@@ -1,11 +1,9 @@
 package com.example.swayogemployeeapp.ui.screens
 
+import android.content.Context
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -16,11 +14,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.swayogemployeeapp.data.local.entity.DailyCommitEntity
 import com.example.swayogemployeeapp.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -28,28 +24,47 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InternDashboard(viewModel: MainViewModel) {
-    val commitsState by viewModel.commits.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
-    var mentorName by remember { mutableStateOf("Rajesh Kumar (Senior Design Eng)") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember { context.getSharedPreferences("intern_skills_prefs", Context.MODE_PRIVATE) }
+
+    // Skills checklist progress stored in SharedPreferences
+    var skillSurvey by remember { mutableStateOf(sharedPrefs.getBoolean("skill_survey", true)) }
+    var skillDesign by remember { mutableStateOf(sharedPrefs.getBoolean("skill_design", false)) }
+    var skillComm by remember { mutableStateOf(sharedPrefs.getBoolean("skill_comm", false)) }
+    var skillRepair by remember { mutableStateOf(sharedPrefs.getBoolean("skill_repair", true)) }
+
+    val mentorName by remember { mutableStateOf("Rajesh Kumar (Senior Design Eng)") }
     var shadowTaskType by remember { mutableStateOf("Site Surveying") }
     var achievementsText by remember { mutableStateOf("") }
     var hoursSpentStr by remember { mutableStateOf("6.5") }
-    
-    // Skills checklist progress
-    var skillSurvey by remember { mutableStateOf(true) }
-    var skillDesign by remember { mutableStateOf(false) }
-    var skillComm by remember { mutableStateOf(false) }
-    var skillRepair by remember { mutableStateOf(true) }
 
     var logMessage by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
 
-    // Mock initial feedback from Supervisor
-    val supervisorFeedback = listOf(
-        MockFeedback("Rajesh Kumar", "Great work measuring John Doe's rooftop Concrete shading factors.", "4.5/5.0"),
-        MockFeedback("Sanjay Mehta", "Review single line diagrams CAD constraints before commissioning.", "4.0/5.0")
-    )
+    // Fetch supervisor feedback dynamically from backend
+    val supervisorFeedback by viewModel.supervisorFeedback.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.fetchSupervisorFeedback()
+    }
+
+    val feedbackToDisplay = if (supervisorFeedback.isNotEmpty()) {
+        supervisorFeedback.map { sub ->
+            MockFeedback(
+                mentor = sub.reviewedBy ?: "Supervisor",
+                comment = sub.reviewNotes ?: "Reviewed: ${sub.title}",
+                score = if (sub.reviewScore != null) "${sub.reviewScore}.0/5.0" else "Pending Rating"
+            )
+        }
+    } else {
+        // Fallback seed feedback
+        listOf(
+            MockFeedback("Rajesh Kumar", "Great work measuring John Doe's rooftop Concrete shading factors.", "4.5/5.0"),
+            MockFeedback("Sanjay Mehta", "Review single line diagrams CAD constraints before commissioning.", "4.0/5.0")
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -122,6 +137,8 @@ fun InternDashboard(viewModel: MainViewModel) {
                                 isSubmitting = false
                                 logMessage = "Shadow log successfully submitted to queue!"
                                 achievementsText = ""
+                                // Refresh ratings feed to see updates
+                                viewModel.fetchSupervisorFeedback()
                             }
                         }
                     },
@@ -149,19 +166,79 @@ fun InternDashboard(viewModel: MainViewModel) {
                 Text("FIELD SKILLS TIMELINE TRACKER", style = Typography.labelSmall, color = MutedText, fontWeight = FontWeight.Bold)
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = skillSurvey, onCheckedChange = { skillSurvey = it }, colors = CheckboxDefaults.colors(checkedColor = PrimaryAmber))
+                    Checkbox(
+                        checked = skillSurvey,
+                        onCheckedChange = { checked ->
+                            skillSurvey = checked
+                            sharedPrefs.edit().putBoolean("skill_survey", checked).apply()
+                            if (checked) {
+                                viewModel.submitDailyWork(
+                                    title = "Skill Checklist Progress",
+                                    description = "Intern completed checkmark: Surveying (Rooftops & Shading)",
+                                    hours = 0.0,
+                                    taskId = "intern_skill_survey"
+                                ) {}
+                            }
+                        },
+                        colors = CheckboxDefaults.colors(checkedColor = PrimaryAmber)
+                    )
                     Text("Surveying (Rooftops & Shading)", color = NeutralText)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = skillDesign, onCheckedChange = { skillDesign = it }, colors = CheckboxDefaults.colors(checkedColor = PrimaryAmber))
+                    Checkbox(
+                        checked = skillDesign,
+                        onCheckedChange = { checked ->
+                            skillDesign = checked
+                            sharedPrefs.edit().putBoolean("skill_design", checked).apply()
+                            if (checked) {
+                                viewModel.submitDailyWork(
+                                    title = "Skill Checklist Progress",
+                                    description = "Intern completed checkmark: CAD Design Layout drawings check",
+                                    hours = 0.0,
+                                    taskId = "intern_skill_design"
+                                ) {}
+                            }
+                        },
+                        colors = CheckboxDefaults.colors(checkedColor = PrimaryAmber)
+                    )
                     Text("CAD Design Layout drawings check", color = NeutralText)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = skillComm, onCheckedChange = { skillComm = it }, colors = CheckboxDefaults.colors(checkedColor = PrimaryAmber))
+                    Checkbox(
+                        checked = skillComm,
+                        onCheckedChange = { checked ->
+                            skillComm = checked
+                            sharedPrefs.edit().putBoolean("skill_comm", checked).apply()
+                            if (checked) {
+                                viewModel.submitDailyWork(
+                                    title = "Skill Checklist Progress",
+                                    description = "Intern completed checkmark: Commissioning & Pit auditing checks",
+                                    hours = 0.0,
+                                    taskId = "intern_skill_comm"
+                                ) {}
+                            }
+                        },
+                        colors = CheckboxDefaults.colors(checkedColor = PrimaryAmber)
+                    )
                     Text("Commissioning & Pit auditing checks", color = NeutralText)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = skillRepair, onCheckedChange = { skillRepair = it }, colors = CheckboxDefaults.colors(checkedColor = PrimaryAmber))
+                    Checkbox(
+                        checked = skillRepair,
+                        onCheckedChange = { checked ->
+                            skillRepair = checked
+                            sharedPrefs.edit().putBoolean("skill_repair", checked).apply()
+                            if (checked) {
+                                viewModel.submitDailyWork(
+                                    title = "Skill Checklist Progress",
+                                    description = "Intern completed checkmark: Diagnostic Inverter Repairs support",
+                                    hours = 0.0,
+                                    taskId = "intern_skill_repair"
+                                ) {}
+                            }
+                        },
+                        colors = CheckboxDefaults.colors(checkedColor = PrimaryAmber)
+                    )
                     Text("Diagnostic Inverter Repairs support", color = NeutralText)
                 }
             }
@@ -169,7 +246,7 @@ fun InternDashboard(viewModel: MainViewModel) {
 
         // Supervisor review feed list
         Text("SUPERVISOR RATING & COMMENTS FEED", style = Typography.labelSmall, color = MutedText, fontWeight = FontWeight.Bold)
-        supervisorFeedback.forEach { feed ->
+        feedbackToDisplay.forEach { feed ->
             Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(
@@ -191,3 +268,4 @@ data class MockFeedback(
     val comment: String,
     val score: String
 )
+

@@ -8,6 +8,8 @@ import com.example.swayogemployeeapp.data.local.entity.OutboxQueueEntity
 import com.example.swayogemployeeapp.data.remote.AttendanceCheckInRequest
 import com.example.swayogemployeeapp.data.remote.AttendanceCheckOutRequest
 import com.example.swayogemployeeapp.data.remote.WorkSubmissionRequest
+import com.example.swayogemployeeapp.data.remote.NetworkClient
+import com.example.swayogemployeeapp.data.remote.WorkSubmissionDto
 import com.example.swayogemployeeapp.data.sync.SyncManager
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +20,7 @@ import java.util.TimeZone
 
 class AttendanceRepository(private val context: Context) {
     private val db = AppDatabase.getDatabase(context)
+    private val apiService = NetworkClient.getApiService(context)
     private val gson = Gson()
 
     fun getAllRecords(): Flow<List<AttendanceRecordEntity>> = db.attendanceRecordDao().getAllRecordsFlow()
@@ -117,6 +120,19 @@ class AttendanceRepository(private val context: Context) {
     }
 
     fun getAllCommits(): Flow<List<DailyCommitEntity>> = db.dailyCommitDao().getAllCommitsFlow()
+
+    suspend fun getWorkSubmissions(): List<WorkSubmissionDto> {
+        return try {
+            val response = apiService.getWorkSubmissions()
+            if (response.isSuccessful) {
+                response.body()?.submissions ?: emptyList()
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 
     private fun getCurrentDateString(): String {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())

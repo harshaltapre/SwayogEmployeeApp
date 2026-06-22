@@ -208,142 +208,155 @@ data class DailyCommitEntity(
 
 ### Common Workspace Screens (All Employees)
 
-#### Screen A: Authentication, Security Credentials & Role-Specific Login Flows
-
-The mobile application utilizes a **Single Unified Authentication Screen** that dynamically shifts its configuration, branding, and post-login landing pages based on the user's verified `jobRole`.
-
-```
- +-------------------------------------------------------------+
- |                   SWAYOG ENTERPRISE LOGON                   |
- +-------------------------------------------------------------+
- |  [ Logo: SWAYOG CleanTech ]                                 |
- |                                                             |
- |  Select Access Mode:                                        |
- |  [ ( ) Passcode/Email ]  [ (o) Mobile OTP ]                 |
- |                                                             |
- |  Username / Mobile Number:                                  |
- |  [ +91 98765 43210                                       ]  |
- |                                                             |
- |  Security Password:                                         |
- |  [ **********                                            ]  |
- |                                                             |
- |  [ SIGN IN NOW ]                                            |
- |                                                             |
- |  [ Quick Biometric Unlock (Fingerprint Icon) ]              |
- +-------------------------------------------------------------+
-```
-
-##### 1. Shared Authentication Features
-
-* **Credential Input System**: Supports logging in via username/password or mobile number with SMS OTP.
-* **Biometric Authentication Bypass**: Securely registers device fingerprint hashes using the Android Biometric Prompt API. Allows instant passcode bypass on subsequent application launches.
-* **Job Role Redirection Engine**: The authentication response contains a profile payload including `role` and `jobRole`. The client-side router checks the role string against the role mappings and opens the designated dashboard view.
+The mobile application utilizes a shared core navigation structure representing screens common to all authenticated roles. The routing, state binding, and layouts dynamically adapt depending on the user's role and authorization clearance.
 
 ---
 
-##### 2. Role-Specific Post-Login Dashboards & Features
-
-Here is the exact specification of the landing experience, key metrics, and functional widgets displayed immediately after logging in for each of the 9 employee roles:
-
-###### Role 1: Service Coordinator Login Dashboard
-
-* **Route Target**: `/subadmin/dashboard`
-* **Post-Login Landing View**: Splits into customer filters and inverter generation metrics.
-* **Key Features**:
-  * *Global Customer Search*: Search by name, project stage, or city.
-  * *Inverter Control Panel*: Displays Growatt, ShineMonitor, and FoxESS/UTL API connectivity. Includes a manual credentials sync tool.
-  * *Field Crew Map*: Visual overview map showing coordinates of all assigned tasks and technicians.
-  * *Pending Requests Banner*: Shows notifications for new service tickets and AMC visit scheduling requests.
-
-###### Role 2: Site Survey Engineer Login Dashboard
-
-* **Route Target**: `/employee/dashboard` (Configured for Survey layout)
-* **Post-Login Landing View**: Displays a chronologically sorted checklist of assigned survey tasks.
-* **Key Features**:
-  * *Daily Route Tracker*: Opens a map showing routes to assigned properties.
-  * *Rooftop Intake Panel*: Digital entry form for roof length/width, load-bearing tests, roof type selection, and shading points.
-  * *Compressed Image Uploader*: Camera widget with custom local scaling (max 1280px, JPEG 75%) for structural photos.
-  * *GPS Verification Badge*: Matches the device's location to the project site's geofence boundaries.
-
-###### Role 3: Solar Design Engineer Login Dashboard
-
-* **Route Target**: `/employee/dashboard` (Configured for Design layout)
-* **Post-Login Landing View**: Shows a queue of completed site surveys awaiting design layouts.
-* **Key Features**:
-  * *Survey Data Downloader*: Accesses roof coordinates, dimensions, shading analyses, and roof photos.
-  * *CAD & SLD Upload Hub*: Fields to select, check, and upload structural designs (CAD drawings) and electrical schematics (Single Line Diagrams - SLD).
-  * *Technical Specs Intake*: Fields to log structural tilting angles, panel models, inverter ratings, and wiring dimensions.
-  * *Review Pipeline Monitor*: Visual status bars tracking submissions through the coordinator and manager reviews.
-
-###### Role 4: Electrical Engineer Login Dashboard
-
-* **Route Target**: `/employee/dashboard` (Configured for Electrical layout)
-* **Post-Login Landing View**: Lists projects ready for commissioning and electrical compliance checks.
-* **Key Features**:
-  * *Commissioning Diagnostic Sheet*: Logs earthing pit resistance (ohms), megger cable insulation, and AC grid integration values.
-  * *SLD Vector Viewer*: Renders Single Line Diagrams in-app for verification during checks.
-  * *Net-Meter Recorder*: Logs net-meter serial IDs, meter status, and coordinates.
-  * *Commissioning Report Upload*: Document scanner interface that converts scanned documents into PDFs for coordinator audits.
-
-###### Role 5: Inventory Executive Login Dashboard
-
-* **Route Target**: `/inventory/dashboard`
-* **Post-Login Landing View**: Opens a summary card tracking active warehouse inventory levels.
-* **Key Features**:
-  * *Critical Stock Alerts*: Highlights stock levels falling below minimum thresholds (e.g., panels, cables, connectors).
-  * *QR/Barcode Scanner*: Activates the camera to scan serial barcodes on panels and inverters during intake and dispatch.
-  * *Dispatch Approval Desk*: Lists dispatch lists sent by Service Coordinators. Enables releasing parts and updating stock counts.
-  * *Offline Stock Adjustment*: Local ledger to record stock changes in offline mode, syncing updates when a network is available.
-
-###### Role 6: O&M (Operations & Maintenance) Technician Login Dashboard
-
-* **Route Target**: `/employee/dashboard` (Configured for Maintenance layout)
-* **Post-Login Landing View**: Renders the daily scheduled AMC cleaning and system checkup list.
-* **Key Features**:
-  * *Before/After Photo Capture*: Forces taking geotagged photos before cleaning starts and after completion.
-  * *Maintenance Audit Checklist*: Steps for clamp tightness, wire inspections, and hot spot checks.
-  * *Rooftop Water Checker*: Form to log site water pressure and availability.
-  * *Technician Navigation Map*: Displays optimized map routes to the day's assigned cleaning sites.
-
-###### Role 7: Service Engineer Login Dashboard
-
-* **Route Target**: `/employee/dashboard` (Configured for Service layout)
-* **Post-Login Landing View**: Lists active client complaints and troubleshooting tasks.
-* **Key Features**:
-  * *Offline Diagnostic Guide*: Troubleshooting directory search for inverter error codes (Growatt / FoxESS) without cellular data.
-  * *Parts Consumed Tracker*: Interface to search and claim warehouse parts used during site repairs.
-  * *Digital Signature Capture*: Signature widget on screen allowing clients to sign off on repairs.
-  * *Ticket Solve CTA*: Button that completes the service ticket, captures coordinates, and triggers an email receipt to the client.
-
-###### Role 8: Monitoring Analyst Login Dashboard
-
-* **Route Target**: `/employee/dashboard` (Configured for Monitoring layout)
-* **Post-Login Landing View**: Shows the system performance and generation monitoring dashboard.
-* **Key Features**:
-  * *Live Performance Alerts*: Highlights systems with >20% generation drops or communication outages.
-  * *Telemetry API Simulators*: Remote options to run diagnostics and manually poll inverter APIs.
-  * *One-Click Dispatch*: Shortcuts to assign O&M checks or service technicians to underperforming sites.
-  * *WhatsApp Client Alerts*: Pre-configured templates to notify clients of offline systems.
-
-###### Role 9: Intern Login Dashboard
-
-* **Route Target**: `/employee/dashboard` (Configured for Intern layout)
-* **Post-Login Landing View**: Displays the active senior mentor assignment and daily learning logs.
-* **Key Features**:
-  * *Daily Shadow Log Form*: Text areas to write work logs, note tasks shadowed, and log decimal hours.
-  * *Supervisor Rating Feed*: View comments and log approvals from reporting mentors.
-  * *Skills Checklist*: Records progress across tasks like surveying, commissioning, and repairs.
+#### Screen A: Authentication & Dynamic Redirect Routing
+* **File Reference**: [LoginScreen.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/LoginScreen.kt)
+* **Visual Structure**: Presents the "SWAYOG Enterprise Logon" title in `PrimaryAmber` styling. Features a tab selector allowing the user to select between "Passcode/Email" access mode and "Mobile OTP" access mode.
+* **Workings & Workflow**:
+  1. The user inputs their identifier (username/email or mobile number) and credentials (password or SMS OTP code).
+  2. Upon pressing "SIGN IN NOW", the UI invokes the `MainViewModel.login` function, passing access variables to `UserRepository.kt`.
+  3. The client issues a REST HTTP request `POST /api/v1/auth/login`.
+  4. The server returns a payload confirming authentication status, access tokens (`accessToken`, `refreshToken`), and user profile parameters (including `role` and `jobRole`).
+  5. The application saves these settings locally into [EmployeeSessionEntity](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/data/local/entity/EmployeeSessionEntity.kt) inside Room SQLite.
+  6. The navigation router triggers [DashboardRouter.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/DashboardRouter.kt), shifting the screen stack depending on `session.jobRole`.
 
 ---
 
-#### Screen B: Geofenced Attendance Dashboard
+#### Screen B: Geofenced Attendance Dashboard (Common Clock)
+* **File Reference**: [AttendanceScreen.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/AttendanceScreen.kt)
+* **Visual Structure**: 
+  - Dynamic Time Canvas featuring an analog circular work clock that pulsates when the work day is active.
+  - Profile banner displaying the employee's name, code, and assigned job title.
+  - GPS status indicator displaying target pins, active coordinates, and geofencing validation states.
+  - Action buttons (`CHECK IN NOW`, `START BREAK`/`END BREAK`, `CHECK OUT`, `SUBMIT TODAY'S TASK`).
+* **Workings & Workflow**:
+  1. **Geofenced Check-In**: Interns and engineers press `CHECK IN NOW`. The screen fetches GPS coordinates from Android `FusedLocationProviderClient`.
+  2. The client calculates the distance between the user's current location and the target office/project geofence coordinates. If distance is $> 100$ meters, check-in fails with a warning dialog.
+  3. If coordinates are verified, the local database table `attendance_records` writes a new check-in row (`isSynced = false`), and enqueues a `CHECK_IN` request payload to the outbox queue table.
+  4. **Active Session Timer**: While checked in, a tick routine updates the UI timer every second, subtracting break durations.
+  5. **Break Tracker**: Pressing `START BREAK` writes the break state. `END BREAK` accumulates the total break duration locally, updating the database record.
+  6. **Check-Out**: Computes final work hours, registers checkout GPS, enqueues the `CHECK_OUT` command to the outbox queue, and halts active work logs.
 
-* **Dynamic Time Canvas**: Renders high-fidelity analog check-in clock. Show elapsed hours, active duration, and current status.
-* **Geofence GPS Lock**: Verify location is within 100 meters of assigned customer site (if task assigned) or regional HQ office coordinates.
-* **Quick Actions**:
-  * `Check In` / `Check Out` button triggers GPS verification and timestamps.
-  * `Start Break` / `End Break` buttons control break periods.
-  * `Submit Today's Task` opens modal to describe accomplishments and input decimal hours.
+---
+
+#### Screen C: Tasks Screen (Assigned Tasks Workspace)
+* **File References**: [Tasks.tsx](file:///d:/intrnship/dashboard_swayog/src/pages/employee/Tasks.tsx) (Web), [SurveyDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/SurveyDashboard.kt) (Android layout variations)
+* **Visual Structure**: Renders a chronological list of assigned site duties (e.g. site surveys, installs, complaints, maintenance cleanings) categorized by scheduled date.
+* **Workings & Workflow**:
+  1. **Flow Binding**: The screen observes a Flow querying the local SQLite table `employee_tasks` filtered by the logged-in employee's `id`.
+  2. **Details Card**: Selecting a task displays the customer's name, phone number, physical site address, and instructions.
+  3. **Address Locator Navigation**: Features a map indicator icon. Clicking it parses coordinates or address queries to construct a navigation Intent, launching Google Maps routes:
+     `geo:0,0?q=latitude,longitude(Customer Name)`
+  4. **Status Lifecycle**: The task moves from `assigned` to `in_progress` once the worker checks in at the geofenced project boundaries.
+  5. **Completion Logs**: Selecting "Complete Task" displays a submission form. Depending on the task's requirements (e.g., uploading site photos, CAD blueprints, or signing reports), files are captured, compressed, and attached before sending a completion request payload to the sync outbox.
+
+---
+
+#### Screen D: Daily Commit Screen (Daily Work Logs)
+* **File References**: [DailyCommit.tsx](file:///d:/intrnship/dashboard_swayog/src/pages/employee/DailyCommit.tsx) (Web), [AttendanceScreen.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/AttendanceScreen.kt) (Android modal popup submission)
+* **Visual Structure**: Contains form fields for log submissions:
+  - *Task Title / Worked On*: Short summary of the project worked on.
+  - *Work Summary / Accomplishments*: Text area to describe resolved items, issues faced, and achievements.
+  - *Hours Spent*: Decimal input representing work duration (e.g., 8.0, 6.5).
+  - *Blockers / Tomorrow's Plan*: Input areas for manager escalations and next-day planning.
+  - *Attachment*: Button to attach documents, PDFs, or layout screenshots.
+* **Workings & Workflow**:
+  1. Interns/employees open the Daily Commit form.
+  2. Validation checks verify that the description length is $\ge 10$ characters and hours fall within a range of $0.25 - 24.0$.
+  3. Upon pressing "SUBMIT", a [DailyCommitEntity](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/data/local/entity/DailyCommitEntity.kt) record is written locally inside SQLite with `isSynced = false`.
+  4. An API payload `WorkSubmissionRequest` is generated, serialized, and enqueued to [OutboxQueueEntity](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/data/local/entity/OutboxQueueEntity.kt) as a `"COMMIT"` action.
+  5. `SyncManager` initiates `SyncWorker` scheduling constraints. The backend processes the commit under route `POST /api/v1/employee/submissions`.
+
+---
+
+#### Screen E: Employees Under Me (Hierarchy & Mentoring Reviews)
+* **File References**: [EmployeesUnderMe.tsx](file:///d:/intrnship/dashboard_swayog/src/pages/employee/EmployeesUnderMe.tsx) (Web), [MainViewModel.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/MainViewModel.kt) (Android reports flows)
+* **Visual Structure**: Reserved for manager roles (e.g. Design Engineers tracking assigned Interns, Coordinators tracking active Technicians). Displays a list of reportees, their current location, status (Checked-In/Out), and performance score history.
+* **Workings & Workflow**:
+  1. **Hierarchy Resolution**: The screen requests a report of reportees matching the supervisor's manager ID. The system recursively builds the tree (reporting manager matches user ID).
+  2. **Sub-employee profile detail**: Selecting a reportee displays their attendance records log calendar, daily commits summary history, and pending tasks queue.
+  3. **Mentoring Feedback & Rating**: Presents a review form containing score inputs (1-5 range) and review notes fields.
+  4. **Submission flow**: Submitting the review saves the evaluation under the database table `WorkSubmission` as `approved` or `revision` with comments. This updates the reportee's performance snapshots.
+
+---
+
+#### Screen F: Settings Screen (App Configurations & Sync Health)
+* **File References**: [Settings.tsx](file:///d:/intrnship/dashboard_swayog/src/pages/employee/Settings.tsx) (Web), [MainViewModel.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/MainViewModel.kt)
+* **Visual Structure**: 
+  - Change Password input card.
+  - Active credentials detail configuration fields.
+  - Sync Health Panel (displaying connection status, last synchronization timestamp, database schema version, and outbox count).
+* **Workings & Workflow**:
+  1. **Password Change**: User enters their current password, a new password, and confirms it. The form validates constraints and fires `POST /api/v1/employee/change-password`.
+  2. **Credentials Update**: Toggles saving biometric credentials locally to bypass standard logins.
+  3. **Sync Health Monitor**: Queries the local outbox queue. If the queue is non-empty, displays a sync badge detailing pending actions. It allows clicking "Force Sync" to manually initiate background uploads.
+
+---
+
+##### 2. Role-Specific Post-Login Dashboards & Variations
+
+The application shifts layouts, access boundaries, and widgets on the home workspace depending on the authenticated role:
+
+```
+[Login Success] ---> Read session.jobRole ---> Route to Workspace
+                               |
+       +-----------------------+-----------------------+
+       |                       |                       |
+["Intern"]              ["Inventory Executive"]  ["Service Coordinator"]
+- Mentor Profile card   - Warehouse stock counts - Customer Directory Search
+- Shadow log forms      - QR/Barcode Scanner     - Inverter Control API Panel
+- Practical checklist   - Dispatch requests list - Tech assignment maps
+```
+
+###### Variation 1: Service Coordinator Login Dashboard
+* **Exposed Route / View**: [CoordinatorDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/CoordinatorDashboard.kt)
+* **Custom Layout Widgets**: Splits into active site lists and inverter performance widgets.
+* **Operations**: Links inverter API keys (Growatt, FoxESS), tracks pending AMC cleanings, and utilizes drag-and-drop actions to assign complaints tasks to field engineers.
+
+###### Variation 2: Site Survey Engineer Login Dashboard
+* **Exposed Route / View**: [SurveyDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/SurveyDashboard.kt)
+* **Custom Layout Widgets**: Lists survey projects and active rooftop dimension calculators.
+* **Operations**: Enforces geotagged camera frames, logs structural metrics (length, width, shading factors), and processes bitmap downscaling checks before queuing drafts to the outbox.
+
+###### Variation 3: Solar Design Engineer Login Dashboard
+* **Exposed Route / View**: [DesignDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/DesignDashboard.kt)
+* **Custom Layout Widgets**: Displays a layout queue of completed surveys.
+* **Operations**: Enables downloading survey photos, inputting CAD drawings configurations, structural tilting coordinates, and SLD schematics.
+
+###### Variation 4: Electrical Engineer Login Dashboard
+* **Exposed Route / View**: [ElectricalDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/ElectricalDashboard.kt)
+* **Custom Layout Widgets**: Renders Single Line Diagram vector views and system diagnostics grids.
+* **Operations**: Logs earthing pit resistance measurement parameters (ohms), Megger insulation results, net-meter specifications, and converts physical compliance scans into black-and-white PDF files.
+
+###### Variation 5: Inventory Executive Login Dashboard
+* **Exposed Route / View**: [InventoryDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/InventoryDashboard.kt)
+* **Custom Layout Widgets**: Renders stock inventory cards and safety threshold panels.
+* **Operations**: Runs the camera barcode decoder during incoming inventory updates and dispatches materials to customer installations.
+
+###### Variation 6: O&M Technician Login Dashboard
+* **Exposed Route / View**: [MaintenanceDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/MaintenanceDashboard.kt)
+* **Custom Layout Widgets**: Lists scheduled AMC washing visits.
+* **Operations**: Enforces "Before/After" camera captures, applies geo-watermarks, and checks structural clamp loose audits.
+
+###### Variation 7: Service Engineer Login Dashboard
+* **Exposed Route / View**: [ServiceDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/ServiceDashboard.kt)
+* **Custom Layout Widgets**: Renders complaint troubleshooting lists and canvas signature boards.
+* **Operations**: Provides Growatt/FoxESS offline error diagnostics directories, logs consumed parts, and requests clients signatures.
+
+###### Variation 8: Monitoring Analyst Login Dashboard
+* **Exposed Route / View**: [MonitoringDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/MonitoringDashboard.kt)
+* **Custom Layout Widgets**: Generation analytics panels and telemetry connection charts.
+* **Operations**: Displays warning flags for underperforming customer inverters and handles one-click tech dispatches or pre-filled WhatsApp customer alerts.
+
+###### Variation 9: Intern Login Dashboard
+* **Exposed Route / View**: [InternDashboard.kt](file:///d:/intrnship/SwayogEmployeeApp/app/src/main/java/com/example/swayogemployeeapp/ui/screens/InternDashboard.kt)
+* **Custom Layout Widgets**: Assigned Mentor details, daily shadow category tabs, achievements field, and practical checklist.
+* **Operations**: Handles writing logs, tracking internship checklist milestones, and showing feedback ratings received from reporting mentors.
+
+---
 
 ---
 

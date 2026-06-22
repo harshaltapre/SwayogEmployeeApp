@@ -60,7 +60,6 @@ class EmployeeAuthInterceptor(
 
     private fun requestTokenRefresh(refreshToken: String): TokenRefreshResponse? {
         val client = OkHttpClient.Builder()
-            .addInterceptor(MockInterceptor()) // Intercept with mock to simulate refreshed tokens locally
             .build()
 
         val gson = Gson()
@@ -68,7 +67,7 @@ class EmployeeAuthInterceptor(
         val requestBody = RequestBody.create(MediaType.parse("application/json"), jsonPayload)
         
         val request = Request.Builder()
-            .url("https://api.swayog.com/api/v1/employee/token/refresh")
+            .url("http://10.0.2.2:4000/api/v1/employee/token/refresh")
             .post(requestBody)
             .build()
 

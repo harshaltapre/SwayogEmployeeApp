@@ -14,11 +14,10 @@ object NetworkClient {
             val db = AppDatabase.getDatabase(context)
             val okHttpClient = OkHttpClient.Builder()
                 .addInterceptor(EmployeeAuthInterceptor(context, db))
-                .addInterceptor(MockInterceptor())
                 .build()
 
             val retrofit = Retrofit.Builder()
-                .baseUrl("https://api.swayog.com/")
+                .baseUrl("http://10.0.2.2:4000/")
                 .client(okHttpClient)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()

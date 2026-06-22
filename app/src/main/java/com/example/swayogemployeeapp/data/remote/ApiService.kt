@@ -65,6 +65,38 @@ interface ApiService {
     suspend fun refreshTokens(
         @Body request: TokenRefreshRequest
     ): Response<TokenRefreshResponse>
+
+    @GET("api/v1/attendance/work-submissions")
+    suspend fun getWorkSubmissions(): Response<WorkSubmissionsResponse>
+
+    // ── Service Coordinator (Sub-Admin) APIs ──
+
+    @GET("api/v1/customers")
+    suspend fun listCustomers(
+        @Query("limit") limit: Int = 200,
+        @Query("city") city: String? = null
+    ): Response<List<CustomerDto>>
+
+    @GET("api/v1/subadmin/customers/{customerId}/summary")
+    suspend fun getCustomerSummary(
+        @Path("customerId") customerId: Int
+    ): Response<CustomerSummaryResponse>
+
+    @GET("api/v1/subadmin/customers/{customerId}/inverter-generation")
+    suspend fun getCustomerInverterGeneration(
+        @Path("customerId") customerId: Int
+    ): Response<InverterGenerationResponse>
+
+    @GET("api/v1/subadmin/service-requests/stats")
+    suspend fun getServiceRequestStats(
+        @Query("customerId") customerId: Int? = null
+    ): Response<ServiceRequestStatsResponse>
+
+    @PATCH("api/v1/subadmin/customers/{customerId}")
+    suspend fun updateCustomerCredentials(
+        @Path("customerId") customerId: Int,
+        @Body request: UpdateCredentialsRequest
+    ): Response<CommonResponse>
 }
 
 // Request & Response DTOs
@@ -148,4 +180,84 @@ data class TokenRefreshRequest(
 data class TokenRefreshResponse(
     val accessToken: String,
     val refreshToken: String
+)
+
+data class WorkSubmissionsResponse(
+    val submissions: List<WorkSubmissionDto>
+)
+
+data class WorkSubmissionDto(
+    val id: String,
+    val employeeId: String,
+    val taskId: Int?,
+    val title: String,
+    val description: String,
+    val proofUrl: String?,
+    val proofNotes: String?,
+    val hoursSpent: Double,
+    val status: String,
+    val reviewScore: Int?,
+    val reviewNotes: String?,
+    val reviewedBy: String?,
+    val reviewedAt: String?
+)
+
+// ── Service Coordinator DTOs ──
+
+data class CustomerDto(
+    val id: Int,
+    val customerCode: String?,
+    val name: String?,
+    val fullName: String?,
+    val email: String?,
+    val phone: String?,
+    val phoneNumber: String?,
+    val city: String?,
+    val address: String?,
+    val systemSizeKw: Double?,
+    val inverterBrand: String?,
+    val inverterLoginId: String?,
+    val inverterPassword: String?,
+    val inverterApiKey: String?,
+    val inverterDeviceSn: String?,
+    val amcStatus: String?,
+    val status: String?,
+    val projectStage: Int?,
+    val installationDate: String?,
+    val cleaningsPerMonth: Int?,
+    val completedVisits: Int?,
+    val pendingVisits: Int?
+) {
+    fun displayName(): String = name ?: fullName ?: "Customer #$id"
+    fun displayPhone(): String = phone ?: phoneNumber ?: ""
+}
+
+data class CustomerSummaryResponse(
+    val customer: CustomerDto,
+    val serviceRequestStats: ServiceRequestStatsResponse?
+)
+
+data class InverterGenerationResponse(
+    val dailyGeneration: Double?,
+    val peakPower: Double?,
+    val totalGeneration: Double?,
+    val lastUpdated: String?,
+    val isSimulated: Boolean?,
+    val dataUnavailable: Boolean?,
+    val unavailableReason: String?
+)
+
+data class ServiceRequestStatsResponse(
+    val total: Int?,
+    val pending: Int?,
+    val scheduled: Int?,
+    val completed: Int?
+)
+
+data class UpdateCredentialsRequest(
+    val inverterBrand: String?,
+    val inverterLoginId: String?,
+    val inverterPassword: String?,
+    val inverterApiKey: String?,
+    val inverterDeviceSn: String?
 )

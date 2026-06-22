@@ -22,6 +22,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,19 +42,9 @@ fun LoginScreen(
     var securityCode by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isAuthenticating by remember { mutableStateOf(false) }
+    var isPasswordVisible by remember { mutableStateOf(false) }
 
-    // Preconfigured Mock accounts for testing
-    val mockProfiles = listOf(
-        MockProfile("coordinator@swayog.com", "123456", "Service Coordinator", "SUB_ADMIN"),
-        MockProfile("surveyor@swayog.com", "123456", "Site Survey Engineer", "EMPLOYEE"),
-        MockProfile("designer@swayog.com", "123456", "Solar Design Engineer", "EMPLOYEE"),
-        MockProfile("electrical@swayog.com", "123456", "Electrical Engineer", "EMPLOYEE"),
-        MockProfile("inventory@swayog.com", "123456", "Inventory Executive", "EMPLOYEE"),
-        MockProfile("technician@swayog.com", "123456", "O&M Technician", "EMPLOYEE"),
-        MockProfile("service@swayog.com", "123456", "Service Engineer", "EMPLOYEE"),
-        MockProfile("analyst@swayog.com", "123456", "Monitoring Analyst", "EMPLOYEE"),
-        MockProfile("intern@swayog.com", "123456", "Intern", "EMPLOYEE")
-    )
+    // Mock profiles removed
 
     Scaffold(
         containerColor = BackgroundDark
@@ -185,7 +178,7 @@ fun LoginScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Password/OTP Input
+                     // Password/OTP Input
                     OutlinedTextField(
                         value = securityCode,
                         onValueChange = { securityCode = it },
@@ -197,7 +190,20 @@ fun LoginScreen(
                                 tint = EngineeringBlue
                             )
                         },
-                        visualTransformation = PasswordVisualTransformation(),
+                        trailingIcon = {
+                            if (!isOtpMode) {
+                                val image = if (isPasswordVisible) {
+                                    Icons.Filled.Visibility
+                                } else {
+                                    Icons.Filled.VisibilityOff
+                                }
+                                val description = if (isPasswordVisible) "Hide password" else "Show password"
+                                IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                    Icon(imageVector = image, contentDescription = description, tint = EngineeringBlue)
+                                }
+                            }
+                        },
+                        visualTransformation = if (isPasswordVisible || isOtpMode) VisualTransformation.None else PasswordVisualTransformation(),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = NeutralText,
                             unfocusedTextColor = NeutralText,
@@ -257,100 +263,7 @@ fun LoginScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Biometrics bypass
-                    IconButton(
-                        onClick = {
-                            // Simulator bypass: log in Surveyor by default if using fingerprint
-                            isAuthenticating = true
-                            viewModel.login("surveyor@swayog.com", "123456", false) { result ->
-                                isAuthenticating = false
-                                result.fold(
-                                    onSuccess = { onLoginSuccess(it) },
-                                    onFailure = { errorMessage = it.message }
-                                )
-                            }
-                        },
-                        modifier = Modifier.size(50.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Fingerprint,
-                            contentDescription = "Fingerprint Login Bypass",
-                            tint = SuccessGreen,
-                            modifier = Modifier.size(40.dp)
-                        )
-                    }
-                    Text(
-                        text = "Touch to bypass (Biometrics Mock)",
-                        style = Typography.labelSmall,
-                        color = MutedText
-                    )
-                }
-            }
-
-            // Reviewer's Profiles switch panel
-            Text(
-                text = "REVIEWER DEMO: TAP PROFILE TO LOGIN INSTANTLY",
-                style = Typography.labelSmall,
-                color = PrimaryAmber,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
-            mockProfiles.forEach { profile ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                        .clickable {
-                            username = profile.email
-                            securityCode = profile.code
-                            isOtpMode = false
-                            isAuthenticating = true
-                            viewModel.login(profile.email, profile.code, false) { result ->
-                                isAuthenticating = false
-                                result.fold(
-                                    onSuccess = { onLoginSuccess(it) },
-                                    onFailure = { errorMessage = it.message }
-                                )
-                            }
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text(
-                                text = profile.jobRole,
-                                style = Typography.titleMedium,
-                                color = NeutralText,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = profile.email,
-                                style = Typography.bodyMedium,
-                                color = MutedText
-                            )
-                        }
-                        Badge(
-                            containerColor = if (profile.role == "SUB_ADMIN") EngineeringBlue else PrimaryAmber
-                        ) {
-                            Text(
-                                text = profile.role,
-                                color = BackgroundDark,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp
-                            )
-                        }
-                    }
+                    // Fingerprint bypass removed
                 }
             }
 
@@ -359,9 +272,3 @@ fun LoginScreen(
     }
 }
 
-data class MockProfile(
-    val email: String,
-    val code: String,
-    val jobRole: String,
-    val role: String
-)
