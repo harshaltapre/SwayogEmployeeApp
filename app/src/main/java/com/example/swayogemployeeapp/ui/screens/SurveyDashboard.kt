@@ -276,8 +276,15 @@ fun SurveyDashboard(viewModel: MainViewModel) {
                         Icon(imageVector = Icons.Default.PhotoCamera, contentDescription = null, tint = PrimaryAmber, modifier = Modifier.size(36.dp))
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text("$mockPhotosCount Photos Compressed", color = NeutralText, fontWeight = FontWeight.Bold)
+                            Text("$mockPhotosCount / 4 Photos Captured", color = NeutralText, fontWeight = FontWeight.Bold)
                             Text(photoLogMessage, fontSize = 11.sp, color = MutedText)
+                            if (mockPhotosCount > 0) {
+                                Text(
+                                    text = "Orig: 4000×3000 → Rescaled: 1280×960 | Quality: 75% JPEG",
+                                    fontSize = 10.sp,
+                                    color = EngineeringBlue
+                                )
+                            }
                         }
                     }
 
@@ -285,13 +292,24 @@ fun SurveyDashboard(viewModel: MainViewModel) {
                         onClick = {
                             if (mockPhotosCount < 4) {
                                 mockPhotosCount++
-                                photoLogMessage = "Photo $mockPhotosCount: Rescaled to 1280px, Jpeg 75% (${(180..320).random()}KB). Check!"
+                                val photoLabels = listOf("Rooftop overview", "Electrical Meter Board", "Structural/Brackets", "Shadow Scan")
+                                val label = photoLabels.getOrElse(mockPhotosCount - 1) { "Extra" }
+                                val fileSize = (180..320).random()
+                                photoLogMessage = "Photo $mockPhotosCount ($label): 4000×3000 → 1280×960, ${fileSize}KB"
+                            } else {
+                                photoLogMessage = "All 4 required photos captured ✓"
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = EngineeringBlue),
-                        shape = RoundedCornerShape(6.dp)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (mockPhotosCount >= 4) SuccessGreen else EngineeringBlue
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        enabled = mockPhotosCount < 4
                     ) {
-                        Text("TAKE PHOTO", fontSize = 11.sp)
+                        Text(
+                            text = if (mockPhotosCount >= 4) "ALL DONE ✓" else "TAKE PHOTO",
+                            fontSize = 11.sp
+                        )
                     }
                 }
             }

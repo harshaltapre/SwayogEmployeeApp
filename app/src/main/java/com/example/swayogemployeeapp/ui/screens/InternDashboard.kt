@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InternDashboard(viewModel: MainViewModel) {
+fun InternDashboard(viewModel: MainViewModel, onNavigateToTeam: () -> Unit = {}) {
     val coroutineScope = rememberCoroutineScope()
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -85,6 +85,31 @@ fun InternDashboard(viewModel: MainViewModel) {
             }
         }
 
+        // Employees Under Me / My Team Action Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onNavigateToTeam() }
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.Group, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(32.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text("EMPLOYEES UNDER ME / MY TEAM", style = Typography.labelSmall, color = SuccessGreen, fontWeight = FontWeight.Bold)
+                        Text("View direct reports, tasks & evaluations", style = Typography.bodyMedium, color = NeutralText, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = MutedText)
+            }
+        }
+
         // Daily Shadow Log Form
         Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -126,19 +151,23 @@ fun InternDashboard(viewModel: MainViewModel) {
                     onClick = {
                         val hours = hoursSpentStr.toDoubleOrNull() ?: 6.5
                         isSubmitting = true
-                        viewModel.submitDailyWork(
-                            title = "Shadowing Log: $shadowTaskType",
-                            description = achievementsText,
-                            hours = hours,
-                            taskId = "intern_shadow"
-                        ) {
-                            coroutineScope.launch {
-                                delay(1000)
-                                isSubmitting = false
-                                logMessage = "Shadow log successfully submitted to queue!"
+                        val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                        viewModel.submitDailyCommit(
+                            date = dateStr,
+                            taskWorkedOn = "Shadowing: $shadowTaskType",
+                            workSummary = achievementsText,
+                            hoursSpent = hours,
+                            issuesBlockers = null,
+                            tomorrowPlan = null
+                        ) { result ->
+                            isSubmitting = false
+                            if (result.isSuccess) {
+                                logMessage = "Daily learning commit submitted successfully!"
                                 achievementsText = ""
                                 // Refresh ratings feed to see updates
                                 viewModel.fetchSupervisorFeedback()
+                            } else {
+                                logMessage = "Error: ${result.exceptionOrNull()?.message}"
                             }
                         }
                     },

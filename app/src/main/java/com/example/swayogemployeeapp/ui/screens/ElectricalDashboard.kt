@@ -198,18 +198,65 @@ fun ElectricalDashboard(viewModel: MainViewModel) {
             }
         }
 
-        // Technical Specs inputs
+            // Technical Specs inputs
+        val earthingValue = earthingResistance.toDoubleOrNull()
+        val earthingExceedsLimit = earthingValue != null && earthingValue > 2.0
+        
         Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("MEASURED SYSTEM VALUES", style = Typography.labelSmall, color = MutedText, fontWeight = FontWeight.Bold)
 
+                // Earthing Resistance with validation indicator
                 OutlinedTextField(
                     value = earthingResistance,
                     onValueChange = { earthingResistance = it },
                     label = { Text("Earthing Pit Resistance (Ohms)", color = MutedText) },
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = NeutralText, unfocusedTextColor = NeutralText, focusedBorderColor = PrimaryAmber, unfocusedBorderColor = BorderGray),
+                    isError = earthingExceedsLimit,
+                    trailingIcon = {
+                        if (earthingExceedsLimit) {
+                            Icon(imageVector = Icons.Default.Warning, contentDescription = "Exceeds limit", tint = Color.Red)
+                        } else if (earthingValue != null && earthingValue <= 2.0) {
+                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "Within limit", tint = SuccessGreen)
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = NeutralText,
+                        unfocusedTextColor = NeutralText,
+                        focusedBorderColor = if (earthingExceedsLimit) Color.Red else PrimaryAmber,
+                        unfocusedBorderColor = if (earthingExceedsLimit) Color.Red else BorderGray,
+                        errorBorderColor = Color.Red
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Earthing Resistance Warning
+                if (earthingExceedsLimit) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF7F1D1D)),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.Block, contentDescription = null, tint = Color(0xFFFCA5A5), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    "EARTHING RESISTANCE EXCEEDS SAFETY LIMIT",
+                                    color = Color(0xFFFCA5A5),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "Measured: ${earthingResistance} Ω — Max allowed: 2.0 Ω. Commissioning blocked until earthing pit is re-treated.",
+                                    color = Color.White,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
@@ -270,7 +317,8 @@ fun ElectricalDashboard(viewModel: MainViewModel) {
             }
         }
 
-        // Submit for Audit button
+        // Submit for Audit button – BLOCKED if earthing > 2.0 Ohm
+        val canSubmit = checkedMegger && checkedGrounding && scanDocumentAttached != null && !earthingExceedsLimit && !isSubmitting
         Button(
             onClick = {
                 isSubmitting = true
@@ -289,17 +337,21 @@ fun ElectricalDashboard(viewModel: MainViewModel) {
                 }
             },
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (checkedMegger && checkedGrounding && scanDocumentAttached != null) SuccessGreen else PrimaryAmber
+                containerColor = if (canSubmit) SuccessGreen else if (earthingExceedsLimit) Color.Red.copy(alpha = 0.5f) else PrimaryAmber
             ),
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.fillMaxWidth().height(50.dp),
-            enabled = checkedMegger && checkedGrounding && scanDocumentAttached != null && !isSubmitting
+            enabled = canSubmit
         ) {
             if (isSubmitting) {
                 CircularProgressIndicator(color = BackgroundDark, modifier = Modifier.size(24.dp))
             } else {
                 Text(
-                    text = if (checkedMegger && checkedGrounding && scanDocumentAttached != null) "SUBMIT COMMISSIONING FOR AUDIT" else "COMPLETE SAFETY TESTING & DOCUMENT SCAN",
+                    text = when {
+                        earthingExceedsLimit -> "BLOCKED: EARTHING > 2.0 Ω"
+                        canSubmit -> "SUBMIT COMMISSIONING FOR AUDIT"
+                        else -> "COMPLETE SAFETY TESTING & DOCUMENT SCAN"
+                    },
                     color = BackgroundDark,
                     fontWeight = FontWeight.Bold
                 )

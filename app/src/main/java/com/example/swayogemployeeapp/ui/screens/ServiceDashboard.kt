@@ -22,6 +22,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -214,7 +216,7 @@ fun ServiceDashboard(viewModel: MainViewModel) {
                         drawPath(
                             path = path,
                             color = PrimaryAmber,
-                            style = Stroke(width = 4f)
+                            style = Stroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
                         )
                     }
                 }

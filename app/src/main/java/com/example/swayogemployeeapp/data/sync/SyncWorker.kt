@@ -152,6 +152,109 @@ class SyncWorker(
                             true
                         } else false
                     }
+                    "DAILY_COMMIT" -> {
+                        val payload = gson.fromJson(item.payloadJson, DailyCommitRequest::class.java)
+                        val response = apiService.submitDailyCommit(payload)
+                        response.isSuccessful
+                    }
+                    "COMPLAINT_SCHEDULE" -> {
+                        val parts = item.payloadJson.split("|||")
+                        if (parts.size >= 4) {
+                            val taskId = parts[0].toInt()
+                            val scheduledDate = parts[1]
+                            val scheduledTime = parts[2]
+                            val employeeId = parts[3].takeIf { it.isNotEmpty() }
+                            // Call API to schedule complaint
+                            val response = apiService.updateTaskSchedule(taskId, scheduledDate, scheduledTime, employeeId)
+                            if (response.isSuccessful) {
+                                val task = db.employeeTaskDao().getTaskById(taskId)
+                                if (task != null) {
+                                    db.employeeTaskDao().update(task.copy(
+                                        scheduledTime = "$scheduledDate$scheduledTime",
+                                        employeeUserId = employeeId,
+                                        status = "scheduled"
+                                    ))
+                                }
+                                true
+                            } else false
+                        } else false
+                    }
+                    "AMC_SETTINGS_UPDATE" -> {
+                        val parts = item.payloadJson.split("|||")
+                        if (parts.size >= 6) {
+                            val customerId = parts[0].toInt()
+                            val cleaningsPerMonth = parts[1].toIntOrNull()
+                            val monthlyRate = parts[2].toDoubleOrNull()
+                            val clientType = parts[3].takeIf { it.isNotEmpty() }
+                            val employeeId = parts[4].takeIf { it.isNotEmpty() }
+                            val cleaningWindows = parts[5].takeIf { it.isNotEmpty() }
+                            // Call API to update AMC settings
+                            val response = apiService.updateAmcSettings(customerId, cleaningsPerMonth, monthlyRate, clientType, employeeId, cleaningWindows)
+                            if (response.isSuccessful) {
+                                // Update local customer entity
+                                val customer = db.customerDao().getCustomerById(customerId)
+                                if (customer != null) {
+                                    db.customerDao().updateCustomer(customer.copy(
+                                        cleaningsPerMonth = cleaningsPerMonth,
+                                        monthlyCleaningRate = monthlyRate,
+                                        clientType = clientType,
+                                        assignedEmployeeId = employeeId
+                                    ))
+                                }
+                                true
+                            } else false
+                        } else false
+                    }
+                    "PAYMENT_LOG" -> {
+                        val payload = gson.fromJson(item.payloadJson, PaymentLogRequest::class.java)
+                        val response = apiService.logPayment(payload)
+                        if (response.isSuccessful) {
+                            Log.d("SyncWorker", "Payment logged successfully")
+                            true
+                        } else false
+                    }
+                    "CREDENTIALS_UPDATE" -> {
+                        val parts = item.payloadJson.split("|||")
+                        if (parts.size >= 6) {
+                            val customerId = parts[0].toInt()
+                            val brand = parts[1].takeIf { it.isNotEmpty() }
+                            val loginId = parts[2].takeIf { it.isNotEmpty() }
+                            val password = parts[3].takeIf { it.isNotEmpty() }
+                            val deviceSn = parts[4].takeIf { it.isNotEmpty() }
+                            val apiKey = parts[5].takeIf { it.isNotEmpty() }
+                            // Call API to update credentials
+                            val response = apiService.updateInverterCredentials(customerId, brand, loginId, password, deviceSn, apiKey)
+                            if (response.isSuccessful) {
+                                val customer = db.customerDao().getCustomerById(customerId)
+                                if (customer != null) {
+                                    db.customerDao().updateCustomer(customer.copy(
+                                        inverterBrand = brand,
+                                        inverterLoginId = loginId,
+                                        inverterPassword = password,
+                                        inverterDeviceSn = deviceSn,
+                                        inverterApiKey = apiKey
+                                    ))
+                                }
+                                true
+                            } else false
+                        } else false
+                    }
+                    "TASK_ASSIGN" -> {
+                        val parts = item.payloadJson.split("|||")
+                        if (parts.size >= 5) {
+                            val customerId = parts[0].toIntOrNull()
+                            val jobType = parts[1]
+                            val description = parts[2]
+                            val address = parts[3]
+                            val employeeId = parts[4].takeIf { it.isNotEmpty() }
+                            // Call API to assign task
+                            val response = apiService.assignTask(customerId, jobType, description, address, employeeId)
+                            if (response.isSuccessful) {
+                                Log.d("SyncWorker", "Task assigned successfully")
+                                true
+                            } else false
+                        } else false
+                    }
                     else -> false
                 }
 

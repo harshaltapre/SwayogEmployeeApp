@@ -1,6 +1,6 @@
 package com.example.swayogemployeeapp.ui.screens
 
-import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,12 +17,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.*
 import com.example.swayogemployeeapp.ui.theme.*
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -69,31 +72,27 @@ fun AttendanceScreen(
         if (attendanceState != null && !isCheckedOut) {
             val checkInStr = attendanceState?.checkInTime
             if (checkInStr != null) {
-                val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault()).apply {
-                    timeZone = TimeZone.getTimeZone("UTC")
-                }
-                try {
-                    val checkInDate = format.parse(checkInStr)
-                    if (checkInDate != null) {
-                        while (true) {
-                            val now = System.currentTimeMillis()
-                            val totalDelta = (now - checkInDate.time) / 1000
-                            val breakSecs = attendanceState?.totalBreakDurationSeconds ?: 0L
-                            
-                            // Subtract break duration if break was saved or currently active
-                            var activeDelta = totalDelta - breakSecs
-                            if (isBreakActive) {
-                                // If break is currently running, subtract its current running duration too
-                                // But since we haven't written it to db yet, compute it dynamically
-                                // activeDelta is computed correctly by subtracting total elapsed since check-in
-                            }
-                            
-                            elapsedSeconds = if (activeDelta > 0) activeDelta else 0
-                            delay(1000)
-                        }
-                    }
+                val checkInTimeMs = try {
+                    val f1 = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault()).apply { timeZone = TimeZone.getTimeZone("UTC") }
+                    f1.parse(checkInStr)?.time
                 } catch (e: Exception) {
-                    // Fallback
+                    try {
+                        val f2 = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply { timeZone = TimeZone.getTimeZone("UTC") }
+                        f2.parse(checkInStr)?.time
+                    } catch (e2: Exception) {
+                        null
+                    }
+                }
+                
+                if (checkInTimeMs != null) {
+                    while (true) {
+                        val now = System.currentTimeMillis()
+                        val totalDelta = (now - checkInTimeMs) / 1000
+                        val breakSecs = attendanceState?.totalBreakDurationSeconds ?: 0L
+                        var activeDelta = totalDelta - breakSecs
+                        elapsedSeconds = if (activeDelta > 0) activeDelta else 0
+                        delay(1000)
+                    }
                 }
             }
         } else if (isCheckedOut) {
@@ -129,11 +128,22 @@ fun AttendanceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SWAYOG Attendance Portal", color = PrimaryAmber, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceDark),
+                title = { 
+                    Text(
+                        text = "WorkForce Attendance", 
+                        color = NeutralText, 
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        letterSpacing = 0.5.sp
+                    ) 
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = BackgroundDark.copy(alpha = 0.85f),
+                    titleContentColor = NeutralText
+                ),
                 actions = {
                     IconButton(onClick = onLogout) {
-                        Icon(imageVector = Icons.Default.Logout, contentDescription = "Log Out", tint = Color(0xFFEF4444))
+                        Icon(imageVector = Icons.Default.Logout, contentDescription = "Log Out", tint = BrandError)
                     }
                 }
             )
@@ -152,8 +162,9 @@ fun AttendanceScreen(
             // Session Profile Banner
             session?.let {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark.copy(alpha = 0.6f)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BorderGray.copy(alpha = 0.5f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 24.dp)
@@ -162,16 +173,27 @@ fun AttendanceScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.AccountBox,
-                            contentDescription = "User Profile",
-                            tint = PrimaryAmber,
-                            modifier = Modifier.size(48.dp)
-                        )
+                        // Monogram Avatar
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(BrandPrimary)
+                                .border(1.dp, BrandSecondary.copy(alpha = 0.4f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val initial = if (it.name.isNotEmpty()) it.name[0].uppercaseChar() else 'E'
+                            Text(
+                                text = initial.toString(),
+                                color = NeutralText,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            )
+                        }
                         Spacer(modifier = Modifier.width(16.dp))
                         Column {
                             Text(text = it.name, style = Typography.titleMedium, color = NeutralText, fontWeight = FontWeight.Bold)
-                            Text(text = "${it.jobRole} (${it.employeeCode ?: "No Code"})", style = Typography.bodyMedium, color = MutedText)
+                            Text(text = "${it.jobRole} • ${it.employeeCode ?: "No Code"}", style = Typography.bodyMedium, color = MutedText)
                         }
                     }
                 }
@@ -179,8 +201,9 @@ fun AttendanceScreen(
 
             // Work Clock Canvas Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark.copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(1.dp, BorderGray),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 24.dp)
@@ -204,13 +227,19 @@ fun AttendanceScreen(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier.size(200.dp)
                     ) {
-                        // Pulsating background ring
+                        // Pulsating background rings
                         if (isCheckedIn && !isCheckedOut && !isBreakActive) {
                             Box(
                                 modifier = Modifier
-                                    .size(180.dp)
+                                    .size(190.dp)
                                     .scale(pulseScale)
-                                    .border(4.dp, SuccessGreen.copy(alpha = 0.4f), CircleShape)
+                                    .border(3.dp, SuccessGreen.copy(alpha = 0.3f), CircleShape)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(175.dp)
+                                    .scale(1f + (pulseScale - 1f) * 0.5f)
+                                    .border(1.5.dp, BrandSecondary.copy(alpha = 0.2f), CircleShape)
                             )
                         }
 
@@ -218,11 +247,16 @@ fun AttendanceScreen(
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(160.dp)
+                                .size(150.dp)
                                 .clip(CircleShape)
-                                .background(BackgroundDark)
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(SurfaceDarkElevated, BackgroundDark),
+                                        radius = 250f
+                                    )
+                                )
                                 .border(
-                                    width = 6.dp,
+                                    width = 5.dp,
                                     color = if (isCheckedOut) MutedText else if (isBreakActive) EngineeringBlue else if (isCheckedIn) SuccessGreen else BorderGray,
                                     shape = CircleShape
                                 )
@@ -255,7 +289,11 @@ fun AttendanceScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("CHECK IN", style = Typography.labelSmall, color = MutedText)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(SuccessGreen))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("CHECK IN", style = Typography.labelSmall, color = MutedText)
+                                }
                                 Text(
                                     text = attendanceState?.checkInTime?.substring(11, 16) ?: "--:--",
                                     style = Typography.titleMedium,
@@ -264,7 +302,11 @@ fun AttendanceScreen(
                                 )
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("BREAK DURATION", style = Typography.labelSmall, color = MutedText)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(EngineeringBlue))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("BREAK", style = Typography.labelSmall, color = MutedText)
+                                }
                                 Text(
                                     text = "${(attendanceState?.totalBreakDurationSeconds ?: 0L) / 60} mins",
                                     style = Typography.titleMedium,
@@ -273,7 +315,11 @@ fun AttendanceScreen(
                                 )
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("CHECK OUT", style = Typography.labelSmall, color = MutedText)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(MutedText))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("CHECK OUT", style = Typography.labelSmall, color = MutedText)
+                                }
                                 Text(
                                     text = attendanceState?.checkOutTime?.substring(11, 16) ?: "--:--",
                                     style = Typography.titleMedium,
@@ -288,8 +334,9 @@ fun AttendanceScreen(
 
             // GPS Lock Status Panel
             Card(
-                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark.copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, if (isCheckedIn) SuccessGreen.copy(alpha = 0.4f) else BorderGray),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 24.dp)
@@ -307,7 +354,7 @@ fun AttendanceScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(
-                            text = if (isCheckedIn) "GEOFENCE BOUNDARY MET" else "GEOFENCE PENDING CHECK-IN",
+                            text = if (isCheckedIn) "GEOFENCE BOUNDARY VALIDATED" else "GEOFENCE PENDING CHECK-IN",
                             style = Typography.titleMedium,
                             color = if (isCheckedIn) SuccessGreen else NeutralText,
                             fontWeight = FontWeight.Bold
@@ -331,15 +378,34 @@ fun AttendanceScreen(
                         onClick = {
                             viewModel.checkIn(simulatedLat, simulatedLng) {}
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                        contentPadding = PaddingValues(),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
+                            .height(52.dp)
+                            .graphicsLayer {
+                                shadowElevation = 6f
+                                shape = RoundedCornerShape(14.dp)
+                                clip = true
+                            }
                     ) {
-                        Icon(imageVector = Icons.Default.Login, contentDescription = "Check In")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("CHECK IN NOW", color = BackgroundDark, fontWeight = FontWeight.Bold)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(SuccessGreen, Color(0xFF059669))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.Login, contentDescription = "Check In", tint = BackgroundDark)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("CHECK IN NOW", color = BackgroundDark, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                        }
                     }
                 } else if (!isCheckedOut) {
                     // Check Out & Break Controls
@@ -355,52 +421,96 @@ fun AttendanceScreen(
                                     viewModel.startBreak()
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isBreakActive) SuccessGreen else EngineeringBlue
-                            ),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                            contentPadding = PaddingValues(),
                             modifier = Modifier
                                 .weight(1f)
                                 .height(50.dp)
+                                .graphicsLayer {
+                                    shadowElevation = 4f
+                                    shape = RoundedCornerShape(12.dp)
+                                    clip = true
+                                }
                         ) {
-                            Icon(
-                                imageVector = if (isBreakActive) Icons.Default.PlayArrow else Icons.Default.Coffee,
-                                contentDescription = "Break Control"
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (isBreakActive) "END BREAK" else "START BREAK",
-                                color = NeutralText,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = if (isBreakActive) {
+                                                listOf(SuccessGreen, Color(0xFF059669))
+                                            } else {
+                                                listOf(EngineeringBlue, Color(0xFF1D4ED8))
+                                            }
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (isBreakActive) Icons.Default.PlayArrow else Icons.Default.Coffee,
+                                        contentDescription = "Break Control",
+                                        tint = if (isBreakActive) BackgroundDark else Color.White
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (isBreakActive) "END BREAK" else "START BREAK",
+                                        color = if (isBreakActive) BackgroundDark else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
                         }
 
                         Button(
                             onClick = {
                                 viewModel.checkOut(simulatedLat, simulatedLng)
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                            contentPadding = PaddingValues(),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(50.dp),
+                                .height(50.dp)
+                                .graphicsLayer {
+                                    shadowElevation = 4f
+                                    shape = RoundedCornerShape(12.dp)
+                                    clip = true
+                                },
                             enabled = !isBreakActive
                         ) {
-                            Icon(imageVector = Icons.Default.Logout, contentDescription = "Check Out")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("CHECK OUT", color = NeutralText, fontWeight = FontWeight.Bold)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(Color(0xFFEF4444), Color(0xFFB91C1C))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.Logout, contentDescription = "Check Out", tint = Color.White)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("CHECK OUT", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                            }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     // Daily Commit Work Submission Button
                     Button(
                         onClick = { showCommitModal = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark),
-                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp)
-                            .border(1.dp, BorderGray, RoundedCornerShape(8.dp))
+                            .border(1.dp, BorderGray, RoundedCornerShape(12.dp))
                     ) {
                         Icon(imageVector = Icons.Default.AddTask, contentDescription = "Commit Today's Task", tint = PrimaryAmber)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -408,23 +518,44 @@ fun AttendanceScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(6.dp))
+
                 // Navigate to Designated Workspace Button
                 Button(
                     onClick = onNavigateToDashboard,
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryAmber),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                    contentPadding = PaddingValues(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
+                        .graphicsLayer {
+                            shadowElevation = 6f
+                            shape = RoundedCornerShape(14.dp)
+                            clip = true
+                        }
                 ) {
-                    Icon(imageVector = Icons.Default.Dashboard, contentDescription = "Workspace", tint = BackgroundDark)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "GO TO WORKSPACE DASHBOARD",
-                        color = BackgroundDark,
-                        fontWeight = FontWeight.Bold,
-                        style = Typography.titleMedium
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(PrimaryAmber, Color(0xFFD97706))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.Dashboard, contentDescription = "Workspace", tint = BackgroundDark)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "GO TO WORKSPACE DASHBOARD",
+                                color = BackgroundDark,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
                 }
             }
 
@@ -437,6 +568,9 @@ fun AttendanceScreen(
         var taskTitle by remember { mutableStateOf("") }
         var taskDesc by remember { mutableStateOf("") }
         var hoursStr by remember { mutableStateOf("") }
+        var blockersText by remember { mutableStateOf("") }
+        var tomorrowPlan by remember { mutableStateOf("") }
+        var attachedFilePath by remember { mutableStateOf<String?>(null) }
         var error by remember { mutableStateOf<String?>(null) }
         var submitting by remember { mutableStateOf(false) }
 
@@ -464,7 +598,10 @@ fun AttendanceScreen(
                     OutlinedTextField(
                         value = taskDesc,
                         onValueChange = { taskDesc = it },
-                        label = { Text("Detailed accomplishments...", color = MutedText) },
+                        label = { Text("Detailed accomplishments (≥10 chars)...", color = MutedText) },
+                        supportingText = {
+                            Text("${taskDesc.length}/10 min characters", color = if (taskDesc.length >= 10) SuccessGreen else MutedText, fontSize = 10.sp)
+                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = NeutralText,
                             unfocusedTextColor = NeutralText,
@@ -478,7 +615,7 @@ fun AttendanceScreen(
                     OutlinedTextField(
                         value = hoursStr,
                         onValueChange = { hoursStr = it },
-                        label = { Text("Hours Spent (e.g. 6.5)", color = MutedText) },
+                        label = { Text("Hours Spent (0.25 – 24.0)", color = MutedText) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = NeutralText,
                             unfocusedTextColor = NeutralText,
@@ -489,6 +626,49 @@ fun AttendanceScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    // Blockers field for manager escalation
+                    OutlinedTextField(
+                        value = blockersText,
+                        onValueChange = { blockersText = it },
+                        label = { Text("Blockers / Escalations (optional)", color = MutedText) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = NeutralText,
+                            unfocusedTextColor = NeutralText,
+                            focusedBorderColor = EngineeringBlue,
+                            unfocusedBorderColor = BorderGray
+                        ),
+                        maxLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Tomorrow's plan for next-day coordination
+                    OutlinedTextField(
+                        value = tomorrowPlan,
+                        onValueChange = { tomorrowPlan = it },
+                        label = { Text("Tomorrow's Plan (optional)", color = MutedText) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = NeutralText,
+                            unfocusedTextColor = NeutralText,
+                            focusedBorderColor = EngineeringBlue,
+                            unfocusedBorderColor = BorderGray
+                        ),
+                        maxLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            attachedFilePath = "work_receipt_log_${System.currentTimeMillis() % 10000}.pdf"
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = EngineeringBlue),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.AttachFile, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(attachedFilePath ?: "Attach PDF/Receipt Log", color = Color.White)
+                    }
+
                     error?.let {
                         Text(it, color = Color(0xFFEF4444), fontSize = 12.sp)
                     }
@@ -498,9 +678,19 @@ fun AttendanceScreen(
                 Button(
                     onClick = {
                         val hours = hoursStr.toDoubleOrNull()
-                        if (taskTitle.isBlank() || taskDesc.isBlank() || hours == null || hours <= 0.0) {
-                            error = "Please fill in all details with valid hours decimal."
-                            return@Button
+                        when {
+                            taskTitle.isBlank() -> {
+                                error = "Task title is required."
+                                return@Button
+                            }
+                            taskDesc.length < 10 -> {
+                                error = "Description must be at least 10 characters."
+                                return@Button
+                            }
+                            hours == null || hours < 0.25 || hours > 24.0 -> {
+                                error = "Hours must be between 0.25 and 24.0."
+                                return@Button
+                            }
                         }
                         error = null
                         submitting = true

@@ -10,5 +10,6 @@ data class InventoryItemEntity(
     val category: String, // "Module", "Inverter", "Cable", "Structure", "BOS"
     val quantityInStock: Double,
     val unit: String,
-    val qrCodeHash: String?
+    val qrCodeHash: String?,
+    val isSynced: Boolean = false
 )

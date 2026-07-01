@@ -1,5 +1,8 @@
 package com.example.swayogemployeeapp.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -42,6 +45,27 @@ fun DesignDashboard(viewModel: MainViewModel) {
     var sldFileAttached by remember { mutableStateOf<String?>(null) }
     var uploadStatusMessage by remember { mutableStateOf("") }
     var isUploading by remember { mutableStateOf(false) }
+
+    val cadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            cadFileAttached = uri.toString()
+        }
+    }
+
+    val sldLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            sldFileAttached = uri.toString()
+        }
+    }
+
+    fun getFileName(uriString: String?): String {
+        if (uriString == null) return "No drawing attached"
+        return uriString.substringAfterLast("/")
+    }
 
     if (selectedSurvey == null) {
         Column(
@@ -157,12 +181,12 @@ fun DesignDashboard(viewModel: MainViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                         Text("CAD Structural Drawing (.dwg/.pdf)", color = NeutralText, fontWeight = FontWeight.Bold)
-                        Text(text = cadFileAttached ?: "No drawing attached", fontSize = 12.sp, color = MutedText)
+                        Text(text = if (cadFileAttached != null) getFileName(cadFileAttached) else "No drawing attached", fontSize = 12.sp, color = MutedText)
                     }
                     Button(
-                        onClick = { cadFileAttached = "cad_layout_${s.customerId.replace(" ", "_")}.dwg" },
+                        onClick = { cadLauncher.launch("*/*") },
                         colors = ButtonDefaults.buttonColors(containerColor = EngineeringBlue),
                         shape = RoundedCornerShape(6.dp)
                     ) {
@@ -178,12 +202,12 @@ fun DesignDashboard(viewModel: MainViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                         Text("Single Line Diagram SLD (.pdf)", color = NeutralText, fontWeight = FontWeight.Bold)
-                        Text(text = sldFileAttached ?: "No schematic attached", fontSize = 12.sp, color = MutedText)
+                        Text(text = if (sldFileAttached != null) getFileName(sldFileAttached) else "No schematic attached", fontSize = 12.sp, color = MutedText)
                     }
                     Button(
-                        onClick = { sldFileAttached = "sld_diagram_${s.customerId.replace(" ", "_")}.pdf" },
+                        onClick = { sldLauncher.launch("application/pdf") },
                         colors = ButtonDefaults.buttonColors(containerColor = EngineeringBlue),
                         shape = RoundedCornerShape(6.dp)
                     ) {

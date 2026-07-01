@@ -121,9 +121,9 @@ class AttendanceRepository(private val context: Context) {
 
     fun getAllCommits(): Flow<List<DailyCommitEntity>> = db.dailyCommitDao().getAllCommitsFlow()
 
-    suspend fun getWorkSubmissions(): List<WorkSubmissionDto> {
+    suspend fun getWorkSubmissions(employeeId: String? = null): List<WorkSubmissionDto> {
         return try {
-            val response = apiService.getWorkSubmissions()
+            val response = apiService.getWorkSubmissions(employeeId)
             if (response.isSuccessful) {
                 response.body()?.submissions ?: emptyList()
             } else {
@@ -131,6 +131,97 @@ class AttendanceRepository(private val context: Context) {
             }
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    suspend fun reviewWorkSubmission(id: String, status: String, score: Int?, notes: String?): Result<Unit> {
+        return try {
+            val response = apiService.reviewWorkSubmission(id, com.example.swayogemployeeapp.data.remote.ReviewWorkRequest(status, score, notes))
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Review failed: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getPendingSubmissions(): List<WorkSubmissionDto> {
+        return try {
+            val response = apiService.getPendingWorkSubmissions()
+            if (response.isSuccessful) {
+                response.body()?.submissions ?: emptyList()
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun submitDailyCommit(
+        date: String,
+        taskWorkedOn: String,
+        workSummary: String,
+        hoursSpent: Double,
+        issuesBlockers: String?,
+        tomorrowPlan: String?
+    ): Result<Unit> {
+        return try {
+            val response = apiService.submitDailyCommit(
+                com.example.swayogemployeeapp.data.remote.DailyCommitRequest(
+                    commitDate = date,
+                    taskWorkedOn = taskWorkedOn,
+                    workSummary = workSummary,
+                    hoursSpent = hoursSpent,
+                    issuesBlockers = issuesBlockers,
+                    tomorrowPlan = tomorrowPlan
+                )
+            )
+            if (response.isSuccessful && response.body()?.success == true) {
+                val body = response.body()!!
+                val localCommit = DailyCommitEntity(
+                    date = date,
+                    taskDescription = "$taskWorkedOn: $workSummary",
+                    hoursSpent = hoursSpent,
+                    isSynced = true,
+                    remoteId = body.data.id
+                )
+                db.dailyCommitDao().insert(localCommit)
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Submit failed: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            try {
+                val localCommit = DailyCommitEntity(
+                    date = date,
+                    taskDescription = "$taskWorkedOn: $workSummary",
+                    hoursSpent = hoursSpent,
+                    isSynced = false
+                )
+                db.dailyCommitDao().insert(localCommit)
+                val req = com.example.swayogemployeeapp.data.remote.DailyCommitRequest(
+                    commitDate = date,
+                    taskWorkedOn = taskWorkedOn,
+                    workSummary = workSummary,
+                    hoursSpent = hoursSpent,
+                    issuesBlockers = issuesBlockers,
+                    tomorrowPlan = tomorrowPlan
+                )
+                val outbox = OutboxQueueEntity(
+                    actionType = "DAILY_COMMIT",
+                    endpoint = "api/v1/daily-commits",
+                    payloadJson = gson.toJson(req),
+                    localAttachmentPaths = null
+                )
+                db.outboxQueueDao().enqueue(outbox)
+                SyncManager.enqueueSync(context)
+                Result.success(Unit)
+            } catch (inner: Exception) {
+                Result.failure(inner)
+            }
         }
     }
 

@@ -7,6 +7,8 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody
 
+import okio.Buffer
+
 class MockInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -17,16 +19,34 @@ class MockInterceptor : Interceptor {
 
         val jsonResponse = when {
             url.contains("api/v1/employee/login") -> {
-                // Return a mock login response depending on the request body (we handle roles dynamically in ViewModel)
+                val buffer = Buffer()
+                request.body()?.writeTo(buffer)
+                val bodyStr = buffer.readUtf8()
+                
+                val (jobRole, name, email) = when {
+                    bodyStr.contains("survey", ignoreCase = true) -> Triple("Site Survey Engineer", "Arjun Survey", "survey@swayog.com")
+                    bodyStr.contains("design", ignoreCase = true) -> Triple("Solar Design Engineer", "Priya Design", "design@swayog.com")
+                    bodyStr.contains("electrical", ignoreCase = true) -> Triple("Electrical Engineer", "Vikram Electrical", "electrical@swayog.com")
+                    bodyStr.contains("coordinator", ignoreCase = true) -> Triple("Service Coordinator", "Neha Coordinator", "coordinator@swayog.com")
+                    bodyStr.contains("lead", ignoreCase = true) -> Triple("Team Lead", "Karan Lead", "lead@swayog.com")
+                    bodyStr.contains("head", ignoreCase = true) -> Triple("Department Head", "Sanjay Head", "head@swayog.com")
+                    bodyStr.contains("analyst", ignoreCase = true) -> Triple("Monitoring Analyst", "Rohan Analyst", "analyst@swayog.com")
+                    bodyStr.contains("tech", ignoreCase = true) -> Triple("O&M Technician", "Vijay Tech", "tech@swayog.com")
+                    bodyStr.contains("service", ignoreCase = true) -> Triple("Service Engineer", "Suresh Service", "service@swayog.com")
+                    bodyStr.contains("intern", ignoreCase = true) -> Triple("Intern", "Amit Intern", "intern@swayog.com")
+                    bodyStr.contains("other", ignoreCase = true) -> Triple("Other Position", "Rahul Other", "other@swayog.com")
+                    else -> Triple("Site Survey Engineer", "Alex Carter", "employee@swayog.com")
+                }
+
                 """
                 {
                     "success": true,
                     "id": "emp_101",
-                    "loginId": "swayog_admin",
-                    "email": "employee@swayog.com",
-                    "name": "Alex Carter",
+                    "loginId": "${email.substringBefore("@")}",
+                    "email": "$email",
+                    "name": "$name",
                     "role": "EMPLOYEE",
-                    "jobRole": "Site Survey Engineer",
+                    "jobRole": "$jobRole",
                     "employeeCode": "SW-EMP-402",
                     "reportingManagerId": "mgr_202",
                     "accessToken": "mock_access_token_12345",

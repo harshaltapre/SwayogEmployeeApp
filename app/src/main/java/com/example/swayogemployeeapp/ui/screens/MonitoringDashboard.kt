@@ -1,5 +1,10 @@
 package com.example.swayogemployeeapp.ui.screens
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import java.util.Locale
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -118,11 +123,16 @@ fun MonitoringDashboard(viewModel: MainViewModel) {
         Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("REGIONAL IRRADIANCE API INTEGRATION", style = Typography.labelSmall, color = EngineeringBlue, fontWeight = FontWeight.Bold)
-                Text("Swayog Solar Telemetry API status: ACTIVE", color = SuccessGreen, fontSize = 12.sp)
+                Text("WorkForce Pro Solar Telemetry API status: ACTIVE", color = SuccessGreen, fontSize = 12.sp)
                 Text("Regional Ground Irradiance: 840 W/m² (Peak sunlight)", color = NeutralText)
                 Text("Efficiency Yield Ratio: ${if (alert.isLowGen) "64% (ALERT)" else "0% (COMM_OUT)"}", color = if (alert.isLowGen) PrimaryAmber else Color.Red, fontWeight = FontWeight.Bold)
             }
         }
+
+        // Expected vs Actual Yield comparative bar chart
+        val expectedYield = if (alert.title.contains("Drop")) 18.4 else if (alert.title.contains("Communication")) 22.0 else 15.0
+        val actualYield = if (alert.title.contains("Drop")) 12.1 else if (alert.title.contains("Communication")) 0.0 else 14.8
+        YieldComparisonChart(expected = expectedYield, actual = actualYield)
 
         // Action controls
         Text("DIRECT WIDGET ACTIONS", style = Typography.labelSmall, color = MutedText, fontWeight = FontWeight.Bold)
@@ -205,3 +215,93 @@ data class MockAlert(
     val description: String,
     val isLowGen: Boolean
 )
+
+@Composable
+fun YieldComparisonChart(expected: Double, actual: Double) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BorderGray, RoundedCornerShape(8.dp))
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("EXPECTED VS ACTUAL DAILY YIELD (kWh)", style = Typography.labelSmall, color = MutedText, fontWeight = FontWeight.Bold)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp)
+                    .padding(vertical = 8.dp)
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val chartHeight = size.height - 40f
+                    val maxVal = maxOf(expected, actual, 5.0) * 1.2
+
+                    val barWidth = 60f
+                    val expectedX = size.width / 2 - barWidth - 40f
+                    val actualX = size.width / 2 + 40f
+
+                    val expectedHeight = (expected / maxVal * chartHeight).toFloat()
+                    val actualHeight = (actual / maxVal * chartHeight).toFloat()
+
+                    drawRoundRect(
+                        color = EngineeringBlue,
+                        topLeft = androidx.compose.ui.geometry.Offset(expectedX, chartHeight - expectedHeight),
+                        size = androidx.compose.ui.geometry.Size(barWidth, expectedHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
+                    )
+
+                    val dropRatio = if (expected > 0.0) actual / expected else 1.0
+                    val barColor = if (dropRatio < 0.8) Color(0xFFEF4444) else SuccessGreen
+                    drawRoundRect(
+                        color = barColor,
+                        topLeft = androidx.compose.ui.geometry.Offset(actualX, chartHeight - actualHeight),
+                        size = androidx.compose.ui.geometry.Size(barWidth, actualHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
+                    )
+
+                    val paint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.WHITE
+                        textSize = 24f
+                        textAlign = android.graphics.Paint.Align.CENTER
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    }
+
+                    val textPaintMuted = android.graphics.Paint().apply {
+                        color = android.graphics.Color.parseColor("#94A3B8")
+                        textSize = 22f
+                        textAlign = android.graphics.Paint.Align.CENTER
+                    }
+
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.drawText(
+                            "${String.format(Locale.US, "%.1f", expected)} kWh",
+                            expectedX + barWidth / 2,
+                            chartHeight - expectedHeight - 10f,
+                            paint
+                        )
+                        canvas.nativeCanvas.drawText(
+                            "Expected",
+                            expectedX + barWidth / 2,
+                            size.height - 5f,
+                            textPaintMuted
+                        )
+
+                        canvas.nativeCanvas.drawText(
+                            "${String.format(Locale.US, "%.1f", actual)} kWh",
+                            actualX + barWidth / 2,
+                            chartHeight - actualHeight - 10f,
+                            paint
+                        )
+                        canvas.nativeCanvas.drawText(
+                            "Actual",
+                            actualX + barWidth / 2,
+                            size.height - 5f,
+                            textPaintMuted
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

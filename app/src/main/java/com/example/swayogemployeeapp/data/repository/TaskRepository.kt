@@ -5,10 +5,41 @@ import com.example.swayogemployeeapp.data.local.AppDatabase
 import com.example.swayogemployeeapp.data.local.entity.EmployeeTaskEntity
 import com.example.swayogemployeeapp.data.local.entity.OutboxQueueEntity
 import com.example.swayogemployeeapp.data.sync.SyncManager
+import com.example.swayogemployeeapp.data.remote.NetworkClient
 import kotlinx.coroutines.flow.Flow
 
 class TaskRepository(private val context: Context) {
     private val db = AppDatabase.getDatabase(context)
+    private val apiService = NetworkClient.getApiService(context)
+
+    suspend fun syncTasksFromServer() {
+        try {
+            val response = apiService.getMyTasks()
+            if (response.isSuccessful) {
+                val tasksList = response.body()?.data?.tasks ?: emptyList()
+                val entities = tasksList.map { dto ->
+                    EmployeeTaskEntity(
+                        id = dto.id,
+                        jobType = dto.jobType,
+                        description = dto.description,
+                        scheduledTime = dto.scheduledTime,
+                        status = dto.status.lowercase(),
+                        customerName = dto.customerName,
+                        customerPhone = dto.customerPhone,
+                        address = dto.address,
+                        latitude = dto.latitude,
+                        longitude = dto.longitude,
+                        completionMessage = null,
+                        completionDocumentUrl = null,
+                        completedAt = null
+                    )
+                }
+                db.employeeTaskDao().insertAll(entities)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     fun getAllTasks(): Flow<List<EmployeeTaskEntity>> = db.employeeTaskDao().getAllTasksFlow()
 

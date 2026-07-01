@@ -17,5 +17,7 @@ data class EmployeeTaskEntity(
     val longitude: Double?,
     val completionMessage: String?,
     val completionDocumentUrl: String?,
-    val completedAt: String?
+    val completedAt: String?,
+    val employeeUserId: String? = null,
+    val isSynced: Boolean = false
 )

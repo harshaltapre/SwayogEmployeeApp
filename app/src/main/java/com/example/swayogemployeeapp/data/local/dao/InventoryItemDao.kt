@@ -13,6 +13,9 @@ interface InventoryItemDao {
     @Query("SELECT * FROM inventory_items ORDER BY itemName ASC")
     fun getAllItemsFlow(): Flow<List<InventoryItemEntity>>
 
+    @Query("SELECT * FROM inventory_items ORDER BY itemName ASC")
+    suspend fun getAllItemsList(): List<InventoryItemEntity>
+
     @Query("SELECT * FROM inventory_items WHERE id = :id LIMIT 1")
     suspend fun getItemById(id: String): InventoryItemEntity?
 

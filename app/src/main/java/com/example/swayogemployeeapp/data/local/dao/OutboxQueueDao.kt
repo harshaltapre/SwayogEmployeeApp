@@ -11,6 +11,9 @@ interface OutboxQueueDao {
     @Query("SELECT * FROM outbox_queue ORDER BY localId ASC")
     suspend fun getQueue(): List<OutboxQueueEntity>
 
+    @Query("SELECT * FROM outbox_queue ORDER BY localId ASC")
+    fun getQueueFlow(): kotlinx.coroutines.flow.Flow<List<OutboxQueueEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun enqueue(item: OutboxQueueEntity): Long
 

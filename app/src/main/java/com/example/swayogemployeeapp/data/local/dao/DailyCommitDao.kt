@@ -16,6 +16,9 @@ interface DailyCommitDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(commit: DailyCommitEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(commits: List<DailyCommitEntity>)
+
     @Update
     suspend fun update(commit: DailyCommitEntity)
 }

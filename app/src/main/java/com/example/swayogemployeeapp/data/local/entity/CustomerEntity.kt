@@ -1,0 +1,58 @@
+package com.example.swayogemployeeapp.data.local.entity
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "customers")
+data class CustomerEntity(
+    @PrimaryKey val id: Int,
+    val customerCode: String,
+    val fullName: String,
+    val email: String,
+    val phoneNumber: String,
+    val city: String,
+    val address: String,
+    val systemSizeKw: Double,
+    val installationDate: String,
+    val warrantyExpiry: String?,
+    val panelBrand: String?,
+    val inverterBrand: String?,
+    val inverterModel: String?,
+    val amcStatus: String,
+    val amcExpiryDate: String?,
+    val status: String,
+    val partnerId: String?,
+    val userId: String?,
+    val projectStage: Int,
+    val assignedEmployeeId: String?,
+    val commissionAmount: Double?,
+    val commissionStatus: String,
+    val inverterLoginId: String?,
+    val inverterPassword: String?,
+    val inverterApiKey: String?,
+    val inverterDeviceSn: String?,
+    val portalPassword: String?,
+    val latitude: Double?,
+    val longitude: Double?,
+    // Additional fields from Prisma schema
+    val cleaningWindow1: String?,
+    val cleaningWindow2: String?,
+    val cleaningWindow3: String?,
+    val cleaningsPerMonth: Int?,
+    val clientType: String?,
+    val consumerNumber: String?,
+    val contractEndDate: String?,
+    val contractStartDate: String?,
+    val monthlyCleaningRate: Double?,
+    val paymentTerms: String?,
+    val remarks: String?,
+    val cleaningWindow4: String?,
+    val cleaningWindow5: String?,
+    val cleaningWindow6: String?,
+    val cleaningWindow7: String?,
+    val cleaningWindow8: String?,
+    val commissionProofUrl: String?,
+    val commissionPaidAt: String?,
+    val apartmentId: Int?,
+    val isSynced: Boolean = false
+)

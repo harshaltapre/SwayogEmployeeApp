@@ -13,6 +13,9 @@ interface EmployeeTaskDao {
     @Query("SELECT * FROM employee_tasks ORDER BY id DESC")
     fun getAllTasksFlow(): Flow<List<EmployeeTaskEntity>>
 
+    @Query("SELECT * FROM employee_tasks ORDER BY id DESC")
+    suspend fun getAllTasksList(): List<EmployeeTaskEntity>
+
     @Query("SELECT * FROM employee_tasks WHERE id = :taskId LIMIT 1")
     fun getTaskByIdFlow(taskId: Int): Flow<EmployeeTaskEntity?>
 

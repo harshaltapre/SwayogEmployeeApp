@@ -1,9 +1,10 @@
 package com.example.swayogemployeeapp.ui.screens
 
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import java.util.Locale
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -131,67 +132,23 @@ fun MaintenanceDashboard(viewModel: MainViewModel) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Before Photo Box
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                modifier = Modifier
-                    .weight(1f)
-                    .height(140.dp)
-                    .clickable {
-                        beforePhoto = "before_clean_${task.id}.jpg"
-                    }
-            ) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (beforePhoto == null) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(imageVector = Icons.Default.PhotoCamera, contentDescription = null, tint = MutedText)
-                            Text("Take BEFORE", color = MutedText, fontSize = 11.sp)
-                        }
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.6f))
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("BEFORE (DIRTY)", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                            Spacer(modifier = Modifier.weight(1f))
-                            Text("Lat: 19.12 • Jun 19 2026", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+            Box(modifier = Modifier.weight(1f)) {
+                WatermarkedPhotoBox(
+                    label = "BEFORE CLEANING (DIRTY)",
+                    photoPath = beforePhoto,
+                    task = task
+                ) {
+                    beforePhoto = "before_clean_${task.id}.jpg"
                 }
             }
 
-            // After Photo Box
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                modifier = Modifier
-                    .weight(1f)
-                    .height(140.dp)
-                    .clickable {
-                        afterPhoto = "after_clean_${task.id}.jpg"
-                    }
-            ) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (afterPhoto == null) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(imageVector = Icons.Default.PhotoCamera, contentDescription = null, tint = MutedText)
-                            Text("Take AFTER", color = MutedText, fontSize = 11.sp)
-                        }
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.6f))
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("AFTER (CLEANED)", color = SuccessGreen, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                            Spacer(modifier = Modifier.weight(1f))
-                            Text("Lat: 19.12 • Jun 19 2026", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+            Box(modifier = Modifier.weight(1f)) {
+                WatermarkedPhotoBox(
+                    label = "AFTER CLEANING (CLEAN)",
+                    photoPath = afterPhoto,
+                    task = task
+                ) {
+                    afterPhoto = "after_clean_${task.id}.jpg"
                 }
             }
         }
@@ -274,6 +231,133 @@ fun AMCTaskItem(task: EmployeeTaskEntity, onClick: () -> Unit) {
                 Text(text = "Target: ${task.address}", color = MutedText, fontSize = 13.sp)
             }
             Icon(imageVector = Icons.Default.CleanHands, contentDescription = null, tint = PrimaryAmber)
+        }
+    }
+}
+
+@Composable
+fun WatermarkedPhotoBox(
+    label: String,
+    photoPath: String?,
+    task: EmployeeTaskEntity,
+    onClick: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(160.dp)
+            .clickable { onClick() }
+            .border(1.dp, BorderGray, RoundedCornerShape(8.dp))
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (photoPath == null) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(imageVector = Icons.Default.PhotoCamera, contentDescription = null, tint = PrimaryAmber, modifier = Modifier.size(32.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(label, color = NeutralText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Tap to capture", color = MutedText, fontSize = 9.sp)
+                }
+            } else {
+                Canvas(modifier = Modifier.fillMaxSize().background(Color(0xFF1E293B))) {
+                    val isBefore = label.contains("BEFORE")
+                    val panelColor = if (isBefore) Color(0xFF1E3A8A).copy(alpha = 0.4f) else Color(0xFF3B82F6).copy(alpha = 0.6f)
+                    
+                    val cols = 4
+                    val rows = 3
+                    val colWidth = size.width / cols
+                    val rowHeight = size.height / rows
+                    
+                    for (i in 0 until cols) {
+                        for (j in 0 until rows) {
+                            drawRect(
+                                color = panelColor,
+                                topLeft = androidx.compose.ui.geometry.Offset(i * colWidth + 2f, j * rowHeight + 2f),
+                                size = androidx.compose.ui.geometry.Size(colWidth - 4f, rowHeight - 4f)
+                            )
+                            drawLine(
+                                color = Color.White.copy(alpha = 0.15f),
+                                start = androidx.compose.ui.geometry.Offset(i * colWidth + colWidth / 2, j * rowHeight),
+                                end = androidx.compose.ui.geometry.Offset(i * colWidth + colWidth / 2, j * rowHeight + rowHeight),
+                                strokeWidth = 1f
+                            )
+                        }
+                    }
+                    
+                    if (isBefore) {
+                        drawCircle(Color(0xFF78350F).copy(alpha = 0.6f), radius = 20f, center = androidx.compose.ui.geometry.Offset(size.width * 0.3f, size.height * 0.4f))
+                        drawCircle(Color(0xFF78350F).copy(alpha = 0.5f), radius = 15f, center = androidx.compose.ui.geometry.Offset(size.width * 0.7f, size.height * 0.2f))
+                        drawCircle(Color(0xFF78350F).copy(alpha = 0.7f), radius = 25f, center = androidx.compose.ui.geometry.Offset(size.width * 0.5f, size.height * 0.7f))
+                    }
+                }
+                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp)
+                        .align(Alignment.TopStart),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (label.contains("BEFORE")) Color.Red.copy(alpha = 0.8f) else SuccessGreen.copy(alpha = 0.8f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(label, color = BackgroundDark, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(16.dp))
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "LAT: ${String.format(Locale.US, "%.6f", task.latitude ?: 19.123456)}",
+                            color = PrimaryAmber,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Text(
+                            text = "LNG: ${String.format(Locale.US, "%.6f", task.longitude ?: 72.890123)}",
+                            color = PrimaryAmber,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "ACCURACY: 3.2m",
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 8.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Text(
+                            text = "TIME: 2026-06-23 17:16:44",
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 8.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                }
+            }
         }
     }
 }
