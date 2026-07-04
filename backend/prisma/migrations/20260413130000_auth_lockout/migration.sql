@@ -1,0 +1,6 @@
+ALTER TABLE "User"
+  ADD COLUMN IF NOT EXISTS "failedLoginAttempts" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "lockoutUntil" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "lastFailedLoginAt" TIMESTAMP(3);
+
+CREATE INDEX IF NOT EXISTS "User_lockoutUntil_idx" ON "User"("lockoutUntil");

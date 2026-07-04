@@ -1,0 +1,473 @@
+m<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Settings - SWAYOG Energy Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        .sidebar-bg {
+            background-color: #0f172a;
+            border-right: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .main-bg {
+            background-color: #0f172a;
+        }
+
+        .card-bg {
+            background-color: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .menu-item {
+            color: #94a3b8;
+            transition: all 0.3s ease;
+        }
+
+        .menu-item:hover {
+            color: #e2e8f0;
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+
+        .menu-item.active {
+            color: #3b82f6;
+            background-color: rgba(59, 130, 246, 0.15);
+            border-left: 3px solid #3b82f6;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 54px;
+            height: 28px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #475569;
+            transition: 0.3s ease;
+            border-radius: 28px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s ease;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #3b82f6;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .search-input {
+            background-color: rgba(148, 163, 184, 0.1);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            color: #e2e8f0;
+        }
+
+        .search-input::placeholder {
+            color: #64748b;
+        }
+
+        .search-input:focus {
+            background-color: rgba(148, 163, 184, 0.15);
+            border-color: rgba(59, 130, 246, 0.3);
+            outline: none;
+        }
+
+        .button-primary {
+            background-color: #3b82f6;
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        .button-primary:hover {
+            background-color: #2563eb;
+        }
+
+        .avatar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            border-radius: 50%;
+            font-weight: 600;
+            font-size: 14px;
+            color: white;
+        }
+
+        .table-row {
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+            transition: background-color 0.2s ease;
+        }
+
+        .table-row:hover {
+            background-color: rgba(59, 130, 246, 0.05);
+        }
+
+        .badge-device {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .breadcrumb {
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .breadcrumb-active {
+            color: #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <div class="sidebar-bg w-64 flex flex-col">
+            <!-- Logo -->
+            <div class="p-6 border-b border-slate-700">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">⚡</span>
+                    <span class="text-xl font-bold text-white">SWAYOG</span>
+                </div>
+            </div>
+
+            <!-- Menu Items -->
+            <nav class="flex-1 px-4 py-6">
+                <div class="space-y-2">
+                    <!-- Dashboard -->
+                    <a href="#" class="menu-item flex items-center gap-3 px-4 py-3 rounded-lg">
+                        <i class="fas fa-chart-line w-5"></i>
+                        <span>Dashboard</span>
+                    </a>
+
+                    <!-- Tasks -->
+                    <a href="#" class="menu-item flex items-center gap-3 px-4 py-3 rounded-lg">
+                        <i class="fas fa-tasks w-5"></i>
+                        <span>Tasks</span>
+                    </a>
+
+                    <!-- Attendance -->
+                    <a href="#" class="menu-item flex items-center gap-3 px-4 py-3 rounded-lg">
+                        <i class="fas fa-calendar-check w-5"></i>
+                        <span>Attendance</span>
+                    </a>
+                </div>
+            </nav>
+
+            <!-- User Info -->
+            <div class="p-4 border-t border-slate-700">
+                <div class="flex items-center gap-3">
+                    <div class="avatar">MG</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-white truncate">mayur gharjare</div>
+                        <div class="text-xs text-slate-400">Employee</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col main-bg overflow-auto">
+            <!-- Top Bar -->
+            <div class="border-b border-slate-700 bg-slate-900 bg-opacity-40 backdrop-blur-sm">
+                <div class="px-8 py-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h1 class="text-2xl font-bold text-white">SETTINGS</h1>
+                        </div>
+                        <button class="button-primary px-6 py-2 rounded-lg font-medium text-sm">
+                            Save Changes
+                        </button>
+                    </div>
+
+                    <!-- Search and Breadcrumb Row -->
+                    <div class="flex items-center justify-between">
+                        <div class="breadcrumb">
+                            Settings <span class="text-slate-600">›</span> <span class="breadcrumb-active">Security</span>
+                        </div>
+                        <div class="relative w-64">
+                            <i class="fas fa-search absolute right-3 top-3 text-slate-500"></i>
+                            <input type="text" placeholder="Search..." class="search-input w-full px-4 py-2 pr-10 rounded-lg text-sm">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 px-8 py-6">
+                <div class="space-y-6">
+                    <!-- Two-Factor Authentication Card -->
+                    <div class="card-bg rounded-xl p-6">
+                        <div class="flex items-start justify-between mb-4">
+                            <div>
+                                <h2 class="text-lg font-semibold text-white mb-1">Two-Factor Authentication</h2>
+                                <p class="text-sm text-slate-400">Add an extra layer of security to your account</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="text-sm text-slate-500 mt-4">
+                            <p>Enable two-factor authentication to protect your account with an additional security step.</p>
+                        </div>
+                    </div>
+
+                    <!-- Active Sessions Card -->
+                    <div class="card-bg rounded-xl p-6 security-card">
+                        <h2 class="text-lg font-semibold text-white mb-6">Active Sessions</h2>
+
+                        <!-- Table -->
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="text-slate-400 border-b border-slate-700">
+                                        <th class="text-left py-3 px-4 font-medium">Device</th>
+                                        <th class="text-left py-3 px-4 font-medium">Location</th>
+                                        <th class="text-left py-3 px-4 font-medium">Last Active</th>
+                                        <th class="text-left py-3 px-4 font-medium">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="table-row" data-session="1">
+                                        <td class="py-4 px-4">
+                                            <div class="badge-device">
+                                                <i class="fab fa-chrome text-blue-400 text-lg"></i>
+                                                <span class="text-white">Chrome on macOS</span>
+                                            </div>
+                                        </td>
+                                        <td class="py-4 px-4 text-slate-300">San Francisco, CA</td>
+                                        <td class="py-4 px-4 text-slate-300">5 minutes ago</td>
+                                        <td class="py-4 px-4">
+                                            <button class="remove-session text-red-400 hover:text-red-300 transition text-sm">
+                                                <i class="fas fa-sign-out-alt"></i> Revoke
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Login Restrictions Card -->
+                    <div class="card-bg rounded-xl p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-lg font-semibold text-white mb-1">Login Restrictions</h2>
+                                <p class="text-sm text-slate-400">Automatic session timeout after inactivity</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State management
+        const state = {
+            twoFactorEnabled: false,
+            sessionTimeoutEnabled: true,
+            changesMade: false
+        };
+
+        // Load saved state from localStorage
+        function loadState() {
+            const saved = localStorage.getItem('securitySettings');
+            if (saved) {
+                Object.assign(state, JSON.parse(saved));
+                applyState();
+            }
+        }
+
+        // Save state to localStorage
+        function saveState() {
+            localStorage.setItem('securitySettings', JSON.stringify(state));
+        }
+
+        // Apply state to UI
+        function applyState() {
+            const toggles = document.querySelectorAll('.toggle-switch input');
+            toggles[0].checked = state.twoFactorEnabled;
+            toggles[1].checked = state.sessionTimeoutEnabled;
+        }
+
+        // Show notification
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-500' : 'bg-blue-500';
+            const icon = type === 'success' ? 'fa-check-circle' : 'fa-info-circle';
+            
+            notification.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg flex items-center gap-2 shadow-lg z-50 animate-pulse`;
+            notification.innerHTML = `<i class="fas ${icon}"></i><span>${message}</span>`;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transition = 'opacity 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // Toggle switch functionality
+        const toggles = document.querySelectorAll('.toggle-switch input');
+        toggles.forEach((toggle, index) => {
+            toggle.addEventListener('change', function() {
+                state.changesMade = true;
+                if (index === 0) {
+                    state.twoFactorEnabled = this.checked;
+                    const status = this.checked ? 'enabled' : 'disabled';
+                    showNotification(`Two-Factor Authentication ${status}`, 'info');
+                } else if (index === 1) {
+                    state.sessionTimeoutEnabled = this.checked;
+                    const status = this.checked ? 'enabled' : 'disabled';
+                    showNotification(`Session timeout ${status}`, 'info');
+                }
+                updateSaveButton();
+            });
+        });
+
+        // Search functionality
+        const searchInput = document.querySelector('.search-input');
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase();
+            const cards = document.querySelectorAll('.security-card, [data-searchable]');
+            
+            if (query === '') {
+                cards.forEach(card => card.style.display = '');
+            } else {
+                cards.forEach(card => {
+                    const text = card.textContent.toLowerCase();
+                    card.style.display = text.includes(query) ? '' : 'none';
+                });
+            }
+        });
+
+        // Search input focus effects
+        searchInput.addEventListener('focus', function() {
+            this.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+        });
+
+        searchInput.addEventListener('blur', function() {
+            this.style.boxShadow = 'none';
+        });
+
+        // Menu item navigation
+        const menuItems = document.querySelectorAll('.menu-item');
+        menuItems.forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                menuItems.forEach(m => m.classList.remove('active'));
+                this.classList.add('active');
+                
+                const menuText = this.textContent.trim();
+                showNotification(`Navigating to ${menuText}...`, 'info');
+            });
+        });
+
+        // Save Changes button
+        const saveButton = document.querySelector('.button-primary');
+        saveButton.addEventListener('click', function() {
+            if (state.changesMade) {
+                saveState();
+                state.changesMade = false;
+                showNotification('Settings saved successfully!', 'success');
+                updateSaveButton();
+            } else {
+                showNotification('No changes to save', 'info');
+            }
+        });
+
+        // Remove session functionality
+        const removeButtons = document.querySelectorAll('.remove-session');
+        removeButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                const row = this.closest('.table-row');
+                if (confirm('Are you sure you want to revoke this session?')) {
+                    row.style.opacity = '0';
+                    row.style.transition = 'opacity 0.3s ease';
+                    setTimeout(() => {
+                        row.remove();
+                        showNotification('Session revoked successfully', 'success');
+                    }, 300);
+                }
+            });
+        });
+
+        // Update Save button appearance
+        function updateSaveButton() {
+            if (state.changesMade) {
+                saveButton.style.boxShadow = '0 0 10px rgba(59, 130, 246, 0.5)';
+                saveButton.style.transform = 'scale(1.05)';
+                saveButton.style.transition = 'all 0.3s ease';
+            } else {
+                saveButton.style.boxShadow = 'none';
+                saveButton.style.transform = 'scale(1)';
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+S or Cmd+S to save
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveButton.click();
+            }
+            // Ctrl+F or Cmd+F to focus search
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                searchInput.focus();
+            }
+        });
+
+        // Initialize
+        window.addEventListener('load', function() {
+            loadState();
+            showNotification('Security Settings loaded', 'info');
+        });
+    </script>
+</body>
+</html>

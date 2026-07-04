@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>SWAYOG Energy Platform</title>
+    <link rel="icon" type="image/svg+xml" href="/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      window.addEventListener('error', function(e) {
+        document.body.innerHTML += '<div style="color:red;padding:20px;z-index:9999;position:absolute;top:0;background:white;width:100%;"><h3>JS Error:</h3><pre>' + e.message + '\n' + e.filename + ':' + e.lineno + '</pre></div>';
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        document.body.innerHTML += '<div style="color:red;padding:20px;z-index:9999;position:absolute;top:100px;background:white;width:100%;"><h3>Unhandled Promise Rejection:</h3><pre>' + (e.reason && e.reason.stack ? e.reason.stack : e.reason) + '</pre></div>';
+      });
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

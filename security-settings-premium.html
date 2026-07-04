@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Settings - SWAYOG Energy Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        .sidebar-bg {
+            background-color: #0a0f1a;
+            border-right: 1px solid rgba(148, 163, 184, 0.08);
+        }
+
+        .main-bg {
+            background-color: #0f172a;
+        }
+
+        .topbar-bg {
+            background-color: rgba(15, 23, 42, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+        }
+
+        .card-bg {
+            background-color: rgba(20, 30, 48, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.08);
+            transition: all 0.3s ease;
+        }
+
+        .card-bg:hover {
+            border-color: rgba(148, 163, 184, 0.15);
+            background-color: rgba(20, 30, 48, 0.8);
+        }
+
+        .menu-item {
+            color: #94a3b8;
+            transition: all 0.3s ease;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 16px;
+            margin: 0 12px;
+            border-radius: 8px;
+        }
+
+        .menu-item:hover {
+            color: #cbd5e1;
+            background-color: rgba(59, 130, 246, 0.08);
+        }
+
+        .menu-item.active {
+            color: #3b82f6;
+            background-color: rgba(59, 130, 246, 0.15);
+            font-weight: 500;
+        }
+
+        .menu-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 24px;
+            background-color: #3b82f6;
+            border-radius: 0 2px 2px 0;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 54px;
+            height: 28px;
+            cursor: pointer;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #475569;
+            transition: 0.3s ease;
+            border-radius: 28px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s ease;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #3b82f6;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .search-input {
+            background-color: rgba(148, 163, 184, 0.08);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            color: #e2e8f0;
+            transition: all 0.3s ease;
+        }
+
+        .search-input::placeholder {
+            color: #64748b;
+        }
+
+        .search-input:focus {
+            background-color: rgba(148, 163, 184, 0.12);
+            border-color: rgba(59, 130, 246, 0.4);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .button-primary {
+            background-color: #3b82f6;
+            color: white;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .button-primary:hover {
+            background-color: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
+        }
+
+        .button-primary:active {
+            transform: translateY(0);
+        }
+
+        .button-secondary {
+            background-color: transparent;
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .button-secondary:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.5);
+        }
+
+        .avatar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
+            border-radius: 50%;
+            font-weight: 600;
+            font-size: 14px;
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .table-header {
+            background-color: rgba(15, 23, 42, 0.5);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .table-row {
+            border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+            transition: background-color 0.2s ease;
+        }
+
+        .table-row:hover {
+            background-color: rgba(59, 130, 246, 0.05);
+        }
+
+        .badge-device {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+        }
+
+        .breadcrumb {
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .breadcrumb-active {
+            color: #cbd5e1;
+            font-weight: 500;
+        }
+
+        .section-divider {
+            border-top: 1px solid rgba(148, 163, 184, 0.08);
+            margin: 4px 0;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 14px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 50;
+            animation: slideIn 0.3s ease forwards;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .notification.success {
+            background-color: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: #86efac;
+        }
+
+        .notification.info {
+            background-color: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #93c5fd;
+        }
+    </style>
+</head>
+<body>
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <div class="sidebar-bg w-64 flex flex-col overflow-hidden">
+            <!-- Logo -->
+            <div class="px-6 py-6 border-b border-slate-800">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">⚡</span>
+                    <span class="text-lg font-bold text-white">SWAYOG</span>
+                </div>
+            </div>
+
+            <!-- Menu Items -->
+            <nav class="flex-1 py-6 overflow-y-auto">
+                <div class="space-y-1">
+                    <a href="#" class="menu-item" data-menu="dashboard">
+                        <i class="fas fa-chart-pie w-5"></i>
+                        <span>Dashboard</span>
+                    </a>
+
+                    <a href="#" class="menu-item" data-menu="tasks">
+                        <i class="fas fa-tasks w-5"></i>
+                        <span>Tasks</span>
+                    </a>
+
+                    <a href="#" class="menu-item" data-menu="attendance">
+                        <i class="fas fa-calendar-check w-5"></i>
+                        <span>Attendance</span>
+                    </a>
+
+                    <a href="#" class="menu-item active" data-menu="settings">
+                        <i class="fas fa-cog w-5"></i>
+                        <span>Settings</span>
+                    </a>
+
+                    <div class="section-divider my-4"></div>
+
+                    <a href="#" class="menu-item" data-menu="notifications">
+                        <i class="fas fa-bell w-5"></i>
+                        <span>Notifications</span>
+                    </a>
+
+                    <a href="#" class="menu-item" data-menu="appearance">
+                        <i class="fas fa-palette w-5"></i>
+                        <span>Appearance</span>
+                    </a>
+
+                    <a href="#" class="menu-item" data-menu="integrations">
+                        <i class="fas fa-plug w-5"></i>
+                        <span>Integrations</span>
+                    </a>
+                </div>
+            </nav>
+
+            <!-- User Info -->
+            <div class="px-4 py-4 border-t border-slate-800">
+                <div class="flex items-center gap-3 px-2">
+                    <div class="avatar">MG</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-white truncate">mayur gharjare</div>
+                        <div class="text-xs text-slate-400">Employee</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col main-bg overflow-hidden">
+            <!-- Top Bar -->
+            <div class="topbar-bg">
+                <div class="px-8 py-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h1 class="text-3xl font-bold text-white">SETTINGS</h1>
+                        <button class="button-primary px-6 py-2.5 rounded-lg text-sm">
+                            Save Changes
+                        </button>
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <div class="breadcrumb">
+                            Settings <span class="text-slate-600 mx-2">›</span> <span class="breadcrumb-active">Security</span>
+                        </div>
+                        <div class="relative w-72">
+                            <i class="fas fa-search absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 text-sm"></i>
+                            <input type="text" placeholder="Search settings..." class="search-input w-full px-4 py-2.5 pr-10 rounded-lg text-sm">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 overflow-y-auto px-8 py-8">
+                <div class="max-w-5xl space-y-6">
+                    <!-- Two-Factor Authentication Card -->
+                    <div class="card-bg rounded-12 p-6">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <h2 class="text-lg font-semibold text-white mb-1">Two-Factor Authentication</h2>
+                                <p class="text-sm text-slate-400 mb-4">Add an extra layer of security to your account</p>
+                                <p class="text-sm text-slate-500">Enable two-factor authentication to protect your account with an additional security step during login.</p>
+                            </div>
+                            <div class="ml-6 mt-1">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="toggle-2fa">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Active Sessions Card -->
+                    <div class="card-bg rounded-12 p-6">
+                        <h2 class="text-lg font-semibold text-white mb-6">Active Sessions</h2>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="text-slate-400 table-header">
+                                        <th class="text-left py-4 px-4 font-medium">Device</th>
+                                        <th class="text-left py-4 px-4 font-medium">Location</th>
+                                        <th class="text-left py-4 px-4 font-medium">Last Active</th>
+                                        <th class="text-left py-4 px-4 font-medium">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="table-row">
+                                        <td class="py-4 px-4">
+                                            <div class="badge-device">
+                                                <i class="fab fa-chrome text-blue-400 text-lg"></i>
+                                                <span class="text-slate-200">Chrome on macOS</span>
+                                            </div>
+                                        </td>
+                                        <td class="py-4 px-4 text-slate-300">San Francisco, CA</td>
+                                        <td class="py-4 px-4 text-slate-300">5 minutes ago</td>
+                                        <td class="py-4 px-4">
+                                            <button class="text-red-400 hover:text-red-300 transition text-sm font-medium">
+                                                <i class="fas fa-sign-out-alt mr-2"></i>Revoke
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Login Restrictions Card -->
+                    <div class="card-bg rounded-12 p-6">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <h2 class="text-lg font-semibold text-white mb-1">Login Restrictions</h2>
+                                <p class="text-sm text-slate-400">Automatic session timeout after inactivity</p>
+                            </div>
+                            <div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="toggle-timeout" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Additional Security Options -->
+                    <div class="card-bg rounded-12 p-6">
+                        <div class="space-y-4">
+                            <div class="flex items-start justify-between pb-4 border-b border-slate-700">
+                                <div>
+                                    <h2 class="text-lg font-semibold text-white mb-1">Password Security</h2>
+                                    <p class="text-sm text-slate-400">Manage your password and recovery options</p>
+                                </div>
+                                <button class="button-secondary px-4 py-2 rounded-lg text-sm">
+                                    Update Password
+                                </button>
+                            </div>
+
+                            <div class="flex items-start justify-between pt-2">
+                                <div>
+                                    <h3 class="text-sm font-medium text-slate-300 mb-1">Backup Codes</h3>
+                                    <p class="text-sm text-slate-500">Generate backup codes for account recovery</p>
+                                </div>
+                                <button class="button-secondary px-4 py-2 rounded-lg text-sm">
+                                    Generate
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State management
+        const state = {
+            twoFactorEnabled: false,
+            sessionTimeoutEnabled: true,
+            changesMade: false
+        };
+
+        // Load saved state
+        function loadState() {
+            const saved = localStorage.getItem('securitySettings');
+            if (saved) {
+                Object.assign(state, JSON.parse(saved));
+                applyState();
+            }
+        }
+
+        // Save state
+        function saveState() {
+            localStorage.setItem('securitySettings', JSON.stringify(state));
+        }
+
+        // Apply state to UI
+        function applyState() {
+            document.getElementById('toggle-2fa').checked = state.twoFactorEnabled;
+            document.getElementById('toggle-timeout').checked = state.sessionTimeoutEnabled;
+        }
+
+        // Show notification
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            const icon = type === 'success' ? 'fa-check-circle' : 'fa-info-circle';
+            notification.innerHTML = `<i class="fas ${icon}"></i><span>${message}</span>`;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transform = 'translateX(400px)';
+                notification.style.transition = 'all 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3500);
+        }
+
+        // Toggle switches
+        const toggle2fa = document.getElementById('toggle-2fa');
+        const toggleTimeout = document.getElementById('toggle-timeout');
+
+        toggle2fa.addEventListener('change', function() {
+            state.twoFactorEnabled = this.checked;
+            state.changesMade = true;
+            const status = this.checked ? 'enabled' : 'disabled';
+            showNotification(`Two-Factor Authentication ${status}`, 'info');
+            updateSaveButton();
+        });
+
+        toggleTimeout.addEventListener('change', function() {
+            state.sessionTimeoutEnabled = this.checked;
+            state.changesMade = true;
+            const status = this.checked ? 'enabled' : 'disabled';
+            showNotification(`Session timeout ${status}`, 'info');
+            updateSaveButton();
+        });
+
+        // Search functionality
+        const searchInput = document.querySelector('.search-input');
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase();
+            // Filter cards based on search
+            console.log('Searching for:', query);
+        });
+
+        // Menu items
+        const menuItems = document.querySelectorAll('.menu-item');
+        menuItems.forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                menuItems.forEach(m => m.classList.remove('active'));
+                this.classList.add('active');
+                const menuName = this.getAttribute('data-menu');
+                showNotification(`Navigating to ${menuName.charAt(0).toUpperCase() + menuName.slice(1)}...`, 'info');
+            });
+        });
+
+        // Save Changes button
+        const saveButton = document.querySelector('.button-primary');
+        saveButton.addEventListener('click', function() {
+            if (state.changesMade) {
+                saveState();
+                state.changesMade = false;
+                showNotification('Settings saved successfully!', 'success');
+                updateSaveButton();
+            } else {
+                showNotification('No changes to save', 'info');
+            }
+        });
+
+        // Update Save button
+        function updateSaveButton() {
+            if (state.changesMade) {
+                saveButton.style.boxShadow = '0 8px 16px rgba(59, 130, 246, 0.3)';
+            } else {
+                saveButton.style.boxShadow = 'none';
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveButton.click();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                searchInput.focus();
+            }
+        });
+
+        // Initialize
+        window.addEventListener('load', function() {
+            loadState();
+            showNotification('Security Settings loaded', 'info');
+        });
+    </script>
+</body>
+</html>

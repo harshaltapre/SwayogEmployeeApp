@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings | Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.6;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 250px;
+            background: #1e293b;
+            border-right: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            padding: 24px 20px 16px;
+            border-bottom: 1px solid #334155;
+        }
+
+        .sidebar-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #94a3b8;
+            margin-bottom: 16px;
+        }
+
+        .nav-items {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 0 8px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #cbd5e1;
+            text-decoration: none;
+            background: transparent;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .nav-item:hover {
+            background: #334155;
+            color: #e2e8f0;
+        }
+
+        .nav-item.active {
+            background: #0369a1;
+            color: #e0f2fe;
+        }
+
+        .nav-icon {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        /* Main Content */
+        .main-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            flex-shrink: 0;
+        }
+
+        .top-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex: 1;
+        }
+
+        .search-box {
+            position: relative;
+            flex: 0 1 300px;
+        }
+
+        .search-input {
+            width: 100%;
+            background: #334155;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 8px 12px 8px 36px;
+            color: #e2e8f0;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+
+        .search-input::placeholder {
+            color: #94a3b8;
+        }
+
+        .search-input:focus {
+            background: #475569;
+            border-color: #0369a1;
+            box-shadow: 0 0 0 3px rgba(3, 105, 161, 0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 16px;
+        }
+
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #94a3b8;
+        }
+
+        .breadcrumb a {
+            color: #0369a1;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .breadcrumb a:hover {
+            color: #06b6d4;
+        }
+
+        .breadcrumb span:last-child {
+            color: #e0f2fe;
+        }
+
+        .save-button {
+            background: #0369a1;
+            color: #e0f2fe;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .save-button:hover {
+            background: #0284c7;
+            box-shadow: 0 4px 12px rgba(3, 105, 161, 0.3);
+        }
+
+        .save-button:active {
+            transform: scale(0.98);
+        }
+
+        /* Content Area */
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 32px;
+        }
+
+        .content-header {
+            margin-bottom: 32px;
+        }
+
+        .content-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 8px;
+        }
+
+        .content-subtitle {
+            font-size: 14px;
+            color: #94a3b8;
+        }
+
+        .settings-grid {
+            display: grid;
+            gap: 24px;
+            max-width: 800px;
+        }
+
+        /* Settings Card */
+        .settings-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 24px;
+            transition: all 0.2s ease;
+        }
+
+        .settings-card:hover {
+            border-color: #475569;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 4px;
+        }
+
+        .card-description {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: #334155;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+            padding: 0;
+        }
+
+        .toggle-switch.active {
+            background: #0369a1;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 10px;
+            top: 2px;
+            left: 2px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .toggle-switch.active::after {
+            left: 22px;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .setting-row:last-child {
+            border-bottom: none;
+        }
+
+        .setting-content {
+            flex: 1;
+        }
+
+        .setting-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #f1f5f9;
+            margin-bottom: 4px;
+        }
+
+        .setting-hint {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        /* Password Policy */
+        .policy-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            cursor: pointer;
+        }
+
+        .radio-button {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #475569;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            background: transparent;
+        }
+
+        .radio-button.selected {
+            border-color: #0369a1;
+            background: #0369a1;
+        }
+
+        .radio-button.selected::after {
+            content: '';
+            position: absolute;
+            width: 4px;
+            height: 8px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            top: 2px;
+            left: 5px;
+            transform: rotate(45deg);
+        }
+
+        .policy-label {
+            flex: 1;
+        }
+
+        .policy-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #f1f5f9;
+            display: block;
+            margin-bottom: 2px;
+        }
+
+        .policy-desc {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        /* Sessions Table */
+        .sessions-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .sessions-table thead {
+            border-bottom: 2px solid #334155;
+        }
+
+        .sessions-table th {
+            text-align: left;
+            padding: 12px 0;
+            font-size: 12px;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .sessions-table td {
+            padding: 16px 0;
+            font-size: 14px;
+            color: #e2e8f0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .sessions-table tbody tr:hover {
+            background: #0f172a;
+        }
+
+        .device-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .device-badge {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            background: #334155;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .device-details {
+            flex: 1;
+        }
+
+        .device-name {
+            font-weight: 500;
+            color: #f1f5f9;
+            margin-bottom: 2px;
+        }
+
+        .device-meta {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-badge.active {
+            background: rgba(34, 197, 94, 0.1);
+            color: #86efac;
+        }
+
+        .status-badge.inactive {
+            background: rgba(148, 163, 184, 0.1);
+            color: #cbd5e1;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .revoke-button {
+            background: transparent;
+            border: 1px solid #475569;
+            color: #ef4444;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .revoke-button:hover {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: #ef4444;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        /* Content Sections */
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 200px;
+            }
+
+            .content {
+                padding: 24px;
+            }
+
+            .top-bar {
+                padding: 12px 24px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                height: auto;
+                flex-direction: row;
+                overflow-x: auto;
+                border-right: none;
+                border-bottom: 1px solid #334155;
+            }
+
+            .nav-items {
+                flex-direction: row;
+                gap: 0;
+            }
+
+            .nav-item {
+                padding: 12px 16px;
+                border-radius: 0;
+                flex-shrink: 0;
+            }
+
+            .top-bar {
+                flex-wrap: wrap;
+                gap: 12px;
+            }
+
+            .search-box {
+                flex: 0 1 100%;
+                max-width: 100%;
+            }
+
+            .content {
+                padding: 16px;
+            }
+
+            .settings-grid {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Settings</div>
+                <div class="nav-items">
+                    <a href="#" class="nav-item">
+                        <span class="nav-icon">⚙️</span>
+                        <span>General</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <span class="nav-icon">👤</span>
+                        <span>Account</span>
+                    </a>
+                    <a href="#" class="nav-item active">
+                        <span class="nav-icon">🔒</span>
+                        <span>Security</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <span class="nav-icon">👥</span>
+                        <span>Users & Teams</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <span class="nav-icon">🔔</span>
+                        <span>Notifications</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <span class="nav-icon">🎨</span>
+                        <span>Appearance</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <span class="nav-icon">🔗</span>
+                        <span>Integrations</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <span class="nav-icon">💳</span>
+                        <span>Billing</span>
+                    </a>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-wrapper">
+            <!-- Top Bar -->
+            <div class="top-bar">
+                <div class="top-bar-left">
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" class="search-input" placeholder="Search settings...">
+                    </div>
+                    <div class="breadcrumb">
+                        <a href="#">Settings</a>
+                        <span>›</span>
+                        <span>Security</span>
+                    </div>
+                </div>
+                <button class="save-button">Save Changes</button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="content">
+                <!-- General Section -->
+                <div id="general" class="section">
+                    <div class="content-header">
+                        <h1 class="content-title">General</h1>
+                        <p class="content-subtitle">Manage your workspace general settings</p>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="settings-card">
+                            <div class="card-header">
+                                <div>
+                                    <div class="card-title">Workspace Name</div>
+                                    <div class="card-description">The name of your workspace</div>
+                                </div>
+                            </div>
+                            <input type="text" class="search-input" value="My Workspace" style="max-width: 300px;">
+                        </div>
+                        <div class="settings-card">
+                            <div class="card-header">
+                                <div>
+                                    <div class="card-title">Language & Region</div>
+                                    <div class="card-description">Set your preferred language and timezone</div>
+                                </div>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Language</div>
+                                </div>
+                                <select class="search-input" style="max-width: 200px; padding: 8px 12px;">
+                                    <option>English</option>
+                                    <option>Spanish</option>
+                                    <option>French</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Account Section -->
+                <div id="account" class="section">
+                    <div class="content-header">
+                        <h1 class="content-title">Account</h1>
+                        <p class="content-subtitle">Manage your account information and profile</p>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="settings-card">
+                            <div class="card-title" style="margin-bottom: 16px;">Profile Information</div>
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Full Name</div>
+                                    <input type="text" class="search-input" value="John Doe" style="max-width: 300px; margin-top: 6px;">
+                                </div>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Email Address</div>
+                                    <input type="email" class="search-input" value="john@example.com" style="max-width: 300px; margin-top: 6px;">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-card">
+                            <div class="card-title" style="margin-bottom: 16px;">Avatar</div>
+                            <button class="save-button" style="background: #334155; color: #e0f2fe;">Upload New Avatar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Security Section -->
+                <div id="security" class="section active">
+                    <div class="content-header">
+                        <h1 class="content-title">Security</h1>
+                        <p class="content-subtitle">Manage your account security and authentication settings</p>
+                    </div>
+
+                    <div class="settings-grid">
+                        <!-- Two-Factor Authentication -->
+                        <div class="settings-card">
+                            <div class="card-header">
+                                <div>
+                                    <div class="card-title">Two-Factor Authentication</div>
+                                    <div class="card-description">Add an extra layer of security to your account</div>
+                                </div>
+                                <button class="toggle-switch" onclick="toggleSwitch(this)"></button>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Authentication Method</div>
+                                    <div class="setting-hint">Choose your preferred 2FA method</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Password Policy -->
+                        <div class="settings-card">
+                            <div class="card-title" style="margin-bottom: 16px;">Password Policy</div>
+                            
+                            <div class="policy-option">
+                                <div class="radio-button selected" onclick="selectPolicy(this)"></div>
+                                <div class="policy-label">
+                                    <span class="policy-name">Standard</span>
+                                    <span class="policy-desc">Minimum 8 characters with mixed case and numbers</span>
+                                </div>
+                            </div>
+
+                            <div class="policy-option">
+                                <div class="radio-button" onclick="selectPolicy(this)"></div>
+                                <div class="policy-label">
+                                    <span class="policy-name">Strong</span>
+                                    <span class="policy-desc">Minimum 12 characters with special characters required</span>
+                                </div>
+                            </div>
+
+                            <div class="policy-option">
+                                <div class="radio-button" onclick="selectPolicy(this)"></div>
+                                <div class="policy-label">
+                                    <span class="policy-name">Enterprise</span>
+                                    <span class="policy-desc">Minimum 16 characters, history check, expiry enforcement</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Active Sessions -->
+                        <div class="settings-card">
+                            <div class="card-title" style="margin-bottom: 16px;">Active Sessions</div>
+                            
+                            <table class="sessions-table">
+                                <thead>
+                                    <tr>
+                                        <th>Device</th>
+                                        <th>Location</th>
+                                        <th>Last Active</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>
+                                            <div class="device-info">
+                                                <div class="device-badge">💻</div>
+                                                <div class="device-details">
+                                                    <div class="device-name">MacBook Pro</div>
+                                                    <div class="device-meta">Chrome on macOS</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>San Francisco, CA</td>
+                                        <td>5 minutes ago</td>
+                                        <td>
+                                            <span class="status-badge active">
+                                                <span class="status-dot"></span>
+                                                Active
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <div class="device-info">
+                                                <div class="device-badge">📱</div>
+                                                <div class="device-details">
+                                                    <div class="device-name">iPhone 15 Pro</div>
+                                                    <div class="device-meta">Safari on iOS</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>San Francisco, CA</td>
+                                        <td>12 hours ago</td>
+                                        <td>
+                                            <button class="revoke-button">Revoke</button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <div class="device-info">
+                                                <div class="device-badge">💻</div>
+                                                <div class="device-details">
+                                                    <div class="device-name">Ubuntu Desktop</div>
+                                                    <div class="device-meta">Firefox on Linux</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>New York, NY</td>
+                                        <td>3 days ago</td>
+                                        <td>
+                                            <button class="revoke-button">Revoke</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Login Restrictions -->
+                        <div class="settings-card">
+                            <div class="card-title" style="margin-bottom: 12px;">Login Restrictions</div>
+                            
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Restrict login by IP</div>
+                                    <div class="setting-hint">Only allow access from whitelisted IP addresses</div>
+                                </div>
+                                <button class="toggle-switch" onclick="toggleSwitch(this)"></button>
+                            </div>
+
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Session timeout</div>
+                                    <div class="setting-hint">Automatically log out after period of inactivity</div>
+                                </div>
+                                <button class="toggle-switch active" onclick="toggleSwitch(this)"></button>
+                            </div>
+
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Require re-authentication</div>
+                                    <div class="setting-hint">Ask for password confirmation for sensitive actions</div>
+                                </div>
+                                <button class="toggle-switch active" onclick="toggleSwitch(this)"></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Users & Teams Section -->
+                <div id="users-teams" class="section">
+                    <div class="content-header">
+                        <h1 class="content-title">Users & Teams</h1>
+                        <p class="content-subtitle">Manage team members and access permissions</p>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="settings-card">
+                            <div class="card-header">
+                                <div>
+                                    <div class="card-title">Team Members</div>
+                                    <div class="card-description">View and manage your team</div>
+                                </div>
+                                <button class="save-button">Add Member</button>
+                            </div>
+                            <table class="sessions-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Sarah Johnson</td>
+                                        <td>sarah@example.com</td>
+                                        <td>Admin</td>
+                                        <td><button class="revoke-button">Remove</button></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Mike Chen</td>
+                                        <td>mike@example.com</td>
+                                        <td>Owner</td>
+                                        <td><span class="status-badge active"><span class="status-dot"></span>Active</span></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notifications Section -->
+                <div id="notifications" class="section">
+                    <div class="content-header">
+                        <h1 class="content-title">Notifications</h1>
+                        <p class="content-subtitle">Configure your notification preferences</p>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="settings-card">
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Email Notifications</div>
+                                    <div class="setting-hint">Receive updates via email</div>
+                                </div>
+                                <button class="toggle-switch active" onclick="toggleSwitch(this)"></button>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Push Notifications</div>
+                                    <div class="setting-hint">Receive push notifications on your device</div>
+                                </div>
+                                <button class="toggle-switch active" onclick="toggleSwitch(this)"></button>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Slack Notifications</div>
+                                    <div class="setting-hint">Send notifications to your Slack workspace</div>
+                                </div>
+                                <button class="toggle-switch" onclick="toggleSwitch(this)"></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Appearance Section -->
+                <div id="appearance" class="section">
+                    <div class="content-header">
+                        <h1 class="content-title">Appearance</h1>
+                        <p class="content-subtitle">Customize how the dashboard looks and feels</p>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="settings-card">
+                            <div class="card-title" style="margin-bottom: 16px;">Theme</div>
+                            <div class="policy-option">
+                                <div class="radio-button selected" onclick="selectPolicy(this)"></div>
+                                <div class="policy-label">
+                                    <span class="policy-name">Dark</span>
+                                    <span class="policy-desc">Dark mode with blue accents</span>
+                                </div>
+                            </div>
+                            <div class="policy-option">
+                                <div class="radio-button" onclick="selectPolicy(this)"></div>
+                                <div class="policy-label">
+                                    <span class="policy-name">Light</span>
+                                    <span class="policy-desc">Light mode for daytime usage</span>
+                                </div>
+                            </div>
+                            <div class="policy-option">
+                                <div class="radio-button" onclick="selectPolicy(this)"></div>
+                                <div class="policy-label">
+                                    <span class="policy-name">System</span>
+                                    <span class="policy-desc">Follow system preferences</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Integrations Section -->
+                <div id="integrations" class="section">
+                    <div class="content-header">
+                        <h1 class="content-title">Integrations</h1>
+                        <p class="content-subtitle">Connect and manage third-party integrations</p>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="settings-card">
+                            <div class="card-header">
+                                <div>
+                                    <div class="card-title">Connected Services</div>
+                                    <div class="card-description">View and manage your integrations</div>
+                                </div>
+                            </div>
+                            <div class="setting-row">
+                                <div class="device-details">
+                                    <div class="device-name">Slack</div>
+                                    <div class="device-meta">Workspace: acme-corp</div>
+                                </div>
+                                <button class="revoke-button">Disconnect</button>
+                            </div>
+                            <div class="setting-row">
+                                <div class="device-details">
+                                    <div class="device-name">GitHub</div>
+                                    <div class="device-meta">Connected: 2 repositories</div>
+                                </div>
+                                <button class="revoke-button">Manage</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Billing Section -->
+                <div id="billing" class="section">
+                    <div class="content-header">
+                        <h1 class="content-title">Billing</h1>
+                        <p class="content-subtitle">Manage your subscription and payment methods</p>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="settings-card">
+                            <div class="card-title" style="margin-bottom: 16px;">Current Plan</div>
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Pro Plan</div>
+                                    <div class="setting-hint">$99/month • Renews on May 15, 2026</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-card">
+                            <div class="card-title" style="margin-bottom: 16px;">Payment Method</div>
+                            <div class="setting-row">
+                                <div class="setting-content">
+                                    <div class="setting-label">Visa ending in 4242</div>
+                                    <div class="setting-hint">Expires 12/2026</div>
+                                </div>
+                                <button class="revoke-button">Update</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const sections = {
+            'general': 'General',
+            'account': 'Account',
+            'security': 'Security',
+            'users-teams': 'Users & Teams',
+            'notifications': 'Notifications',
+            'appearance': 'Appearance',
+            'integrations': 'Integrations',
+            'billing': 'Billing'
+        };
+
+        function toggleSwitch(element) {
+            element.classList.toggle('active');
+        }
+
+        function selectPolicy(element) {
+            document.querySelectorAll('.radio-button').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            element.classList.add('selected');
+        }
+
+        function showSection(sectionId) {
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.classList.remove('active');
+            });
+
+            // Show selected section
+            const selectedSection = document.getElementById(sectionId);
+            if (selectedSection) {
+                selectedSection.classList.add('active');
+            }
+
+            // Update breadcrumb
+            const breadcrumb = document.querySelector('.breadcrumb');
+            const sectionName = sections[sectionId] || 'Settings';
+            breadcrumb.innerHTML = `
+                <a href="#">Settings</a>
+                <span>›</span>
+                <span>${sectionName}</span>
+            `;
+        }
+
+        // Search functionality
+        document.querySelector('.search-input').addEventListener('input', function(e) {
+            const query = e.target.value.toLowerCase();
+            console.log('Search:', query);
+        });
+
+        // Navigation
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Remove active class from all items
+                document.querySelectorAll('.nav-item').forEach(nav => {
+                    nav.classList.remove('active');
+                });
+                
+                // Add active class to clicked item
+                this.classList.add('active');
+
+                // Get the section id from the nav text or data attribute
+                const text = this.textContent.trim().toLowerCase();
+                const sectionId = text === 'security' ? 'security' : 
+                                 text === 'general' ? 'general' :
+                                 text === 'account' ? 'account' :
+                                 text === 'users & teams' ? 'users-teams' :
+                                 text === 'notifications' ? 'notifications' :
+                                 text === 'appearance' ? 'appearance' :
+                                 text === 'integrations' ? 'integrations' :
+                                 text === 'billing' ? 'billing' : 'general';
+
+                showSection(sectionId);
+            });
+        });
+    </script>
+</body>
+</html>

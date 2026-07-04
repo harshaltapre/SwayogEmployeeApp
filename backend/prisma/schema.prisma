@@ -1,0 +1,818 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/client"
+}
+
+generator client_backend {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                  String                @id @default(uuid())
+  loginId             String                @unique
+  employeeCode        String?               @unique
+  email               String                @unique
+  phoneNumber         String?               @unique
+  fullName            String
+  passwordHash        String
+  portalPassword      String?
+  role                UserRole              @default(CUSTOMER)
+  designationTitle    String?
+  departmentId        String?
+  reportingManagerId  String?
+  isActive            Boolean               @default(true)
+  failedLoginAttempts Int                   @default(0)
+  lockoutUntil        DateTime?
+  lastFailedLoginAt   DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  AttendanceRecord    AttendanceRecord[]
+  checkIns            CheckIn[]
+  auditLogs           AuditLog[]            @relation("audit_actor")
+  customerProfile     Customer?
+  employeeProfile     EmployeeProfile?
+  receivedMessages    Message[]             @relation("ReceivedMessages")
+  sentMessages        Message[]             @relation("SentMessages")
+  partnerProfile      PartnerProfile?
+  PerformanceSnapshot PerformanceSnapshot[]
+  refreshTokens       RefreshToken[]
+  createdTasks        Task[]           @relation("task_creator")
+  assignedTasks       Task[]           @relation("task_employee")
+  department          Department?      @relation(fields: [departmentId], references: [id])
+  reportingManager    User?            @relation("user_reporting", fields: [reportingManagerId], references: [id])
+  directReports       User[]           @relation("user_reporting")
+  taskAssignees       TaskAssignee[]
+  imageRecords        ImageRecord[]
+  assignedAmcVisits   AmcVisit[]            @relation("assigned_amc_employee")
+  workSubmissions     WorkSubmission[]
+  dailyCommits        DailyCommit[]
+  taskAssignments     TaskAssignment[]
+  taskImages          TaskImage[]
+
+  @@index([lockoutUntil])
+  @@index([departmentId])
+  @@index([reportingManagerId])
+  @@index([role, departmentId])
+}
+
+model Department {
+  id          String         @id @default(uuid())
+  code        DepartmentCode @unique
+  name        String         @unique
+  description String?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  users       User[]
+}
+
+model Task {
+  id                    Int              @id @default(autoincrement())
+  jobType               String
+  description           String
+  customerName          String
+  customerPhone         String
+  address               String
+  latitude              Float?
+  longitude             Float?
+  status                TaskStatus       @default(ASSIGNED)
+  scheduledTime         DateTime
+  employeeUserId        String
+  assignedById          String
+  completionMessage     String?
+  completionDocumentUrl String?
+  completedAt           DateTime?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  assignedBy            User       @relation("task_creator", fields: [assignedById], references: [id], onDelete: Cascade)
+  employee              User       @relation("task_employee", fields: [employeeUserId], references: [id], onDelete: Cascade)
+  taskAssignees         TaskAssignee[]
+  imageRecords          ImageRecord[]
+  workSubmissions       WorkSubmission[]
+  taskAssignments       TaskAssignment[]
+  taskImages            TaskImage[]
+  payments              Payment[]
+
+  @@index([employeeUserId])
+  @@index([assignedById])
+  @@index([status])
+  @@index([scheduledTime])
+  @@index([employeeUserId, status])
+  @@index([employeeUserId, scheduledTime])
+}
+
+model TaskAssignee {
+  id        String   @id @default(uuid())
+  taskId    Int
+  userId    String
+  role      String?
+  status    String   @default("assigned")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+}
+
+model ImageRecord {
+  id             String   @id @default(uuid())
+  taskId         Int
+  uploadedBy     String
+  type           String
+  url            String
+  watermarkedUrl String?
+  exif           Json?
+  latitude       Float?
+  longitude      Float?
+  takenAt        DateTime?
+  createdAt      DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([uploadedBy])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  actor     User?    @relation("audit_actor", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([entity, entityId, action])
+}
+
+model PartnerProfile {
+  id             String            @id @default(uuid())
+  userId         String            @unique
+  businessName   String?
+  serviceZone    String?
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  customers      Customer[]
+  employees      EmployeeProfile[]
+  Invoice        Invoice[]
+  PartnerInstall PartnerInstall[]
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model EmployeeProfile {
+  id               String          @id @default(uuid())
+  userId           String          @unique
+  partnerId        String?
+  jobRole          String          @default("field_technician")
+  zone             String?
+  monthlySalaryInr Int?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  partner          PartnerProfile? @relation(fields: [partnerId], references: [id])
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId])
+  @@index([userId])
+}
+
+model Customer {
+  id                  Int               @id @default(autoincrement())
+  customerCode        String            @unique
+  fullName            String
+  email               String
+  phoneNumber         String
+  city                String
+  address             String
+  systemSizeKw        Float
+  installationDate    DateTime
+  warrantyExpiry      DateTime?
+  panelBrand          String?
+  inverterBrand       String?
+  inverterModel       String?
+  amcStatus           CustomerAmcStatus @default(NONE)
+  amcExpiryDate       DateTime?
+  status              CustomerStatus    @default(ACTIVE)
+  partnerId           String?
+  userId              String?           @unique
+  projectStage        Int               @default(0)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  cleaningWindow1     String?           @default("1-10")
+  cleaningWindow2     String?           @default("11-20")
+  cleaningWindow3     String?           @default("21-30")
+  cleaningsPerMonth   Int?              @default(1)
+  clientType          String?           @default("post_paid")
+  consumerNumber      String?
+  contractEndDate     DateTime?
+  contractStartDate   DateTime?
+  monthlyCleaningRate Float?
+  paymentTerms        String?
+  remarks             String?
+  cleaningWindow4     String?
+  cleaningWindow5     String?
+  cleaningWindow6     String?
+  cleaningWindow7     String?
+  cleaningWindow8     String?
+  assignedEmployeeId  String?
+  commissionAmount    Float?
+  commissionStatus    CommissionStatus  @default(PENDING)
+  commissionProofUrl  String?
+  commissionPaidAt    DateTime?
+  inverterLoginId     String?
+  inverterPassword    String?
+  inverterApiKey       String?
+  inverterDeviceSn     String?
+  portalPassword      String?
+  latitude            Float?
+  longitude           Float?
+  AmcContract         AmcContract[]
+  AmcVisit            AmcVisit[]
+  partner             PartnerProfile?   @relation(fields: [partnerId], references: [id])
+  user                User?             @relation(fields: [userId], references: [id])
+  Invoice             Invoice[]
+  serviceRequests     ServiceRequest[]
+  dispatchRecords     DispatchRecord[]
+  waareeGeneration    WaareeGeneration?
+  inverterCache       InverterCache?
+  apartmentId         Int?
+  apartment           Apartment?        @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
+  payments            Payment[]
+  notifications       CustomerNotification[]
+
+  @@index([partnerId])
+  @@index([status])
+  @@index([amcStatus])
+}
+
+model Apartment {
+  id        Int        @id @default(autoincrement())
+  name      String
+  address   String
+  city      String     @default("Pune")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  customers Customer[]
+}
+
+model ServiceRequest {
+  id            Int                  @id @default(autoincrement())
+  customerId    Int
+  title         String
+  description   String
+  address       String?
+  latitude      Float?
+  longitude     Float?
+  status        ServiceRequestStatus @default(PENDING)
+  scheduledDate String?
+  scheduledTime String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  customer      Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model AmcContract {
+  id           String   @id
+  customerId   Int
+  state        String
+  annualFeeInr Int
+  startDate    DateTime
+  renewalDate  DateTime
+  isActive     Boolean  @default(true)
+  isRenewed    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime
+  Customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([renewalDate])
+  @@index([state])
+}
+
+model Expense {
+  id          String   @id
+  category    String
+  amount      Int
+  expenseDate DateTime
+  zone        String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  @@index([category])
+  @@index([expenseDate])
+}
+
+model Invoice {
+  id             String               @id @default(uuid())
+  invoiceNumber  String?
+  customerId     Int
+  invoiceType    InvoiceType          @default(INSTALLATION)
+  amount         Float
+  paymentStatus  InvoicePaymentStatus @default(PENDING)
+  amountPaid     Float                @default(0)
+  invoiceDate    DateTime             @default(now())
+  paymentDate    DateTime?
+  zone           String?
+  state          String?
+  partnerId      String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  description    String?
+  paymentMethod  String?
+  proofUrl       String?
+  Customer       Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  PartnerProfile PartnerProfile?      @relation(fields: [partnerId], references: [id])
+
+  @@index([customerId])
+  @@index([invoiceDate])
+  @@index([partnerId])
+  @@index([paymentStatus])
+  @@index([zone])
+  @@index([partnerId, invoiceDate])
+  @@index([customerId, invoiceDate])
+}
+
+model PartnerInstall {
+  id             String         @id
+  partnerId      String
+  invoiceId      String
+  installDate    DateTime
+  commissionInr  Int
+  createdAt      DateTime       @default(now())
+  PartnerProfile PartnerProfile @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([partnerId])
+}
+
+model AmcVisit {
+  id                    String         @id @default(uuid())
+  customerId            Int
+  scheduledDate         DateTime
+  status                AmcVisitStatus @default(PENDING)
+  completedAt           DateTime?
+  notes                 String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  assignedEmployeeId    String?
+  customer              Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedEmployee      User?          @relation("assigned_amc_employee", fields: [assignedEmployeeId], references: [id])
+
+  // NEW AMC COMPLETION & SCHEDULING FIELDS
+  cleaningNumber        Int?       // which cleaning # this is (1, 2, 3 or 4) in the month
+  timeSlot              String?    // e.g. "09:00"
+  completedByEmployeeId String?
+  completedByName       String?    // denormalized name for quick display
+  visitNotes            String?
+  beforeImageUrl        String?
+  afterImageUrl         String?
+
+  @@index([customerId])
+  @@index([scheduledDate])
+  @@index([status])
+  @@index([assignedEmployeeId])
+  @@index([assignedEmployeeId, status])
+  @@index([assignedEmployeeId, scheduledDate])
+}
+
+model Message {
+  id         Int      @id @default(autoincrement())
+  senderId   String
+  receiverId String
+  content    String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+}
+
+model AttendanceRecord {
+  id           String           @id @default(uuid())
+  employeeId   String
+  date         DateTime         @db.Date
+  checkInTime  DateTime?
+  checkOutTime DateTime?
+  totalMinutes Int?
+  status       AttendanceStatus @default(PRESENT)
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @default(now()) @updatedAt
+  employee     User             @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@index([employeeId])
+}
+
+model CheckIn {
+  id         String        @id @default(cuid())
+  employeeId String
+  employee   User          @relation(fields: [employeeId], references: [id])
+  selfieUrl  String?
+  latitude   Float?
+  longitude  Float?
+  status     CheckInStatus @default(CHECKED_IN)
+  createdAt  DateTime      @default(now())
+
+  @@index([employeeId])
+  @@index([createdAt])
+}
+
+model AdminNotification {
+  id         String   @id @default(cuid())
+  type       String
+  message    String
+  imageUrl   String?
+  employeeId String
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([employeeId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+enum CheckInStatus {
+  CHECKED_IN
+  CHECKED_OUT
+}
+
+model PerformanceSnapshot {
+  id                 String   @id @default(uuid())
+  employeeId         String
+  month              Int
+  year               Int
+  attendancePercent  Float    @default(0)
+  taskCompletionRate Float    @default(0)
+  avgWorkScore       Float    @default(0)
+  totalHoursLogged   Float    @default(0)
+  performanceScore   Float    @default(0)
+  daysPresent        Int      @default(0)
+  daysAbsent         Int      @default(0)
+  tasksAssigned      Int      @default(0)
+  tasksCompleted     Int      @default(0)
+  workSubmissions    Int      @default(0)
+  calculatedAt       DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
+  employee           User     @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, month, year])
+  @@index([employeeId])
+}
+
+model WorkSubmission {
+  id          String     @id @default(uuid())
+  employeeId  String
+  taskId      Int?
+  title       String
+  description String
+  proofUrl    String?
+  proofNotes  String?
+  hoursSpent  Float      @default(0)
+  submittedAt DateTime   @default(now())
+  reviewedAt  DateTime?
+  reviewedBy  String?
+  reviewScore Int?
+  reviewNotes String?
+  status      WorkStatus @default(PENDING)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @default(now()) @updatedAt
+  employee    User       @relation(fields: [employeeId], references: [id])
+  task        Task?      @relation(fields: [taskId], references: [id])
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+model DailyCommit {
+  id             String   @id @default(uuid())
+  employeeId     String
+  commitDate     DateTime @db.Date
+  taskWorkedOn   String
+  workSummary    String
+  hoursSpent     Float
+  issuesBlockers String?
+  tomorrowPlan   String?
+  attachmentUrl  String?
+  submittedAt    DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  employee       User     @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, commitDate])
+  @@index([employeeId])
+  @@index([commitDate])
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  SUB_ADMIN
+  EMPLOYEE
+  PARTNER
+  CUSTOMER
+  DEPARTMENT_HEAD
+  TEAM_LEAD
+}
+
+enum DepartmentCode {
+  OPERATIONS
+  SERVICE_MAINTENANCE
+  INVENTORY
+  FINANCE
+  SALES
+  HR
+}
+
+enum CustomerAmcStatus {
+  ACTIVE
+  EXPIRED
+  NONE
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TaskStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum CommissionStatus {
+  PENDING
+  COMPLETED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  LATE
+  LEAVE
+}
+
+enum WorkStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVISION
+}
+
+model Inventory {
+  id           Int              @id @default(autoincrement())
+  sku          String           @unique
+  name         String
+  category     String
+  inStock      Int              @default(0)
+  minThreshold Int              @default(0)
+  supplier     String?
+  pricePerUnit Float            @default(0)
+  entryDate    DateTime         @default(now())
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  dispatches   DispatchRecord[]
+}
+
+model DispatchRecord {
+  id           String    @id @default(uuid())
+  customerId   Int
+  itemId       Int
+  quantity     Int
+  dispatchedAt DateTime  @default(now())
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  item         Inventory @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([itemId])
+}
+
+model GrowattCustomer {
+  id             Int                 @id @default(autoincrement())
+  customerName   String              @map("customer_name")
+  apiToken       String              @map("api_token") // AES-256-GCM encrypted
+  plantId        String              @unique @map("plant_id")
+  plantName      String              @map("plant_name")
+  plantCapacity  Float               @map("plant_capacity")
+  plantLocation  String              @map("plant_location")
+  inverterSn     String?             @map("inverter_sn")
+  isActive       Boolean             @default(true) @map("is_active")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  generations    GrowattGeneration[]
+
+  @@map("growatt_customers")
+}
+
+model GrowattGeneration {
+  id                Int             @id @default(autoincrement())
+  growattCustomerId Int             @map("growatt_customer_id")
+  todayGeneration   Float           @default(0) @map("today_generation")
+  monthlyGeneration Float           @default(0) @map("monthly_generation")
+  yearlyGeneration  Float           @default(0) @map("yearly_generation")
+  totalGeneration   Float           @default(0) @map("total_generation")
+  currentPower      Float           @default(0) @map("current_power")
+  status            String          @default("offline") // online or offline
+  lastUpdated       DateTime        @default(now()) @map("last_updated")
+  growattCustomer   GrowattCustomer @relation(fields: [growattCustomerId], references: [id], onDelete: Cascade)
+
+  @@index([growattCustomerId])
+  @@map("growatt_generations")
+}
+
+model WaareeGeneration {
+  id                Int             @id @default(autoincrement())
+  customerId        Int             @unique @map("customer_id")
+  todayGeneration   Float           @default(0) @map("today_generation")
+  monthlyGeneration Float           @default(0) @map("monthly_generation")
+  yearlyGeneration  Float           @default(0) @map("yearly_generation")
+  totalGeneration   Float           @default(0) @map("total_generation")
+  currentPower      Float           @default(0) @map("current_power")
+  status            String          @default("offline") // online or offline
+  lastUpdated       DateTime        @default(now()) @map("last_updated")
+  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("waaree_generations")
+}
+
+model InverterCache {
+  customerId  Int      @id
+  summaryData Json
+  updatedAt   DateTime @default(now()) @updatedAt
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Employee Task Assignment
+// ---------------------------------------------------------------------------
+
+model TaskAssignment {
+  id            String               @id @default(uuid())
+  taskId        Int
+  employeeUserId String
+  assignedAt    DateTime             @default(now())
+  status        TaskAssignmentStatus @default(ASSIGNED)
+  task          Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employee      User                 @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, employeeUserId])
+  @@index([taskId])
+  @@index([employeeUserId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Customer Notifications
+// ---------------------------------------------------------------------------
+
+model CustomerNotification {
+  id         String   @id @default(uuid())
+  customerId Int
+  type       String
+  message    String
+  taskId     Int?
+  imageUrl   String?
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([taskId])
+}
+
+// ---------------------------------------------------------------------------
+// Task Images with Geo-Tagging
+// ---------------------------------------------------------------------------
+
+model TaskImage {
+  id           String   @id @default(uuid())
+  taskId       Int
+  employeeUserId String
+  type         String   // before, after
+  url          String
+  latitude     Float?
+  longitude    Float?
+  watermarkText String?
+  uploadedAt   DateTime @default(now())
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employee     User     @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([employeeUserId])
+  @@index([type])
+}
+
+// ---------------------------------------------------------------------------
+// Payment Processing
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id              String        @id @default(uuid())
+  taskId          Int
+  customerId      Int
+  amount          Float
+  paymentMethod   String?       // upi, bank_transfer, cash, etc.
+  paymentStatus   PaymentStatus @default(PENDING)
+  transactionId   String?       @unique
+  paidBy          String?       // customer name or reference
+  paidAt          DateTime?
+  processedBy     String?       // admin user id who processed payment
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  task            Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([customerId])
+  @@index([paymentStatus])
+  @@index([paidAt])
+  @@index([customerId, paymentStatus])
+}
+
+// ---------------------------------------------------------------------------
+// Hardening Status Enums (T2.6)
+// ---------------------------------------------------------------------------
+
+enum ServiceRequestStatus {
+  PENDING
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum AmcVisitStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskAssignmentStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum InvoicePaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum InvoiceType {
+  INSTALLATION
+  AMC
+  REPAIR
+  SERVICE
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
