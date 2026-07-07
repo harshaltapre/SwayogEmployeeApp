@@ -22,16 +22,24 @@ class DashboardViewModel @Inject constructor(
     val dashboardState: StateFlow<DashboardState> = _dashboardState.asStateFlow()
     
     val userName: StateFlow<String?> = dataStoreManager.userName.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), null
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
     )
     val userRole: StateFlow<String?> = dataStoreManager.userRole.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), null
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
     )
     val jobRole: StateFlow<String?> = dataStoreManager.jobRole.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), null
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
     )
     val userId: StateFlow<String?> = dataStoreManager.userId.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), null
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
     )
     
     private val _tasks = MutableStateFlow<List<com.swayog.employee.data.model.Task>>(emptyList())

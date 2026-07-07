@@ -91,10 +91,10 @@ fun SwayogNavHost(
 }
 
 sealed class Screen(val route: String) {
-    object Login : Screen("login")
-    object Dashboard : Screen("dashboard")
-    object Attendance : Screen("attendance")
-    object Tasks : Screen("tasks")
-    object Profile : Screen("profile")
-    object Settings : Screen("settings")
+    data object Login : Screen("login")
+    data object Dashboard : Screen("dashboard")
+    data object Attendance : Screen("attendance")
+    data object Tasks : Screen("tasks")
+    data object Profile : Screen("profile")
+    data object Settings : Screen("settings")
 }

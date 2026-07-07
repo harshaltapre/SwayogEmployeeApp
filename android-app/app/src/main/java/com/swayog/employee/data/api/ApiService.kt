@@ -10,7 +10,7 @@ interface ApiService {
     @POST("auth/login")
     suspend fun login(@Body request: LoginRequest): Response<AuthResponse>
 
-    @POST("auth/login-phone")
+    @POST("auth/login-with-phone")
     suspend fun loginWithPhone(@Body request: LoginWithPhoneRequest): Response<AuthResponse>
     
     @POST("auth/register")

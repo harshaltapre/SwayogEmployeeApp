@@ -83,6 +83,13 @@ class SwayogFirebaseMessagingService : FirebaseMessagingService() {
             .setContentIntent(pendingIntent)
         
         val notificationManager = NotificationManagerCompat.from(this)
-        notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val permission = android.Manifest.permission.POST_NOTIFICATIONS
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+            }
+        } else {
+            notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+        }
     }
 }
