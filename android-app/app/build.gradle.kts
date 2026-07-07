@@ -25,9 +25,9 @@ android {
         }
 
         // BuildConfig fields for API configuration
-        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:4000/api/v1\"")
-        buildConfigField("String", "WS_BASE_URL", "\"ws://10.0.2.2:4000\"")
-        buildConfigField("String", "MAPS_API_KEY", "\"AIzaSyBGleNkZ2eFC5L6QpbZx7KnGjZonwiklwc\"")
+        buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "http://10.0.2.2:4000/api/v1/"}\"")
+        buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "ws://10.0.2.2:4000"}\"")
+        buildConfigField("String", "MAPS_API_KEY", "\"${project.findProperty("MAPS_API_KEY") ?: ""}\"")
     }
 
     buildTypes {
@@ -37,13 +37,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "API_BASE_URL", "\"https://api.swayog.com/api/v1\"")
-            buildConfigField("String", "WS_BASE_URL", "\"wss://api.swayog.com\"")
+            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "https://api.swayog.com/api/v1/"}\"")
+            buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "wss://api.swayog.com"}\"")
         }
         debug {
             isDebuggable = true
-            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:4000/api/v1\"")
-            buildConfigField("String", "WS_BASE_URL", "\"ws://10.0.2.2:4000\"")
+            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "http://10.0.2.2:4000/api/v1/"}\"")
+            buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "ws://10.0.2.2:4000"}\"")
         }
     }
     
@@ -66,6 +66,9 @@ android {
     }
     
     packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -96,7 +99,6 @@ dependencies {
     // Hilt
     implementation("com.google.dagger:hilt-android:2.51.1")
     ksp("com.google.dagger:hilt-android-compiler:2.51.1")
-    kapt("com.google.dagger:hilt-android-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     
     // Networking
@@ -122,10 +124,10 @@ dependencies {
     implementation("com.google.maps.android:maps-compose:4.3.0")
     
     // Camera
-    implementation("androidx.camera:camera-core:1.3.0")
-    implementation("androidx.camera:camera-camera2:1.3.0")
-    implementation("androidx.camera:camera-lifecycle:1.3.0")
-    implementation("androidx.camera:camera-view:1.3.0")
+    implementation("androidx.camera:camera-core:1.4.1")
+    implementation("androidx.camera:camera-camera2:1.4.1")
+    implementation("androidx.camera:camera-lifecycle:1.4.1")
+    implementation("androidx.camera:camera-view:1.4.1")
     
     // Biometrics
     implementation("androidx.biometric:biometric:1.1.0")
@@ -137,7 +139,6 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.hilt:hilt-work:1.2.0")
     ksp("androidx.hilt:hilt-compiler:1.2.0")
-    kapt("androidx.hilt:hilt-compiler:1.2.0")
     
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))

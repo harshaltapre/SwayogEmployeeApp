@@ -13,6 +13,9 @@ interface AttendanceDao {
     @Query("SELECT * FROM attendance WHERE employeeId = :employeeId AND date = :date")
     suspend fun getAttendanceByDate(employeeId: String, date: String): AttendanceEntity?
     
+    @Query("SELECT * FROM attendance WHERE date = :todayDate LIMIT 1")
+    suspend fun getTodayAttendance(todayDate: String = java.time.LocalDate.now().toString()): AttendanceEntity?
+    
     @Query("SELECT * FROM attendance WHERE employeeId = :employeeId AND date >= :startDate AND date <= :endDate")
     fun getAttendanceByDateRange(employeeId: String, startDate: String, endDate: String): Flow<List<AttendanceEntity>>
     

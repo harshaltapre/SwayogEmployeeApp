@@ -135,10 +135,11 @@ fun DashboardScreen(
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    if (todayAttendance != null) {
+                                    val attendance = todayAttendance
+                                    if (attendance != null) {
                                         Text(
-                                            text = if (todayAttendance!!.checkInTime != null) {
-                                                "Checked in at ${todayAttendance!!.checkInTime}"
+                                            text = if (attendance.checkInTime != null) {
+                                                "Checked in at ${attendance.checkInTime}"
                                             } else {
                                                 "Not checked in yet"
                                             },
@@ -162,7 +163,8 @@ fun DashboardScreen(
                     
                     // Performance Card
                     item {
-                        if (performance != null) {
+                        val perf = performance
+                        if (perf != null) {
                             SwayogCard {
                                 Column {
                                     Text(
@@ -176,7 +178,7 @@ fun DashboardScreen(
                                     ) {
                                         Column {
                                             Text(
-                                                text = "${performance!!.performanceScore}/5",
+                                                text = "${perf.performanceScore}/5",
                                                 style = MaterialTheme.typography.headlineMedium,
                                                 color = MaterialTheme.colorScheme.primary
                                             )
@@ -188,7 +190,7 @@ fun DashboardScreen(
                                         }
                                         Column {
                                             Text(
-                                                text = "${performance!!.attendancePercent}%",
+                                                text = "${perf.attendancePercent}%",
                                                 style = MaterialTheme.typography.headlineMedium,
                                                 color = MaterialTheme.colorScheme.secondary
                                             )

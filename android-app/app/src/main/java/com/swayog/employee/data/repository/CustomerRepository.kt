@@ -1,7 +1,7 @@
 package com.swayog.employee.data.repository
 
 import com.swayog.employee.data.api.ApiService
-import com.swayog.employee.data.api.RetrofitClient
+
 import com.swayog.employee.data.local.dao.CustomerDao
 import com.swayog.employee.data.local.entity.CustomerEntity
 import com.swayog.employee.data.model.*
@@ -12,10 +12,9 @@ import javax.inject.Singleton
 
 @Singleton
 class CustomerRepository @Inject constructor(
-    private val customerDao: CustomerDao
+    private val customerDao: CustomerDao,
+    private val apiService: ApiService
 ) {
-    
-    private val apiService = RetrofitClient.apiService
     
     fun getAllCustomers(): Flow<List<Customer>> {
         return customerDao.getAllCustomers().map { entities ->

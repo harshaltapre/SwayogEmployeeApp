@@ -75,14 +75,22 @@ class DataStoreManager @Inject constructor(
     }
     
     suspend fun saveAuthToken(token: String) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.AUTH_TOKEN] = token
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.AUTH_TOKEN] = token
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
     
     suspend fun saveRefreshToken(token: String) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.REFRESH_TOKEN] = token
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.REFRESH_TOKEN] = token
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
     
@@ -93,43 +101,67 @@ class DataStoreManager @Inject constructor(
         role: String,
         jobRole: String?
     ) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.USER_ID] = userId
-            preferences[PreferencesKeys.USER_EMAIL] = email
-            preferences[PreferencesKeys.USER_NAME] = name
-            preferences[PreferencesKeys.USER_ROLE] = role
-            jobRole?.let { preferences[PreferencesKeys.JOB_ROLE] = it }
-            preferences[PreferencesKeys.IS_LOGGED_IN] = true
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.USER_ID] = userId
+                preferences[PreferencesKeys.USER_EMAIL] = email
+                preferences[PreferencesKeys.USER_NAME] = name
+                preferences[PreferencesKeys.USER_ROLE] = role
+                jobRole?.let { preferences[PreferencesKeys.JOB_ROLE] = it }
+                preferences[PreferencesKeys.IS_LOGGED_IN] = true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
     
     suspend fun setLoggedIn(isLoggedIn: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.IS_LOGGED_IN] = isLoggedIn
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.IS_LOGGED_IN] = isLoggedIn
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
     
     suspend fun setBiometricEnabled(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.BIOMETRIC_ENABLED] = enabled
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.BIOMETRIC_ENABLED] = enabled
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
     
     suspend fun setDarkMode(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.DARK_MODE] = enabled
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.DARK_MODE] = enabled
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
     
     suspend fun setLanguage(language: String) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.LANGUAGE] = language
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.LANGUAGE] = language
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
     
     suspend fun clearAll() {
-        context.dataStore.edit { preferences ->
-            preferences.clear()
+        try {
+            context.dataStore.edit { preferences ->
+                preferences.clear()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

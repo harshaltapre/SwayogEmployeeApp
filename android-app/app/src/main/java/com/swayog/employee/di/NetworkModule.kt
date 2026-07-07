@@ -1,12 +1,17 @@
 package com.swayog.employee.di
 
+import android.content.Context
 import com.swayog.employee.BuildConfig
 import com.swayog.employee.data.api.ApiService
-import com.swayog.employee.data.api.RetrofitClient
+import com.swayog.employee.data.local.preferences.DataStoreManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -32,9 +37,32 @@ object NetworkModule {
     
     @Provides
     @Singleton
-    fun provideOkHttpClient(loggingInterceptor: HttpLoggingInterceptor): OkHttpClient {
+    fun provideAuthInterceptor(dataStoreManager: DataStoreManager): Interceptor {
+        return Interceptor { chain ->
+            val originalRequest = chain.request()
+            val requestBuilder = originalRequest.newBuilder()
+                .header("Content-Type", "application/json")
+            
+            // Inject auth token if available
+            val authToken = runBlocking { dataStoreManager.authToken.first() }
+            if (authToken != null) {
+                requestBuilder.header("Authorization", "Bearer $authToken")
+            }
+            
+            val request = requestBuilder.build()
+            chain.proceed(request)
+        }
+    }
+    
+    @Provides
+    @Singleton
+    fun provideOkHttpClient(
+        loggingInterceptor: HttpLoggingInterceptor,
+        authInterceptor: Interceptor
+    ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
+            .addInterceptor(authInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -44,8 +72,11 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+        val baseUrl = BuildConfig.API_BASE_URL.let { url ->
+            if (url.endsWith("/")) url else "$url/"
+        }
         return Retrofit.Builder()
-            .baseUrl(BuildConfig.API_BASE_URL)
+            .baseUrl(baseUrl)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()

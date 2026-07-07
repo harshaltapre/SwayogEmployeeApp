@@ -1,21 +1,20 @@
 package com.swayog.employee.data.repository
 
 import com.swayog.employee.data.api.ApiService
-import com.swayog.employee.data.api.RetrofitClient
 import com.swayog.employee.data.local.dao.UserDao
 import com.swayog.employee.data.local.entity.UserEntity
 import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.swayog.employee.data.model.*
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class AuthRepository @Inject constructor(
     private val dataStoreManager: DataStoreManager,
-    private val userDao: UserDao
+    private val userDao: UserDao,
+    private val apiService: ApiService
 ) {
-    
-    private val apiService = RetrofitClient.apiService
     
     suspend fun login(email: String, password: String): Result<AuthResponse> {
         return try {
@@ -116,11 +115,9 @@ class AuthRepository @Inject constructor(
     
     suspend fun logout(): Result<Unit> {
         return try {
-            val token = dataStoreManager.authToken
-            token.collect { authToken ->
-                if (authToken != null) {
-                    apiService.logout("Bearer $authToken")
-                }
+            val authToken = dataStoreManager.authToken.first()
+            if (authToken != null) {
+                apiService.logout("Bearer $authToken")
             }
             
             // Clear local data
@@ -135,23 +132,20 @@ class AuthRepository @Inject constructor(
     
     suspend fun refreshToken(): Result<AuthResponse> {
         return try {
-            val refreshToken = dataStoreManager.refreshToken
-            refreshToken.collect { token ->
-                if (token != null) {
-                    val response = apiService.refreshToken(RefreshTokenRequest(token))
-                    if (response.isSuccessful && response.body() != null) {
-                        val authResponse = response.body()!!
-                        dataStoreManager.saveAuthToken(authResponse.token)
-                        dataStoreManager.saveRefreshToken(authResponse.refreshToken)
-                        Result.success(authResponse)
-                    } else {
-                        Result.failure(Exception("Token refresh failed"))
-                    }
+            val refreshToken = dataStoreManager.refreshToken.first()
+            if (refreshToken != null) {
+                val response = apiService.refreshToken(RefreshTokenRequest(refreshToken))
+                if (response.isSuccessful && response.body() != null) {
+                    val authResponse = response.body()!!
+                    dataStoreManager.saveAuthToken(authResponse.token)
+                    dataStoreManager.saveRefreshToken(authResponse.refreshToken)
+                    Result.success(authResponse)
                 } else {
-                    Result.failure(Exception("No refresh token available"))
+                    Result.failure(Exception("Token refresh failed"))
                 }
+            } else {
+                Result.failure(Exception("No refresh token available"))
             }
-            Result.failure(Exception("No refresh token available"))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -159,20 +153,17 @@ class AuthRepository @Inject constructor(
     
     suspend fun getCurrentUser(): Result<User> {
         return try {
-            val token = dataStoreManager.authToken
-            token.collect { authToken ->
-                if (authToken != null) {
-                    val response = apiService.getCurrentUser("Bearer $authToken")
-                    if (response.isSuccessful && response.body() != null) {
-                        Result.success(response.body()!!)
-                    } else {
-                        Result.failure(Exception("Failed to get user"))
-                    }
+            val authToken = dataStoreManager.authToken.first()
+            if (authToken != null) {
+                val response = apiService.getCurrentUser("Bearer $authToken")
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
                 } else {
-                    Result.failure(Exception("No auth token available"))
+                    Result.failure(Exception("Failed to get user"))
                 }
+            } else {
+                Result.failure(Exception("No auth token available"))
             }
-            Result.failure(Exception("No auth token available"))
         } catch (e: Exception) {
             Result.failure(e)
         }

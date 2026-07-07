@@ -1,7 +1,6 @@
 package com.swayog.employee.data.repository
 
 import com.swayog.employee.data.api.ApiService
-import com.swayog.employee.data.api.RetrofitClient
 import com.swayog.employee.data.local.dao.DailyCommitDao
 import com.swayog.employee.data.local.entity.DailyCommitEntity
 import com.swayog.employee.data.model.*
@@ -12,10 +11,9 @@ import javax.inject.Singleton
 
 @Singleton
 class DailyCommitRepository @Inject constructor(
-    private val dailyCommitDao: DailyCommitDao
+    private val dailyCommitDao: DailyCommitDao,
+    private val apiService: ApiService
 ) {
-    
-    private val apiService = RetrofitClient.apiService
     
     fun getDailyCommitsByEmployeeId(employeeId: String): Flow<List<DailyCommit>> {
         return dailyCommitDao.getDailyCommitsByEmployeeId(employeeId).map { entities ->

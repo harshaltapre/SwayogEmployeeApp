@@ -1,7 +1,6 @@
 package com.swayog.employee.data.repository
 
 import com.swayog.employee.data.api.ApiService
-import com.swayog.employee.data.api.RetrofitClient
 import com.swayog.employee.data.local.dao.AttendanceDao
 import com.swayog.employee.data.local.entity.AttendanceEntity
 import com.swayog.employee.data.model.*
@@ -13,10 +12,9 @@ import javax.inject.Singleton
 
 @Singleton
 class AttendanceRepository @Inject constructor(
-    private val attendanceDao: AttendanceDao
+    private val attendanceDao: AttendanceDao,
+    private val apiService: ApiService
 ) {
-    
-    private val apiService = RetrofitClient.apiService
     
     fun getAttendanceByEmployeeId(employeeId: String): Flow<List<AttendanceRecord>> {
         return attendanceDao.getAttendanceByEmployeeId(employeeId).map { entities ->
@@ -91,6 +89,11 @@ class AttendanceRepository @Inject constructor(
         return try {
             val response = apiService.checkOut("Bearer $token")
             if (response.isSuccessful) {
+                // Update local database with check-out time
+                val todayAttendance = attendanceDao.getTodayAttendance()
+                todayAttendance?.let {
+                    attendanceDao.updateAttendance(it.copy(checkOutTime = java.time.LocalDateTime.now().toString()))
+                }
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Check-out failed"))
@@ -115,6 +118,11 @@ class AttendanceRepository @Inject constructor(
                 )
             )
             if (response.isSuccessful) {
+                // Update local database with work description
+                val todayAttendance = attendanceDao.getTodayAttendance()
+                todayAttendance?.let {
+                    attendanceDao.updateAttendance(it.copy(notes = description))
+                }
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Failed to save work description"))

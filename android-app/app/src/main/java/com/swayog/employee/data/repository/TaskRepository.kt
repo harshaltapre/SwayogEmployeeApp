@@ -1,7 +1,7 @@
 package com.swayog.employee.data.repository
 
 import com.swayog.employee.data.api.ApiService
-import com.swayog.employee.data.api.RetrofitClient
+
 import com.swayog.employee.data.local.dao.TaskDao
 import com.swayog.employee.data.local.dao.OutboxQueueDao
 import com.swayog.employee.data.local.entity.TaskEntity
@@ -16,10 +16,10 @@ import javax.inject.Singleton
 @Singleton
 class TaskRepository @Inject constructor(
     private val taskDao: TaskDao,
-    private val outboxQueueDao: OutboxQueueDao
+    private val outboxQueueDao: OutboxQueueDao,
+    private val apiService: ApiService
 ) {
     
-    private val apiService = RetrofitClient.apiService
     
     fun getTasksByEmployeeId(employeeUserId: String): Flow<List<Task>> {
         return taskDao.getTasksByEmployeeId(employeeUserId).map { entities ->
@@ -154,8 +154,31 @@ class TaskRepository @Inject constructor(
                 
                 // Update local entity
                 val localTask = taskDao.getTaskById(taskId)
-                localTask?.let {
-                    taskDao.updateTask(it.copy(status = status, isSynced = false))
+                if (localTask != null) {
+                    taskDao.updateTask(localTask.copy(status = status, isSynced = false))
+                } else {
+                    // If task doesn't exist locally, create it with the new status
+                    val newTaskEntity = TaskEntity(
+                        id = taskId,
+                        jobType = "Unknown",
+                        description = "Task updated offline",
+                        customerName = "Unknown",
+                        customerPhone = "",
+                        address = "",
+                        latitude = null,
+                        longitude = null,
+                        status = status,
+                        scheduledTime = "",
+                        employeeUserId = "OfflineUser",
+                        assignedById = "",
+                        completionMessage = null,
+                        completionDocumentUrl = null,
+                        completedAt = null,
+                        createdAt = System.currentTimeMillis().toString(),
+                        updatedAt = System.currentTimeMillis().toString(),
+                        isSynced = false
+                    )
+                    taskDao.insertTask(newTaskEntity)
                 }
                 
                 Result.failure(Exception("Failed to update task"))

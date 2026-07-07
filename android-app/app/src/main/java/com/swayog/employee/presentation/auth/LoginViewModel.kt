@@ -54,8 +54,18 @@ class LoginViewModel @Inject constructor(
             return
         }
         
+        if (!isValidEmail(emailValue)) {
+            _loginState.value = LoginState.Error("Please enter a valid email address")
+            return
+        }
+        
         if (passwordValue.isBlank()) {
             _loginState.value = LoginState.Error("Please enter your password")
+            return
+        }
+        
+        if (passwordValue.length < 6) {
+            _loginState.value = LoginState.Error("Password must be at least 6 characters")
             return
         }
         
@@ -72,6 +82,11 @@ class LoginViewModel @Inject constructor(
                     )
                 }
         }
+    }
+    
+    private fun isValidEmail(email: String): Boolean {
+        val emailRegex = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+        return email.matches(emailRegex.toRegex())
     }
     
     fun loginWithBiometric() {

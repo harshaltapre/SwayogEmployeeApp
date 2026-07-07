@@ -63,15 +63,25 @@ class DashboardViewModel @Inject constructor(
             val tokenValue = dataStoreManager.authToken.first()
             
             if (userIdValue != null && tokenValue != null) {
+                var hasError = false
+                var errorMessage = ""
+                
                 // Load tasks
                 taskRepository.refreshTasks(userIdValue, "Bearer $tokenValue")
                     .onSuccess { taskList ->
                         _tasks.value = taskList
                     }
-                    .onFailure {
+                    .onFailure { error ->
+                        hasError = true
+                        errorMessage += "Tasks: ${error.message}. "
                         // Load from local cache if API fails
-                        taskRepository.getTasksByEmployeeId(userIdValue).collect { localTasks ->
-                            _tasks.value = localTasks
+                        viewModelScope.launch {
+                            try {
+                                val localTasks = taskRepository.getTasksByEmployeeId(userIdValue).first()
+                                _tasks.value = localTasks
+                            } catch (e: Exception) {
+                                // Ignore
+                            }
                         }
                     }
                 
@@ -79,6 +89,10 @@ class DashboardViewModel @Inject constructor(
                 attendanceRepository.getTodayAttendance("Bearer $tokenValue")
                     .onSuccess { attendance ->
                         _todayAttendance.value = attendance
+                    }
+                    .onFailure { error ->
+                        hasError = true
+                        errorMessage += "Attendance: ${error.message}. "
                     }
                 
                 // Load performance
@@ -91,8 +105,16 @@ class DashboardViewModel @Inject constructor(
                     .onSuccess { perf ->
                         _performance.value = perf
                     }
+                    .onFailure { error ->
+                        hasError = true
+                        errorMessage += "Performance: ${error.message}. "
+                    }
                 
-                _dashboardState.value = DashboardState.Success
+                if (hasError && _tasks.value.isEmpty()) {
+                    _dashboardState.value = DashboardState.Error("Failed to load dashboard data: $errorMessage")
+                } else {
+                    _dashboardState.value = DashboardState.Success
+                }
             } else {
                 _dashboardState.value = DashboardState.Error("User not authenticated")
             }
