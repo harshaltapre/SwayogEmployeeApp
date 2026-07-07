@@ -5,8 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="98b90a9a-ccc4-4952-80ab-1572b390d732" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/src/pages/employee/SubAdminDashboard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/pages/employee/SubAdminDashboard.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/pages/inventory/Dashboard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/pages/inventory/Dashboard.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/gradle.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/gradle.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -25,12 +27,12 @@
     &quot;assignee&quot;: &quot;harshaltapre&quot;
   }
 }</component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/harshaltapre/SwayogEmployeeApp.git",
-    "accountId": "37cce656-7bb1-49a7-9dcb-5f1b4b830925"
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/harshaltapre/SwayogEmployeeApp.git&quot;,
+    &quot;accountId&quot;: &quot;37cce656-7bb1-49a7-9dcb-5f1b4b830925&quot;
   }
-}]]></component>
+}</component>
   <component name="ProjectColorInfo">{
   &quot;customColor&quot;: &quot;&quot;,
   &quot;associatedIndex&quot;: 4
