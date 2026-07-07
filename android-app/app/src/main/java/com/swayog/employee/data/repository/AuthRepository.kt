@@ -69,7 +69,7 @@ class AuthRepository @Inject constructor(
     
     suspend fun loginWithPhone(phoneNumber: String, otp: String): Result<AuthResponse> {
         return try {
-            val response = apiService.login(LoginWithPhoneRequest(phoneNumber, otp))
+            val response = apiService.loginWithPhone(LoginWithPhoneRequest(phoneNumber, otp))
             if (response.isSuccessful && response.body() != null) {
                 val authResponse = response.body()!!
                 

@@ -9,6 +9,9 @@ interface ApiService {
     // Auth endpoints
     @POST("auth/login")
     suspend fun login(@Body request: LoginRequest): Response<AuthResponse>
+
+    @POST("auth/login-phone")
+    suspend fun loginWithPhone(@Body request: LoginWithPhoneRequest): Response<AuthResponse>
     
     @POST("auth/register")
     suspend fun register(@Body request: RegisterRequest): Response<AuthResponse>

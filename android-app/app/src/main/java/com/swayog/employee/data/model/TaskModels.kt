@@ -35,9 +35,9 @@ data class CreateTaskRequest(
 )
 
 data class UpdateTaskRequest(
-    val status: String?,
-    val description: String?,
-    val scheduledTime: String?
+    val status: String? = null,
+    val description: String? = null,
+    val scheduledTime: String? = null
 )
 
 data class AssignTaskRequest(

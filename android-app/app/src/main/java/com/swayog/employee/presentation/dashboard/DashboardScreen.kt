@@ -107,7 +107,7 @@ fun DashboardScreen(
                             SwayogStatCard(
                                 title = "Completed",
                                 value = completedTasks.size.toString(),
-                                color = MaterialTheme.colorScheme.secondary,
+                                contentColor = MaterialTheme.colorScheme.onSecondary,
                                 modifier = Modifier.weight(1f),
                                 backgroundColor = MaterialTheme.colorScheme.secondary
                             )
