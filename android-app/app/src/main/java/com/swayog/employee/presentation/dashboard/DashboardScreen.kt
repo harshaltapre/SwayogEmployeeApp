@@ -63,7 +63,7 @@ fun DashboardScreen(
             is DashboardState.Error -> {
                 ErrorScreen(
                     message = (dashboardState as DashboardState.Error).message,
-                    onRetry = viewModel::loadDashboardData,
+                    onRetry = viewModel::retryLoading,
                     modifier = Modifier.padding(paddingValues)
                 )
             }

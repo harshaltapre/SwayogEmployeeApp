@@ -30,8 +30,8 @@ const loginRateLimit = createRateLimit({
   windowMs: env.AUTH_LOGIN_RATE_LIMIT_WINDOW_MS,
   message: "Too many login attempts. Please try again later.",
   keyGenerator: (req) => {
-    const body = (req.body ?? {}) as { identifier?: string };
-    const identifier = body.identifier?.trim().toLowerCase() ?? "unknown";
+    const body = (req.body ?? {}) as { identifier?: string; email?: string };
+    const identifier = (body.identifier || body.email)?.trim().toLowerCase() ?? "unknown";
     return `${getRequestIp(req)}:${identifier}`;
   },
 });

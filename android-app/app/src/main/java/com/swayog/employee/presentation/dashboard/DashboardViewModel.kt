@@ -52,69 +52,78 @@ class DashboardViewModel @Inject constructor(
     val performance: StateFlow<com.swayog.employee.data.model.PerformanceSnapshot?> = _performance.asStateFlow()
     
     init {
-        loadDashboardData()
+        viewModelScope.launch {
+            combine(dataStoreManager.userId, dataStoreManager.authToken) { id, token ->
+                id to token
+            }.filter { it.first != null && it.second != null }
+                .distinctUntilChanged()
+                .collect { (id, _) ->
+                    loadDashboardData(id!!)
+                }
+        }
     }
     
-    fun loadDashboardData() {
+    fun loadDashboardData(userIdValue: String) {
         viewModelScope.launch {
             _dashboardState.value = DashboardState.Loading
             
-            val userIdValue = userId.first()
-            val tokenValue = dataStoreManager.authToken.first()
+            var hasError = false
+            var errorMessage = ""
             
-            if (userIdValue != null && tokenValue != null) {
-                var hasError = false
-                var errorMessage = ""
-                
-                // Load tasks
-                taskRepository.refreshTasks(userIdValue, "Bearer $tokenValue")
-                    .onSuccess { taskList ->
-                        _tasks.value = taskList
-                    }
-                    .onFailure { error ->
-                        hasError = true
-                        errorMessage += "Tasks: ${error.message}. "
-                        // Load from local cache if API fails
-                        viewModelScope.launch {
-                            try {
-                                val localTasks = taskRepository.getTasksByEmployeeId(userIdValue).first()
-                                _tasks.value = localTasks
-                            } catch (e: Exception) {
-                                // Ignore
-                            }
-                        }
-                    }
-                
-                // Load today's attendance
-                attendanceRepository.getTodayAttendance("Bearer $tokenValue")
-                    .onSuccess { attendance ->
-                        _todayAttendance.value = attendance
-                    }
-                    .onFailure { error ->
-                        hasError = true
-                        errorMessage += "Attendance: ${error.message}. "
-                    }
-                
-                // Load performance
-                val now = Calendar.getInstance()
-                attendanceRepository.getPerformance(
-                    now.get(Calendar.MONTH) + 1,
-                    now.get(Calendar.YEAR),
-                    "Bearer $tokenValue"
-                )
-                    .onSuccess { perf ->
-                        _performance.value = perf
-                    }
-                    .onFailure { error ->
-                        hasError = true
-                        errorMessage += "Performance: ${error.message}. "
-                    }
-                
-                if (hasError && _tasks.value.isEmpty()) {
-                    _dashboardState.value = DashboardState.Error("Failed to load dashboard data: $errorMessage")
-                } else {
-                    _dashboardState.value = DashboardState.Success
+            // Load tasks
+            taskRepository.refreshTasks(userIdValue)
+                .onSuccess { taskList ->
+                    _tasks.value = taskList
                 }
+                .onFailure { error ->
+                    hasError = true
+                    errorMessage += "Tasks: ${error.message}. "
+                    // Load from local cache if API fails
+                    try {
+                        val localTasks = taskRepository.getTasksByEmployeeId(userIdValue).first()
+                        _tasks.value = localTasks
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
+                }
+            
+            // Load today's attendance
+            attendanceRepository.getTodayAttendance()
+                .onSuccess { attendance ->
+                    _todayAttendance.value = attendance
+                }
+                .onFailure { error ->
+                    hasError = true
+                    errorMessage += "Attendance: ${error.message}. "
+                }
+            
+            // Load performance
+            val now = Calendar.getInstance()
+            attendanceRepository.getPerformance(
+                now.get(Calendar.MONTH) + 1,
+                now.get(Calendar.YEAR)
+            )
+                .onSuccess { perf ->
+                    _performance.value = perf
+                }
+                .onFailure { error ->
+                    hasError = true
+                    errorMessage += "Performance: ${error.message}. "
+                }
+            
+            if (hasError && _tasks.value.isEmpty()) {
+                _dashboardState.value = DashboardState.Error("Failed to load dashboard data: $errorMessage")
+            } else {
+                _dashboardState.value = DashboardState.Success
+            }
+        }
+    }
+    
+    fun retryLoading() {
+        viewModelScope.launch {
+            val id = dataStoreManager.userId.first()
+            if (id != null) {
+                loadDashboardData(id)
             } else {
                 _dashboardState.value = DashboardState.Error("User not authenticated")
             }
@@ -123,14 +132,11 @@ class DashboardViewModel @Inject constructor(
     
     fun saveWorkDescription(description: String) {
         viewModelScope.launch {
-            val userIdValue = userId.first()
-            val tokenValue = dataStoreManager.authToken.first()
-            
-            if (userIdValue != null && tokenValue != null) {
+            val userIdValue = dataStoreManager.userId.first()
+            if (userIdValue != null) {
                 attendanceRepository.saveWorkDescription(
                     userIdValue,
-                    description,
-                    "Bearer $tokenValue"
+                    description
                 )
                     .onSuccess {
                         _dashboardState.value = DashboardState.WorkDescriptionSaved

@@ -2,9 +2,16 @@ package com.swayog.employee.data.model
 
 import com.google.gson.annotations.SerializedName
 
+data class ApiResponse<T>(
+    val success: Boolean,
+    val message: String,
+    val data: T?
+)
+
 data class LoginRequest(
     val email: String,
-    val password: String
+    val password: String,
+    val role: String = "EMPLOYEE"
 )
 
 data class LoginWithPhoneRequest(
@@ -25,24 +32,25 @@ data class RefreshTokenRequest(
 
 data class AuthResponse(
     val user: User,
+    @SerializedName("accessToken")
     val token: String,
     val refreshToken: String
 )
 
 data class User(
     val id: String,
-    val loginId: String,
-    val employeeCode: String?,
-    val email: String,
-    val phoneNumber: String?,
     val fullName: String,
+    val email: String,
     val role: String,
-    val designationTitle: String?,
-    val departmentId: String?,
-    val reportingManagerId: String?,
     val isActive: Boolean,
-    val createdAt: String,
-    val employeeProfile: EmployeeProfile?
+    val loginId: String? = null,
+    val employeeCode: String? = null,
+    val phoneNumber: String? = null,
+    val designationTitle: String? = null,
+    val departmentId: String? = null,
+    val reportingManagerId: String? = null,
+    val createdAt: String? = null,
+    val employeeProfile: EmployeeProfile? = null
 )
 
 data class EmployeeProfile(

@@ -1,7 +1,6 @@
 package com.swayog.employee.data.repository
 
 import com.swayog.employee.data.api.ApiService
-
 import com.swayog.employee.data.local.dao.CustomerDao
 import com.swayog.employee.data.local.entity.CustomerEntity
 import com.swayog.employee.data.model.*
@@ -80,11 +79,11 @@ class CustomerRepository @Inject constructor(
         }
     }
     
-    suspend fun refreshCustomers(limit: Int?, city: String?, token: String): Result<List<Customer>> {
+    suspend fun refreshCustomers(limit: Int?, city: String?): Result<List<Customer>> {
         return try {
-            val response = apiService.getCustomers("Bearer $token", limit, city)
-            if (response.isSuccessful && response.body() != null) {
-                val customers = response.body()!!
+            val response = apiService.getCustomers(limit, city)
+            if (response.isSuccessful && response.body()?.data != null) {
+                val customers = response.body()!!.data!!
                 val entities = customers.map { customer ->
                     CustomerEntity(
                         id = customer.id,
@@ -122,11 +121,11 @@ class CustomerRepository @Inject constructor(
         }
     }
     
-    suspend fun getCustomerSummary(customerId: Int, token: String): Result<CustomerSummary> {
+    suspend fun getCustomerSummary(customerId: Int): Result<CustomerSummary> {
         return try {
-            val response = apiService.getCustomerSummary("Bearer $token", customerId)
-            if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!)
+            val response = apiService.getCustomerSummary(customerId)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
             } else {
                 Result.failure(Exception("Failed to fetch customer summary"))
             }
@@ -135,11 +134,11 @@ class CustomerRepository @Inject constructor(
         }
     }
     
-    suspend fun getCustomerInverterGeneration(customerId: Int, token: String): Result<InverterGeneration> {
+    suspend fun getCustomerInverterGeneration(customerId: Int): Result<InverterGeneration> {
         return try {
-            val response = apiService.getCustomerInverterGeneration("Bearer $token", customerId)
-            if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!)
+            val response = apiService.getCustomerInverterGeneration(customerId)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
             } else {
                 Result.failure(Exception("Failed to fetch inverter generation"))
             }
@@ -150,13 +149,12 @@ class CustomerRepository @Inject constructor(
     
     suspend fun updateCustomerCredentials(
         customerId: Int,
-        request: UpdateCredentialsRequest,
-        token: String
+        request: UpdateCredentialsRequest
     ): Result<Customer> {
         return try {
-            val response = apiService.updateCustomerCredentials("Bearer $token", customerId, request)
-            if (response.isSuccessful && response.body() != null) {
-                val customer = response.body()!!
+            val response = apiService.updateCustomerCredentials(customerId, request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                val customer = response.body()!!.data!!
                 val entity = CustomerEntity(
                     id = customer.id,
                     customerCode = customer.customerCode,

@@ -25,8 +25,8 @@ android {
         }
 
         // BuildConfig fields for API configuration
-        buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "http://10.0.2.2:4000/api/v1/"}\"")
-        buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "ws://10.0.2.2:4000"}\"")
+        buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "http://192.168.1.6:4000/api/v1/"}\"")
+        buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "ws://192.168.1.6:4000"}\"")
         buildConfigField("String", "MAPS_API_KEY", "\"${project.findProperty("MAPS_API_KEY") ?: ""}\"")
     }
 
@@ -42,8 +42,8 @@ android {
         }
         debug {
             isDebuggable = true
-            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "http://10.0.2.2:4000/api/v1/"}\"")
-            buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "ws://10.0.2.2:4000"}\"")
+            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "http://192.168.1.6:4000/api/v1/"}\"")
+            buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "ws://192.168.1.6:4000"}\"")
         }
     }
     

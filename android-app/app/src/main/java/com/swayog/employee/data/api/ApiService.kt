@@ -8,165 +8,136 @@ interface ApiService {
     
     // Auth endpoints
     @POST("auth/login")
-    suspend fun login(@Body request: LoginRequest): Response<AuthResponse>
+    suspend fun login(@Body request: LoginRequest): Response<ApiResponse<AuthResponse>>
 
     @POST("auth/login-with-phone")
-    suspend fun loginWithPhone(@Body request: LoginWithPhoneRequest): Response<AuthResponse>
+    suspend fun loginWithPhone(@Body request: LoginWithPhoneRequest): Response<ApiResponse<AuthResponse>>
     
     @POST("auth/register")
-    suspend fun register(@Body request: RegisterRequest): Response<AuthResponse>
+    suspend fun register(@Body request: RegisterRequest): Response<ApiResponse<AuthResponse>>
     
     @POST("auth/refresh")
-    suspend fun refreshToken(@Body request: RefreshTokenRequest): Response<AuthResponse>
+    suspend fun refreshToken(@Body request: RefreshTokenRequest): Response<ApiResponse<AuthResponse>>
     
     @POST("auth/logout")
-    suspend fun logout(@Header("Authorization") token: String): Response<Unit>
+    suspend fun logout(): Response<ApiResponse<Unit>>
     
     @GET("auth/me")
-    suspend fun getCurrentUser(@Header("Authorization") token: String): Response<User>
+    suspend fun getCurrentUser(): Response<ApiResponse<User>>
     
     // Employee endpoints
     @GET("employee/tasks")
     suspend fun getEmployeeTasks(
-        @Header("Authorization") token: String,
         @Query("employeeUserId") employeeUserId: String
-    ): Response<List<Task>>
+    ): Response<ApiResponse<List<Task>>>
     
     @GET("employee/attendance/today")
-    suspend fun getTodayAttendance(
-        @Header("Authorization") token: String
-    ): Response<AttendanceRecord>
+    suspend fun getTodayAttendance(): Response<ApiResponse<AttendanceRecord>>
     
     @POST("employee/check-in")
     suspend fun checkIn(
-        @Header("Authorization") token: String,
         @Body request: CheckInRequest
-    ): Response<CheckInResponse>
+    ): Response<ApiResponse<CheckInResponse>>
     
     @POST("employee/check-out")
-    suspend fun checkOut(
-        @Header("Authorization") token: String
-    ): Response<Unit>
+    suspend fun checkOut(): Response<ApiResponse<Unit>>
     
     @POST("employee/work-description")
     suspend fun saveWorkDescription(
-        @Header("Authorization") token: String,
         @Body request: WorkDescriptionRequest
-    ): Response<Unit>
+    ): Response<ApiResponse<Unit>>
     
     @GET("employee/performance")
     suspend fun getPerformance(
-        @Header("Authorization") token: String,
         @Query("month") month: Int,
         @Query("year") year: Int
-    ): Response<PerformanceSnapshot>
+    ): Response<ApiResponse<PerformanceSnapshot>>
     
     @GET("employee/daily-commits")
-    suspend fun getDailyCommits(
-        @Header("Authorization") token: String
-    ): Response<List<DailyCommit>>
+    suspend fun getDailyCommits(): Response<ApiResponse<List<DailyCommit>>>
     
     @POST("employee/daily-commits")
     suspend fun createDailyCommit(
-        @Header("Authorization") token: String,
         @Body request: DailyCommitRequest
-    ): Response<DailyCommit>
+    ): Response<ApiResponse<DailyCommit>>
     
     // Sub-admin endpoints
     @GET("subadmin/customers")
     suspend fun getCustomers(
-        @Header("Authorization") token: String,
         @Query("limit") limit: Int?,
         @Query("city") city: String?
-    ): Response<List<Customer>>
+    ): Response<ApiResponse<List<Customer>>>
     
     @GET("subadmin/customers/{customerId}/summary")
     suspend fun getCustomerSummary(
-        @Header("Authorization") token: String,
         @Path("customerId") customerId: Int
-    ): Response<CustomerSummary>
+    ): Response<ApiResponse<CustomerSummary>>
     
     @GET("subadmin/customers/{customerId}/inverter-generation")
     suspend fun getCustomerInverterGeneration(
-        @Header("Authorization") token: String,
         @Path("customerId") customerId: Int
-    ): Response<InverterGeneration>
+    ): Response<ApiResponse<InverterGeneration>>
     
     @GET("subadmin/customers/{customerId}/inverter-generation-history")
     suspend fun getCustomerInverterGenerationHistory(
-        @Header("Authorization") token: String,
         @Path("customerId") customerId: Int,
         @Query("period") period: String
-    ): Response<List<GenerationHistory>>
+    ): Response<ApiResponse<List<GenerationHistory>>>
     
     @PATCH("subadmin/customers/{customerId}")
     suspend fun updateCustomerCredentials(
-        @Header("Authorization") token: String,
         @Path("customerId") customerId: Int,
         @Body request: UpdateCredentialsRequest
-    ): Response<Customer>
+    ): Response<ApiResponse<Customer>>
     
     @GET("subadmin/complaints")
-    suspend fun getComplaints(
-        @Header("Authorization") token: String
-    ): Response<List<ServiceRequest>>
+    suspend fun getComplaints(): Response<ApiResponse<List<ServiceRequest>>>
     
     @GET("subadmin/employees")
-    suspend fun getSubAdminEmployees(
-        @Header("Authorization") token: String
-    ): Response<List<User>>
+    suspend fun getSubAdminEmployees(): Response<ApiResponse<List<User>>>
     
     // Task endpoints
     @POST("tasks")
     suspend fun createTask(
-        @Header("Authorization") token: String,
         @Body request: CreateTaskRequest
-    ): Response<Task>
+    ): Response<ApiResponse<Task>>
     
     @PATCH("tasks/{taskId}")
     suspend fun updateTask(
-        @Header("Authorization") token: String,
         @Path("taskId") taskId: Int,
         @Body request: UpdateTaskRequest
-    ): Response<Task>
+    ): Response<ApiResponse<Task>>
     
     @POST("tasks/{taskId}/assign")
     suspend fun assignTask(
-        @Header("Authorization") token: String,
         @Path("taskId") taskId: Int,
         @Body request: AssignTaskRequest
-    ): Response<Task>
+    ): Response<ApiResponse<Task>>
     
     @POST("tasks/{taskId}/complete")
     suspend fun completeTask(
-        @Header("Authorization") token: String,
         @Path("taskId") taskId: Int,
         @Body request: CompleteTaskRequest
-    ): Response<Task>
+    ): Response<ApiResponse<Task>>
     
     // AMC endpoints
     @GET("amc/visits")
     suspend fun getAmcVisits(
-        @Header("Authorization") token: String,
         @Query("employeeId") employeeId: String?
-    ): Response<List<AmcVisit>>
+    ): Response<ApiResponse<List<AmcVisit>>>
     
     @PATCH("amc/visits/{visitId}")
     suspend fun updateAmcVisit(
-        @Header("Authorization") token: String,
         @Path("visitId") visitId: String,
         @Body request: UpdateAmcVisitRequest
-    ): Response<AmcVisit>
+    ): Response<ApiResponse<AmcVisit>>
     
     // Inventory endpoints
     @GET("inventory")
-    suspend fun getInventory(
-        @Header("Authorization") token: String
-    ): Response<List<InventoryItem>>
+    suspend fun getInventory(): Response<ApiResponse<List<InventoryItem>>>
     
     @POST("inventory/dispatch")
     suspend fun createDispatch(
-        @Header("Authorization") token: String,
         @Body request: DispatchRequest
-    ): Response<DispatchRecord>
+    ): Response<ApiResponse<DispatchRecord>>
 }

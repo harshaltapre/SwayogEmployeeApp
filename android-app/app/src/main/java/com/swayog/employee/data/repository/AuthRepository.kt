@@ -6,6 +6,8 @@ import com.swayog.employee.data.local.entity.UserEntity
 import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.swayog.employee.data.model.*
 import kotlinx.coroutines.flow.first
+import retrofit2.Response
+import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,8 +21,8 @@ class AuthRepository @Inject constructor(
     suspend fun login(email: String, password: String): Result<AuthResponse> {
         return try {
             val response = apiService.login(LoginRequest(email, password))
-            if (response.isSuccessful && response.body() != null) {
-                val authResponse = response.body()!!
+            if (response.isSuccessful && response.body()?.data != null) {
+                val authResponse = response.body()!!.data!!
                 
                 // Save tokens
                 dataStoreManager.saveAuthToken(authResponse.token)
@@ -39,7 +41,7 @@ class AuthRepository @Inject constructor(
                 // Save user to local database
                 val userEntity = UserEntity(
                     id = user.id,
-                    loginId = user.loginId,
+                    loginId = user.loginId ?: "",
                     employeeCode = user.employeeCode,
                     email = user.email,
                     phoneNumber = user.phoneNumber,
@@ -49,7 +51,7 @@ class AuthRepository @Inject constructor(
                     departmentId = user.departmentId,
                     reportingManagerId = user.reportingManagerId,
                     isActive = user.isActive,
-                    createdAt = user.createdAt,
+                    createdAt = user.createdAt ?: "",
                     jobRole = user.employeeProfile?.jobRole,
                     zone = user.employeeProfile?.zone,
                     monthlySalaryInr = user.employeeProfile?.monthlySalaryInr,
@@ -59,7 +61,8 @@ class AuthRepository @Inject constructor(
                 
                 Result.success(authResponse)
             } else {
-                Result.failure(Exception("Login failed: ${response.message()}"))
+                val errorMsg = response.body()?.message ?: parseErrorMessage(response)
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -69,8 +72,8 @@ class AuthRepository @Inject constructor(
     suspend fun loginWithPhone(phoneNumber: String, otp: String): Result<AuthResponse> {
         return try {
             val response = apiService.loginWithPhone(LoginWithPhoneRequest(phoneNumber, otp))
-            if (response.isSuccessful && response.body() != null) {
-                val authResponse = response.body()!!
+            if (response.isSuccessful && response.body()?.data != null) {
+                val authResponse = response.body()!!.data!!
                 
                 // Save tokens
                 dataStoreManager.saveAuthToken(authResponse.token)
@@ -88,7 +91,8 @@ class AuthRepository @Inject constructor(
                 
                 Result.success(authResponse)
             } else {
-                Result.failure(Exception("Login failed: ${response.message()}"))
+                val errorMsg = response.body()?.message ?: parseErrorMessage(response)
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -103,10 +107,11 @@ class AuthRepository @Inject constructor(
     ): Result<AuthResponse> {
         return try {
             val response = apiService.register(RegisterRequest(email, password, fullName, phoneNumber))
-            if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Registration failed: ${response.message()}"))
+                val errorMsg = response.body()?.message ?: parseErrorMessage(response)
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -115,10 +120,7 @@ class AuthRepository @Inject constructor(
     
     suspend fun logout(): Result<Unit> {
         return try {
-            val authToken = dataStoreManager.authToken.first()
-            if (authToken != null) {
-                apiService.logout("Bearer $authToken")
-            }
+            apiService.logout()
             
             // Clear local data
             dataStoreManager.clearAll()
@@ -135,8 +137,8 @@ class AuthRepository @Inject constructor(
             val refreshToken = dataStoreManager.refreshToken.first()
             if (refreshToken != null) {
                 val response = apiService.refreshToken(RefreshTokenRequest(refreshToken))
-                if (response.isSuccessful && response.body() != null) {
-                    val authResponse = response.body()!!
+                if (response.isSuccessful && response.body()?.data != null) {
+                    val authResponse = response.body()!!.data!!
                     dataStoreManager.saveAuthToken(authResponse.token)
                     dataStoreManager.saveRefreshToken(authResponse.refreshToken)
                     Result.success(authResponse)
@@ -153,19 +155,94 @@ class AuthRepository @Inject constructor(
     
     suspend fun getCurrentUser(): Result<User> {
         return try {
-            val authToken = dataStoreManager.authToken.first()
-            if (authToken != null) {
-                val response = apiService.getCurrentUser("Bearer $authToken")
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Failed to get user"))
-                }
+            val response = apiService.getCurrentUser()
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("No auth token available"))
+                Result.failure(Exception("Failed to get user"))
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun mockLogin(): Result<AuthResponse> {
+        val mockUser = User(
+            id = "mock-123",
+            loginId = "testuser",
+            employeeCode = "EMP-001",
+            email = "test@swayog.com",
+            phoneNumber = "+91 9876543210",
+            fullName = "Test User",
+            role = "employee",
+            designationTitle = "Software Engineer",
+            departmentId = "DEPT-01",
+            reportingManagerId = "MGR-01",
+            isActive = true,
+            createdAt = "2024-01-01T00:00:00Z",
+            employeeProfile = EmployeeProfile(
+                id = "prof-123",
+                userId = "mock-123",
+                jobRole = "Developer",
+                zone = "Pune",
+                monthlySalaryInr = 50000,
+                isActive = true
+            )
+        )
+        val mockResponse = AuthResponse(
+            user = mockUser,
+            token = "mock-token",
+            refreshToken = "mock-refresh-token"
+        )
+
+        // Save tokens
+        dataStoreManager.saveAuthToken(mockResponse.token)
+        dataStoreManager.saveRefreshToken(mockResponse.refreshToken)
+
+        // Save user info
+        dataStoreManager.saveUserInfo(
+            userId = mockUser.id,
+            email = mockUser.email,
+            name = mockUser.fullName,
+            role = mockUser.role,
+            jobRole = mockUser.employeeProfile?.jobRole
+        )
+
+        // Save user to local database
+        val userEntity = UserEntity(
+            id = mockUser.id,
+            loginId = mockUser.loginId ?: "",
+            employeeCode = mockUser.employeeCode,
+            email = mockUser.email,
+            phoneNumber = mockUser.phoneNumber,
+            fullName = mockUser.fullName,
+            role = mockUser.role,
+            designationTitle = mockUser.designationTitle,
+            departmentId = mockUser.departmentId,
+            reportingManagerId = mockUser.reportingManagerId,
+            isActive = mockUser.isActive,
+            createdAt = mockUser.createdAt ?: "",
+            jobRole = mockUser.employeeProfile?.jobRole,
+            zone = mockUser.employeeProfile?.zone,
+            monthlySalaryInr = mockUser.employeeProfile?.monthlySalaryInr,
+            profilePhotoUrl = null
+        )
+        userDao.insertUser(userEntity)
+
+        return Result.success(mockResponse)
+    }
+
+    private fun parseErrorMessage(response: Response<*>): String {
+        return try {
+            val errorBody = response.errorBody()?.string()
+            if (!errorBody.isNullOrEmpty()) {
+                val jsonObject = JSONObject(errorBody)
+                jsonObject.optString("error", response.message())
+            } else {
+                response.message()
+            }
+        } catch (e: Exception) {
+            response.message()
         }
     }
 }

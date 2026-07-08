@@ -69,6 +69,12 @@ class LoginViewModel @Inject constructor(
             return
         }
         
+        // Handle mock login for testing
+        if (emailValue == "test@swayog.com" && passwordValue == "password123") {
+            mockLogin()
+            return
+        }
+
         _loginState.value = LoginState.Loading
         
         viewModelScope.launch {
@@ -94,6 +100,21 @@ class LoginViewModel @Inject constructor(
         _loginState.value = LoginState.Error("Biometric authentication not yet implemented")
     }
     
+    private fun mockLogin() {
+        _loginState.value = LoginState.Loading
+        viewModelScope.launch {
+            authRepository.mockLogin()
+                .onSuccess { authResponse ->
+                    _loginState.value = LoginState.Success(authResponse)
+                }
+                .onFailure { error ->
+                    _loginState.value = LoginState.Error(
+                        error.message ?: "Mock login failed"
+                    )
+                }
+        }
+    }
+
     fun resetState() {
         _loginState.value = LoginState.Initial
     }

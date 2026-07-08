@@ -35,11 +35,11 @@ class DailyCommitRepository @Inject constructor(
         }
     }
     
-    suspend fun refreshDailyCommits(employeeId: String, token: String): Result<List<DailyCommit>> {
+    suspend fun refreshDailyCommits(): Result<List<DailyCommit>> {
         return try {
-            val response = apiService.getDailyCommits("Bearer $token")
-            if (response.isSuccessful && response.body() != null) {
-                val commits = response.body()!!
+            val response = apiService.getDailyCommits()
+            if (response.isSuccessful && response.body()?.data != null) {
+                val commits = response.body()!!.data!!
                 val entities = commits.map { commit ->
                     DailyCommitEntity(
                         id = commit.id,
@@ -74,12 +74,10 @@ class DailyCommitRepository @Inject constructor(
         hoursSpent: Double,
         issuesBlockers: String?,
         tomorrowPlan: String?,
-        attachmentUrl: String?,
-        token: String
+        attachmentUrl: String?
     ): Result<DailyCommit> {
         return try {
             val response = apiService.createDailyCommit(
-                "Bearer $token",
                 DailyCommitRequest(
                     employeeId = employeeId,
                     commitDate = commitDate,
@@ -91,8 +89,8 @@ class DailyCommitRepository @Inject constructor(
                     attachmentUrl = attachmentUrl
                 )
             )
-            if (response.isSuccessful && response.body() != null) {
-                val commit = response.body()!!
+            if (response.isSuccessful && response.body()?.data != null) {
+                val commit = response.body()!!.data!!
                 val entity = DailyCommitEntity(
                     id = commit.id,
                     employeeId = commit.employeeId,
