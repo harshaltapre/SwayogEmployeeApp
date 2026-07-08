@@ -20,9 +20,13 @@ export const registerSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  identifier: z.string().min(1),
+  identifier: z.string().min(1).optional(),
+  email: z.string().email().optional(),
   password: z.string().min(8),
-  role: UserRoleSchema.describe("Required - must match user's assigned role"),
+  role: UserRoleSchema.optional(),
+}).refine(data => data.identifier || data.email, {
+  message: "Either identifier or email must be provided",
+  path: ["identifier"],
 });
 
 export const refreshSchema = z.object({

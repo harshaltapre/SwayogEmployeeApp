@@ -316,25 +316,30 @@ export async function registerCustomer(input: RegisterInput) {
 
 export async function login(input: LoginInput) {
   try {
-    console.log("[AUTH] Login attempt for identifier:", input.identifier, "role:", input.role);
+    const identifier = input.identifier || input.email;
+    if (!identifier) {
+      throw new ApiError(400, "Identifier or email is required");
+    }
+    
+    console.log("[AUTH] Login attempt for identifier:", identifier, "role:", input.role);
     
     // Database-backed login flow
-    const user = await findUserByIdentifier(input.identifier);
+    const user = await findUserByIdentifier(identifier);
 
     if (!user || !user.isActive) {
-      console.warn("[AUTH] User not found or inactive:", input.identifier);
+      console.warn("[AUTH] User not found or inactive:", identifier);
       throw new ApiError(401, "Invalid email or password");
     }
 
     console.log("[AUTH] User found:", user.id, user.role);
 
-    // CRITICAL SECURITY CHECK: Validate role matches
-    if (user.role !== input.role) {
+    // CRITICAL SECURITY CHECK: Validate role matches ONLY if requested by the client (backward compatibility)
+    if (input.role && user.role !== input.role) {
       // Specialized case: SUB_ADMIN users should be allowed to login using the "EMPLOYEE" role selection
       const isSubAdminLoggingAsEmployee = (user.role === UserRole.SUB_ADMIN && (input.role as string) === "EMPLOYEE");
 
       if (!isSubAdminLoggingAsEmployee) {
-        console.warn("[AUTH] Role mismatch for identifier:", input.identifier, "user role:", user.role, "requested role:", input.role);
+        console.warn("[AUTH] Role mismatch for identifier:", identifier, "user role:", user.role, "requested role:", input.role);
         // Log the unauthorized access attempt
         await prisma.auditLog.create({
           data: {
@@ -345,7 +350,7 @@ export async function login(input: LoginInput) {
             metadata: {
               userRole: user.role,
               requestedRole: input.role,
-              identifier: input.identifier,
+              identifier: identifier,
             },
           },
         }).catch(() => {
