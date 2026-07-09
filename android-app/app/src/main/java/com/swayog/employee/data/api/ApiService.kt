@@ -29,10 +29,10 @@ interface ApiService {
     @GET("employee/tasks")
     suspend fun getEmployeeTasks(
         @Query("employeeUserId") employeeUserId: String
-    ): Response<ApiResponse<List<Task>>>
+    ): Response<ApiResponse<TasksResponse>>
     
     @GET("employee/attendance/today")
-    suspend fun getTodayAttendance(): Response<ApiResponse<AttendanceRecord>>
+    suspend fun getTodayAttendance(): Response<ApiResponse<Any>>
     
     @POST("employee/check-in")
     suspend fun checkIn(

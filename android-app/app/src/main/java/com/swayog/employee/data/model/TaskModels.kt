@@ -58,3 +58,14 @@ data class TaskAssignee(
     val status: String,
     val createdAt: String
 )
+
+data class TasksResponse(
+    val tasks: List<Task>,
+    val pagination: Pagination?
+)
+
+data class Pagination(
+    val total: Int,
+    val limit: Int,
+    val offset: Int
+)

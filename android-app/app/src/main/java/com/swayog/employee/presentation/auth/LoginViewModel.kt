@@ -48,38 +48,18 @@ class LoginViewModel @Inject constructor(
     fun login() {
         val emailValue = _email.value.trim()
         val passwordValue = _password.value
-        
-        if (emailValue.isBlank()) {
-            _loginState.value = LoginState.Error("Please enter your email")
-            return
-        }
-        
-        if (!isValidEmail(emailValue)) {
-            _loginState.value = LoginState.Error("Please enter a valid email address")
-            return
-        }
-        
-        if (passwordValue.isBlank()) {
-            _loginState.value = LoginState.Error("Please enter your password")
-            return
-        }
-        
-        if (passwordValue.length < 6) {
-            _loginState.value = LoginState.Error("Password must be at least 6 characters")
-            return
-        }
-        
-        // Handle mock login for testing
-        if (emailValue == "test@swayog.com" && passwordValue == "password123") {
-            mockLogin()
+
+        if (emailValue.isBlank() || passwordValue.isBlank()) {
+            _loginState.value = LoginState.Error("Please enter email and password")
             return
         }
 
         _loginState.value = LoginState.Loading
-        
+
         viewModelScope.launch {
             authRepository.login(emailValue, passwordValue)
                 .onSuccess { authResponse ->
+                    // Success - proceed to dashboard
                     _loginState.value = LoginState.Success(authResponse)
                 }
                 .onFailure { error ->
@@ -98,21 +78,6 @@ class LoginViewModel @Inject constructor(
     fun loginWithBiometric() {
         // This will be implemented with BiometricPrompt
         _loginState.value = LoginState.Error("Biometric authentication not yet implemented")
-    }
-    
-    private fun mockLogin() {
-        _loginState.value = LoginState.Loading
-        viewModelScope.launch {
-            authRepository.mockLogin()
-                .onSuccess { authResponse ->
-                    _loginState.value = LoginState.Success(authResponse)
-                }
-                .onFailure { error ->
-                    _loginState.value = LoginState.Error(
-                        error.message ?: "Mock login failed"
-                    )
-                }
-        }
     }
 
     fun resetState() {

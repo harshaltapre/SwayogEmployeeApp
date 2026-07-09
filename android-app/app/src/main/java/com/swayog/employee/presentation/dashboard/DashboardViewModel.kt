@@ -66,11 +66,10 @@ class DashboardViewModel @Inject constructor(
     fun loadDashboardData(userIdValue: String) {
         viewModelScope.launch {
             _dashboardState.value = DashboardState.Loading
-            
             var hasError = false
             var errorMessage = ""
-            
-            // Load tasks
+
+            // 1. Load Tasks - Most Likely Culprit
             taskRepository.refreshTasks(userIdValue)
                 .onSuccess { taskList ->
                     _tasks.value = taskList
@@ -78,16 +77,11 @@ class DashboardViewModel @Inject constructor(
                 .onFailure { error ->
                     hasError = true
                     errorMessage += "Tasks: ${error.message}. "
-                    // Load from local cache if API fails
-                    try {
-                        val localTasks = taskRepository.getTasksByEmployeeId(userIdValue).first()
-                        _tasks.value = localTasks
-                    } catch (e: Exception) {
-                        // Ignore
-                    }
+                    // Safe fallback
+                    _tasks.value = emptyList()
                 }
-            
-            // Load today's attendance
+
+            // 2. Load Today's Attendance
             attendanceRepository.getTodayAttendance()
                 .onSuccess { attendance ->
                     _todayAttendance.value = attendance
@@ -95,9 +89,10 @@ class DashboardViewModel @Inject constructor(
                 .onFailure { error ->
                     hasError = true
                     errorMessage += "Attendance: ${error.message}. "
+                    _todayAttendance.value = null
                 }
-            
-            // Load performance
+
+            // 3. Load Performance
             val now = Calendar.getInstance()
             attendanceRepository.getPerformance(
                 now.get(Calendar.MONTH) + 1,
@@ -110,9 +105,12 @@ class DashboardViewModel @Inject constructor(
                     hasError = true
                     errorMessage += "Performance: ${error.message}. "
                 }
-            
-            if (hasError && _tasks.value.isEmpty()) {
-                _dashboardState.value = DashboardState.Error("Failed to load dashboard data: $errorMessage")
+
+            // Final State
+            if (hasError) {
+                _dashboardState.value = DashboardState.Error(
+                    "Failed to load dashboard data: $errorMessage"
+                )
             } else {
                 _dashboardState.value = DashboardState.Success
             }

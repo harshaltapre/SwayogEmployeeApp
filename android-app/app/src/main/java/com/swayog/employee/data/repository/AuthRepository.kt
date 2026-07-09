@@ -1,6 +1,7 @@
 package com.swayog.employee.data.repository
 
 import com.swayog.employee.data.api.ApiService
+import java.util.UUID
 import com.swayog.employee.data.local.dao.UserDao
 import com.swayog.employee.data.local.entity.UserEntity
 import com.swayog.employee.data.local.preferences.DataStoreManager
@@ -166,71 +167,7 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    suspend fun mockLogin(): Result<AuthResponse> {
-        val mockUser = User(
-            id = "mock-123",
-            loginId = "testuser",
-            employeeCode = "EMP-001",
-            email = "test@swayog.com",
-            phoneNumber = "+91 9876543210",
-            fullName = "Test User",
-            role = "employee",
-            designationTitle = "Software Engineer",
-            departmentId = "DEPT-01",
-            reportingManagerId = "MGR-01",
-            isActive = true,
-            createdAt = "2024-01-01T00:00:00Z",
-            employeeProfile = EmployeeProfile(
-                id = "prof-123",
-                userId = "mock-123",
-                jobRole = "Developer",
-                zone = "Pune",
-                monthlySalaryInr = 50000,
-                isActive = true
-            )
-        )
-        val mockResponse = AuthResponse(
-            user = mockUser,
-            token = "mock-token",
-            refreshToken = "mock-refresh-token"
-        )
 
-        // Save tokens
-        dataStoreManager.saveAuthToken(mockResponse.token)
-        dataStoreManager.saveRefreshToken(mockResponse.refreshToken)
-
-        // Save user info
-        dataStoreManager.saveUserInfo(
-            userId = mockUser.id,
-            email = mockUser.email,
-            name = mockUser.fullName,
-            role = mockUser.role,
-            jobRole = mockUser.employeeProfile?.jobRole
-        )
-
-        // Save user to local database
-        val userEntity = UserEntity(
-            id = mockUser.id,
-            loginId = mockUser.loginId ?: "",
-            employeeCode = mockUser.employeeCode,
-            email = mockUser.email,
-            phoneNumber = mockUser.phoneNumber,
-            fullName = mockUser.fullName,
-            role = mockUser.role,
-            designationTitle = mockUser.designationTitle,
-            departmentId = mockUser.departmentId,
-            reportingManagerId = mockUser.reportingManagerId,
-            isActive = mockUser.isActive,
-            createdAt = mockUser.createdAt ?: "",
-            jobRole = mockUser.employeeProfile?.jobRole,
-            zone = mockUser.employeeProfile?.zone,
-            monthlySalaryInr = mockUser.employeeProfile?.monthlySalaryInr,
-            profilePhotoUrl = null
-        )
-        userDao.insertUser(userEntity)
-
-        return Result.success(mockResponse)
-    }
 
     private fun parseErrorMessage(response: Response<*>): String {
         return try {
@@ -246,3 +183,4 @@ class AuthRepository @Inject constructor(
         }
     }
 }
+

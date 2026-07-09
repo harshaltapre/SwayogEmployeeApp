@@ -18,7 +18,14 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
       latitude: latitude ? Number(latitude) : null,
       longitude: longitude ? Number(longitude) : null,
     });
-    res.json({ success: true, result });
+    
+    // Map keys to match CheckInResponse model expected by the Android client
+    const formattedResult = {
+      checkIn: result.checkInRecord,
+      attendanceRecord: result.attendance
+    };
+    
+    res.json({ success: true, data: formattedResult });
   } catch (err: any) {
     res.status(400).json({ error: err?.message ?? "Unable to check in" });
   }
@@ -27,22 +34,54 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
 router.post("/check-out", employeeAuth, asyncHandler(async (req, res) => {
   try {
     const record = await AttendanceService.checkOut(req.auth!.userId);
-    res.json({ success: true, record });
+    res.json({ success: true, data: record });
   } catch (err: any) {
     res.status(400).json({ error: err?.message ?? "Unable to check out" });
   }
 }));
 
+router.post("/work-description", employeeAuth, asyncHandler(async (req, res) => {
+  try {
+    const { description } = req.body;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    today.setMilliseconds(0);
+    
+    const record = await prisma.attendanceRecord.findUnique({
+      where: {
+        employeeId_date: {
+          employeeId: req.auth!.userId,
+          date: today,
+        },
+      },
+    });
+
+    if (!record) {
+      res.status(400).json({ error: "No attendance check-in found for today" });
+      return;
+    }
+
+    const updated = await prisma.attendanceRecord.update({
+      where: { id: record.id },
+      data: { notes: description },
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message ?? "Unable to save work description" });
+  }
+}));
+
 router.get("/today", authenticateAccessToken, asyncHandler(async (req, res) => {
   const record = await AttendanceService.getTodayAttendance(req.auth!.userId);
-  res.json({ record });
+  res.json({ success: true, data: record });
 }));
 
 router.get("/monthly", authenticateAccessToken, asyncHandler(async (req, res) => {
   const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
   const year = parseInt(req.query.year as string) || new Date().getFullYear();
   const data = await AttendanceService.getMonthlyAttendance(req.auth!.userId, month, year);
-  res.json(data);
+  res.json({ success: true, data });
 }));
 
 router.get("/performance", authenticateAccessToken, asyncHandler(async (req, res) => {
@@ -51,7 +90,7 @@ router.get("/performance", authenticateAccessToken, asyncHandler(async (req, res
   const snapshot = await prisma.performanceSnapshot.findUnique({
     where: { employeeId_month_year: { employeeId: req.auth!.userId, month, year } },
   });
-  res.json({ snapshot });
+  res.json({ success: true, data: snapshot });
 }));
 
 router.post("/work-submissions", employeeAuth, asyncHandler(async (req, res) => {

@@ -33,11 +33,37 @@ class AttendanceRepository @Inject constructor(
         }
     }
     
-    suspend fun getTodayAttendance(): Result<AttendanceRecord> {
+    suspend fun getTodayAttendance(): Result<AttendanceRecord?> {
         return try {
             val response = apiService.getTodayAttendance()
-            if (response.isSuccessful && response.body()?.data != null) {
-                Result.success(response.body()!!.data!!)
+            
+            if (response.isSuccessful) {
+                val body = response.body()
+                
+                when {
+                    body?.data != null -> {
+                        val data = body.data
+                        val gson = com.google.gson.Gson()
+                        
+                        val attendanceRecord = when (data) {
+                            is AttendanceRecord -> data
+                            is List<*> -> {
+                                val firstItem = data.firstOrNull()
+                                if (firstItem != null) {
+                                    gson.fromJson(gson.toJson(firstItem), AttendanceRecord::class.java)
+                                } else null
+                            }
+                            else -> {
+                                gson.fromJson(gson.toJson(data), AttendanceRecord::class.java)
+                            }
+                        }
+                        
+                        Result.success(attendanceRecord)
+                    }
+                    else -> {
+                        Result.success(null)
+                    }
+                }
             } else {
                 Result.failure(Exception("Failed to fetch attendance"))
             }
