@@ -27,4 +27,13 @@ class ProfileViewModel @Inject constructor(
             }
         }
     }
+
+    fun loadProfile() {
+        viewModelScope.launch {
+            dataStoreManager.userId.firstOrNull()?.let { id ->
+                val user = userDao.getUserById(id)
+                _currentUser.value = user
+            }
+        }
+    }
 }

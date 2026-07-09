@@ -21,8 +21,7 @@ fun ProfileScreen(
     onNavigateBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
-    val user by viewModel.userProfile.collectAsState()
-    val state by viewModel.profileState.collectAsState()
+    val user by viewModel.currentUser.collectAsState()
     
     Scaffold(
         topBar = {
@@ -38,7 +37,7 @@ fun ProfileScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (state is ProfileState.Loading && user == null) {
+            if (user == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
