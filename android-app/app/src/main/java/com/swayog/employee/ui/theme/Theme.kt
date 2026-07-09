@@ -11,29 +11,33 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Primary,
-    secondary = Secondary,
-    tertiary = BrandYellow,
-    background = Color(0xFF111827),
-    surface = Color(0xFF1F2937),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color(0xFF3A2417),
-    onBackground = Color(0xFFF9FAFB),
-    onSurface = Color(0xFFF9FAFB),
+    primary = Primary,                  // Golden Honey
+    secondary = Secondary,              // Warm Brown
+    tertiary = PrimaryLight,            // Beeswax Yellow
+    background = Color(0xFF1E1712),     // Honeycomb dark brown-black
+    surface = Color(0xFF2C221A),        // Dark brown surface card
+    surfaceVariant = Color(0xFF3B2F25),
+    onPrimary = Color(0xFF1E1712),      // Dark brown text on gold primary
+    onSecondary = Color.White,          // White text on brown secondary
+    onTertiary = Color(0xFF1E1712),
+    onBackground = Color(0xFFFFFDD0),   // Soft cream text
+    onSurface = Color(0xFFFFFDD0),      // Soft cream text
+    onSurfaceVariant = Color(0xFFD6C8B5)
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Primary,
-    secondary = Secondary,
-    tertiary = BrandYellow,
-    background = Background,
-    surface = Surface,
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color(0xFF3A2417),
-    onBackground = TextPrimary,
-    onSurface = TextPrimary,
+    primary = Primary,                  // Golden Honey
+    secondary = Secondary,              // Warm Brown
+    tertiary = PrimaryLight,            // Beeswax Yellow
+    background = Background,            // Soft Cream
+    surface = Surface,                  // White
+    surfaceVariant = SurfaceVariant,    // Beeswax Cream Variant
+    onPrimary = Color(0xFF3E2718),      // Dark Brown text on golden primary
+    onSecondary = Color.White,          // White text on brown secondary
+    onTertiary = Color(0xFF3E2718),
+    onBackground = TextPrimary,         // Premium Dark Brown text
+    onSurface = TextPrimary,            // Premium Dark Brown text
+    onSurfaceVariant = TextSecondary
 )
 
 @Composable
@@ -51,7 +55,7 @@ fun SwayogEmployeeAppTheme(
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = darkTheme
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
 
