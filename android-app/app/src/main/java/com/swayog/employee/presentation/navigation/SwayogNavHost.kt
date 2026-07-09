@@ -13,11 +13,13 @@ import com.swayog.employee.presentation.settings.SettingsScreen
 
 @Composable
 fun SwayogNavHost(
-    navController: NavHostController = androidx.navigation.compose.rememberNavController()
+    navController: NavHostController = androidx.navigation.compose.rememberNavController(),
+    startDestination: String = Screen.Login.route,
+    onLogout: () -> Unit = {}
 ) {
     NavHost(
         navController = navController,
-        startDestination = Screen.Login.route
+        startDestination = startDestination
     ) {
         composable(Screen.Login.route) {
             LoginScreen(
@@ -44,6 +46,7 @@ fun SwayogNavHost(
                     navController.navigate(Screen.Settings.route)
                 },
                 onLogout = {
+                    onLogout()
                     navController.navigate(Screen.Login.route) {
                         popUpTo(Screen.Dashboard.route) { inclusive = true }
                     }
@@ -81,6 +84,7 @@ fun SwayogNavHost(
                     navController.popBackStack()
                 },
                 onLogout = {
+                    onLogout()
                     navController.navigate(Screen.Login.route) {
                         popUpTo(Screen.Dashboard.route) { inclusive = true }
                     }

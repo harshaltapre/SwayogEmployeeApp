@@ -34,20 +34,20 @@ interface ApiService {
     @GET("employee/attendance/today")
     suspend fun getTodayAttendance(): Response<ApiResponse<Any>>
     
-    @POST("employee/check-in")
+    @POST("employee/attendance/check-in")
     suspend fun checkIn(
         @Body request: CheckInRequest
     ): Response<ApiResponse<CheckInResponse>>
     
-    @POST("employee/check-out")
+    @POST("employee/attendance/check-out")
     suspend fun checkOut(): Response<ApiResponse<Unit>>
     
-    @POST("employee/work-description")
+    @POST("employee/attendance/work-description")
     suspend fun saveWorkDescription(
         @Body request: WorkDescriptionRequest
     ): Response<ApiResponse<Unit>>
     
-    @GET("employee/performance")
+    @GET("employee/attendance/performance")
     suspend fun getPerformance(
         @Query("month") month: Int,
         @Query("year") year: Int
@@ -140,4 +140,19 @@ interface ApiService {
     suspend fun createDispatch(
         @Body request: DispatchRequest
     ): Response<ApiResponse<DispatchRecord>>
+    
+    @POST("employee/submissions")
+    suspend fun submitWork(
+        @Body request: WorkSubmissionRequest
+    ): Response<ApiResponse<Unit>>
+
+    @POST("employee/surveys")
+    suspend fun submitSurvey(
+        @Body request: SurveySubmissionRequest
+    ): Response<ApiResponse<SurveySubmissionResponse>>
+
+    @POST("employee/designs")
+    suspend fun submitDesign(
+        @Body request: DesignSubmissionRequest
+    ): Response<ApiResponse<DesignSubmissionResponse>>
 }

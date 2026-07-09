@@ -1,6 +1,7 @@
 package com.swayog.employee.presentation.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -8,105 +9,125 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.presentation.common.components.*
 
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    var darkMode by remember { mutableStateOf(false) }
-    var biometricEnabled by remember { mutableStateOf(true) }
-    var notificationsEnabled by remember { mutableStateOf(true) }
+    val darkMode by viewModel.darkMode.collectAsState()
+    val biometricEnabled by viewModel.biometricEnabled.collectAsState()
+    val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
     
     Scaffold(
         topBar = {
             SwayogTopBar(
-                title = "Settings",
+                title = "Settings Options",
                 showBackButton = true,
                 onBackClick = onNavigateBack
             )
         }
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
+                .padding(paddingValues),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Appearance Settings
-            SwayogCard {
-                Text(
-                    text = "Appearance",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                SettingToggle(
-                    title = "Dark Mode",
-                    description = "Enable dark theme",
-                    checked = darkMode,
-                    onCheckedChange = { darkMode = it }
-                )
+            item {
+                SwayogCard {
+                    Column {
+                        Text(
+                            text = "Appearance theme",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SettingToggle(
+                            title = "Dark Mode Theme",
+                            description = "Enable dark layout styling",
+                            checked = darkMode,
+                            onCheckedChange = { viewModel.setDarkMode(it) }
+                        )
+                    }
+                }
             }
             
             // Security Settings
-            SwayogCard {
-                Text(
-                    text = "Security",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                SettingToggle(
-                    title = "Biometric Login",
-                    description = "Use fingerprint or face recognition",
-                    checked = biometricEnabled,
-                    onCheckedChange = { biometricEnabled = it }
-                )
+            item {
+                SwayogCard {
+                    Column {
+                        Text(
+                            text = "Security options",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SettingToggle(
+                            title = "Biometrics Auth",
+                            description = "Use fingerprint scans on login screen",
+                            checked = biometricEnabled,
+                            onCheckedChange = { viewModel.setBiometricEnabled(it) }
+                        )
+                    }
+                }
             }
             
             // Notification Settings
-            SwayogCard {
-                Text(
-                    text = "Notifications",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                SettingToggle(
-                    title = "Push Notifications",
-                    description = "Receive task and attendance alerts",
-                    checked = notificationsEnabled,
-                    onCheckedChange = { notificationsEnabled = it }
-                )
+            item {
+                SwayogCard {
+                    Column {
+                        Text(
+                            text = "Notifications alerts",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SettingToggle(
+                            title = "Push Notifications Toggles",
+                            description = "Receive task assigned alerts",
+                            checked = notificationsEnabled,
+                            onCheckedChange = { viewModel.setNotificationsEnabled(it) }
+                        )
+                    }
+                }
             }
             
             // About Section
-            SwayogCard {
-                Text(
-                    text = "About",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                SettingItem(
-                    title = "Version",
-                    value = "1.0.0"
-                )
-                SettingItem(
-                    title = "Build",
-                    value = "1"
-                )
+            item {
+                SwayogCard {
+                    Column {
+                        Text(
+                            text = "Software Info",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SettingItem(
+                            title = "Application Version",
+                            value = "1.0.0"
+                        )
+                        SettingItem(
+                            title = "Software Build ID",
+                            value = "1"
+                        )
+                    }
+                }
             }
             
             // Logout Button
-            SwayogButton(
-                text = "Logout",
-                onClick = onLogout,
-                variant = ButtonVariant.Secondary
-            )
+            item {
+                SwayogButton(
+                    text = "Logout Session",
+                    onClick = onLogout,
+                    variant = ButtonVariant.Secondary
+                )
+            }
         }
     }
 }

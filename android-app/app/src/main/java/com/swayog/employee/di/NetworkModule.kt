@@ -53,7 +53,14 @@ object NetworkModule {
             }
             
             val request = requestBuilder.build()
-            chain.proceed(request)
+            val response = chain.proceed(request)
+            
+            if (response.code == 401) {
+                // Clear session preferences dynamically on auth failure
+                runBlocking { dataStoreManager.clearAll() }
+            }
+            
+            response
         }
     }
     

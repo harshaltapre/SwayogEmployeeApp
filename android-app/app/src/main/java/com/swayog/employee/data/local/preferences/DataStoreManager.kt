@@ -27,6 +27,7 @@ class DataStoreManager @Inject constructor(
         val IS_LOGGED_IN = booleanPreferencesKey("is_logged_in")
         val BIOMETRIC_ENABLED = booleanPreferencesKey("biometric_enabled")
         val DARK_MODE = booleanPreferencesKey("dark_mode")
+        val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val LANGUAGE = stringPreferencesKey("language")
     }
     
@@ -68,6 +69,10 @@ class DataStoreManager @Inject constructor(
     
     val darkMode: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.DARK_MODE] ?: false
+    }
+
+    val notificationsEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.NOTIFICATIONS_ENABLED] ?: true
     }
     
     val language: Flow<String> = context.dataStore.data.map { preferences ->
@@ -139,6 +144,16 @@ class DataStoreManager @Inject constructor(
         try {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.DARK_MODE] = enabled
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun setNotificationsEnabled(enabled: Boolean) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.NOTIFICATIONS_ENABLED] = enabled
             }
         } catch (e: Exception) {
             e.printStackTrace()

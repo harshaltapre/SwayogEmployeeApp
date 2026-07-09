@@ -120,13 +120,15 @@ class AuthRepository @Inject constructor(
     }
     
     suspend fun logout(): Result<Unit> {
-        return try {
+        try {
             apiService.logout()
-            
+        } catch (e: Exception) {
+            // Ignore API exceptions so local logout always completes
+        }
+        return try {
             // Clear local data
             dataStoreManager.clearAll()
             userDao.deleteAllUsers()
-            
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

@@ -212,7 +212,80 @@ class TaskRepository @Inject constructor(
         }
     }
 
+    suspend fun submitWork(title: String, description: String, hoursSpent: Double, taskId: Int?): Result<Unit> {
+        return try {
+            val response = apiService.submitWork(WorkSubmissionRequest(title, description, hoursSpent, taskId))
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Submission failed: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
+    suspend fun submitSurvey(
+        taskId: Int?,
+        customerId: Int?,
+        roofType: String,
+        lengthFt: Double,
+        widthFt: Double,
+        obstacleNotes: String?,
+        shadowFactors: String?,
+        recommendedCapacityKw: Double,
+        latitude: Double?,
+        longitude: Double?
+    ): Result<SurveySubmissionResponse> {
+        return try {
+            val request = SurveySubmissionRequest(
+                taskId = taskId,
+                customerId = customerId,
+                roofType = roofType,
+                lengthFt = lengthFt,
+                widthFt = widthFt,
+                obstacleNotes = obstacleNotes,
+                shadowFactors = shadowFactors,
+                recommendedCapacityKw = recommendedCapacityKw,
+                latitude = latitude,
+                longitude = longitude
+            )
+            val response = apiService.submitSurvey(request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Survey upload failed: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun submitDesign(
+        customerId: Int?,
+        panelCount: Int,
+        inverterModel: String,
+        systemCapacityKw: Double,
+        tiltAngle: Double
+    ): Result<DesignSubmissionResponse> {
+        return try {
+            val request = DesignSubmissionRequest(
+                customerId = customerId,
+                panelCount = panelCount,
+                inverterModel = inverterModel,
+                systemCapacityKw = systemCapacityKw,
+                tiltAngle = tiltAngle
+            )
+            val response = apiService.submitDesign(request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Design upload failed: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     private fun scheduleSync() {
         val constraints = Constraints.Builder()

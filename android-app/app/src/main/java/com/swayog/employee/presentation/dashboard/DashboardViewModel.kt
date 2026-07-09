@@ -147,6 +147,55 @@ class DashboardViewModel @Inject constructor(
             }
         }
     }
+
+    fun submitWork(
+        title: String,
+        description: String,
+        hoursSpent: Double,
+        taskId: Int?,
+        onResult: (Result<Unit>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val res = taskRepository.submitWork(title, description, hoursSpent, taskId)
+            onResult(res)
+        }
+    }
+
+    fun submitSurvey(
+        taskId: Int?,
+        customerId: Int?,
+        roofType: String,
+        lengthFt: Double,
+        widthFt: Double,
+        obstacleNotes: String?,
+        shadowFactors: String?,
+        recommendedCapacityKw: Double,
+        latitude: Double?,
+        longitude: Double?,
+        onResult: (Result<com.swayog.employee.data.model.SurveySubmissionResponse>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val res = taskRepository.submitSurvey(
+                taskId, customerId, roofType, lengthFt, widthFt,
+                obstacleNotes, shadowFactors, recommendedCapacityKw, latitude, longitude
+            )
+            onResult(res)
+        }
+    }
+
+    fun submitDesign(
+        customerId: Int?,
+        panelCount: Int,
+        inverterModel: String,
+        systemCapacityKw: Double,
+        tiltAngle: Double,
+        onResult: (Result<com.swayog.employee.data.model.DesignSubmissionResponse>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val res = taskRepository.submitDesign(customerId, panelCount, inverterModel, systemCapacityKw, tiltAngle)
+            onResult(res)
+        }
+    }
     
     fun resetState() {
         _dashboardState.value = DashboardState.Initial

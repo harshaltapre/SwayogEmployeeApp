@@ -2,6 +2,7 @@ package com.swayog.employee.presentation.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -12,109 +13,122 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.presentation.common.components.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: ProfileViewModel = hiltViewModel()
 ) {
+    val user by viewModel.currentUser.collectAsState()
+    
     Scaffold(
         topBar = {
             SwayogTopBar(
-                title = "Profile",
+                title = "Profile Profile",
                 showBackButton = true,
                 onBackClick = onNavigateBack
             )
         }
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
+                .padding(paddingValues),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Profile Header
-            SwayogCard {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(100.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "JD",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontWeight = FontWeight.Bold
-                        )
+            user?.let { u ->
+                // Profile Header Card
+                item {
+                    SwayogCard {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            val initial = if (u.fullName.isNotBlank()) u.fullName.take(2).uppercase() else "JD"
+                            Box(
+                                modifier = Modifier
+                                    .size(100.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = initial,
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = u.fullName,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = u.jobRole ?: u.designationTitle ?: "Employee",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = u.employeeCode ?: "No Emp Code",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "John Doe",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Service Coordinator",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "EMP-12345",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                    )
                 }
-            }
-            
-            // Profile Details
-            SwayogCard {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    ProfileItem(
-                        icon = Icons.Default.Email,
-                        label = "Email",
-                        value = "john.doe@swayog.com"
-                    )
-                    ProfileItem(
-                        icon = Icons.Default.Phone,
-                        label = "Phone",
-                        value = "+91 98765 43210"
-                    )
-                    ProfileItem(
-                        icon = Icons.Default.LocationOn,
-                        label = "Zone",
-                        value = "Pune West"
-                    )
-                    ProfileItem(
-                        icon = Icons.Default.Badge,
-                        label = "Department",
-                        value = "Operations"
-                    )
+                
+                // Detailed Information Card
+                item {
+                    SwayogCard {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            ProfileItem(
+                                icon = Icons.Default.Email,
+                                label = "Email Address",
+                                value = u.email
+                            )
+                            ProfileItem(
+                                icon = Icons.Default.Phone,
+                                label = "Phone Number",
+                                value = u.phoneNumber ?: "Not provided"
+                            )
+                            ProfileItem(
+                                icon = Icons.Default.LocationOn,
+                                label = "Zone Region",
+                                value = u.zone ?: "Not assigned"
+                            )
+                            ProfileItem(
+                                icon = Icons.Default.Badge,
+                                label = "Department ID",
+                                value = u.departmentId ?: "Operations"
+                            )
+                            ProfileItem(
+                                icon = Icons.Default.Person,
+                                label = "System Role Type",
+                                value = u.role.uppercase()
+                            )
+                            ProfileItem(
+                                icon = Icons.Default.CalendarToday,
+                                label = "Joined System Date",
+                                value = u.createdAt.substringBefore("T")
+                            )
+                        }
+                    }
                 }
-            }
-            
-            // Actions
-            SwayogCard {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            } ?: item {
+                Box(
+                    modifier = Modifier.fillParentMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    SwayogButton(
-                        text = "Edit Profile",
-                        onClick = { /* TODO: Navigate to edit profile */ },
-                        variant = ButtonVariant.Secondary
-                    )
-                    SwayogButton(
-                        text = "Change Password",
-                        onClick = { /* TODO: Navigate to change password */ },
-                        variant = ButtonVariant.Secondary
-                    )
+                    CircularProgressIndicator()
                 }
             }
         }

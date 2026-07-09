@@ -69,3 +69,41 @@ data class Pagination(
     val limit: Int,
     val offset: Int
 )
+
+data class WorkSubmissionRequest(
+    val title: String,
+    val description: String,
+    val hoursSpent: Double,
+    val taskId: Int? = null
+)
+
+data class SurveySubmissionRequest(
+    val taskId: Int? = null,
+    val customerId: Int? = null,
+    val roofType: String,
+    val lengthFt: Double,
+    val widthFt: Double,
+    val obstacleNotes: String? = null,
+    val shadowFactors: String? = null,
+    val recommendedCapacityKw: Double,
+    val latitude: Double? = null,
+    val longitude: Double? = null
+)
+
+data class SurveySubmissionResponse(
+    val surveyId: Int,
+    val message: String
+)
+
+data class DesignSubmissionRequest(
+    val customerId: Int? = null,
+    val panelCount: Int,
+    val inverterModel: String,
+    val systemCapacityKw: Double,
+    val tiltAngle: Double
+)
+
+data class DesignSubmissionResponse(
+    val designId: Int,
+    val message: String
+)
