@@ -266,21 +266,21 @@ fun DashboardScreen(
                                 QuickActionCard(
                                     icon = Icons.Default.Fingerprint,
                                     label = "Attendance",
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = Color(0xFF386FA4), // BrandBlue
                                     onClick = onNavigateToAttendance,
                                     modifier = Modifier.weight(1f)
                                 )
                                 QuickActionCard(
                                     icon = Icons.Default.Assignment,
                                     label = "Tasks",
-                                    color = MaterialTheme.colorScheme.secondary,
+                                    color = Color(0xFF0B6E4F), // BrandGreen
                                     onClick = onNavigateToTasks,
                                     modifier = Modifier.weight(1f)
                                 )
                                 QuickActionCard(
                                     icon = Icons.Default.EditNote,
                                     label = "Timesheets",
-                                    color = MaterialTheme.colorScheme.tertiary,
+                                    color = Color(0xFFD1603D), // BrandOrange
                                     onClick = onNavigateToDailyCommit,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -422,17 +422,17 @@ fun DashboardScreen(
                                             PerformanceStat(
                                                 value = "${perf.performanceScore}/5",
                                                 label = "Score",
-                                                color = MaterialTheme.colorScheme.primary
+                                                color = Color(0xFF386FA4) // BrandBlue
                                             )
                                             PerformanceStat(
                                                 value = "${perf.attendancePercent}%",
                                                 label = "Attendance",
-                                                color = MaterialTheme.colorScheme.secondary
+                                                color = Color(0xFF0B6E4F) // BrandGreen
                                             )
                                             PerformanceStat(
                                                 value = "${perf.taskCompletionRate}%",
                                                 label = "Completion",
-                                                color = MaterialTheme.colorScheme.tertiary
+                                                color = Color(0xFFFFC857) // BrandYellow
                                             )
                                         }
                                     }
@@ -609,9 +609,9 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 val statusColor = when (task.status.lowercase()) {
-                    "completed" -> MaterialTheme.colorScheme.primary
-                    "in_progress" -> Color(0xFFFF9800)
-                    "assigned" -> Color(0xFF2196F3)
+                    "completed" -> Color(0xFF0B6E4F) // BrandGreen
+                    "in_progress" -> Color(0xFFD1603D) // BrandOrange
+                    "assigned" -> Color(0xFF386FA4) // BrandBlue
                     else -> MaterialTheme.colorScheme.error
                 }
                 Surface(

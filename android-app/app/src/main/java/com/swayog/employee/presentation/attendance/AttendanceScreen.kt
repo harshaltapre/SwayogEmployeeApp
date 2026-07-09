@@ -197,9 +197,9 @@ fun AttendanceScreen(
                                             style = MaterialTheme.typography.headlineMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = if (todayAttendance?.checkOutTime != null)
-                                                MaterialTheme.colorScheme.tertiary
+                                                Color(0xFF0B6E4F) // BrandGreen
                                             else
-                                                Color(0xFF4CAF50)
+                                                Color(0xFF386FA4) // BrandBlue
                                         )
                                         Text(
                                             text = if (todayAttendance?.checkOutTime != null) "Total Worked" else "Working...",
@@ -421,7 +421,7 @@ fun AttendanceScreen(
                                         Text(
                                             text = perf.daysPresent.toString(),
                                             style = MaterialTheme.typography.headlineMedium,
-                                            color = Color(0xFF4CAF50),
+                                            color = Color(0xFF0B6E4F), // BrandGreen
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(text = "Present", style = MaterialTheme.typography.bodySmall)
@@ -439,7 +439,7 @@ fun AttendanceScreen(
                                         Text(
                                             text = "${perf.attendancePercent}%",
                                             style = MaterialTheme.typography.headlineMedium,
-                                            color = MaterialTheme.colorScheme.primary,
+                                            color = Color(0xFF386FA4), // BrandBlue
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(text = "Rate", style = MaterialTheme.typography.bodySmall)
@@ -448,7 +448,7 @@ fun AttendanceScreen(
                                         Text(
                                             text = String.format("%.1f", perf.totalHoursLogged),
                                             style = MaterialTheme.typography.headlineMedium,
-                                            color = Color(0xFFFF9800),
+                                            color = Color(0xFFD1603D), // BrandOrange
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(text = "Hours", style = MaterialTheme.typography.bodySmall)
@@ -548,11 +548,11 @@ fun AttendanceScreen(
                                                 val record = monthlyRecords.find { it.date == dateStr }
 
                                                 val dotColor = when (record?.status?.uppercase()) {
-                                                    "PRESENT" -> Color(0xFF4CAF50)
+                                                    "PRESENT" -> Color(0xFF0B6E4F) // BrandGreen
                                                     "ABSENT" -> Color(0xFFF44336)
-                                                    "LATE" -> Color(0xFFFF9800)
-                                                    "LEAVE" -> Color(0xFF2196F3)
-                                                    "HALF_DAY", "HALF-DAY" -> Color(0xFF9C27B0)
+                                                    "LATE" -> Color(0xFFD1603D) // BrandOrange
+                                                    "LEAVE" -> Color(0xFF386FA4) // BrandBlue
+                                                    "HALF_DAY", "HALF-DAY" -> Color(0xFF3A2417) // BrandBrown
                                                     else -> null
                                                 }
 
@@ -564,7 +564,7 @@ fun AttendanceScreen(
                                                         .then(
                                                             if (isToday) Modifier.border(
                                                                 2.dp,
-                                                                Color(0xFFFF9800),
+                                                                Color(0xFFD1603D), // BrandOrange
                                                                 RoundedCornerShape(8.dp)
                                                             ) else Modifier
                                                         ),
@@ -575,7 +575,7 @@ fun AttendanceScreen(
                                                             text = day.toString(),
                                                             style = MaterialTheme.typography.labelSmall,
                                                             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                                                            color = if (isToday) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurface
+                                                            color = if (isToday) Color(0xFFD1603D) else MaterialTheme.colorScheme.onSurface
                                                         )
                                                         if (dotColor != null) {
                                                             Box(
@@ -600,10 +600,10 @@ fun AttendanceScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceEvenly
                                 ) {
-                                    CalendarLegendItem(color = Color(0xFF4CAF50), label = "Present")
+                                    CalendarLegendItem(color = Color(0xFF0B6E4F), label = "Present")
                                     CalendarLegendItem(color = Color(0xFFF44336), label = "Absent")
-                                    CalendarLegendItem(color = Color(0xFFFF9800), label = "Late")
-                                    CalendarLegendItem(color = Color(0xFF2196F3), label = "Leave")
+                                    CalendarLegendItem(color = Color(0xFFD1603D), label = "Late")
+                                    CalendarLegendItem(color = Color(0xFF386FA4), label = "Leave")
                                 }
                             }
                         }
@@ -678,10 +678,10 @@ fun AttendanceScreen(
                                     }
 
                                     val badgeColor = when (log.status.uppercase()) {
-                                        "PRESENT" -> Color(0xFF4CAF50)
+                                        "PRESENT" -> Color(0xFF0B6E4F) // BrandGreen
                                         "ABSENT" -> Color(0xFFF44336)
-                                        "LATE" -> Color(0xFFFF9800)
-                                        "LEAVE" -> Color(0xFF2196F3)
+                                        "LATE" -> Color(0xFFD1603D) // BrandOrange
+                                        "LEAVE" -> Color(0xFF386FA4) // BrandBlue
                                         else -> MaterialTheme.colorScheme.tertiary
                                     }
                                     Surface(

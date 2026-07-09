@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -111,7 +112,7 @@ fun LoginScreen(
                     modifier = Modifier.size(100.dp),
                     shape = MaterialTheme.shapes.extraLarge,
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                        containerColor = Color(0xFF386FA4) // BrandBlue
                     )
                 ) {
                     Box(
@@ -121,7 +122,7 @@ fun LoginScreen(
                         Text(
                             text = "SE",
                             style = MaterialTheme.typography.headlineLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
                     }

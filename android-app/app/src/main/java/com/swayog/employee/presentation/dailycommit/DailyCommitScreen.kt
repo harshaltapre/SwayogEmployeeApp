@@ -109,7 +109,7 @@ fun DailyCommitScreen(
                                 text = if (alreadySubmitted) "Submitted Log" else "Submit Timesheet",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = if (alreadySubmitted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                color = if (alreadySubmitted) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.onSurface // BrandGreen
                             )
                             
                             // Date field
@@ -255,8 +255,8 @@ fun DailyCommitScreen(
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    Badge {
-                                        Text("${commit.hoursSpent} Hrs")
+                                    Badge(containerColor = Color(0xFF386FA4)) { // BrandBlue
+                                        Text("${commit.hoursSpent} Hrs", color = Color.White)
                                     }
                                 }
                                 Text(

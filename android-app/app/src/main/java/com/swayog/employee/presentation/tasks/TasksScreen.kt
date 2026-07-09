@@ -134,7 +134,7 @@ fun TasksScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Active")
-                                Badge(containerColor = Color(0xFFFF9800)) {
+                                Badge(containerColor = Color(0xFFD1603D)) { // BrandOrange
                                     Text(activeCount.toString(), color = Color.White)
                                 }
                             }
@@ -149,7 +149,7 @@ fun TasksScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Done")
-                                Badge(containerColor = Color(0xFF4CAF50)) {
+                                Badge(containerColor = Color(0xFF0B6E4F)) { // BrandGreen
                                     Text(completedCount.toString(), color = Color.White)
                                 }
                             }
@@ -262,9 +262,9 @@ fun TaskCard(
     }
 
     val statusColor = when (task.status.lowercase()) {
-        "completed" -> Color(0xFF4CAF50)
-        "in_progress" -> Color(0xFFFF9800)
-        "assigned" -> Color(0xFF2196F3)
+        "completed" -> Color(0xFF0B6E4F) // BrandGreen
+        "in_progress" -> Color(0xFFD1603D) // BrandOrange
+        "assigned" -> Color(0xFF386FA4) // BrandBlue
         "cancelled" -> Color(0xFFF44336)
         else -> MaterialTheme.colorScheme.onSurface
     }
@@ -325,11 +325,11 @@ fun TaskCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFFF9800))
+                Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFD1603D)) // BrandOrange
                 Text(
                     text = task.scheduledTime,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFFF9800),
+                    color = Color(0xFFD1603D), // BrandOrange
                     fontWeight = FontWeight.Medium
                 )
             }

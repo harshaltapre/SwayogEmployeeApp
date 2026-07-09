@@ -2,15 +2,15 @@ package com.swayog.employee.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary colors (Amber/Orange theme matching web dashboard)
-val Primary = Color(0xFFF59E0B)
-val PrimaryDark = Color(0xFFD97706)
-val PrimaryLight = Color(0xFFFBBF24)
+// Primary colors (Brand Blue)
+val Primary = Color(0xFF386FA4)
+val PrimaryDark = Color(0xFF2D5A84)
+val PrimaryLight = Color(0xFF5A8DBE)
 
-// Secondary colors
-val Secondary = Color(0xFF10B981)
-val SecondaryDark = Color(0xFF059669)
-val SecondaryLight = Color(0xFF34D399)
+// Secondary colors (Brand Green)
+val Secondary = Color(0xFF0B6E4F)
+val SecondaryDark = Color(0xFF08543C)
+val SecondaryLight = Color(0xFF108E66)
 
 // Background colors
 val Background = Color(0xFFFAFAFA)
@@ -23,10 +23,10 @@ val TextSecondary = Color(0xFF6B7280)
 val TextTertiary = Color(0xFF9CA3AF)
 
 // Status colors
-val Success = Color(0xFF10B981)
-val Warning = Color(0xFFF59E0B)
-val Error = Color(0xFFEF4444)
-val Info = Color(0xFF3B82F6)
+val Success = Color(0xFF0B6E4F)
+val Warning = Color(0xFFFFC857)
+val Error = Color(0xFFD1603D)
+val Info = Color(0xFF386FA4)
 
 // Role-specific colors
 val ServiceCoordinator = Color(0xFF8B5CF6)
@@ -38,3 +38,10 @@ val OMTech = Color(0xFF14B8A6)
 val ServiceEngineer = Color(0xFF6366F1)
 val MonitoringAnalyst = Color(0xFFA855F7)
 val Intern = Color(0xFF64748B)
+
+// Brand Palette
+val BrandBlue = Color(0xFF386FA4)
+val BrandBrown = Color(0xFF3A2417)
+val BrandGreen = Color(0xFF0B6E4F)
+val BrandYellow = Color(0xFFFFC857)
+val BrandOrange = Color(0xFFD1603D)
