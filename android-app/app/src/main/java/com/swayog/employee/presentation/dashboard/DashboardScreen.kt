@@ -258,59 +258,64 @@ fun DashboardScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    QuickActionCard(
-                                        icon = Icons.Default.Fingerprint,
-                                        label = "Attendance",
-                                        color = Color(0xFF4CAF50),
-                                        onClick = onNavigateToAttendance,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    QuickActionCard(
-                                        icon = Icons.Default.Assignment,
-                                        label = "Tasks",
-                                        color = Color(0xFF2196F3),
-                                        onClick = onNavigateToTasks,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    QuickActionCard(
-                                        icon = Icons.Default.EditNote,
-                                        label = "Timesheets",
-                                        color = Color(0xFFFF9800),
-                                        onClick = onNavigateToDailyCommit,
-                                        modifier = Modifier.weight(1f)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                QuickActionCard(
+                                    icon = Icons.Default.Fingerprint,
+                                    label = "Attendance",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    onClick = onNavigateToAttendance,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                QuickActionCard(
+                                    icon = Icons.Default.Assignment,
+                                    label = "Tasks",
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    onClick = onNavigateToTasks,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                QuickActionCard(
+                                    icon = Icons.Default.EditNote,
+                                    label = "Timesheets",
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    onClick = onNavigateToDailyCommit,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        // My Tasks Section
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Active Tasks",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                TextButton(onClick = onNavigateToTasks) {
+                                    Text("See All")
+                                }
+                            }
+                            if (activeTasks.isEmpty()) {
+                                SwayogCard {
+                                    Text(
+                                        text = "No active tasks assigned.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                     )
                                 }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    QuickActionCard(
-                                        icon = Icons.Default.Person,
-                                        label = "Profile",
-                                        color = Color(0xFF9C27B0),
-                                        onClick = onNavigateToProfile,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    QuickActionCard(
-                                        icon = Icons.Default.Settings,
-                                        label = "Settings",
-                                        color = Color(0xFF607D8B),
-                                        onClick = onNavigateToSettings,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    QuickActionCard(
-                                        icon = Icons.Default.Logout,
-                                        label = "Logout",
-                                        color = Color(0xFFF44336),
-                                        onClick = onLogout,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    activeTasks.take(3).forEach { task ->
+                                        TaskItem(task = task)
+                                    }
                                 }
                             }
                         }
@@ -405,95 +410,36 @@ fun DashboardScreen(
                                 SwayogCard {
                                     Column {
                                         Text(
-                                            text = "Performance Score",
+                                            text = "Monthly Performance",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.SemiBold
                                         )
-                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Spacer(modifier = Modifier.height(16.dp))
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceEvenly
                                         ) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text(
-                                                    text = "${perf.performanceScore}/5",
-                                                    style = MaterialTheme.typography.headlineMedium,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Text(
-                                                    text = "Score",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                                )
-                                            }
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text(
-                                                    text = "${perf.attendancePercent}%",
-                                                    style = MaterialTheme.typography.headlineMedium,
-                                                    color = MaterialTheme.colorScheme.secondary,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Text(
-                                                    text = "Attendance",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                                )
-                                            }
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text(
-                                                    text = "${perf.taskCompletionRate}%",
-                                                    style = MaterialTheme.typography.headlineMedium,
-                                                    color = MaterialTheme.colorScheme.tertiary,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Text(
-                                                    text = "Tasks Done",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                                )
-                                            }
+                                            PerformanceStat(
+                                                value = "${perf.performanceScore}/5",
+                                                label = "Score",
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            PerformanceStat(
+                                                value = "${perf.attendancePercent}%",
+                                                label = "Attendance",
+                                                color = MaterialTheme.colorScheme.secondary
+                                            )
+                                            PerformanceStat(
+                                                value = "${perf.taskCompletionRate}%",
+                                                label = "Completion",
+                                                color = MaterialTheme.colorScheme.tertiary
+                                            )
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // Active Tasks
-                        item {
-                            SwayogCard {
-                                Column {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "My Tasks",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        TextButton(onClick = onNavigateToTasks) {
-                                            Text("View All")
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    if (activeTasks.isEmpty()) {
-                                        Text(
-                                            text = "No active tasks",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                        )
-                                    } else {
-                                        activeTasks.take(3).forEach { task ->
-                                            TaskItem(task = task)
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                        }
-                                    }
-                                }
-                            }
-                        }
 
                         // Quick Work Update
                         item {
@@ -542,6 +488,27 @@ fun DashboardScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun PerformanceStat(
+    value: String,
+    label: String,
+    color: Color
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.headlineMedium,
+            color = color,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+        )
     }
 }
 
