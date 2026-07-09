@@ -20,6 +20,7 @@ fun DashboardScreen(
     onNavigateToTasks: () -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToDailyCommit: () -> Unit,
     onLogout: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
@@ -174,6 +175,34 @@ fun DashboardScreen(
                                         text = "View Details",
                                         maxLines = 1
                                     )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Daily Commit Card
+                    item {
+                        SwayogCard {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "Daily Commit Log",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Log tasks, hours & blockers",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                }
+                                Button(onClick = onNavigateToDailyCommit) {
+                                    Text("Timesheets")
                                 }
                             }
                         }

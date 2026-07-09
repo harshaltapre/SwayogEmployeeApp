@@ -23,7 +23,7 @@ export const loginSchema = z.object({
   identifier: z.string().min(1).optional(),
   email: z.string().email().optional(),
   password: z.string().min(8),
-  role: UserRoleSchema.optional().default("EMPLOYEE"),
+  role: UserRoleSchema.optional(),
 }).refine(data => data.identifier || data.email, {
   message: "Either email or identifier is required",
   path: ["identifier"]

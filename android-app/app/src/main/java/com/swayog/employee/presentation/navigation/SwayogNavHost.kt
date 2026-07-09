@@ -10,6 +10,7 @@ import com.swayog.employee.presentation.attendance.AttendanceScreen
 import com.swayog.employee.presentation.tasks.TasksScreen
 import com.swayog.employee.presentation.profile.ProfileScreen
 import com.swayog.employee.presentation.settings.SettingsScreen
+import com.swayog.employee.presentation.dailycommit.DailyCommitScreen
 
 @Composable
 fun SwayogNavHost(
@@ -44,6 +45,9 @@ fun SwayogNavHost(
                 },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToDailyCommit = {
+                    navController.navigate(Screen.DailyCommit.route)
                 },
                 onLogout = {
                     onLogout()
@@ -91,6 +95,14 @@ fun SwayogNavHost(
                 }
             )
         }
+        
+        composable(Screen.DailyCommit.route) {
+            DailyCommitScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
     }
 }
 
@@ -101,4 +113,5 @@ sealed class Screen(val route: String) {
     data object Tasks : Screen("tasks")
     data object Profile : Screen("profile")
     data object Settings : Screen("settings")
+    data object DailyCommit : Screen("daily_commit")
 }

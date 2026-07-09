@@ -2,7 +2,6 @@ package com.swayog.employee.presentation.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -13,42 +12,53 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.presentation.common.components.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+import androidx.hilt.navigation.compose.hiltViewModel
+
 @Composable
 fun ProfileScreen(
     onNavigateBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
-    val user by viewModel.currentUser.collectAsState()
+    val user by viewModel.userProfile.collectAsState()
+    val state by viewModel.profileState.collectAsState()
     
     Scaffold(
         topBar = {
             SwayogTopBar(
-                title = "Profile Profile",
+                title = "Profile",
                 showBackButton = true,
                 onBackClick = onNavigateBack
             )
         }
     ) { paddingValues ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(paddingValues)
         ) {
-            user?.let { u ->
-                // Profile Header Card
-                item {
+            if (state is ProfileState.Loading && user == null) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                val currentUser = user
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Profile Header
                     SwayogCard {
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            val initial = if (u.fullName.isNotBlank()) u.fullName.take(2).uppercase() else "JD"
                             Box(
                                 modifier = Modifier
                                     .size(100.dp)
@@ -56,8 +66,12 @@ fun ProfileScreen(
                                     .background(MaterialTheme.colorScheme.primaryContainer),
                                 contentAlignment = Alignment.Center
                             ) {
+                                val initials = currentUser?.fullName?.split(" ")
+                                    ?.mapNotNull { it.firstOrNull()?.toString() }
+                                    ?.take(2)
+                                    ?.joinToString("") ?: "JD"
                                 Text(
-                                    text = initial,
+                                    text = initials.uppercase(),
                                     style = MaterialTheme.typography.headlineMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     fontWeight = FontWeight.Bold
@@ -65,26 +79,24 @@ fun ProfileScreen(
                             }
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = u.fullName,
+                                text = currentUser?.fullName ?: "Employee Name",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = u.jobRole ?: u.designationTitle ?: "Employee",
+                                text = currentUser?.jobRole ?: currentUser?.designationTitle ?: "Field Engineer",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                             Text(
-                                text = u.employeeCode ?: "No Emp Code",
+                                text = currentUser?.loginId ?: "EMP-XXXXX",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                             )
                         }
                     }
-                }
-                
-                // Detailed Information Card
-                item {
+                    
+                    // Profile Details
                     SwayogCard {
                         Column(
                             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -92,43 +104,40 @@ fun ProfileScreen(
                         ) {
                             ProfileItem(
                                 icon = Icons.Default.Email,
-                                label = "Email Address",
-                                value = u.email
+                                label = "Email",
+                                value = currentUser?.email ?: "Not Provided"
                             )
                             ProfileItem(
                                 icon = Icons.Default.Phone,
-                                label = "Phone Number",
-                                value = u.phoneNumber ?: "Not provided"
+                                label = "Phone",
+                                value = currentUser?.phoneNumber ?: "Not Provided"
                             )
                             ProfileItem(
                                 icon = Icons.Default.LocationOn,
-                                label = "Zone Region",
-                                value = u.zone ?: "Not assigned"
+                                label = "Zone",
+                                value = currentUser?.zone ?: "Unassigned"
                             )
                             ProfileItem(
                                 icon = Icons.Default.Badge,
-                                label = "Department ID",
-                                value = u.departmentId ?: "Operations"
-                            )
-                            ProfileItem(
-                                icon = Icons.Default.Person,
-                                label = "System Role Type",
-                                value = u.role.uppercase()
-                            )
-                            ProfileItem(
-                                icon = Icons.Default.CalendarToday,
-                                label = "Joined System Date",
-                                value = u.createdAt.substringBefore("T")
+                                label = "Role Code",
+                                value = currentUser?.role ?: "EMPLOYEE"
                             )
                         }
                     }
-                }
-            } ?: item {
-                Box(
-                    modifier = Modifier.fillParentMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+                    
+                    // Actions
+                    SwayogCard {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            SwayogButton(
+                                text = "Refresh Details",
+                                onClick = { viewModel.loadProfile() },
+                                variant = ButtonVariant.Secondary
+                            )
+                        }
+                    }
                 }
             }
         }

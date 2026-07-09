@@ -24,6 +24,7 @@ fun SwayogTextField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     trailingIcon: @Composable (() -> Unit)? = null,
     singleLine: Boolean = true,
+    enabled: Boolean = true,
 ) {
     Column(modifier = modifier) {
         if (label != null) {
@@ -40,7 +41,7 @@ fun SwayogTextField(
             onValueChange = onValueChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .then(if (singleLine) Modifier.height(56.dp) else Modifier.height(120.dp)),
             placeholder = placeholder?.let {
                 {
                     Text(
@@ -51,6 +52,7 @@ fun SwayogTextField(
                 }
             },
             isError = isError,
+            enabled = enabled,
             shape = RoundedCornerShape(12.dp),
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             visualTransformation = visualTransformation,
