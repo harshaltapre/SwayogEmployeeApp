@@ -2,24 +2,37 @@ package com.swayog.employee.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Honeycomb Theme Colors
-val Primary = Color(0xFFFFC107)      // Golden Honey
-val PrimaryDark = Color(0xFF895129)  // Warm Brown
-val PrimaryLight = Color(0xFFF9E076) // Beeswax Yellow
+// Primary colors (Brand Blue)
+val Primary = Color(0xFF386FA4)
+val PrimaryDark = Color(0xFF2D5A84)
+val PrimaryLight = Color(0xFF5A8DBE)
 
-val Secondary = Color(0xFF895129)    // Warm Brown
-val SecondaryDark = Color(0xFF5E3416)
-val SecondaryLight = Color(0xFFF9E076)
+// Secondary colors (Brand Green)
+val Secondary = Color(0xFF0B6E4F)
+val SecondaryDark = Color(0xFF08543C)
+val SecondaryLight = Color(0xFF108E66)
 
-// Background & Surface
-val Background = Color(0xFFFFFDD0)   // Soft Cream
+// Material Gray Colors
+val Gray50 = Color(0xFFFAFAFA)
+val Gray100 = Color(0xFFF5F5F5)
+val Gray200 = Color(0xFFEEEEEE)
+val Gray300 = Color(0xFFE0E0E0)
+val Gray400 = Color(0xFFBDBDBD)
+val Gray500 = Color(0xFF9E9E9E)
+val Gray600 = Color(0xFF757575)
+val Gray700 = Color(0xFF616161)
+val Gray800 = Color(0xFF424242)
+val Gray900 = Color(0xFF212121)
+
+// Background colors
+val Background = Gray50
 val Surface = Color(0xFFFFFFFF)
-val SurfaceVariant = Color(0xFFF5ECC3) // Beeswax Cream Variant
+val SurfaceVariant = Gray100
 
-// Text Colors (Premium dark brown tones)
-val TextPrimary = Color(0xFF3E2718)   // Very Dark Brown
-val TextSecondary = Color(0xFF6E503B) // Medium Brown
-val TextTertiary = Color(0xFF9E8472)  // Soft Warm Gray
+// Text colors
+val TextPrimary = Color(0xFF111827)
+val TextSecondary = Color(0xFF6B7280)
+val TextTertiary = Color(0xFF9CA3AF)
 
 // Status colors
 val Success = Color(0xFF0B6E4F)
