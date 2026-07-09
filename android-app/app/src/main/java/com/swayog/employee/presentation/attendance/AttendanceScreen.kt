@@ -97,12 +97,8 @@ fun AttendanceScreen(
     
     LaunchedEffect(state) {
         val currentState = state
-        if (currentState is AttendanceState.Success) {
+        if (currentState is AttendanceState.Error) {
             Toast.makeText(context, currentState.message, Toast.LENGTH_LONG).show()
-            viewModel.resetState()
-        } else if (currentState is AttendanceState.Error) {
-            Toast.makeText(context, currentState.message, Toast.LENGTH_LONG).show()
-            viewModel.resetState()
         }
     }
     
@@ -277,7 +273,15 @@ fun AttendanceScreen(
                                 
                                 SwayogButton(
                                     text = "Check Out",
-                                    onClick = { viewModel.checkOut() },
+                                    onClick = {
+                                        viewModel.checkOut { result ->
+                                            if (result.isSuccess) {
+                                                Toast.makeText(context, "Checked out successfully!", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Check-out failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    },
                                     enabled = todayAttendance != null && todayAttendance?.checkOutTime == null,
                                     variant = ButtonVariant.Secondary,
                                     modifier = Modifier.weight(1f)
@@ -455,7 +459,13 @@ fun AttendanceScreen(
                                                     val byteArray = stream.toByteArray()
                                                     val base64Selfie = "data:image/jpeg;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP)
                                                     
-                                                    viewModel.checkIn(base64Selfie, currentLatitude, currentLongitude)
+                                                    viewModel.checkIn(base64Selfie, currentLatitude, currentLongitude) { result ->
+                                                        if (result.isSuccess) {
+                                                            Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
+                                                        } else {
+                                                            Toast.makeText(context, "Check-in failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                                        }
+                                                    }
                                                     showCamera = false
                                                 }
                                             }

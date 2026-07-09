@@ -33,7 +33,7 @@ fun TasksScreen(
 ) {
     val context = LocalContext.current
     val tasksState by viewModel.tasksState.collectAsState()
-    val tasksList by viewModel.tasksList.collectAsState()
+    val tasksList by viewModel.tasks.collectAsState()
     
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedTask by remember { mutableStateOf<Task?>(null) }
@@ -47,12 +47,8 @@ fun TasksScreen(
     }
     
     LaunchedEffect(tasksState) {
-        if (tasksState is TasksState.Success) {
-            Toast.makeText(context, (tasksState as TasksState.Success).message, Toast.LENGTH_SHORT).show()
-            viewModel.resetState()
-        } else if (tasksState is TasksState.Error) {
+        if (tasksState is TasksState.Error) {
             Toast.makeText(context, (tasksState as TasksState.Error).message, Toast.LENGTH_LONG).show()
-            viewModel.resetState()
         }
     }
     
@@ -63,7 +59,7 @@ fun TasksScreen(
                 showBackButton = true,
                 onBackClick = onNavigateBack,
                 actions = {
-                    IconButton(onClick = { viewModel.refreshTasksList() }) {
+                    IconButton(onClick = { viewModel.refresh() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 }
@@ -144,12 +140,23 @@ fun TasksScreen(
                     task = task,
                     onDismiss = { selectedTask = null },
                     onStartTask = {
-                        viewModel.updateStatus(task.id, "in_progress")
-                        selectedTask = task.copy(status = "in_progress")
+                        viewModel.updateTaskStatus(task.id, "in_progress") { result ->
+                            if (result.isSuccess) {
+                                selectedTask = result.getOrNull()
+                            } else {
+                                Toast.makeText(context, "Failed to start task", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     },
                     onCompleteTask = { msg, doc ->
-                        viewModel.completeTask(task.id, msg, doc)
-                        selectedTask = null
+                        viewModel.completeTask(task.id, msg, doc) { result ->
+                            if (result.isSuccess) {
+                                selectedTask = null
+                                viewModel.refresh()
+                            } else {
+                                Toast.makeText(context, "Failed to complete task", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
                 )
             }

@@ -10,12 +10,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.swayog.employee.data.local.preferences.DataStoreManager
+import kotlinx.coroutines.flow.filterNotNull
 import java.util.Calendar
 import javax.inject.Inject
 
 @HiltViewModel
 class AttendanceViewModel @Inject constructor(
-    private val attendanceRepository: AttendanceRepository
+    private val attendanceRepository: AttendanceRepository,
+    private val dataStoreManager: DataStoreManager
 ) : ViewModel() {
 
     private val _attendanceState = MutableStateFlow<AttendanceState>(AttendanceState.Initial)
@@ -27,8 +30,18 @@ class AttendanceViewModel @Inject constructor(
     private val _performance = MutableStateFlow<PerformanceSnapshot?>(null)
     val performance: StateFlow<PerformanceSnapshot?> = _performance.asStateFlow()
 
+    private val _monthlyRecords = MutableStateFlow<List<AttendanceRecord>>(emptyList())
+    val monthlyRecords: StateFlow<List<AttendanceRecord>> = _monthlyRecords.asStateFlow()
+
     init {
         loadData()
+        viewModelScope.launch {
+            dataStoreManager.userId.filterNotNull().collect { id ->
+                attendanceRepository.getAttendanceByEmployeeId(id).collect { records ->
+                    _monthlyRecords.value = records
+                }
+            }
+        }
     }
 
     fun loadData() {
