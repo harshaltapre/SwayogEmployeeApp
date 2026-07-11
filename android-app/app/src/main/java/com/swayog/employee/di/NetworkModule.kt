@@ -47,12 +47,7 @@ object NetworkModule {
             val originalRequest = chain.request()
 
             // Dynamic base URL: read saved server URL from preferences
-            val savedUrlRaw = dataStoreManager.getServerUrlBlocking()
-            val savedUrl = if (savedUrlRaw != null && savedUrlRaw.contains(".loca.lt") && !savedUrlRaw.contains("clever-snails-report")) {
-                null // Stale tunnel URL cached - bypass and fall back to the new default BuildConfig URL
-            } else {
-                savedUrlRaw
-            }
+            val savedUrl = dataStoreManager.getServerUrlBlocking()
             val request = if (!savedUrl.isNullOrBlank()) {
                 try {
                     val newBaseUrl = savedUrl.let { url ->

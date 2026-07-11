@@ -56,6 +56,9 @@ fun SwayogNavHost(
                 onNavigateToSubAdminCustomers = {
                     navController.navigate(Screen.SubAdminCustomers.route)
                 },
+                onNavigateToSubAdminCustomerDetails = { customerId ->
+                    navController.navigate("subadmin_customer_details/$customerId")
+                },
                 onNavigateToSubAdminComplaints = {
                     navController.navigate(Screen.SubAdminComplaints.route)
                 },

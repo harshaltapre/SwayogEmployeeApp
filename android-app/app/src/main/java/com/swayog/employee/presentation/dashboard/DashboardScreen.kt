@@ -21,6 +21,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.presentation.common.components.*
+import com.swayog.employee.presentation.subadmin.SubAdminComplaintsScreen
+import com.swayog.employee.presentation.subadmin.SubAdminCalendarScreen
+import com.swayog.employee.presentation.subadmin.SubAdminCustomersScreen
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -34,6 +37,7 @@ fun DashboardScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToDailyCommit: () -> Unit,
     onNavigateToSubAdminCustomers: () -> Unit,
+    onNavigateToSubAdminCustomerDetails: (Int) -> Unit,
     onNavigateToSubAdminComplaints: () -> Unit,
     onNavigateToSubAdminCalendar: () -> Unit,
     onLogout: () -> Unit,
@@ -46,6 +50,11 @@ fun DashboardScreen(
     val tasks by viewModel.tasks.collectAsState()
     val todayAttendance by viewModel.todayAttendance.collectAsState()
     val performance by viewModel.performance.collectAsState()
+
+    val isServiceCoordinator = remember(userRole, jobRole) {
+        userRole?.uppercase() == "SUB_ADMIN" || jobRole?.replace(" ", "")?.lowercase() == "servicecoordinator"
+    }
+    var currentTab by remember { mutableIntStateOf(0) }
 
     var workDescription by remember { mutableStateOf("") }
 
@@ -96,20 +105,52 @@ fun DashboardScreen(
 
     Scaffold(
         topBar = {
-            SwayogTopBar(
-                title = "Dashboard",
-                actions = {
-                    IconButton(onClick = { viewModel.retryLoading() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+            if (!isServiceCoordinator || currentTab == 0) {
+                SwayogTopBar(
+                    title = "Dashboard",
+                    actions = {
+                        IconButton(onClick = { viewModel.retryLoading() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        }
+                        IconButton(onClick = onNavigateToProfile) {
+                            Icon(Icons.Default.Person, contentDescription = "Profile")
+                        }
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
                     }
-                    IconButton(onClick = onNavigateToProfile) {
-                        Icon(Icons.Default.Person, contentDescription = "Profile")
-                    }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
+                )
+            }
+        },
+        bottomBar = {
+            if (isServiceCoordinator && dashboardState is DashboardState.Success) {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = currentTab == 0,
+                        onClick = { currentTab = 0 },
+                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                        label = { Text("Home") }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == 1,
+                        onClick = { currentTab = 1 },
+                        icon = { Icon(Icons.Default.Build, contentDescription = "Complaints") },
+                        label = { Text("Complaints") }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == 2,
+                        onClick = { currentTab = 2 },
+                        icon = { Icon(Icons.Default.CalendarToday, contentDescription = "Calendar") },
+                        label = { Text("Calendar") }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == 3,
+                        onClick = { currentTab = 3 },
+                        icon = { Icon(Icons.Default.People, contentDescription = "Customers") },
+                        label = { Text("Customers") }
+                    )
                 }
-            )
+            }
         }
     ) { paddingValues ->
         when (dashboardState) {
@@ -129,16 +170,34 @@ fun DashboardScreen(
             }
 
             else -> {
-                val isServiceCoordinator = remember(userRole, jobRole) {
-                    userRole?.uppercase() == "SUB_ADMIN" || jobRole?.replace(" ", "")?.lowercase() == "servicecoordinator"
-                }
-
                 if (isServiceCoordinator) {
-                    val scViewModel: ServiceCoordinatorViewModel = hiltViewModel()
-                    ServiceCoordinatorDashboardContent(
-                        viewModel = scViewModel,
-                        modifier = Modifier.padding(paddingValues)
-                    )
+                    when (currentTab) {
+                        0 -> {
+                            val scViewModel: ServiceCoordinatorViewModel = hiltViewModel()
+                            ServiceCoordinatorDashboardContent(
+                                viewModel = scViewModel,
+                                modifier = Modifier.padding(paddingValues)
+                            )
+                        }
+                        1 -> {
+                            SubAdminComplaintsScreen(
+                                onNavigateBack = { currentTab = 0 }
+                            )
+                        }
+                        2 -> {
+                            SubAdminCalendarScreen(
+                                onNavigateBack = { currentTab = 0 }
+                            )
+                        }
+                        3 -> {
+                            SubAdminCustomersScreen(
+                                onNavigateBack = { currentTab = 0 },
+                                onNavigateToDetails = { customerId ->
+                                    onNavigateToSubAdminCustomerDetails(customerId)
+                                }
+                            )
+                        }
+                    }
                 } else {
                     Box(
                         modifier = Modifier
