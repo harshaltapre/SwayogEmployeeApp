@@ -11,15 +11,32 @@ import {
   getSubadminCustomerSummary,
   updateCustomerCredentials,
 } from "./subadmin.controller.js";
-import {
-  getAmcCustomers,
-  updateAmcSettings,
-  listAmcVisits,
-  markVisitCompleted,
-  updateAmcVisit
-} from "./amc.controller.js";
+import { getAmcCustomers, updateAmcSettings, listAmcVisits, markVisitCompleted, updateAmcVisit } from "./amc.controller.js";
+import { listCustomersHandler } from "../customers/customers.controller.js";
+import { listCustomersQuerySchema } from "../customers/customers.schemas.js";
+import { listInternalUsersHandler } from "../users/users.controller.js";
+import { listInternalUsersQuerySchema } from "../users/users.schemas.js";
+import { validateQuery } from "../../middleware/validate.js";
 
 export const subadminRoutes = Router();
+
+// Get all customers (admin-level view) for the sub-admin portal
+subadminRoutes.get(
+  "/customers",
+  authenticateAccessToken,
+  requireMinRole(UserRole.EMPLOYEE),
+  validateQuery(listCustomersQuerySchema),
+  asyncHandler(listCustomersHandler)
+);
+
+// Get all internal users (staff directory) for the sub-admin portal
+subadminRoutes.get(
+  "/employees",
+  authenticateAccessToken,
+  requireMinRole(UserRole.EMPLOYEE),
+  validateQuery(listInternalUsersQuerySchema),
+  asyncHandler(listInternalUsersHandler)
+);
 
 /**
  * Sub-Admin routes require a valid token and SUB_ADMIN role or higher.
