@@ -40,10 +40,10 @@ sealed class MapPinType {
 @Composable
 fun SubAdminMapScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToEmployees: () -> Unit = {},
     viewModel: SubAdminMapViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val isLoading by viewModel.isLoading.collectAsState()
     val customers by viewModel.customers.collectAsState()
     val complaints by viewModel.complaints.collectAsState()
     val employees by viewModel.employees.collectAsState()
@@ -88,6 +88,9 @@ fun SubAdminMapScreen(
                 showBackButton = true,
                 onBackClick = onNavigateBack,
                 actions = {
+                    IconButton(onClick = onNavigateToEmployees) {
+                        Icon(Icons.Default.People, contentDescription = "Technicians")
+                    }
                     IconButton(onClick = { viewModel.loadData() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
@@ -304,7 +307,6 @@ fun SubAdminMapScreen(
             if (isScheduleOpen && selectedPin is MapPinType.Complaint) {
                 val req = (selectedPin as MapPinType.Complaint).request
                 ScheduleVisitDialog(
-                    complaint = req,
                     employees = employees,
                     onDismiss = { isScheduleOpen = false },
                     onSubmit = { date, time, techId ->

@@ -3,7 +3,9 @@ package com.swayog.employee.presentation.subadmin
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.AmcVisit
+import com.swayog.employee.data.model.CreateAmcVisitRequest
 import com.swayog.employee.data.model.ServiceRequest
+import com.swayog.employee.data.model.UpdateAmcVisitRequest
 import com.swayog.employee.data.repository.CustomerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +24,9 @@ class SubAdminCalendarViewModel @Inject constructor(
 
     private val _events = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val events: StateFlow<List<CalendarEvent>> = _events.asStateFlow()
+
+    private val _actionState = MutableStateFlow<CalendarActionState>(CalendarActionState.Idle)
+    val actionState: StateFlow<CalendarActionState> = _actionState.asStateFlow()
 
     init {
         loadEvents()
@@ -89,6 +94,36 @@ class SubAdminCalendarViewModel @Inject constructor(
             }
         }
     }
+
+    fun createAmcVisit(request: CreateAmcVisitRequest) {
+        viewModelScope.launch {
+            _actionState.value = CalendarActionState.Loading
+            val result = customerRepository.createAmcVisit(request)
+            result.onSuccess {
+                _actionState.value = CalendarActionState.Success("AMC visit created successfully")
+                loadEvents() // Refresh the calendar
+            }.onFailure { error ->
+                _actionState.value = CalendarActionState.Error(error.message ?: "Failed to create AMC visit")
+            }
+        }
+    }
+
+    fun updateAmcVisit(visitId: String, request: UpdateAmcVisitRequest) {
+        viewModelScope.launch {
+            _actionState.value = CalendarActionState.Loading
+            val result = customerRepository.updateAmcVisit(visitId, request)
+            result.onSuccess {
+                _actionState.value = CalendarActionState.Success("AMC visit updated successfully")
+                loadEvents() // Refresh the calendar
+            }.onFailure { error ->
+                _actionState.value = CalendarActionState.Error(error.message ?: "Failed to update AMC visit")
+            }
+        }
+    }
+
+    fun resetActionState() {
+        _actionState.value = CalendarActionState.Idle
+    }
 }
 
 data class CalendarEvent(
@@ -106,4 +141,11 @@ sealed class SubAdminCalendarState {
     object Loading : SubAdminCalendarState()
     object Success : SubAdminCalendarState()
     data class Error(val message: String) : SubAdminCalendarState()
+}
+
+sealed class CalendarActionState {
+    object Idle : CalendarActionState()
+    object Loading : CalendarActionState()
+    data class Success(val message: String) : CalendarActionState()
+    data class Error(val message: String) : CalendarActionState()
 }

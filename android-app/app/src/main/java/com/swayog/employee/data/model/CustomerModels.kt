@@ -5,8 +5,10 @@ import com.google.gson.annotations.SerializedName
 data class Customer(
     val id: Int,
     val customerCode: String,
+    @SerializedName("name")
     val fullName: String,
     val email: String,
+    @SerializedName("phone")
     val phoneNumber: String,
     val city: String,
     val address: String,
@@ -94,4 +96,15 @@ data class UpdateServiceRequestRequest(
     val scheduledDate: String? = null,
     val scheduledTime: String? = null,
     val assignedEmployeeId: String? = null
+)
+
+data class PaginatedServiceRequests(
+    val requests: List<ServiceRequest>,
+    val pagination: PaginationInfo? = null
+)
+
+data class PaginationInfo(
+    val total: Int,
+    val limit: Int,
+    val offset: Int
 )

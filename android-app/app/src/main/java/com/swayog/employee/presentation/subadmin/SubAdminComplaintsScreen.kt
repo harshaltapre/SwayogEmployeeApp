@@ -138,7 +138,6 @@ fun SubAdminComplaintsScreen(
         // Reschedule/Schedule Dialog
         if (isScheduleOpen && selectedComplaint != null) {
             ScheduleVisitDialog(
-                complaint = selectedComplaint!!,
                 employees = employees,
                 onDismiss = { isScheduleOpen = false },
                 onSubmit = { date, time, techId ->
@@ -333,7 +332,6 @@ fun ComplaintDetailsDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScheduleVisitDialog(
-    complaint: ServiceRequest,
     employees: List<User>,
     onDismiss: () -> Unit,
     onSubmit: (String, String?, String) -> Unit,

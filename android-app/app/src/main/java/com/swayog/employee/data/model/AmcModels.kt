@@ -28,3 +28,11 @@ data class UpdateAmcVisitRequest(
     val afterImageUrl: String?,
     val visitNotes: String?
 )
+
+data class CreateAmcVisitRequest(
+    val customerId: Int,
+    val scheduledDate: String,
+    val timeSlot: String?,
+    val assignedEmployeeId: String?,
+    val notes: String?
+)

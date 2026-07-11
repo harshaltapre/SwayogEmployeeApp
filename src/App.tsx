@@ -148,7 +148,7 @@ function Router() {
       <ProtectedRoute path="/customer/payments" component={CustomerPayments} allowedRoles={['admin', 'super_admin', 'customer']} />
       <ProtectedRoute path="/customer/settings" component={CustomerSettings} allowedRoles={['admin', 'super_admin', 'customer']} />
       
-      {/* Sub Admin Routes */}
+      {/* Sub Admin / Service Coordinator Routes */}
       <ProtectedRoute path="/subadmin/dashboard" component={SubAdminDashboard} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/complaints" component={SubAdminComplaints} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/employees" component={SubAdminEmployees} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
@@ -156,7 +156,6 @@ function Router() {
       <ProtectedRoute path="/subadmin/calendar" component={SubAdminCalendar} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/financials" component={SubAdminFinancials} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/waaree-solar" component={WaareeSolarDashboard} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
-      <ProtectedRoute path="/subadmin/service-coordinator-dashboard" component={ServiceCoordinatorDashboard} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/map" component={SubAdminMap} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
 
       {/* Legacy compatibility redirect */}

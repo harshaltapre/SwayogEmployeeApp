@@ -67,17 +67,8 @@ fun SwayogNavHost(
                 onNavigateToSubAdminCalendar = {
                     navController.navigate(Screen.SubAdminCalendar.route)
                 },
-                onNavigateToSubAdminMap = {
-                    navController.navigate(Screen.SubAdminMap.route)
-                },
                 onNavigateToSubAdminEmployees = {
                     navController.navigate(Screen.SubAdminEmployees.route)
-                },
-                onLogout = {
-                    onLogout()
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Dashboard.route) { inclusive = true }
-                    }
                 }
             )
         }

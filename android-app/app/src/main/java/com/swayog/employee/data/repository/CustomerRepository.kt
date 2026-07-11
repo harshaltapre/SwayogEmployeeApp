@@ -114,9 +114,12 @@ class CustomerRepository @Inject constructor(
                 customerDao.insertCustomers(entities)
                 Result.success(customers)
             } else {
-                Result.failure(Exception("Failed to fetch customers"))
+                val errorMsg = "Failed to fetch customers: Server returned ${response.code()} ${response.message()}"
+                android.util.Log.w("CustomerRepository", errorMsg)
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
+            android.util.Log.e("CustomerRepository", "Exception fetching customers", e)
             Result.failure(e)
         }
     }
@@ -210,7 +213,7 @@ class CustomerRepository @Inject constructor(
         return try {
             val response = apiService.getComplaints()
             if (response.isSuccessful && response.body()?.data != null) {
-                Result.success(response.body()!!.data!!)
+                Result.success(response.body()!!.data!!.requests)
             } else {
                 Result.failure(Exception("Failed to fetch complaints: ${response.message()}"))
             }
@@ -268,6 +271,32 @@ class CustomerRepository @Inject constructor(
                 Result.success(response.body()!!.data!!)
             } else {
                 Result.failure(Exception("Failed to fetch AMC visits: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createAmcVisit(request: CreateAmcVisitRequest): Result<AmcVisit> {
+        return try {
+            val response = apiService.createAmcVisit(request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to create AMC visit: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateAmcVisit(visitId: String, request: UpdateAmcVisitRequest): Result<AmcVisit> {
+        return try {
+            val response = apiService.updateAmcVisit(visitId, request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to update AMC visit: ${response.message()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

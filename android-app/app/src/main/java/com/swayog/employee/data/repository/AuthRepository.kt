@@ -23,9 +23,9 @@ class AuthRepository @Inject constructor(
     private val apiService: ApiService
 ) {
     
-    suspend fun login(email: String, password: String): Result<AuthResponse> {
+    suspend fun login(email: String, password: String, role: String = "EMPLOYEE"): Result<AuthResponse> {
         return try {
-            val response = apiService.login(LoginRequest(email, password))
+            val response = apiService.login(LoginRequest(identifier = email, password = password, role = role))
             if (response.isSuccessful && response.body()?.data != null) {
                 val authResponse = response.body()!!.data!!
                 

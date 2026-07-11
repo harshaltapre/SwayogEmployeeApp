@@ -9,7 +9,7 @@ data class ApiResponse<T>(
 )
 
 data class LoginRequest(
-    val email: String,
+    val identifier: String,
     val password: String,
     val role: String? = null
 )

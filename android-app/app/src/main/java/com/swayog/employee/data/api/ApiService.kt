@@ -65,7 +65,7 @@ interface ApiService {
     ): Response<ApiResponse<DailyCommit>>
     
     // Sub-admin endpoints
-    @GET("subadmin/customers")
+    @GET("customers")
     suspend fun getCustomers(
         @Query("limit") limit: Int?,
         @Query("city") city: String?
@@ -94,7 +94,7 @@ interface ApiService {
     ): Response<ApiResponse<Customer>>
     
     @GET("subadmin/service-requests")
-    suspend fun getComplaints(): Response<ApiResponse<List<ServiceRequest>>>
+    suspend fun getComplaints(): Response<ApiResponse<PaginatedServiceRequests>>
 
     @PATCH("subadmin/service-requests/{requestId}")
     suspend fun updateServiceRequest(
@@ -142,6 +142,11 @@ interface ApiService {
     suspend fun getAmcVisits(
         @Query("employeeId") employeeId: String?
     ): Response<ApiResponse<List<AmcVisit>>>
+    
+    @POST("amc/visits")
+    suspend fun createAmcVisit(
+        @Body request: CreateAmcVisitRequest
+    ): Response<ApiResponse<AmcVisit>>
     
     @PATCH("amc/visits/{visitId}")
     suspend fun updateAmcVisit(

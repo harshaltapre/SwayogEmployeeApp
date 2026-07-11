@@ -92,29 +92,13 @@ class LoginViewModel @Inject constructor(
         _loginState.value = LoginState.Loading
 
         viewModelScope.launch {
-            authRepository.checkHealth()
-                .onSuccess {
-                    authRepository.login(emailValue, passwordValue)
-                        .onSuccess { authResponse ->
-                            _loginState.value = LoginState.Success(authResponse)
-                        }
-                        .onFailure { error ->
-                            _loginState.value = LoginState.Error(
-                                error.message ?: "Login failed. Please try again."
-                            )
-                        }
+            authRepository.login(emailValue, passwordValue)
+                .onSuccess { authResponse ->
+                    _loginState.value = LoginState.Success(authResponse)
                 }
-                .onFailure { healthError ->
-                    try {
-                        val cachedUrl = dataStoreManager.serverUrl.first()
-                        if (!cachedUrl.isNullOrBlank()) {
-                            dataStoreManager.saveServerUrl("")
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                .onFailure { error ->
                     _loginState.value = LoginState.Error(
-                        healthError.message ?: "Server unreachable. Stale configuration has been cleared."
+                        error.message ?: "Login failed. Please try again."
                     )
                 }
         }
@@ -132,36 +116,20 @@ class LoginViewModel @Inject constructor(
         _loginState.value = LoginState.Loading
 
         viewModelScope.launch {
-            authRepository.checkHealth()
-                .onSuccess {
-                    authRepository.loginWithPhone(phoneValue, otpValue)
+            authRepository.loginWithPhone(phoneValue, otpValue)
+                .onSuccess { authResponse ->
+                    _loginState.value = LoginState.Success(authResponse)
+                }
+                .onFailure { _ ->
+                    authRepository.login(phoneValue, "OTP_MOCK")
                         .onSuccess { authResponse ->
                             _loginState.value = LoginState.Success(authResponse)
                         }
-                        .onFailure { _ ->
-                            authRepository.login(phoneValue, "OTP_MOCK")
-                                .onSuccess { authResponse ->
-                                    _loginState.value = LoginState.Success(authResponse)
-                                }
-                                .onFailure { fallbackError ->
-                                    _loginState.value = LoginState.Error(
-                                        fallbackError.message ?: "Phone login failed. Please try again."
-                                    )
-                                }
+                        .onFailure { fallbackError ->
+                            _loginState.value = LoginState.Error(
+                                fallbackError.message ?: "Phone login failed. Please try again."
+                            )
                         }
-                }
-                .onFailure { healthError ->
-                    try {
-                        val cachedUrl = dataStoreManager.serverUrl.first()
-                        if (!cachedUrl.isNullOrBlank()) {
-                            dataStoreManager.saveServerUrl("")
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                    _loginState.value = LoginState.Error(
-                        healthError.message ?: "Server unreachable. Stale configuration has been cleared."
-                    )
                 }
         }
     }
@@ -173,7 +141,7 @@ class LoginViewModel @Inject constructor(
                 .onSuccess { authResponse ->
                     _loginState.value = LoginState.Success(authResponse)
                 }
-                .onFailure { error ->
+                .onFailure { _ ->
                     _loginState.value = LoginState.Error(
                         "Session expired. Please log in with your email or phone."
                     )

@@ -491,7 +491,6 @@ fun ServiceCoordinatorDashboardContent(
                                 }
 
                                 val pending = summary?.serviceRequestStats?.pending ?: 0
-                                val scheduled = summary?.serviceRequestStats?.inProgress ?: 0 // Map to scheduled
                                 val resolved = summary?.serviceRequestStats?.completed ?: 0
 
                                 Row(
@@ -886,7 +885,9 @@ fun ServiceCoordinatorDashboardContent(
                                     Text(
                                         text = selectedCustomer.fullName,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = selectedCustomer.customerCode,
@@ -1434,7 +1435,6 @@ fun GenerationChart(
     history: List<GenerationHistory>,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     Canvas(modifier = modifier) {
         val width = size.width
         val height = size.height
@@ -1636,7 +1636,9 @@ fun CustomerSearchDialog(
                                     Text(
                                         text = customer.fullName,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = "${customer.customerCode} · ${customer.city}",

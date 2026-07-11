@@ -32,11 +32,13 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
 
   const navItems = [
     { name: "Dashboard", href: "/subadmin/dashboard", icon: LayoutDashboard },
-    { name: "Complaints", href: "/subadmin/complaints", icon: ClipboardList },
-    { name: "AMC Management", href: "/subadmin/amc-management", icon: CalendarDays },
-    { name: "Employee Section", href: "/subadmin/employees", icon: UserCog },
+    { name: "Service Requests", href: "/subadmin/complaints", icon: ClipboardList },
+    { name: "AMC Customers", href: "/subadmin/amc-management", icon: CalendarDays },
+    { name: "Technicians", href: "/subadmin/employees", icon: UserCog },
     { name: "Calendar", href: "/subadmin/calendar", icon: Calendar },
     { name: "Financials", href: "/subadmin/financials", icon: IndianRupee },
+    { name: "Solar Dashboard", href: "/subadmin/waaree-solar", icon: Sun },
+    { name: "Map View", href: "/subadmin/map", icon: Activity },
   ];
 
 

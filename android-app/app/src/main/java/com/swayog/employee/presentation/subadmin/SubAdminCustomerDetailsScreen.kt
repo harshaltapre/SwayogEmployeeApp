@@ -382,6 +382,7 @@ fun InverterTabContent(
                         }
                     }
                 }
+
             }
         }
 

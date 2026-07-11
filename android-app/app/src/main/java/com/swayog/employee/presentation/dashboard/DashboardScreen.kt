@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -24,6 +25,7 @@ import com.swayog.employee.presentation.common.components.*
 import com.swayog.employee.presentation.subadmin.SubAdminComplaintsScreen
 import com.swayog.employee.presentation.subadmin.SubAdminCalendarScreen
 import com.swayog.employee.presentation.subadmin.SubAdminCustomersScreen
+import com.swayog.employee.presentation.subadmin.SubAdminMapScreen
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -40,9 +42,7 @@ fun DashboardScreen(
     onNavigateToSubAdminCustomerDetails: (Int) -> Unit,
     onNavigateToSubAdminComplaints: () -> Unit,
     onNavigateToSubAdminCalendar: () -> Unit,
-    onNavigateToSubAdminMap: () -> Unit,
     onNavigateToSubAdminEmployees: () -> Unit,
-    onLogout: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val dashboardState by viewModel.dashboardState.collectAsState()
@@ -122,6 +122,21 @@ fun DashboardScreen(
                         }
                     }
                 )
+            } else if (isServiceCoordinator) {
+                SwayogTopBar(
+                    title = when (currentTab) {
+                        1 -> "Service Requests"
+                        2 -> "Customers"
+                        3 -> "Calendar"
+                        4 -> "Map"
+                        else -> "Dashboard"
+                    },
+                    actions = {
+                        IconButton(onClick = onNavigateToProfile) {
+                            Icon(Icons.Default.Person, contentDescription = "Profile")
+                        }
+                    }
+                )
             }
         },
         bottomBar = {
@@ -131,25 +146,31 @@ fun DashboardScreen(
                         selected = currentTab == 0,
                         onClick = { currentTab = 0 },
                         icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                        label = { Text("Home") }
+                        label = { Text("Home", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     )
                     NavigationBarItem(
                         selected = currentTab == 1,
                         onClick = { currentTab = 1 },
-                        icon = { Icon(Icons.Default.Build, contentDescription = "Complaints") },
-                        label = { Text("Complaints") }
+                        icon = { Icon(Icons.Default.Build, contentDescription = "Requests") },
+                        label = { Text("Requests", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     )
                     NavigationBarItem(
                         selected = currentTab == 2,
                         onClick = { currentTab = 2 },
-                        icon = { Icon(Icons.Default.CalendarToday, contentDescription = "Calendar") },
-                        label = { Text("Calendar") }
+                        icon = { Icon(Icons.Default.People, contentDescription = "Customers") },
+                        label = { Text("Customers", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     )
                     NavigationBarItem(
                         selected = currentTab == 3,
                         onClick = { currentTab = 3 },
-                        icon = { Icon(Icons.Default.People, contentDescription = "Customers") },
-                        label = { Text("Customers") }
+                        icon = { Icon(Icons.Default.CalendarToday, contentDescription = "Calendar") },
+                        label = { Text("Calendar", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == 4,
+                        onClick = { currentTab = 4 },
+                        icon = { Icon(Icons.Default.Map, contentDescription = "Map") },
+                        label = { Text("Map", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     )
                 }
             }
@@ -178,10 +199,10 @@ fun DashboardScreen(
                             val scViewModel: ServiceCoordinatorViewModel = hiltViewModel()
                             ServiceCoordinatorDashboardContent(
                                 viewModel = scViewModel,
-                                onNavigateToCustomers = { currentTab = 3 },
+                                onNavigateToCustomers = { currentTab = 2 },
                                 onNavigateToComplaints = { currentTab = 1 },
-                                onNavigateToCalendar = { currentTab = 2 },
-                                onNavigateToMap = onNavigateToSubAdminMap,
+                                onNavigateToCalendar = { currentTab = 3 },
+                                onNavigateToMap = { currentTab = 4 },
                                 onNavigateToEmployees = onNavigateToSubAdminEmployees,
                                 modifier = Modifier.padding(paddingValues)
                             )
@@ -192,16 +213,22 @@ fun DashboardScreen(
                             )
                         }
                         2 -> {
-                            SubAdminCalendarScreen(
-                                onNavigateBack = { currentTab = 0 }
-                            )
-                        }
-                        3 -> {
                             SubAdminCustomersScreen(
                                 onNavigateBack = { currentTab = 0 },
                                 onNavigateToDetails = { customerId ->
                                     onNavigateToSubAdminCustomerDetails(customerId)
                                 }
+                            )
+                        }
+                        3 -> {
+                            SubAdminCalendarScreen(
+                                onNavigateBack = { currentTab = 0 }
+                            )
+                        }
+                        4 -> {
+                            SubAdminMapScreen(
+                                onNavigateBack = { currentTab = 0 },
+                                onNavigateToEmployees = onNavigateToSubAdminEmployees
                             )
                         }
                     }
