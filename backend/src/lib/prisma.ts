@@ -261,8 +261,15 @@ export const prisma: any = new Proxy({} as any, {
               const errStr = String(error?.message || "");
               const isConnectionError = 
                 errStr.includes("Can't reach database server") || 
+                errStr.includes("EADDRNOTAVAIL") ||
                 errStr.includes("ECONNREFUSED") ||
-                error?.code === "P1001";
+                errStr.includes("connection refused") ||
+                error?.code === "P2024" ||
+                error?.code === "P1001" ||
+                error?.code === "P1002" ||
+                error?.code === "P1003" ||
+                error?.code === "P1008" ||
+                error?.code === "P1017";
               if (isConnectionError && process.env.NODE_ENV === 'development') {
                 console.warn("[Prisma] Database connection lost on raw query. Switching to mock client.");
                 mockMode = true;
