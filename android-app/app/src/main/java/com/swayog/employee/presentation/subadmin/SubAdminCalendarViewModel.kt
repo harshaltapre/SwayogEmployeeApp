@@ -1,0 +1,109 @@
+package com.swayog.employee.presentation.subadmin
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.swayog.employee.data.model.AmcVisit
+import com.swayog.employee.data.model.ServiceRequest
+import com.swayog.employee.data.repository.CustomerRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class SubAdminCalendarViewModel @Inject constructor(
+    private val customerRepository: CustomerRepository
+) : ViewModel() {
+
+    private val _state = MutableStateFlow<SubAdminCalendarState>(SubAdminCalendarState.Initial)
+    val state: StateFlow<SubAdminCalendarState> = _state.asStateFlow()
+
+    private val _events = MutableStateFlow<List<CalendarEvent>>(emptyList())
+    val events: StateFlow<List<CalendarEvent>> = _events.asStateFlow()
+
+    init {
+        loadEvents()
+    }
+
+    fun loadEvents() {
+        viewModelScope.launch {
+            _state.value = SubAdminCalendarState.Loading
+            
+            var complaintsResult: Result<List<ServiceRequest>> = Result.failure(Exception())
+            var visitsResult: Result<List<AmcVisit>> = Result.failure(Exception())
+
+            val jobs = listOf(
+                viewModelScope.launch {
+                    complaintsResult = customerRepository.getComplaints()
+                },
+                viewModelScope.launch {
+                    visitsResult = customerRepository.getAmcVisits()
+                }
+            )
+            
+            // Wait for both to finish
+            jobs.forEach { it.join() }
+
+            if (complaintsResult.isSuccess || visitsResult.isSuccess) {
+                val list = mutableListOf<CalendarEvent>()
+                
+                complaintsResult.onSuccess { requests ->
+                    requests.filter { it.status.lowercase() == "scheduled" && it.scheduledDate != null }.forEach {
+                        list.add(
+                            CalendarEvent(
+                                id = "complaint_${it.id}",
+                                type = "Complaint Ticket",
+                                title = it.title,
+                                description = it.description,
+                                date = it.scheduledDate!!,
+                                time = it.scheduledTime,
+                                address = it.address ?: "No Address Listed"
+                            )
+                        )
+                    }
+                }
+
+                visitsResult.onSuccess { visits ->
+                    visits.filter { it.status.lowercase() == "scheduled" }.forEach {
+                        list.add(
+                            CalendarEvent(
+                                id = "amc_${it.id}",
+                                type = "AMC Cleaning Visit",
+                                title = "Cleaning Visit #${it.cleaningNumber ?: 1}",
+                                description = it.notes ?: "Routine AMC cleaning visit",
+                                date = it.scheduledDate,
+                                time = it.timeSlot,
+                                address = "Customer ID: ${it.customerId}"
+                            )
+                        )
+                    }
+                }
+
+                // Sort by date ascending
+                _events.value = list.sortedBy { it.date }
+                _state.value = SubAdminCalendarState.Success
+            } else {
+                _state.value = SubAdminCalendarState.Error("Failed to fetch calendar events.")
+            }
+        }
+    }
+}
+
+data class CalendarEvent(
+    val id: String,
+    val type: String,
+    val title: String,
+    val description: String,
+    val date: String,
+    val time: String?,
+    val address: String
+)
+
+sealed class SubAdminCalendarState {
+    object Initial : SubAdminCalendarState()
+    object Loading : SubAdminCalendarState()
+    object Success : SubAdminCalendarState()
+    data class Error(val message: String) : SubAdminCalendarState()
+}
