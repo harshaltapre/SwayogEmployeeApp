@@ -11,6 +11,10 @@ import com.swayog.employee.presentation.tasks.TasksScreen
 import com.swayog.employee.presentation.profile.ProfileScreen
 import com.swayog.employee.presentation.settings.SettingsScreen
 import com.swayog.employee.presentation.dailycommit.DailyCommitScreen
+import com.swayog.employee.presentation.subadmin.SubAdminCustomersScreen
+import com.swayog.employee.presentation.subadmin.SubAdminCustomerDetailsScreen
+import com.swayog.employee.presentation.subadmin.SubAdminComplaintsScreen
+import com.swayog.employee.presentation.subadmin.SubAdminCalendarScreen
 
 @Composable
 fun SwayogNavHost(
@@ -48,6 +52,15 @@ fun SwayogNavHost(
                 },
                 onNavigateToDailyCommit = {
                     navController.navigate(Screen.DailyCommit.route)
+                },
+                onNavigateToSubAdminCustomers = {
+                    navController.navigate(Screen.SubAdminCustomers.route)
+                },
+                onNavigateToSubAdminComplaints = {
+                    navController.navigate(Screen.SubAdminComplaints.route)
+                },
+                onNavigateToSubAdminCalendar = {
+                    navController.navigate(Screen.SubAdminCalendar.route)
                 },
                 onLogout = {
                     onLogout()
@@ -103,6 +116,40 @@ fun SwayogNavHost(
                 }
             )
         }
+
+        composable(Screen.SubAdminCustomers.route) {
+            SubAdminCustomersScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToDetails = { customerId ->
+                    navController.navigate("subadmin_customer_details/$customerId")
+                }
+            )
+        }
+
+        composable(
+            route = Screen.SubAdminCustomerDetails.route,
+            arguments = listOf(
+                androidx.navigation.navArgument("customerId") {
+                    type = androidx.navigation.NavType.IntType
+                }
+            )
+        ) {
+            SubAdminCustomerDetailsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.SubAdminComplaints.route) {
+            SubAdminComplaintsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.SubAdminCalendar.route) {
+            SubAdminCalendarScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
     }
 }
 
@@ -114,4 +161,8 @@ sealed class Screen(val route: String) {
     data object Profile : Screen("profile")
     data object Settings : Screen("settings")
     data object DailyCommit : Screen("daily_commit")
+    data object SubAdminCustomers : Screen("subadmin_customers")
+    data object SubAdminCustomerDetails : Screen("subadmin_customer_details/{customerId}")
+    data object SubAdminComplaints : Screen("subadmin_complaints")
+    data object SubAdminCalendar : Screen("subadmin_calendar")
 }

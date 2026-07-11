@@ -33,6 +33,9 @@ fun DashboardScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToDailyCommit: () -> Unit,
+    onNavigateToSubAdminCustomers: () -> Unit,
+    onNavigateToSubAdminComplaints: () -> Unit,
+    onNavigateToSubAdminCalendar: () -> Unit,
     onLogout: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
@@ -262,6 +265,80 @@ fun DashboardScreen(
                             }
                         }
 
+                        // Quick Navigation Grid
+                        item {
+                            Text(
+                                text = "Quick Actions",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                QuickActionCard(
+                                    icon = Icons.Default.Fingerprint,
+                                    label = "Attendance",
+                                    color = Color(0xFF386FA4), // BrandBlue
+                                    onClick = onNavigateToAttendance,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                QuickActionCard(
+                                    icon = Icons.Default.Assignment,
+                                    label = "Tasks",
+                                    color = Color(0xFF0B6E4F), // BrandGreen
+                                    onClick = onNavigateToTasks,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                QuickActionCard(
+                                    icon = Icons.Default.EditNote,
+                                    label = "Timesheets",
+                                    color = Color(0xFFD1603D), // BrandOrange
+                                    onClick = onNavigateToDailyCommit,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        // Coordinator Actions
+                        val isCoordinator = userRole?.uppercase() == "SUB_ADMIN" || jobRole?.uppercase()?.contains("COORDINATOR") == true
+                        if (isCoordinator) {
+                            item {
+                                Text(
+                                    text = "Coordinator Actions",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    QuickActionCard(
+                                        icon = Icons.Default.People,
+                                        label = "Customers",
+                                        color = Color(0xFF8B5CF6),
+                                        onClick = onNavigateToSubAdminCustomers,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    QuickActionCard(
+                                        icon = Icons.Default.Warning,
+                                        label = "Complaints",
+                                        color = Color(0xFFF59E0B),
+                                        onClick = onNavigateToSubAdminComplaints,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    QuickActionCard(
+                                        icon = Icons.Default.CalendarToday,
+                                        label = "Calendar",
+                                        color = Color(0xFF10B981),
+                                        onClick = onNavigateToSubAdminCalendar,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
                         // My Tasks Section
                         item {
                             Row(

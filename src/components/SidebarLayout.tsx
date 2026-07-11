@@ -85,7 +85,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         return [
           { name: "Dashboard", href: "/subadmin/dashboard", icon: LayoutDashboard },
           { name: "Complaints", href: "/subadmin/complaints", icon: Wrench },
-          { name: "AMC Management", href: "/subadmin/amc", icon: Calendar },
+          { name: "AMC Management", href: "/subadmin/amc-management", icon: Calendar },
           { name: "Employee Section", href: "/subadmin/employees", icon: Users },
           { name: "Calendar", href: "/subadmin/calendar", icon: Calendar },
           { name: "Settings", href: "/employee/settings", icon: Settings },

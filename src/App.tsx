@@ -51,6 +51,7 @@ import SubAdminCalendar from "@/pages/employee/SubAdminCalendar";
 import SubAdminFinancials from "@/pages/employee/SubAdminFinancials";
 import WaareeSolarDashboard from "@/pages/employee/WaareeSolarDashboard";
 import ServiceCoordinatorDashboard from "@/pages/admin/ServiceCoordinatorDashboard";
+import SubAdminMap from "@/pages/employee/SubAdminMap";
 
 
 
@@ -156,10 +157,14 @@ function Router() {
       <ProtectedRoute path="/subadmin/financials" component={SubAdminFinancials} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/waaree-solar" component={WaareeSolarDashboard} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/service-coordinator-dashboard" component={ServiceCoordinatorDashboard} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
+      <ProtectedRoute path="/subadmin/map" component={SubAdminMap} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
 
       {/* Legacy compatibility redirect */}
       <Route path="/subadmin/service-requests">
         <Redirect to="/subadmin/complaints" />
+      </Route>
+      <Route path="/subadmin/amc">
+        <Redirect to="/subadmin/amc-management" />
       </Route>
 
       {/* Inventory Executive Routes */}

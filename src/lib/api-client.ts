@@ -121,6 +121,8 @@ export type CustomerRecord = {
   apartmentId?: number | null;
   apartment?: { id: number; name: string; address: string; city: string } | null;
   assignedEmployee?: { id: string; name: string } | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type ApartmentRecord = {
@@ -946,6 +948,8 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
       id: String(raw.assignedEmployee.id),
       name: String(raw.assignedEmployee.fullName || raw.assignedEmployee.name || ""),
     } : null,
+    latitude: raw?.latitude !== undefined && raw?.latitude !== null ? Number(raw.latitude) : null,
+    longitude: raw?.longitude !== undefined && raw?.longitude !== null ? Number(raw.longitude) : null,
   };
 }
 

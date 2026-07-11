@@ -189,7 +189,7 @@ class CustomerRepository @Inject constructor(
             Result.failure(e)
         }
     }
-    
+
     suspend fun getCustomerInverterGenerationHistory(
         customerId: Int,
         period: String
@@ -199,33 +199,75 @@ class CustomerRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to fetch inverter history"))
+                Result.failure(Exception("Failed to fetch generation history: ${response.message()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
-    
+
+    suspend fun getComplaints(): Result<List<ServiceRequest>> {
+        return try {
+            val response = apiService.getComplaints()
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to fetch complaints: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getSubAdminAmcVisits(customerId: Int?): Result<List<AmcVisit>> {
         return try {
             val response = apiService.getSubAdminAmcVisits(customerId, null, null, null)
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to fetch AMC visits"))
+                Result.failure(Exception("Failed to fetch AMC visits: ${response.message()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
-    
+
     suspend fun getSubAdminEmployees(): Result<List<User>> {
         return try {
             val response = apiService.getSubAdminEmployees()
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to fetch sub-admin employees"))
+                Result.failure(Exception("Failed to fetch employees: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateServiceRequest(
+        requestId: Int,
+        request: UpdateServiceRequestRequest
+    ): Result<ServiceRequest> {
+        return try {
+            val response = apiService.updateServiceRequest(requestId, request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to update service request: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAmcVisits(): Result<List<AmcVisit>> {
+        return try {
+            val response = apiService.getAmcVisits(null)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to fetch AMC visits: ${response.message()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

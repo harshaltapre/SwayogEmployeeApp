@@ -5,6 +5,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { useListInventory } from "@/lib/api-client";
 import { useAuth, isInventoryExecutiveJobRole } from "@/lib/auth";
 import { C, Card, Pill, StatCard } from "../superadmin/shared";
+import { CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export default function InventoryExecutiveDashboard() {
   const { user, logout } = useAuth();

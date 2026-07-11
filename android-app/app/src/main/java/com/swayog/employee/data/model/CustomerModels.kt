@@ -88,3 +88,10 @@ data class ServiceRequest(
     val createdAt: String,
     val updatedAt: String
 )
+
+data class UpdateServiceRequestRequest(
+    val status: String?,
+    val scheduledDate: String? = null,
+    val scheduledTime: String? = null,
+    val assignedEmployeeId: String? = null
+)

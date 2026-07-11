@@ -93,8 +93,14 @@ interface ApiService {
         @Body request: UpdateCredentialsRequest
     ): Response<ApiResponse<Customer>>
     
-    @GET("subadmin/complaints")
+    @GET("subadmin/service-requests")
     suspend fun getComplaints(): Response<ApiResponse<List<ServiceRequest>>>
+
+    @PATCH("subadmin/service-requests/{requestId}")
+    suspend fun updateServiceRequest(
+        @Path("requestId") requestId: Int,
+        @Body request: UpdateServiceRequestRequest
+    ): Response<ApiResponse<ServiceRequest>>
     
     @GET("subadmin/employees")
     suspend fun getSubAdminEmployees(): Response<ApiResponse<List<User>>>
