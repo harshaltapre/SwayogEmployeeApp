@@ -15,6 +15,8 @@ import com.swayog.employee.presentation.subadmin.SubAdminCustomersScreen
 import com.swayog.employee.presentation.subadmin.SubAdminCustomerDetailsScreen
 import com.swayog.employee.presentation.subadmin.SubAdminComplaintsScreen
 import com.swayog.employee.presentation.subadmin.SubAdminCalendarScreen
+import com.swayog.employee.presentation.subadmin.SubAdminMapScreen
+import com.swayog.employee.presentation.subadmin.SubAdminEmployeesScreen
 
 @Composable
 fun SwayogNavHost(
@@ -64,6 +66,12 @@ fun SwayogNavHost(
                 },
                 onNavigateToSubAdminCalendar = {
                     navController.navigate(Screen.SubAdminCalendar.route)
+                },
+                onNavigateToSubAdminMap = {
+                    navController.navigate(Screen.SubAdminMap.route)
+                },
+                onNavigateToSubAdminEmployees = {
+                    navController.navigate(Screen.SubAdminEmployees.route)
                 },
                 onLogout = {
                     onLogout()
@@ -153,6 +161,18 @@ fun SwayogNavHost(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
+
+        composable(Screen.SubAdminMap.route) {
+            SubAdminMapScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.SubAdminEmployees.route) {
+            SubAdminEmployeesScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
     }
 }
 
@@ -168,4 +188,6 @@ sealed class Screen(val route: String) {
     data object SubAdminCustomerDetails : Screen("subadmin_customer_details/{customerId}")
     data object SubAdminComplaints : Screen("subadmin_complaints")
     data object SubAdminCalendar : Screen("subadmin_calendar")
+    data object SubAdminMap : Screen("subadmin_map")
+    data object SubAdminEmployees : Screen("subadmin_employees")
 }

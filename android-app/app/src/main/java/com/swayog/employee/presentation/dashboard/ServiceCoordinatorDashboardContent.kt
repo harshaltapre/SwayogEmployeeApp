@@ -47,6 +47,11 @@ import java.util.*
 @Composable
 fun ServiceCoordinatorDashboardContent(
     viewModel: ServiceCoordinatorViewModel,
+    onNavigateToCustomers: () -> Unit,
+    onNavigateToComplaints: () -> Unit,
+    onNavigateToCalendar: () -> Unit,
+    onNavigateToMap: () -> Unit,
+    onNavigateToEmployees: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -114,7 +119,7 @@ fun ServiceCoordinatorDashboardContent(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
-                            text = "Select a client to manage solar parameters, telemetry, and AMC visits.",
+                            text = "Manage solar parameters, telemetry, maps, and schedules.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -130,6 +135,63 @@ fun ServiceCoordinatorDashboardContent(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh Portal",
                             tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            // Section 1.5: Quick Actions Navigation Grid
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Coordinator Console",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        QuickActionCard(
+                            icon = Icons.Default.People,
+                            label = "Customers",
+                            color = Color(0xFF8B5CF6),
+                            onClick = onNavigateToCustomers,
+                            modifier = Modifier.weight(1f)
+                        )
+                        QuickActionCard(
+                            icon = Icons.Default.Warning,
+                            label = "Complaints",
+                            color = Color(0xFFF59E0B),
+                            onClick = onNavigateToComplaints,
+                            modifier = Modifier.weight(1f)
+                        )
+                        QuickActionCard(
+                            icon = Icons.Default.CalendarToday,
+                            label = "Calendar",
+                            color = Color(0xFF10B981),
+                            onClick = onNavigateToCalendar,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        QuickActionCard(
+                            icon = Icons.Default.Map,
+                            label = "Geospatial Map",
+                            color = Color(0xFF386FA4),
+                            onClick = onNavigateToMap,
+                            modifier = Modifier.weight(1f)
+                        )
+                        QuickActionCard(
+                            icon = Icons.Default.Group,
+                            label = "Staff Directory",
+                            color = Color(0xFF0B6E4F),
+                            onClick = onNavigateToEmployees,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -1769,3 +1831,4 @@ fun UpdateCredentialsDialog(
         }
     }
 }
+

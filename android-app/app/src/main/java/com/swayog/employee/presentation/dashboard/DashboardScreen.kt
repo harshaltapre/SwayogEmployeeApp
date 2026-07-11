@@ -40,6 +40,8 @@ fun DashboardScreen(
     onNavigateToSubAdminCustomerDetails: (Int) -> Unit,
     onNavigateToSubAdminComplaints: () -> Unit,
     onNavigateToSubAdminCalendar: () -> Unit,
+    onNavigateToSubAdminMap: () -> Unit,
+    onNavigateToSubAdminEmployees: () -> Unit,
     onLogout: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
@@ -168,7 +170,7 @@ fun DashboardScreen(
                     modifier = Modifier.padding(paddingValues)
                 )
             }
-
+            
             else -> {
                 if (isServiceCoordinator) {
                     when (currentTab) {
@@ -176,6 +178,11 @@ fun DashboardScreen(
                             val scViewModel: ServiceCoordinatorViewModel = hiltViewModel()
                             ServiceCoordinatorDashboardContent(
                                 viewModel = scViewModel,
+                                onNavigateToCustomers = { currentTab = 3 },
+                                onNavigateToComplaints = { currentTab = 1 },
+                                onNavigateToCalendar = { currentTab = 2 },
+                                onNavigateToMap = onNavigateToSubAdminMap,
+                                onNavigateToEmployees = onNavigateToSubAdminEmployees,
                                 modifier = Modifier.padding(paddingValues)
                             )
                         }
