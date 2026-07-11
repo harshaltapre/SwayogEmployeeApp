@@ -189,4 +189,46 @@ class CustomerRepository @Inject constructor(
             Result.failure(e)
         }
     }
+    
+    suspend fun getCustomerInverterGenerationHistory(
+        customerId: Int,
+        period: String
+    ): Result<List<GenerationHistory>> {
+        return try {
+            val response = apiService.getCustomerInverterGenerationHistory(customerId, period)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to fetch inverter history"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getSubAdminAmcVisits(customerId: Int?): Result<List<AmcVisit>> {
+        return try {
+            val response = apiService.getSubAdminAmcVisits(customerId, null, null, null)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to fetch AMC visits"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getSubAdminEmployees(): Result<List<User>> {
+        return try {
+            val response = apiService.getSubAdminEmployees()
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to fetch sub-admin employees"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

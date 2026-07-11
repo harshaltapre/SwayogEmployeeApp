@@ -1,6 +1,7 @@
 package com.swayog.employee.di
 
 import android.content.Context
+import android.util.Log
 import com.swayog.employee.BuildConfig
 import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.local.preferences.DataStoreManager
@@ -16,6 +17,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okhttp3.Response
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -43,20 +45,62 @@ object NetworkModule {
     fun provideAuthInterceptor(dataStoreManager: DataStoreManager): Interceptor {
         return Interceptor { chain ->
             val originalRequest = chain.request()
-            val requestBuilder = originalRequest.newBuilder()
-                .header("Content-Type", "application/json")
-            
-            // Inject auth token if available
-            val authToken = runBlocking { dataStoreManager.authToken.first() }
-            if (authToken != null) {
-                requestBuilder.header("Authorization", "Bearer $authToken")
+
+            // Dynamic base URL: read saved server URL from preferences
+            val savedUrlRaw = dataStoreManager.getServerUrlBlocking()
+            val savedUrl = if (savedUrlRaw != null && savedUrlRaw.contains(".loca.lt") && !savedUrlRaw.contains("clever-snails-report")) {
+                null // Stale tunnel URL cached - bypass and fall back to the new default BuildConfig URL
+            } else {
+                savedUrlRaw
+            }
+            val request = if (!savedUrl.isNullOrBlank()) {
+                try {
+                    val newBaseUrl = savedUrl.let { url ->
+                        val normalized = if (url.endsWith("/")) url else "$url/"
+                        normalized.toHttpUrl()
+                    }
+                    val newUrl = originalRequest.url.newBuilder()
+                        .scheme(newBaseUrl.scheme)
+                        .host(newBaseUrl.host)
+                        .port(newBaseUrl.port)
+                        .build()
+                    
+                    val requestBuilder = originalRequest.newBuilder()
+                        .url(newUrl)
+                        .header("Content-Type", "application/json")
+                        .header("bypass-tunnel-reminder", "true")
+                    
+                    val authToken = runBlocking { dataStoreManager.authToken.first() }
+                    if (authToken != null) {
+                        requestBuilder.header("Authorization", "Bearer $authToken")
+                    }
+                    requestBuilder.build()
+                } catch (e: Exception) {
+                    Log.e("NetworkModule", "Failed to parse saved server URL: $savedUrl", e)
+                    // Fallback to original request with auth header
+                    val requestBuilder = originalRequest.newBuilder()
+                        .header("Content-Type", "application/json")
+                        .header("bypass-tunnel-reminder", "true")
+                    val authToken = runBlocking { dataStoreManager.authToken.first() }
+                    if (authToken != null) {
+                        requestBuilder.header("Authorization", "Bearer $authToken")
+                    }
+                    requestBuilder.build()
+                }
+            } else {
+                val requestBuilder = originalRequest.newBuilder()
+                    .header("Content-Type", "application/json")
+                    .header("bypass-tunnel-reminder", "true")
+                val authToken = runBlocking { dataStoreManager.authToken.first() }
+                if (authToken != null) {
+                    requestBuilder.header("Authorization", "Bearer $authToken")
+                }
+                requestBuilder.build()
             }
             
-            val request = requestBuilder.build()
             val response = chain.proceed(request)
             
             if (response.code == 401) {
-                // Clear session preferences dynamically on auth failure
                 runBlocking { dataStoreManager.clearAll() }
             }
             
@@ -71,11 +115,11 @@ object NetworkModule {
         authInterceptor: Interceptor
     ): OkHttpClient {
         return OkHttpClient.Builder()
-            .addInterceptor(loggingInterceptor)
             .addInterceptor(authInterceptor)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor(loggingInterceptor)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
             .build()
     }
     

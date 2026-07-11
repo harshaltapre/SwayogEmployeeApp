@@ -126,13 +126,24 @@ fun DashboardScreen(
             }
 
             else -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                ) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                val isServiceCoordinator = remember(userRole, jobRole) {
+                    userRole?.uppercase() == "SUB_ADMIN" || jobRole?.replace(" ", "")?.lowercase() == "servicecoordinator"
+                }
+
+                if (isServiceCoordinator) {
+                    val scViewModel: ServiceCoordinatorViewModel = hiltViewModel()
+                    ServiceCoordinatorDashboardContent(
+                        viewModel = scViewModel,
+                        modifier = Modifier.padding(paddingValues)
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues)
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
@@ -247,42 +258,6 @@ fun DashboardScreen(
                                     value = tasks.size.toString(),
                                     modifier = Modifier.weight(1f),
                                     backgroundColor = MaterialTheme.colorScheme.tertiary
-                                )
-                            }
-                        }
-
-                        // Quick Navigation Grid
-                        item {
-                            Text(
-                                text = "Quick Actions",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                QuickActionCard(
-                                    icon = Icons.Default.Fingerprint,
-                                    label = "Attendance",
-                                    color = Color(0xFF386FA4), // BrandBlue
-                                    onClick = onNavigateToAttendance,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                QuickActionCard(
-                                    icon = Icons.Default.Assignment,
-                                    label = "Tasks",
-                                    color = Color(0xFF0B6E4F), // BrandGreen
-                                    onClick = onNavigateToTasks,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                QuickActionCard(
-                                    icon = Icons.Default.EditNote,
-                                    label = "Timesheets",
-                                    color = Color(0xFFD1603D), // BrandOrange
-                                    onClick = onNavigateToDailyCommit,
-                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
@@ -488,6 +463,7 @@ fun DashboardScreen(
                 }
             }
         }
+    }
     }
 }
 

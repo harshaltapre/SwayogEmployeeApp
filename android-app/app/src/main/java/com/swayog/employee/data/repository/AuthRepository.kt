@@ -3,10 +3,13 @@ package com.swayog.employee.data.repository
 import com.swayog.employee.data.api.ApiService
 import java.util.UUID
 import com.swayog.employee.data.local.dao.UserDao
+import com.swayog.employee.data.local.database.AppDatabase
 import com.swayog.employee.data.local.entity.UserEntity
 import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.swayog.employee.data.model.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import retrofit2.Response
 import org.json.JSONObject
 import javax.inject.Inject
@@ -15,6 +18,7 @@ import javax.inject.Singleton
 @Singleton
 class AuthRepository @Inject constructor(
     private val dataStoreManager: DataStoreManager,
+    private val appDatabase: AppDatabase,
     private val userDao: UserDao,
     private val apiService: ApiService
 ) {
@@ -66,7 +70,12 @@ class AuthRepository @Inject constructor(
                 Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            val errMsg = if (e is com.google.gson.JsonSyntaxException || e.message?.contains("MalformedJsonException") == true || e.message?.contains("BEGIN_OBJECT but was") == true) {
+                "Server returned HTML instead of JSON. This is likely a tunnel warning page or network issue."
+            } else {
+                e.message ?: "An unexpected connection error occurred."
+            }
+            Result.failure(Exception(errMsg, e))
         }
     }
     
@@ -96,7 +105,12 @@ class AuthRepository @Inject constructor(
                 Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            val errMsg = if (e is com.google.gson.JsonSyntaxException || e.message?.contains("MalformedJsonException") == true || e.message?.contains("BEGIN_OBJECT but was") == true) {
+                "Server returned HTML instead of JSON. This is likely a tunnel warning page or network issue."
+            } else {
+                e.message ?: "An unexpected connection error occurred."
+            }
+            Result.failure(Exception(errMsg, e))
         }
     }
     
@@ -128,7 +142,9 @@ class AuthRepository @Inject constructor(
         return try {
             // Clear local data
             dataStoreManager.clearAll()
-            userDao.deleteAllUsers()
+            withContext(Dispatchers.IO) {
+                appDatabase.clearAllTables()
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -169,14 +185,50 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    suspend fun checkHealth(): Result<Unit> {
+        return try {
+            val response = apiService.checkHealth()
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                val errorMsg = if (response.code() == 503) {
+                    "Database connection failure on the server."
+                } else {
+                    "Server returned an error status: ${response.code()}"
+                }
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            val errMsg = if (e is com.google.gson.JsonSyntaxException || e.message?.contains("MalformedJsonException") == true || e.message?.contains("BEGIN_OBJECT but was") == true) {
+                "Server returned HTML instead of JSON. This is likely a tunnel warning page or network issue."
+            } else {
+                e.message ?: "Server is unreachable. Please check your network connection."
+            }
+            Result.failure(Exception(errMsg, e))
+        }
+    }
+
 
 
     private fun parseErrorMessage(response: Response<*>): String {
         return try {
+            val contentType = response.headers().get("Content-Type")
+            if (contentType != null && contentType.contains("text/html")) {
+                return "Server returned HTML instead of JSON. This is likely a tunnel warning page or network issue."
+            }
             val errorBody = response.errorBody()?.string()
             if (!errorBody.isNullOrEmpty()) {
+                if (errorBody.trim().startsWith("<")) {
+                    return "Server returned HTML instead of JSON. This is likely a tunnel warning page or network issue."
+                }
                 val jsonObject = JSONObject(errorBody)
-                jsonObject.optString("error", response.message())
+                val errorCode = jsonObject.optString("errorCode", "")
+                val errorMessage = jsonObject.optString("error", response.message())
+                if (errorCode.isNotEmpty()) {
+                    "$errorMessage [$errorCode]"
+                } else {
+                    errorMessage
+                }
             } else {
                 response.message()
             }

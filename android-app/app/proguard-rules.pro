@@ -79,3 +79,10 @@
 # Biometric
 -keep class androidx.biometric.** { *; }
 -dontwarn androidx.biometric.**
+
+# Keep data models intact for serialization/deserialization
+-keep class com.swayog.employee.data.model.** { *; }
+
+# Keep database entities and DAOs intact for Room DB mappings
+-keep class com.swayog.employee.data.local.entity.** { *; }
+-keep class com.swayog.employee.data.local.dao.** { *; }

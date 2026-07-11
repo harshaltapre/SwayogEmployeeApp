@@ -1,13 +1,23 @@
 import { app } from "./app.js";
 import { env } from "./config/env.js";
-import { disconnectPrisma } from "./lib/prisma.js";
+import { disconnectPrisma, ensurePrismaInitialized } from "./lib/prisma.js";
 import { startGrowattScheduler } from "./lib/growatt-scheduler.js";
 import { startWaareeScheduler } from "./lib/waaree-scheduler.js";
 import { initWebSocketServer } from "./lib/telemetry-ws.js";
 import { startTelemetryPoller } from "./lib/telemetry-poller.js";
 
-const server = app.listen(env.PORT, () => {
-  console.log(`Solar OS backend listening on port ${env.PORT}`);
+const server = app.listen(env.PORT, "0.0.0.0", () => {
+  console.log(`Solar OS backend listening on 0.0.0.0:${env.PORT}`);
+  
+  // Verify database connection at startup
+  ensurePrismaInitialized()
+    .then(() => {
+      console.log("[Startup] Database connection successfully established.");
+    })
+    .catch((err) => {
+      console.error("[Startup] CRITICAL ERROR: Could not connect to the database on startup! Exiting process.", err);
+      process.exit(1);
+    });
   
   // Initialize the Growatt Live Telemetry Polling Scheduler
   try {

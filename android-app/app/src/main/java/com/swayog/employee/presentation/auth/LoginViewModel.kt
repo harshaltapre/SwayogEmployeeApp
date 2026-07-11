@@ -92,13 +92,29 @@ class LoginViewModel @Inject constructor(
         _loginState.value = LoginState.Loading
 
         viewModelScope.launch {
-            authRepository.login(emailValue, passwordValue)
-                .onSuccess { authResponse ->
-                    _loginState.value = LoginState.Success(authResponse)
+            authRepository.checkHealth()
+                .onSuccess {
+                    authRepository.login(emailValue, passwordValue)
+                        .onSuccess { authResponse ->
+                            _loginState.value = LoginState.Success(authResponse)
+                        }
+                        .onFailure { error ->
+                            _loginState.value = LoginState.Error(
+                                error.message ?: "Login failed. Please try again."
+                            )
+                        }
                 }
-                .onFailure { error ->
+                .onFailure { healthError ->
+                    try {
+                        val cachedUrl = dataStoreManager.serverUrl.first()
+                        if (!cachedUrl.isNullOrBlank()) {
+                            dataStoreManager.saveServerUrl("")
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                     _loginState.value = LoginState.Error(
-                        error.message ?: "Login failed. Please try again."
+                        healthError.message ?: "Server unreachable. Stale configuration has been cleared."
                     )
                 }
         }
@@ -116,23 +132,36 @@ class LoginViewModel @Inject constructor(
         _loginState.value = LoginState.Loading
 
         viewModelScope.launch {
-            // Replicate web app: Try standard login with OTP_MOCK if endpoint login-with-phone fails or directly.
-            // First we try loginWithPhone endpoint
-            authRepository.loginWithPhone(phoneValue, otpValue)
-                .onSuccess { authResponse ->
-                    _loginState.value = LoginState.Success(authResponse)
-                }
-                .onFailure { _ ->
-                    // Fall back to login(phoneNumber, "OTP_MOCK") to replicate web app wiring
-                    authRepository.login(phoneValue, "OTP_MOCK")
+            authRepository.checkHealth()
+                .onSuccess {
+                    authRepository.loginWithPhone(phoneValue, otpValue)
                         .onSuccess { authResponse ->
                             _loginState.value = LoginState.Success(authResponse)
                         }
-                        .onFailure { fallbackError ->
-                            _loginState.value = LoginState.Error(
-                                fallbackError.message ?: "Phone login failed. Please try again."
-                            )
+                        .onFailure { _ ->
+                            authRepository.login(phoneValue, "OTP_MOCK")
+                                .onSuccess { authResponse ->
+                                    _loginState.value = LoginState.Success(authResponse)
+                                }
+                                .onFailure { fallbackError ->
+                                    _loginState.value = LoginState.Error(
+                                        fallbackError.message ?: "Phone login failed. Please try again."
+                                    )
+                                }
                         }
+                }
+                .onFailure { healthError ->
+                    try {
+                        val cachedUrl = dataStoreManager.serverUrl.first()
+                        if (!cachedUrl.isNullOrBlank()) {
+                            dataStoreManager.saveServerUrl("")
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                    _loginState.value = LoginState.Error(
+                        healthError.message ?: "Server unreachable. Stale configuration has been cleared."
+                    )
                 }
         }
     }

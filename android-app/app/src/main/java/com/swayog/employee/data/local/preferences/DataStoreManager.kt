@@ -6,7 +6,9 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,6 +31,7 @@ class DataStoreManager @Inject constructor(
         val DARK_MODE = booleanPreferencesKey("dark_mode")
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val LANGUAGE = stringPreferencesKey("language")
+        val SERVER_URL = stringPreferencesKey("server_url")
     }
     
     val authToken: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -77,6 +80,14 @@ class DataStoreManager @Inject constructor(
     
     val language: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.LANGUAGE] ?: "en"
+    }
+
+    val serverUrl: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.SERVER_URL]
+    }
+
+    fun getServerUrlBlocking(): String? {
+        return runBlocking { serverUrl.first() }
     }
     
     suspend fun saveAuthToken(token: String) {
@@ -164,6 +175,16 @@ class DataStoreManager @Inject constructor(
         try {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.LANGUAGE] = language
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun saveServerUrl(url: String) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SERVER_URL] = url
             }
         } catch (e: Exception) {
             e.printStackTrace()

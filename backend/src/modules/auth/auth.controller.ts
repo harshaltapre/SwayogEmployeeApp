@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 
 import type { AuthContext } from "../../middleware/auth.js";
 import { ApiError } from "../../middleware/error.js";
+import { logger } from "../../lib/logger.js";
+import { getRequestIp } from "../../middleware/rate-limit.js";
 import type { LoginInput, RefreshInput, RegisterInput } from "./auth.schemas.js";
 import {
   getCurrentUser,
@@ -17,8 +19,29 @@ export async function registerHandler(req: Request<unknown, unknown, RegisterInp
 }
 
 export async function loginHandler(req: Request<unknown, unknown, LoginInput>, res: Response): Promise<void> {
-  const session = await login(req.body);
-  res.status(200).json({ data: session });
+  const ip = getRequestIp(req);
+  const emailAttempted = req.body.identifier || req.body.email || "unknown";
+  const startTime = process.hrtime();
+  const timestamp = new Date().toISOString();
+
+  logger.info(`[AUTH_LOGIN_START] IP: ${ip}, Email/Identifier: ${emailAttempted}, Timestamp: ${timestamp}`);
+
+  try {
+    const session = await login(req.body);
+    const diff = process.hrtime(startTime);
+    const durationMs = Math.round((diff[0] * 1e9 + diff[1]) / 1e6);
+
+    logger.info(`[AUTH_LOGIN_END] Outcome: SUCCESS, IP: ${ip}, Email/Identifier: ${emailAttempted}, Duration: ${durationMs}ms`);
+    res.status(200).json({ data: session });
+  } catch (error: any) {
+    const diff = process.hrtime(startTime);
+    const durationMs = Math.round((diff[0] * 1e9 + diff[1]) / 1e6);
+    const statusCode = error instanceof ApiError ? error.statusCode : 500;
+    const errorCode = error instanceof ApiError ? error.errorCode : "INTERNAL_ERROR";
+
+    logger.warn(`[AUTH_LOGIN_END] Outcome: FAILURE (${errorCode}), IP: ${ip}, Email/Identifier: ${emailAttempted}, Status: ${statusCode}, Duration: ${durationMs}ms`);
+    throw error;
+  }
 }
 
 export async function refreshHandler(req: Request<unknown, unknown, RefreshInput>, res: Response): Promise<void> {

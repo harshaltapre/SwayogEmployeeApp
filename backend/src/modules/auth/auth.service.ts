@@ -318,7 +318,7 @@ export async function login(input: LoginInput) {
   try {
     const identifier = input.identifier || input.email;
     if (!identifier) {
-      throw new ApiError(400, "Identifier or email is required");
+      throw new ApiError(400, "Identifier or email is required", undefined, "VALIDATION_ERROR");
     }
     
     console.log("[AUTH] Login attempt for identifier:", identifier, "role:", input.role);
@@ -326,9 +326,14 @@ export async function login(input: LoginInput) {
     // Database-backed login flow
     const user = await findUserByIdentifier(identifier);
 
-    if (!user || !user.isActive) {
-      console.warn("[AUTH] User not found or inactive:", identifier);
-      throw new ApiError(401, "Invalid email or password");
+    if (!user) {
+      console.warn("[AUTH] User not found:", identifier);
+      throw new ApiError(404, "User account does not exist", undefined, "USER_NOT_FOUND");
+    }
+
+    if (!user.isActive) {
+      console.warn("[AUTH] User is inactive/disabled:", identifier);
+      throw new ApiError(403, "User account is disabled or inactive", undefined, "USER_INACTIVE");
     }
 
     console.log("[AUTH] User found:", user.id, user.role);
@@ -359,7 +364,9 @@ export async function login(input: LoginInput) {
 
         throw new ApiError(
           403,
-          "You are not authorized to log in with this role selection."
+          "You are not authorized to log in with this role selection.",
+          undefined,
+          "ROLE_MISMATCH"
         );
       }
     }
@@ -369,7 +376,7 @@ export async function login(input: LoginInput) {
       throw new ApiError(423, "Account temporarily locked due to repeated login failures", {
         lockoutUntil: user.lockoutUntil.toISOString(),
         retryAfter: getRetryAfterSeconds(user.lockoutUntil),
-      });
+      }, "ACCOUNT_LOCKED");
     }
 
     const passwordMatches = await verifyPassword(input.password, user.passwordHash);
@@ -381,10 +388,10 @@ export async function login(input: LoginInput) {
         throw new ApiError(423, "Account temporarily locked due to repeated login failures", {
           lockoutUntil: lockoutUntil.toISOString(),
           retryAfter: getRetryAfterSeconds(lockoutUntil),
-        });
+        }, "ACCOUNT_LOCKED");
       }
 
-      throw new ApiError(401, "Invalid email or password");
+      throw new ApiError(401, "Invalid password", undefined, "INVALID_PASSWORD");
     }
 
     console.log("[AUTH] Login successful for user:", user.id);

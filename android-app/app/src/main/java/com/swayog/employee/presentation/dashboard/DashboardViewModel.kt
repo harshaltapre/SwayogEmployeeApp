@@ -53,12 +53,23 @@ class DashboardViewModel @Inject constructor(
     
     init {
         viewModelScope.launch {
-            combine(dataStoreManager.userId, dataStoreManager.authToken) { id, token ->
-                id to token
+            combine(
+                dataStoreManager.userId,
+                dataStoreManager.authToken,
+                dataStoreManager.userRole,
+                dataStoreManager.jobRole
+            ) { id, token, role, job ->
+                Triple(id, token, role to job)
             }.filter { it.first != null && it.second != null }
                 .distinctUntilChanged()
-                .collect { (id, _) ->
-                    loadDashboardData(id!!)
+                .collect { (id, _, roles) ->
+                    val (role, job) = roles
+                    val isServiceCoordinator = role?.uppercase() == "SUB_ADMIN" || job?.replace(" ", "")?.lowercase() == "servicecoordinator"
+                    if (isServiceCoordinator) {
+                        _dashboardState.value = DashboardState.Success
+                    } else {
+                        loadDashboardData(id!!)
+                    }
                 }
         }
     }

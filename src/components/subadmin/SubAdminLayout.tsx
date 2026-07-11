@@ -12,6 +12,7 @@ import {
   Calendar,
   IndianRupee,
   Sun,
+  Activity,
 } from "lucide-react";
 
 import { Button } from "../ui/button";

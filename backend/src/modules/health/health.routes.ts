@@ -15,9 +15,10 @@ healthRoutes.get("/", async (_req, res) => {
     dbError = error.message;
   }
 
-  res.status(200).json({
+  const statusCode = dbStatus === "connected" ? 200 : 503;
+  res.status(statusCode).json({
     data: {
-      status: "ok",
+      status: dbStatus === "connected" ? "ok" : "error",
       service: "swayog-backend",
       timestamp: new Date().toISOString(),
       database: {

@@ -9,6 +9,8 @@ async function main() {
     select: {
       id: true,
       loginId: true,
+      email: true,
+      phoneNumber: true,
       employeeCode: true,
       role: true,
       fullName: true,
@@ -28,7 +30,7 @@ async function main() {
   console.log(`Total users in DB: ${users.length}`);
   console.log("=== Employee / Admin Users ===");
   users.filter(u => u.role !== "CUSTOMER" && u.role !== "PARTNER").forEach(u => {
-    console.log(`- [${u.role}] Name: ${u.fullName}, Login: ${u.loginId}, Code: ${u.employeeCode}`);
+    console.log(`- [${u.role}] Name: ${u.fullName}, Login: ${u.loginId}, Email: ${u.email}, Code: ${u.employeeCode}`);
   });
 
   console.log("=== Partner Users ===");

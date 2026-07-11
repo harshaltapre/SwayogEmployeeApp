@@ -24,6 +24,9 @@ interface ApiService {
     
     @GET("auth/me")
     suspend fun getCurrentUser(): Response<ApiResponse<User>>
+
+    @GET("health")
+    suspend fun checkHealth(): Response<Unit>
     
     // Employee endpoints
     @GET("employee/tasks")
@@ -95,6 +98,14 @@ interface ApiService {
     
     @GET("subadmin/employees")
     suspend fun getSubAdminEmployees(): Response<ApiResponse<List<User>>>
+    
+    @GET("subadmin/amc-visits")
+    suspend fun getSubAdminAmcVisits(
+        @Query("customerId") customerId: Int?,
+        @Query("status") status: String?,
+        @Query("from") from: String?,
+        @Query("to") to: String?
+    ): Response<ApiResponse<List<AmcVisit>>>
     
     // Task endpoints
     @POST("tasks")

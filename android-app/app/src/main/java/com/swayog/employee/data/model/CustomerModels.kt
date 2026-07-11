@@ -25,7 +25,10 @@ data class Customer(
     val inverterLoginId: String?,
     val inverterPassword: String?,
     val inverterApiKey: String?,
-    val inverterDeviceSn: String?
+    val inverterDeviceSn: String?,
+    val cleaningsPerMonth: Int? = null,
+    val completedVisits: Int? = null,
+    val pendingVisits: Int? = null
 )
 
 data class CustomerSummary(
