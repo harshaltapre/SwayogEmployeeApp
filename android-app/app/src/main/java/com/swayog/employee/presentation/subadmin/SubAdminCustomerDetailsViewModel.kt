@@ -70,6 +70,7 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
                     _historyState.value = CustomerDetailsState.Success(it)
                 }
                 .onFailure {
+                    android.util.Log.e("TelemetryFetch", "ViewModel caught fetch error", it)
                     _historyState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch generation history")
                 }
         }

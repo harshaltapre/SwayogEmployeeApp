@@ -202,9 +202,12 @@ class CustomerRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to fetch generation history: ${response.message()}"))
+                val errorBody = response.errorBody()?.string() ?: ""
+                android.util.Log.e("TelemetryFetch", "Failed to fetch generation history. Code: ${response.code()}, Message: ${response.message()}, Body: $errorBody")
+                Result.failure(Exception("HTTP ${response.code()}: ${response.message()} - $errorBody"))
             }
         } catch (e: Exception) {
+            android.util.Log.e("TelemetryFetch", "Exception fetching generation history", e)
             Result.failure(e)
         }
     }
@@ -213,7 +216,7 @@ class CustomerRepository @Inject constructor(
         return try {
             val response = apiService.getComplaints()
             if (response.isSuccessful && response.body()?.data != null) {
-                Result.success(response.body()!!.data!!.requests)
+                Result.success(response.body()!!.data!!)
             } else {
                 Result.failure(Exception("Failed to fetch complaints: ${response.message()}"))
             }

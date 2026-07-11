@@ -94,7 +94,7 @@ interface ApiService {
     ): Response<ApiResponse<Customer>>
     
     @GET("subadmin/service-requests")
-    suspend fun getComplaints(): Response<ApiResponse<PaginatedServiceRequests>>
+    suspend fun getComplaints(): Response<ApiResponse<List<ServiceRequest>>>
 
     @PATCH("subadmin/service-requests/{requestId}")
     suspend fun updateServiceRequest(

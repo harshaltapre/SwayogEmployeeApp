@@ -97,14 +97,3 @@ data class UpdateServiceRequestRequest(
     val scheduledTime: String? = null,
     val assignedEmployeeId: String? = null
 )
-
-data class PaginatedServiceRequests(
-    val requests: List<ServiceRequest>,
-    val pagination: PaginationInfo? = null
-)
-
-data class PaginationInfo(
-    val total: Int,
-    val limit: Int,
-    val offset: Int
-)

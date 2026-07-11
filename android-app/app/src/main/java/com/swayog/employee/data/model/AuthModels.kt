@@ -2,10 +2,25 @@ package com.swayog.employee.data.model
 
 import com.google.gson.annotations.SerializedName
 
+data class PaginationInfo(
+    val total: Int,
+    val limit: Int,
+    val offset: Int
+)
+
+data class ApiResponseMeta(
+    val pagination: PaginationInfo? = null,
+    val total: Int? = null,
+    val isSimulated: Boolean? = null,
+    val customerId: Int? = null,
+    val period: String? = null
+)
+
 data class ApiResponse<T>(
     val success: Boolean,
-    val message: String,
-    val data: T?
+    val message: String? = null,
+    val data: T?,
+    val meta: ApiResponseMeta? = null
 )
 
 data class LoginRequest(

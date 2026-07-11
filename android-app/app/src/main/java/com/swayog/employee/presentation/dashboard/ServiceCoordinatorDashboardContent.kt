@@ -320,14 +320,14 @@ fun ServiceCoordinatorDashboardContent(
                 // AMC & Complaints Summary Cards
                 item {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         // AMC Card
                         Card(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(160.dp),
+                                .fillMaxHeight(),
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -343,7 +343,10 @@ fun ServiceCoordinatorDashboardContent(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
                                         Icon(
                                             imageVector = Icons.Default.CalendarToday,
                                             contentDescription = null,
@@ -368,7 +371,9 @@ fun ServiceCoordinatorDashboardContent(
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = Color(0xFF0B6E4F),
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -444,7 +449,7 @@ fun ServiceCoordinatorDashboardContent(
                         Card(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(160.dp),
+                                .fillMaxHeight(),
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -460,9 +465,12 @@ fun ServiceCoordinatorDashboardContent(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
                                         Icon(
-                                            imageVector = Icons.Default.Warning,
+                                            imageVector = Icons.Default.Build,
                                             contentDescription = null,
                                             tint = Color(0xFF386FA4),
                                             modifier = Modifier.size(16.dp)
@@ -485,7 +493,9 @@ fun ServiceCoordinatorDashboardContent(
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = Color(0xFF386FA4),
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -524,9 +534,8 @@ fun ServiceCoordinatorDashboardContent(
                                         )
                                     }
                                 }
-
                                 val totalVal = summary?.serviceRequestStats?.total ?: 0
-                                val resolutionRate = if (totalVal > 0) resolved.toFloat() / totalVal.toFloat() else 1f
+                                val resolutionRate = if (totalVal > 0) resolved.toFloat() / totalVal.toFloat() else 0f
                                 Column {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -538,14 +547,14 @@ fun ServiceCoordinatorDashboardContent(
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                         )
                                         Text(
-                                            text = "${(resolutionRate * 100).toInt()}%",
+                                            text = if (totalVal == 0) "—" else "${(resolutionRate * 100).toInt()}%",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     LinearProgressIndicator(
-                                        progress = resolutionRate.coerceIn(0f, 1f),
+                                        progress = resolutionRate,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(6.dp)
@@ -716,12 +725,19 @@ fun ServiceCoordinatorDashboardContent(
                                 Text(
                                     text = "Generation History",
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
 
                                 // Period filters
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                @OptIn(ExperimentalLayoutApi::class)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.weight(2f)
                                 ) {
                                     listOf("realtime", "daily", "monthly", "yearly").forEach { p ->
                                         val isSelected = selectedPeriod == p
@@ -741,7 +757,9 @@ fun ServiceCoordinatorDashboardContent(
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = if (isSelected) MaterialTheme.colorScheme.onPrimary
                                                 else MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         }
                                     }
@@ -1048,8 +1066,12 @@ fun ServiceCoordinatorDashboardContent(
                                 Text(
                                     text = "$connectionType Integration Portal",
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
 
                                 Surface(
                                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
@@ -1060,7 +1082,9 @@ fun ServiceCoordinatorDashboardContent(
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
