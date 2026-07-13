@@ -76,6 +76,15 @@ android {
     }
 }
 
+hilt {
+    enableAggregatingTask = true
+}
+
+ksp {
+    arg("room.incremental", "false")
+    arg("hilt.correctErrorTypes", "true")
+}
+
 dependencies {
     // Core Android
     implementation("androidx.core:core-ktx:1.12.0")

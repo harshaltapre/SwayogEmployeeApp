@@ -18,7 +18,7 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    private val customerId: Int = checkNotNull(savedStateHandle["customerId"])
+    private val customerId: Int? = savedStateHandle["customerId"]
 
     private val _summaryState = MutableStateFlow<CustomerDetailsState<CustomerSummary>>(CustomerDetailsState.Loading)
     val summaryState: StateFlow<CustomerDetailsState<CustomerSummary>> = _summaryState.asStateFlow()
@@ -38,6 +38,10 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
 
     fun loadData() {
         viewModelScope.launch {
+            if (customerId == null) {
+                _summaryState.value = CustomerDetailsState.Error("Invalid Customer ID")
+                return@launch
+            }
             _summaryState.value = CustomerDetailsState.Loading
             customerRepository.getCustomerSummary(customerId)
                 .onSuccess {
@@ -49,6 +53,7 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            if (customerId == null) return@launch
             _generationState.value = CustomerDetailsState.Loading
             customerRepository.getCustomerInverterGeneration(customerId)
                 .onSuccess {
@@ -64,6 +69,10 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
 
     fun loadHistory(period: String) {
         viewModelScope.launch {
+            if (customerId == null) {
+                _historyState.value = CustomerDetailsState.Error("Invalid Customer ID")
+                return@launch
+            }
             _historyState.value = CustomerDetailsState.Loading
             customerRepository.getCustomerInverterGenerationHistory(customerId, period)
                 .onSuccess {
@@ -87,6 +96,10 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
         projectStage: Int?
     ) {
         viewModelScope.launch {
+            if (customerId == null) {
+                _credentialsUpdateState.value = CredentialsUpdateState.Error("Invalid Customer ID")
+                return@launch
+            }
             _credentialsUpdateState.value = CredentialsUpdateState.Loading
             val request = UpdateCredentialsRequest(
                 inverterBrand = inverterBrand,

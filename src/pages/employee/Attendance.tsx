@@ -1010,50 +1010,26 @@ export default function EmployeeAttendance() {
         </div>
       )}
 
-      {/* ── Stats Row (Mobile Grid) ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* ── Stats Row ────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 mb-6 md:grid-cols-4 md:gap-4 md:mb-8">
         {[
-          { label: "Present", value: presentCount, icon: <CalendarCheck className="h-4 w-4 text-emerald-500" />, color: "text-emerald-600" },
-          { label: "Absent", value: absentCount, icon: <CalendarX className="h-4 w-4 text-red-500" />, color: "text-red-600" },
-          { label: "Late", value: lateCount, icon: <AlertCircle className="h-4 w-4 text-amber-500" />, color: "text-amber-600" },
-          { label: "Total Hrs", value: `${totalHours.toFixed(0)}h`, icon: <TrendingUp className="h-4 w-4 text-blue-500" />, color: "text-blue-600" },
+          { label: "Present Days", value: presentCount, icon: <CalendarCheck className="h-5 w-5 text-emerald-500" />, color: "text-emerald-600" },
+          { label: "Absent Days", value: absentCount, icon: <CalendarX className="h-5 w-5 text-red-500" />, color: "text-red-600" },
+          { label: "Late Arrivals", value: lateCount, icon: <AlertCircle className="h-5 w-5 text-amber-500" />, color: "text-amber-600" },
+          { label: "Total Hours", value: `${totalHours.toFixed(0)}h`, icon: <TrendingUp className="h-5 w-5 text-blue-500" />, color: "text-blue-600" },
         ].map((s) => (
-          <Card key={s.label} className="shadow-sm border-slate-100 rounded-2xl">
-            <CardContent className="p-4 flex flex-col gap-1 items-center">
-              {s.icon}
-              <div className={cn("text-2xl font-bold mt-1", s.color)}>{s.value}</div>
-              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{s.label}</span>
+          <Card key={s.label} className="shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500 font-medium">{s.label}</span>
+                {s.icon}
+              </div>
+              <div className={cn("text-3xl font-bold", s.color)}>{s.value}</div>
+              <div className="text-xs text-slate-400">This month</div>
             </CardContent>
           </Card>
         ))}
       </div>
-
-      {/* ── GPS Target Card (Mocked for Geofence) ────────────────────────────── */}
-      <Card className="shadow-sm border-slate-100 rounded-2xl">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-              <MapPin size={16} />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-slate-800">Geofence Status</span>
-              <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                <CheckCircle2 size={12} /> Geofence Matched - OK
-              </span>
-            </div>
-          </div>
-          <div className="bg-slate-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <span className="text-slate-400 block mb-0.5">Target</span>
-              <span className="font-mono text-slate-700">19.1234, 72.8901</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block mb-0.5">Current</span>
-              <span className="font-mono text-slate-700">19.1236, 72.8904</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* ── Calendar + History ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 md:gap-6">
@@ -1107,43 +1083,67 @@ export default function EmployeeAttendance() {
           </CardContent>
         </Card>
 
-        {/* History Table (Mobile scrollable) */}
-        <Card className="shadow-sm border-slate-100 rounded-2xl">
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-800">Recent Logs</CardTitle>
+        {/* Recent History Table */}
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold text-slate-800">Recent Attendance Log</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 border-b">
-                    <th className="text-left px-4 py-2 font-semibold text-slate-500">Date</th>
-                    <th className="text-left px-4 py-2 font-semibold text-slate-500">In/Out</th>
-                    <th className="text-left px-4 py-2 font-semibold text-slate-500">Status</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Check-In</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Check-Out</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Breaks</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Hours</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recentRecords.map((r) => {
+                  {recentRecords.map((r, i) => {
                     const cfg = statusConfig[r.status];
                     const d = new Date(r.date + "T00:00:00");
                     const isToday = r.date === today;
                     return (
-                      <tr key={r.date} className={cn("border-b last:border-0", isToday && "bg-amber-50")}>
-                        <td className="px-4 py-3 font-medium text-slate-700 whitespace-nowrap">
+                      <tr key={r.date} className={cn("border-b last:border-0 hover:bg-slate-50 transition-colors", isToday && "bg-orange-50")}>
+                        <td className="px-4 py-3 font-medium text-slate-700">
                           {d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                          {isToday && <span className="ml-1 text-xs text-orange-500 font-semibold">(Today)</span>}
                         </td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                          {r.checkIn ?? "—"} - {r.checkOut ?? "—"}
-                        </td>
+                        <td className="px-4 py-3 text-slate-600">{r.checkIn ?? "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{r.checkOut ?? "—"}</td>
                         <td className="px-4 py-3">
-                          <Badge className={cn("border text-[10px]", cfg.color)}>{cfg.label}</Badge>
+                          {r.breaks && r.breaks.length > 0 ? (
+                            <div className="space-y-1">
+                              {r.breaks.map((br, idx) => (
+                                <div key={idx} className="flex items-center gap-2 text-xs">
+                                  {br.type === "lunch" ? (
+                                    <Coffee className="h-3 w-3 text-amber-600" />
+                                  ) : (
+                                    <Timer className="h-3 w-3 text-blue-600" />
+                                  )}
+                                  <span className="text-slate-600">
+                                    {br.type === "lunch" ? "Lunch" : "Short"} - {br.duration}m
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{r.workHours > 0 ? `${r.workHours}h` : "—"}</td>
+                        <td className="px-4 py-3">
+                          <Badge className={cn("border text-xs", cfg.color)}>{cfg.label}</Badge>
                         </td>
                       </tr>
                     );
                   })}
                   {recentRecords.length === 0 && (
                     <tr>
-                      <td colSpan={3} className="text-center py-6 text-slate-400">No records found.</td>
+                      <td colSpan={6} className="text-center py-8 text-slate-400 text-sm">No attendance records found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1152,6 +1152,39 @@ export default function EmployeeAttendance() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Attendance Summary Bar ───────────────────────────────────────────── */}
+      <Card className="mt-6 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold text-slate-800">Monthly Attendance Rate</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            const workingDays = thisMonthRecords.length || 1;
+            const attendedDays = thisMonthRecords.filter((r) => r.status !== "absent").length;
+            const pct = Math.round((attendedDays / workingDays) * 100);
+            return (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">{attendedDays} of {workingDays} working days attended</span>
+                  <span className={cn("font-bold", pct >= 90 ? "text-emerald-600" : pct >= 75 ? "text-amber-600" : "text-red-600")}>{pct}%</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-3">
+                  <div
+                    className={cn("h-3 rounded-full transition-all duration-700", pct >= 90 ? "bg-emerald-500" : pct >= 75 ? "bg-amber-500" : "bg-red-500")}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <div className="flex gap-4 text-xs text-slate-400 mt-1">
+                  <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-500" /> ≥90% Excellent</span>
+                  <span className="flex items-center gap-1"><AlertCircle className="h-3 w-3 text-amber-500" /> 75–89% Good</span>
+                  <span className="flex items-center gap-1"><XCircle className="h-3 w-3 text-red-500" /> &lt;75% Needs Improvement</span>
+                </div>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
     </SidebarLayout>
   );
 }

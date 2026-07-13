@@ -24,7 +24,6 @@ import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Separator } from "./ui/separator";
-import { MobileAppLayout } from "./MobileAppLayout";
 
 interface SidebarLayoutProps {
   children: ReactNode;
@@ -35,12 +34,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const { user, logout } = useAuth();
 
   if (!user) return null;
-
-  // Use MobileAppLayout for employee, sub_admin, or inventory roles
-  const isEmployeeRole = ["employee", "sub_admin", "team_lead", "department_head"].includes(user.role);
-  if (isEmployeeRole) {
-    return <MobileAppLayout>{children}</MobileAppLayout>;
-  }
 
   const getNavItems = () => {
     const isInventoryPath = location.startsWith("/inventory");
@@ -84,6 +77,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       if (isSubAdmin) {
         return [
           { name: "Dashboard", href: "/subadmin/dashboard", icon: LayoutDashboard },
+          { name: "Customers", href: "/subadmin/customers", icon: Users },
           { name: "Complaints", href: "/subadmin/complaints", icon: Wrench },
           { name: "AMC Management", href: "/subadmin/amc-management", icon: Calendar },
           { name: "Employee Section", href: "/subadmin/employees", icon: Users },

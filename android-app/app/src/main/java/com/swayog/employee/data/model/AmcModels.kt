@@ -22,11 +22,14 @@ data class AmcVisit(
 )
 
 data class UpdateAmcVisitRequest(
-    val status: String,
-    val notes: String?,
-    val beforeImageUrl: String?,
-    val afterImageUrl: String?,
-    val visitNotes: String?
+    val status: String? = null,
+    val scheduledDate: String? = null,
+    val timeSlot: String? = null,
+    val assignedEmployeeId: String? = null,
+    val notes: String? = null,
+    val beforeImageUrl: String? = null,
+    val afterImageUrl: String? = null,
+    val visitNotes: String? = null
 )
 
 data class CreateAmcVisitRequest(

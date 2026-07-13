@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, MapPin, Phone, History, CalendarDays, Filter, Calendar, Edit2, X, Clock, HelpCircle, AlertTriangle } from "lucide-react";
+import { CheckCircle2, MapPin, Phone, History, CalendarDays, Filter, Calendar, Edit2, X, Clock, HelpCircle, AlertTriangle, Building2 } from "lucide-react";
 import { useListAmcVisits, useMarkVisitDone, useUpdateAmcVisit, useListEmployees } from "@/lib/api-client";
 import { format, isSameDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -305,8 +305,16 @@ export function AmcVisitTracker({
                           </TableCell>
                           <TableCell>
                             <div className="font-medium text-slate-900">{visit.customer?.fullName}</div>
-                            <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
-                              <MapPin className="h-3 w-3" /> {visit.customer?.city}
+                            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">
+                              <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                              <span>{visit.customer?.city}</span>
+                              {visit.customer?.apartment && (
+                                <>
+                                  <span>•</span>
+                                  <Building2 className="h-3 w-3 text-indigo-500 shrink-0" />
+                                  <span className="font-semibold text-indigo-600">{visit.customer.apartment.name}</span>
+                                </>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>

@@ -23,8 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.ServiceRequest
-import com.swayog.employee.data.model.User
 import com.swayog.employee.presentation.common.components.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -332,7 +332,7 @@ fun ComplaintDetailsDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScheduleVisitDialog(
-    employees: List<User>,
+    employees: List<Employee>,
     onDismiss: () -> Unit,
     onSubmit: (String, String?, String) -> Unit,
     isLoading: Boolean
@@ -403,7 +403,7 @@ fun ScheduleVisitDialog(
                         trailingIcon = {
                             Icon(Icons.Default.ArrowDropDown, contentDescription = "Dropdown")
                         },
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                        colors = OutlinedTextFieldDefaults.colors(
                             disabledTextColor = MaterialTheme.colorScheme.onSurface,
                             disabledBorderColor = MaterialTheme.colorScheme.outline,
                             disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant

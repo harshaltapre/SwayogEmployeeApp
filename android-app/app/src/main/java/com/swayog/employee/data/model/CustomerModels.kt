@@ -57,10 +57,26 @@ data class InverterGeneration(
     val lastUpdated: String
 )
 
+data class CustomerSummaryResponse(
+    val customer: CustomerSummary,
+    val completedVisits: Int
+)
+
+data class InverterGenerationHistoryResponse(
+    val customerId: Int,
+    val period: String,
+    val history: List<GenerationHistory>,
+    val isSimulated: Boolean
+)
+
 data class GenerationHistory(
     val date: String,
     val label: String,
     val generation: Double,
+    val actualGeneration: Double? = null,
+    val expectedGeneration: Double? = null,
+    val isAlert: Boolean = false,
+    val generationDropPct: Double? = null,
     val power: Double? = null // For realtime period
 )
 
@@ -81,6 +97,8 @@ data class ServiceRequest(
     val title: String,
     val description: String,
     val address: String?,
+    val customerCity: String? = null,
+    val assignedEmployeeId: String? = null,
     val latitude: Double?,
     val longitude: Double?,
     val status: String,

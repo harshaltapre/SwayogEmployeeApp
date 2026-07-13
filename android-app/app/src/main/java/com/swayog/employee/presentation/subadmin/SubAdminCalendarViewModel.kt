@@ -4,9 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.AmcVisit
 import com.swayog.employee.data.model.CreateAmcVisitRequest
+import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.ServiceRequest
 import com.swayog.employee.data.model.UpdateAmcVisitRequest
+import com.swayog.employee.data.model.User
 import com.swayog.employee.data.repository.CustomerRepository
+import com.swayog.employee.data.repository.EmployeeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +19,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SubAdminCalendarViewModel @Inject constructor(
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val employeeRepository: EmployeeRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<SubAdminCalendarState>(SubAdminCalendarState.Initial)
@@ -24,6 +28,9 @@ class SubAdminCalendarViewModel @Inject constructor(
 
     private val _events = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val events: StateFlow<List<CalendarEvent>> = _events.asStateFlow()
+
+    private val _employees = MutableStateFlow<List<Employee>>(emptyList())
+    val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
 
     private val _actionState = MutableStateFlow<CalendarActionState>(CalendarActionState.Idle)
     val actionState: StateFlow<CalendarActionState> = _actionState.asStateFlow()
@@ -45,6 +52,9 @@ class SubAdminCalendarViewModel @Inject constructor(
                 },
                 viewModelScope.launch {
                     visitsResult = customerRepository.getAmcVisits()
+                },
+                viewModelScope.launch {
+                    employeeRepository.getInternalUsers("EMPLOYEE").onSuccess { _employees.value = it }
                 }
             )
             
@@ -64,7 +74,9 @@ class SubAdminCalendarViewModel @Inject constructor(
                                 description = it.description,
                                 date = it.scheduledDate!!,
                                 time = it.scheduledTime,
-                                address = it.address ?: "No Address Listed"
+                                address = it.address ?: "No Address Listed",
+                                rawId = it.id.toString(),
+                                assignedEmployeeId = null
                             )
                         )
                     }
@@ -80,7 +92,9 @@ class SubAdminCalendarViewModel @Inject constructor(
                                 description = it.notes ?: "Routine AMC cleaning visit",
                                 date = it.scheduledDate,
                                 time = it.timeSlot,
-                                address = "Customer ID: ${it.customerId}"
+                                address = "Customer ID: ${it.customerId}",
+                                rawId = it.id,
+                                assignedEmployeeId = it.assignedEmployeeId
                             )
                         )
                     }
@@ -133,7 +147,9 @@ data class CalendarEvent(
     val description: String,
     val date: String,
     val time: String?,
-    val address: String
+    val address: String,
+    val rawId: String,
+    val assignedEmployeeId: String?
 )
 
 sealed class SubAdminCalendarState {

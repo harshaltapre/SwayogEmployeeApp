@@ -121,8 +121,6 @@ export type CustomerRecord = {
   apartmentId?: number | null;
   apartment?: { id: number; name: string; address: string; city: string } | null;
   assignedEmployee?: { id: string; name: string } | null;
-  latitude?: number | null;
-  longitude?: number | null;
 };
 
 export type ApartmentRecord = {
@@ -145,7 +143,13 @@ export type AmcVisitRecord = {
   completedAt?: string;
   notes?: string;
   assignedEmployeeId?: string;
-  customer?: { fullName: string; city: string; phoneNumber: string };
+  customer?: { 
+    fullName: string; 
+    city: string; 
+    phoneNumber: string;
+    apartmentId?: number | null;
+    apartment?: { id: number; name: string; address: string; city: string } | null;
+  };
   cleaningNumber?: number | null;
   timeSlot?: string | null;
   completedByEmployeeId?: string | null;
@@ -948,8 +952,6 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
       id: String(raw.assignedEmployee.id),
       name: String(raw.assignedEmployee.fullName || raw.assignedEmployee.name || ""),
     } : null,
-    latitude: raw?.latitude !== undefined && raw?.latitude !== null ? Number(raw.latitude) : null,
-    longitude: raw?.longitude !== undefined && raw?.longitude !== null ? Number(raw.longitude) : null,
   };
 }
 
@@ -2898,6 +2900,32 @@ export function useUpdateAmcSettings(opts?: any) {
       const apiBaseUrl = getApiBaseUrl();
       if (apiBaseUrl) {
         return requestApi<CustomerRecord>(`/subadmin/customers/${customerId}/amc-settings`, {
+          method: "PATCH",
+          body: JSON.stringify(data),
+        });
+      }
+      throw new Error("Backend not connected");
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["amc-customers"] });
+      queryClient.invalidateQueries({ queryKey: ["amc-visits"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateApartmentAmcSettings(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ apartmentId, data }: { apartmentId: number; data: any }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (apiBaseUrl) {
+        return requestApi<any>(`/subadmin/apartments/${apartmentId}/amc-settings`, {
           method: "PATCH",
           body: JSON.stringify(data),
         });

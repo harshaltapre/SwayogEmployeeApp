@@ -52,6 +52,7 @@ fun ServiceCoordinatorDashboardContent(
     onNavigateToCalendar: () -> Unit,
     onNavigateToMap: () -> Unit,
     onNavigateToEmployees: () -> Unit,
+    onNavigateToFinancials: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -191,6 +192,13 @@ fun ServiceCoordinatorDashboardContent(
                             label = "Staff Directory",
                             color = Color(0xFF0B6E4F),
                             onClick = onNavigateToEmployees,
+                            modifier = Modifier.weight(1f)
+                        )
+                        QuickActionCard(
+                            icon = Icons.Default.AttachMoney,
+                            label = "Financials",
+                            color = Color(0xFF22C55E),
+                            onClick = onNavigateToFinancials,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -358,7 +366,8 @@ fun ServiceCoordinatorDashboardContent(
                                             text = "AMC Cleaning",
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            maxLines = 2
                                         )
                                     }
                                     val limit = selectedCustomer.cleaningsPerMonth ?: 2
@@ -371,9 +380,7 @@ fun ServiceCoordinatorDashboardContent(
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = Color(0xFF0B6E4F),
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
@@ -727,7 +734,43 @@ fun ServiceCoordinatorDashboardContent(
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            // Row 2: Period filters (full width, evenly distributed)
+                            if (isLoadingHistory) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(150.dp),
+                                        contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                }
+                            } else if (historyError != null) {
+                                Text(
+                                    text = "Failed to load generation chart: $historyError",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                                )
+                            } else if (inverterHistory.isNotEmpty()) {
+                                GenerationChart(
+                                    history = inverterHistory,
+                                    selectedPeriod = selectedPeriod,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(160.dp)
+                                        .padding(vertical = 8.dp)
+                                )
+                            } else {
+                                Text(
+                                    text = "No history data available for selected period.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp)
+                                )
+                            }
+
+                            // Row 2: Period filters (full width, below the graph)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -757,42 +800,6 @@ fun ServiceCoordinatorDashboardContent(
                                         )
                                     }
                                 }
-                            }
-
-                            if (isLoadingHistory) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(150.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator()
-                                }
-                            } else if (historyError != null) {
-                                Text(
-                                    text = "Failed to load generation chart: $historyError",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
-                                )
-                            } else if (inverterHistory.isNotEmpty()) {
-                                GenerationChart(
-                                    history = inverterHistory,
-                                    selectedPeriod = selectedPeriod,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(160.dp)
-                                        .padding(vertical = 8.dp)
-                                )
-                            } else {
-                                Text(
-                                    text = "No history data available for selected period.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp)
-                                )
                             }
                         }
                     }
@@ -876,14 +883,14 @@ fun ServiceCoordinatorDashboardContent(
                                 }
                             }
 
-                            Column(
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 // Contact Card
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
+                                        .weight(1f)
                                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                                         .padding(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -950,7 +957,7 @@ fun ServiceCoordinatorDashboardContent(
                                 // System Card
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
+                                        .weight(1f)
                                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                                         .padding(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)

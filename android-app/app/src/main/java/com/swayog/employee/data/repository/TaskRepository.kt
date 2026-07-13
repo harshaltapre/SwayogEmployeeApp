@@ -106,7 +106,23 @@ class TaskRepository @Inject constructor(
                 taskDao.insertTasks(entities)
                 Result.success(tasks)
             } else {
-                Result.failure(Exception("Failed to fetch tasks"))
+                Result.failure(Exception("Failed to refresh tasks: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getAllTasks(
+        employeeUserId: String? = null,
+        status: String? = null
+    ): Result<List<Task>> {
+        return try {
+            val response = apiService.getTasks(employeeUserId, status)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to fetch all tasks: ${response.message()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

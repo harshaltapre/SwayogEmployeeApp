@@ -252,7 +252,7 @@ class CustomerRepository @Inject constructor(
 
             if (response.isSuccessful && response.body()?.data != null) {
 
-                Result.success(response.body()!!.data!!)
+                Result.success(response.body()!!.data!!.customer)
 
             } else {
 
@@ -396,7 +396,7 @@ class CustomerRepository @Inject constructor(
 
             if (response.isSuccessful && response.body()?.data != null) {
 
-                Result.success(response.body()!!.data!!)
+                Result.success(response.body()!!.data!!.history)
 
             } else {
 
@@ -415,17 +415,19 @@ class CustomerRepository @Inject constructor(
 
 
     suspend fun getComplaints(): Result<List<ServiceRequest>> {
-
         return try {
-
             val response = apiService.getComplaints()
-
             if (response.isSuccessful && response.body()?.data != null) {
-
-                Result.success(response.body()!!.data!!)
-
+                val data = response.body()!!.data!!
+                val list = if (data.isJsonArray) {
+                    com.google.gson.Gson().fromJson(data, Array<ServiceRequest>::class.java).toList()
+                } else if (data.isJsonObject && data.asJsonObject.has("requests")) {
+                    com.google.gson.Gson().fromJson(data.asJsonObject.get("requests"), Array<ServiceRequest>::class.java).toList()
+                } else {
+                    emptyList()
+                }
+                Result.success(list)
             } else {
-
                 Result.failure(Exception("Failed to fetch complaints: ${response.message()}"))
 
             }
@@ -453,32 +455,6 @@ class CustomerRepository @Inject constructor(
             } else {
 
                 Result.failure(Exception("Failed to fetch AMC visits: ${response.message()}"))
-
-            }
-
-        } catch (e: Exception) {
-
-            Result.failure(e)
-
-        }
-
-    }
-
-
-
-    suspend fun getSubAdminEmployees(): Result<List<User>> {
-
-        return try {
-
-            val response = apiService.getSubAdminEmployees()
-
-            if (response.isSuccessful && response.body()?.data != null) {
-
-                Result.success(response.body()!!.data!!)
-
-            } else {
-
-                Result.failure(Exception("Failed to fetch employees: ${response.message()}"))
 
             }
 
@@ -548,11 +524,15 @@ class CustomerRepository @Inject constructor(
 
     }
 
-    suspend fun createAmcVisit(request: CreateAmcVisitRequest): Result<AmcVisit> {
+    suspend fun createAmcVisit(request: CreateAmcVisitRequest): Result<Unit> {
         return try {
-            val response = apiService.createAmcVisit(request)
-            if (response.isSuccessful && response.body()?.data != null) {
-                Result.success(response.body()!!.data!!)
+            val body = mapOf(
+                "manualVisitDate" to request.scheduledDate,
+                "assignedEmployeeId" to request.assignedEmployeeId
+            )
+            val response = apiService.createAmcVisit(request.customerId, body)
+            if (response.isSuccessful) {
+                Result.success(Unit)
             } else {
                 Result.failure(Exception("Failed to create AMC visit: ${response.message()}"))
             }

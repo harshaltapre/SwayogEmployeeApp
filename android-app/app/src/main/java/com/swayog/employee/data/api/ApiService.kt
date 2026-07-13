@@ -74,7 +74,7 @@ interface ApiService {
     @GET("subadmin/customers/{customerId}/summary")
     suspend fun getCustomerSummary(
         @Path("customerId") customerId: Int
-    ): Response<ApiResponse<CustomerSummary>>
+    ): Response<ApiResponse<CustomerSummaryResponse>>
     
     @GET("subadmin/customers/{customerId}/inverter-generation")
     suspend fun getCustomerInverterGeneration(
@@ -85,7 +85,7 @@ interface ApiService {
     suspend fun getCustomerInverterGenerationHistory(
         @Path("customerId") customerId: Int,
         @Query("period") period: String
-    ): Response<ApiResponse<List<GenerationHistory>>>
+    ): Response<ApiResponse<InverterGenerationHistoryResponse>>
     
     @PATCH("subadmin/customers/{customerId}")
     suspend fun updateCustomerCredentials(
@@ -94,7 +94,7 @@ interface ApiService {
     ): Response<ApiResponse<Customer>>
     
     @GET("subadmin/service-requests")
-    suspend fun getComplaints(): Response<ApiResponse<List<ServiceRequest>>>
+    suspend fun getComplaints(): Response<ApiResponse<com.google.gson.JsonElement>>
 
     @PATCH("subadmin/service-requests/{requestId}")
     suspend fun updateServiceRequest(
@@ -102,8 +102,11 @@ interface ApiService {
         @Body request: UpdateServiceRequestRequest
     ): Response<ApiResponse<ServiceRequest>>
     
-    @GET("subadmin/employees")
-    suspend fun getSubAdminEmployees(): Response<ApiResponse<List<User>>>
+    @GET("users/internal")
+    suspend fun getInternalUsers(
+        @Query("role") role: String? = null,
+        @Query("limit") limit: Int? = 300
+    ): Response<ApiResponse<List<com.swayog.employee.data.model.Employee>>>
     
     @GET("subadmin/amc-visits")
     suspend fun getSubAdminAmcVisits(
@@ -114,6 +117,13 @@ interface ApiService {
     ): Response<ApiResponse<List<AmcVisit>>>
     
     // Task endpoints
+    @GET("tasks")
+    suspend fun getTasks(
+        @Query("employeeUserId") employeeUserId: String? = null,
+        @Query("status") status: String? = null,
+        @Query("limit") limit: Int? = 300
+    ): Response<ApiResponse<List<Task>>>
+
     @POST("tasks")
     suspend fun createTask(
         @Body request: CreateTaskRequest
@@ -143,12 +153,13 @@ interface ApiService {
         @Query("employeeId") employeeId: String?
     ): Response<ApiResponse<List<AmcVisit>>>
     
-    @POST("amc/visits")
+    @PATCH("subadmin/customers/{customerId}/amc-settings")
     suspend fun createAmcVisit(
-        @Body request: CreateAmcVisitRequest
-    ): Response<ApiResponse<AmcVisit>>
+        @Path("customerId") customerId: Int,
+        @Body request: Map<String, String?>
+    ): Response<ApiResponse<Any>>
     
-    @PATCH("amc/visits/{visitId}")
+    @PATCH("subadmin/amc-visits/{visitId}")
     suspend fun updateAmcVisit(
         @Path("visitId") visitId: String,
         @Body request: UpdateAmcVisitRequest
@@ -177,4 +188,15 @@ interface ApiService {
     suspend fun submitDesign(
         @Body request: DesignSubmissionRequest
     ): Response<ApiResponse<DesignSubmissionResponse>>
+
+    // Invoices endpoints
+    @GET("invoices")
+    suspend fun getInvoices(
+        @Query("invoiceType") invoiceType: String? = null
+    ): Response<ApiResponse<List<Invoice>>>
+
+    @POST("invoices")
+    suspend fun createInvoice(
+        @Body request: CreateInvoiceRequest
+    ): Response<ApiResponse<Invoice>>
 }

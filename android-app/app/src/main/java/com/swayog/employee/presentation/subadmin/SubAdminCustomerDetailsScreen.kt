@@ -444,16 +444,13 @@ fun InverterTabContent(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
-                                        Text(text = item.date, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                        if (item.isAlert) {
-                                            Text(text = "⚠️ Drop of ${item.generationDropPct ?: 0.0}%", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                                        }
+                                        Text(text = item.label.ifBlank { item.date }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                     }
 
                                     Column(horizontalAlignment = Alignment.End) {
-                                        Text(text = "${item.actualGeneration} kWh", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                                        item.expectedGeneration?.let {
-                                            Text(text = "Exp: $it kWh", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontSize = 10.sp)
+                                        Text(text = "${item.generation} kWh", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
+                                        if (item.power != null) {
+                                            Text(text = "Power: ${item.power} kW", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontSize = 10.sp)
                                         }
                                     }
                                 }

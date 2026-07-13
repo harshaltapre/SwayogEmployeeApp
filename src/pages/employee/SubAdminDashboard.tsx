@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { SidebarLayout } from "@/components/SidebarLayout";
+import { SubAdminLayout } from "@/components/subadmin/SubAdminLayout";
 import { useAuth } from "@/lib/auth";
 import {
   getEffectiveApiBaseUrl,
@@ -207,8 +207,8 @@ export default function SubAdminDashboard() {
   }, [inverterHistoryError]);
 
   return (
-    <SidebarLayout>
-      <div className="space-y-4 md:space-y-6 pb-20 animate-in fade-in zoom-in-95 duration-500 mt-4">
+    <SubAdminLayout>
+      <div className="space-y-4 md:space-y-6">
         {/* Welcome Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -1517,6 +1517,6 @@ export default function SubAdminDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </SidebarLayout>
+    </SubAdminLayout>
   );
 }

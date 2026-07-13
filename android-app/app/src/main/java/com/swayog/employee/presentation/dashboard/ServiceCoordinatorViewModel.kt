@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.swayog.employee.data.model.*
 import com.swayog.employee.data.repository.CustomerRepository
+import com.swayog.employee.data.repository.EmployeeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -15,6 +16,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ServiceCoordinatorViewModel @Inject constructor(
     private val customerRepository: CustomerRepository,
+    private val employeeRepository: EmployeeRepository,
     private val dataStoreManager: DataStoreManager
 ) : ViewModel() {
 
@@ -43,8 +45,8 @@ class ServiceCoordinatorViewModel @Inject constructor(
     private val _amcVisits = MutableStateFlow<List<AmcVisit>>(emptyList())
     val amcVisits: StateFlow<List<AmcVisit>> = _amcVisits.asStateFlow()
 
-    private val _employees = MutableStateFlow<List<User>>(emptyList())
-    val employees: StateFlow<List<User>> = _employees.asStateFlow()
+    private val _employees = MutableStateFlow<List<Employee>>(emptyList())
+    val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
 
     // Loading & Error States
     private val _isLoadingTelemetry = MutableStateFlow(false)
@@ -158,7 +160,7 @@ class ServiceCoordinatorViewModel @Inject constructor(
 
     private fun loadEmployeesList() {
         viewModelScope.launch {
-            customerRepository.getSubAdminEmployees()
+            employeeRepository.getInternalUsers("EMPLOYEE")
                 .onSuccess { _employees.value = it }
         }
     }

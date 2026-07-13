@@ -2,6 +2,7 @@ package com.swayog.employee.presentation.subadmin
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,9 +38,11 @@ fun SubAdminCalendarScreen(
     val state by viewModel.state.collectAsState()
     val events by viewModel.events.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
+    val employees by viewModel.employees.collectAsState()
 
     var selectedFilter by remember { mutableIntStateOf(0) }
     var isCreateDialogOpen by remember { mutableStateOf(false) }
+    var selectedEventForUpdate by remember { mutableStateOf<CalendarEvent?>(null) }
 
     val filteredEvents = remember(events, selectedFilter) {
         when (selectedFilter) {
@@ -55,6 +58,7 @@ fun SubAdminCalendarScreen(
                 Toast.makeText(context, (actionState as CalendarActionState.Success).message, Toast.LENGTH_SHORT).show()
                 viewModel.resetActionState()
                 isCreateDialogOpen = false
+                selectedEventForUpdate = null
             }
             is CalendarActionState.Error -> {
                 Toast.makeText(context, (actionState as CalendarActionState.Error).message, Toast.LENGTH_LONG).show()
@@ -139,7 +143,14 @@ fun SubAdminCalendarScreen(
                         }
 
                         items(dailyEvents, key = { it.id }) { event ->
-                            CalendarEventItem(event = event)
+                            CalendarEventItem(
+                                event = event,
+                                onClick = {
+                                    if (event.type.contains("AMC", ignoreCase = true)) {
+                                        selectedEventForUpdate = event
+                                    }
+                                }
+                            )
                         }
                     }
                 }
@@ -149,9 +160,22 @@ fun SubAdminCalendarScreen(
         // Create AMC Visit Dialog
         if (isCreateDialogOpen) {
             CreateAmcVisitDialog(
+                employees = employees,
                 onDismiss = { isCreateDialogOpen = false },
                 onSubmit = { request ->
                     viewModel.createAmcVisit(request)
+                },
+                isLoading = actionState is CalendarActionState.Loading
+            )
+        }
+
+        selectedEventForUpdate?.let { event ->
+            UpdateAmcVisitDialog(
+                employees = employees,
+                event = event,
+                onDismiss = { selectedEventForUpdate = null },
+                onSubmit = { visitId, request ->
+                    viewModel.updateAmcVisit(visitId, request)
                 },
                 isLoading = actionState is CalendarActionState.Loading
             )
@@ -162,6 +186,7 @@ fun SubAdminCalendarScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateAmcVisitDialog(
+    employees: List<com.swayog.employee.data.model.Employee>,
     onDismiss: () -> Unit,
     onSubmit: (CreateAmcVisitRequest) -> Unit,
     isLoading: Boolean
@@ -171,6 +196,8 @@ fun CreateAmcVisitDialog(
     var timeSlot by remember { mutableStateOf("") }
     var assignedEmployeeId by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    
+    var employeeDropdownExpanded by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -216,14 +243,42 @@ fun CreateAmcVisitDialog(
                     singleLine = true
                 )
 
-                OutlinedTextField(
-                    value = assignedEmployeeId,
-                    onValueChange = { assignedEmployeeId = it },
-                    label = { Text("Assign Employee ID (Optional)") },
-                    placeholder = { Text("Enter employee ID") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                ExposedDropdownMenuBox(
+                    expanded = employeeDropdownExpanded,
+                    onExpandedChange = { employeeDropdownExpanded = !employeeDropdownExpanded }
+                ) {
+                    val selectedName = employees.find { it.id.toString() == assignedEmployeeId }?.fullName ?: ""
+                    OutlinedTextField(
+                        value = if (assignedEmployeeId.isEmpty()) "" else "$selectedName (ID: $assignedEmployeeId)",
+                        onValueChange = { },
+                        readOnly = true,
+                        label = { Text("Assign Employee (Optional)") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employeeDropdownExpanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = employeeDropdownExpanded,
+                        onDismissRequest = { employeeDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Unassigned") },
+                            onClick = {
+                                assignedEmployeeId = ""
+                                employeeDropdownExpanded = false
+                            }
+                        )
+                        employees.forEach { employee ->
+                            DropdownMenuItem(
+                                text = { Text("${employee.fullName} (${employee.role})") },
+                                onClick = {
+                                    assignedEmployeeId = employee.id.toString()
+                                    employeeDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = notes,
@@ -272,8 +327,130 @@ fun CreateAmcVisitDialog(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalendarEventItem(event: CalendarEvent) {
+fun UpdateAmcVisitDialog(
+    employees: List<com.swayog.employee.data.model.Employee>,
+    event: CalendarEvent,
+    onDismiss: () -> Unit,
+    onSubmit: (String, com.swayog.employee.data.model.UpdateAmcVisitRequest) -> Unit,
+    isLoading: Boolean
+) {
+    var scheduledDate by remember(event) { mutableStateOf(event.date.substringBefore("T")) }
+    var timeSlot by remember(event) { mutableStateOf(event.time ?: "") }
+    var assignedEmployeeId by remember(event) { mutableStateOf(event.assignedEmployeeId ?: "") }
+    var employeeDropdownExpanded by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Reschedule AMC Visit",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = scheduledDate,
+                    onValueChange = { scheduledDate = it },
+                    label = { Text("Scheduled Date (YYYY-MM-DD)") },
+                    placeholder = { Text("e.g. 2026-07-15") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = timeSlot,
+                    onValueChange = { timeSlot = it },
+                    label = { Text("Time Slot (Optional)") },
+                    placeholder = { Text("e.g. 10:00 AM") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                ExposedDropdownMenuBox(
+                    expanded = employeeDropdownExpanded,
+                    onExpandedChange = { employeeDropdownExpanded = !employeeDropdownExpanded }
+                ) {
+                    val selectedName = employees.find { it.id.toString() == assignedEmployeeId }?.fullName ?: ""
+                    OutlinedTextField(
+                        value = if (assignedEmployeeId.isEmpty()) "" else "$selectedName (ID: $assignedEmployeeId)",
+                        onValueChange = { },
+                        readOnly = true,
+                        label = { Text("Assign Employee (Optional)") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employeeDropdownExpanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = employeeDropdownExpanded,
+                        onDismissRequest = { employeeDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Unassigned") },
+                            onClick = {
+                                assignedEmployeeId = ""
+                                employeeDropdownExpanded = false
+                            }
+                        )
+                        employees.forEach { employee ->
+                            DropdownMenuItem(
+                                text = { Text("${employee.fullName} (${employee.role})") },
+                                onClick = {
+                                    assignedEmployeeId = employee.id.toString()
+                                    employeeDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss, enabled = !isLoading) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val request = com.swayog.employee.data.model.UpdateAmcVisitRequest(
+                                scheduledDate = scheduledDate,
+                                timeSlot = timeSlot.ifBlank { null },
+                                assignedEmployeeId = assignedEmployeeId.ifBlank { null }
+                            )
+                            onSubmit(event.rawId, request)
+                        },
+                        enabled = scheduledDate.isNotBlank() && !isLoading
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        } else {
+                            Text("Save")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CalendarEventItem(event: CalendarEvent, onClick: () -> Unit = {}) {
     val isAmc = event.type.contains("AMC", ignoreCase = true)
     val (typeColor, typeBg) = if (isAmc) {
         Color(0xFF10B981) to Color(0xFFD1FAE5) // Green
@@ -281,7 +458,11 @@ fun CalendarEventItem(event: CalendarEvent) {
         Color(0xFF3B82F6) to Color(0xFFDBEAFE) // Blue
     }
 
-    SwayogCard {
+    SwayogCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

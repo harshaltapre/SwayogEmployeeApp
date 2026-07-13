@@ -153,11 +153,11 @@ export default function DailyCommitPage() {
 
   return (
     <SidebarLayout>
-      <div className="flex flex-col space-y-6 animate-in fade-in zoom-in-95 duration-500 pb-20">
-        <div className="text-center space-y-1 mt-4">
-          <h1 className="text-2xl font-bold text-slate-900">Daily Commit</h1>
-          <p className="text-slate-500 text-sm">Timesheet & Work Log</p>
-        </div>
+      <div className="max-w-3xl mx-auto space-y-6">
+        <PageHeader
+          title="Daily Commit"
+          description="Record what you worked on today. This feeds monthly performance reports for your team."
+        />
 
         {!user?.reportingManagerId && (
           <Card className="border-amber-200 bg-amber-50">
@@ -195,13 +195,13 @@ export default function DailyCommitPage() {
           </Card>
         )}
 
-        <Card className="shadow-xl shadow-slate-200/40 border-slate-100 rounded-2xl overflow-hidden">
-          <CardHeader className="bg-slate-50 border-b border-slate-100 pb-4">
-            <CardTitle className="text-lg font-bold text-slate-800">Submit Daily Commit</CardTitle>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Submit Daily Commit</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-5 pt-6">
+          <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="commitDate" className="font-semibold text-slate-700">Date</Label>
+              <Label htmlFor="commitDate">Date</Label>
               <Input
                 id="commitDate"
                 type="date"
@@ -209,24 +209,22 @@ export default function DailyCommitPage() {
                 max={todayIso()}
                 onChange={(e) => setCommitDate(e.target.value)}
                 disabled={alreadySubmitted}
-                className="h-12 rounded-xl border-slate-200 bg-slate-50 focus:bg-white"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="taskWorkedOn" className="font-semibold text-slate-700">Task Worked On</Label>
+              <Label htmlFor="taskWorkedOn">Task Worked On</Label>
               <Input
                 id="taskWorkedOn"
                 placeholder="e.g. Site inspection at Pune plant"
                 value={taskWorkedOn}
                 onChange={(e) => setTaskWorkedOn(e.target.value)}
                 disabled={alreadySubmitted}
-                className="h-12 rounded-xl border-slate-200 bg-slate-50 focus:bg-white"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="workSummary" className="font-semibold text-slate-700">Work Summary</Label>
+              <Label htmlFor="workSummary">Work Summary</Label>
               <Textarea
                 id="workSummary"
                 rows={4}
@@ -234,12 +232,11 @@ export default function DailyCommitPage() {
                 value={workSummary}
                 onChange={(e) => setWorkSummary(e.target.value)}
                 disabled={alreadySubmitted}
-                className="rounded-xl border-slate-200 bg-slate-50 focus:bg-white resize-none"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="hoursSpent" className="font-semibold text-slate-700">Hours Spent (Decimal)</Label>
+              <Label htmlFor="hoursSpent">Hours Spent</Label>
               <Input
                 id="hoursSpent"
                 type="number"
@@ -249,12 +246,11 @@ export default function DailyCommitPage() {
                 value={hoursSpent}
                 onChange={(e) => setHoursSpent(e.target.value)}
                 disabled={alreadySubmitted}
-                className="h-12 rounded-xl border-slate-200 bg-slate-50 focus:bg-white"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="issuesBlockers" className="font-semibold text-slate-700">Issues / Blockers</Label>
+              <Label htmlFor="issuesBlockers">Issues / Blockers</Label>
               <Textarea
                 id="issuesBlockers"
                 rows={2}
@@ -262,12 +258,11 @@ export default function DailyCommitPage() {
                 value={issuesBlockers}
                 onChange={(e) => setIssuesBlockers(e.target.value)}
                 disabled={alreadySubmitted}
-                className="rounded-xl border-slate-200 bg-slate-50 focus:bg-white resize-none"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tomorrowPlan" className="font-semibold text-slate-700">Goal for Tomorrow</Label>
+              <Label htmlFor="tomorrowPlan">Tomorrow&apos;s Plan</Label>
               <Textarea
                 id="tomorrowPlan"
                 rows={2}
@@ -275,25 +270,21 @@ export default function DailyCommitPage() {
                 value={tomorrowPlan}
                 onChange={(e) => setTomorrowPlan(e.target.value)}
                 disabled={alreadySubmitted}
-                className="rounded-xl border-slate-200 bg-slate-50 focus:bg-white resize-none"
               />
             </div>
 
             {!alreadySubmitted && (
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <Label htmlFor="attachment" className="font-semibold text-slate-700">Attachment (optional)</Label>
-                <div className="relative">
-                  <Input
-                    id="attachment"
-                    ref={fileRef}
-                    type="file"
-                    accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
-                    onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
-                    className="h-12 rounded-xl border-slate-200 bg-slate-50 file:border-0 file:bg-slate-200 file:text-slate-700 file:font-semibold file:rounded-lg file:px-4 file:mr-4 file:py-1 file:-ml-2 pt-2"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="attachment">Attachment (optional)</Label>
+                <Input
+                  id="attachment"
+                  ref={fileRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+                  onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+                />
                 {attachment && (
-                  <p className="text-xs text-amber-600 flex items-center gap-1 mt-1 font-medium">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
                     <Paperclip className="h-3 w-3" />
                     {attachment.name}
                   </p>
@@ -307,50 +298,42 @@ export default function DailyCommitPage() {
                   href={buildAssetUrlFromPath(existing.attachmentUrl) ?? "#"}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-amber-600 font-semibold hover:underline flex items-center gap-1"
+                  className="text-primary underline"
                 >
-                  <Paperclip className="h-4 w-4" /> View Attachment
+                  View attachment
                 </a>
               </p>
             )}
 
             {!alreadySubmitted && (
               <Button
-                className="w-full h-14 rounded-xl text-lg font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/30 mt-4"
+                className="w-full"
                 onClick={handleSubmit}
                 disabled={submitMutation.isPending || attachMutation.isPending}
               >
-                {submitMutation.isPending ? (
-                  "Submitting..."
-                ) : (
-                  <>
-                    <Send className="h-5 w-5 mr-2" />
-                    Submit Timesheet
-                  </>
-                )}
+                <Send className="h-4 w-4 mr-2" />
+                {submitMutation.isPending ? "Submitting..." : "Submit Daily Commit"}
               </Button>
             )}
           </CardContent>
         </Card>
 
         {history && history.length > 0 && (
-          <Card className="shadow-sm border-slate-100 rounded-2xl overflow-hidden">
-            <CardHeader className="bg-slate-50 border-b border-slate-100 pb-3">
-              <CardTitle className="text-base font-semibold text-slate-800">Recent Submissions</CardTitle>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Recent Submissions</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-0 p-0">
-              {history.slice(0, 5).map((item) => (
+            <CardContent className="space-y-3">
+              {history.slice(0, 10).map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-start justify-between gap-4 border-b border-slate-100 p-4 last:border-0 hover:bg-slate-50/50"
+                  className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 last:border-0"
                 >
                   <div>
-                    <p className="font-semibold text-slate-800">{item.commitDate}</p>
-                    <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{item.taskWorkedOn}</p>
+                    <p className="font-medium text-slate-900">{item.commitDate}</p>
+                    <p className="text-sm text-slate-600 line-clamp-2">{item.workSummary}</p>
                   </div>
-                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold px-2 py-1">
-                    {item.hoursSpent}h
-                  </Badge>
+                  <Badge variant="secondary">{item.hoursSpent}h</Badge>
                 </div>
               ))}
             </CardContent>
@@ -358,8 +341,8 @@ export default function DailyCommitPage() {
         )}
 
         {submittedId && (
-          <p className="text-[10px] text-center text-slate-400 uppercase tracking-widest font-mono">
-            ID: {submittedId.slice(0, 8)}
+          <p className="text-xs text-center text-muted-foreground">
+            Commit ID: {submittedId.slice(0, 8)}…
           </p>
         )}
       </div>

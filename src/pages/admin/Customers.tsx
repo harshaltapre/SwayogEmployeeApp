@@ -13,7 +13,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { format, addYears, isAfter } from "date-fns";
 import { Search, Plus, Eye, MapPin, Phone, Mail, Zap, Shield, History, BadgeCheck, Loader2, RefreshCw, Upload, Copy, Check, Download } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -117,6 +117,8 @@ function WarrantyBadge({ installDate }: { installDate: string }) {
 }
 
 export default function AdminCustomers() {
+  const [location] = useLocation();
+  const basePath = location.startsWith("/subadmin") ? "/subadmin" : "/admin";
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [amcStatus, setAmcStatus] = useState<"all" | "active" | "expired" | "none">("all");
@@ -919,7 +921,7 @@ export default function AdminCustomers() {
                             {c.cleaningsPerMonth ? `${c.cleaningsPerMonth} / Mo` : "—"}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Link href={`/admin/customers/${c.id}`}>
+                            <Link href={`${basePath}/customers/${c.id}`}>
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-primary">
                                 <Eye className="h-3.5 w-3.5" />
                               </Button>
@@ -990,7 +992,7 @@ export default function AdminCustomers() {
                           </div>
                         </div>
 
-                        <Link href={`/admin/customers/${c.id}`}>
+                        <Link href={`${basePath}/customers/${c.id}`}>
                           <Button variant="outline" size="sm" className="w-full text-xs h-8 gap-1 group-hover:bg-slate-800 group-hover:text-white transition-colors">
                             <Eye className="w-3 h-3" /> View Full Details
                           </Button>

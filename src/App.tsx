@@ -50,8 +50,7 @@ import AmcManagement from "@/pages/employee/AmcManagement";
 import SubAdminCalendar from "@/pages/employee/SubAdminCalendar";
 import SubAdminFinancials from "@/pages/employee/SubAdminFinancials";
 import WaareeSolarDashboard from "@/pages/employee/WaareeSolarDashboard";
-import ServiceCoordinatorDashboard from "@/pages/admin/ServiceCoordinatorDashboard";
-import SubAdminMap from "@/pages/employee/SubAdminMap";
+import SubAdminCustomers from "@/pages/employee/SubAdminCustomers";
 
 
 
@@ -148,22 +147,20 @@ function Router() {
       <ProtectedRoute path="/customer/payments" component={CustomerPayments} allowedRoles={['admin', 'super_admin', 'customer']} />
       <ProtectedRoute path="/customer/settings" component={CustomerSettings} allowedRoles={['admin', 'super_admin', 'customer']} />
       
-      {/* Sub Admin / Service Coordinator Routes */}
+      {/* Sub Admin Routes */}
       <ProtectedRoute path="/subadmin/dashboard" component={SubAdminDashboard} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
+      <ProtectedRoute path="/subadmin/customers" component={SubAdminCustomers} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
+      <ProtectedRoute path="/subadmin/customers/:id" component={AdminCustomerDetail} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/complaints" component={SubAdminComplaints} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/employees" component={SubAdminEmployees} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/amc-management" component={AmcManagement} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/calendar" component={SubAdminCalendar} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/financials" component={SubAdminFinancials} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/waaree-solar" component={WaareeSolarDashboard} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
-      <ProtectedRoute path="/subadmin/map" component={SubAdminMap} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
 
       {/* Legacy compatibility redirect */}
       <Route path="/subadmin/service-requests">
         <Redirect to="/subadmin/complaints" />
-      </Route>
-      <Route path="/subadmin/amc">
-        <Redirect to="/subadmin/amc-management" />
       </Route>
 
       {/* Inventory Executive Routes */}

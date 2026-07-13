@@ -11,12 +11,7 @@ import com.swayog.employee.presentation.tasks.TasksScreen
 import com.swayog.employee.presentation.profile.ProfileScreen
 import com.swayog.employee.presentation.settings.SettingsScreen
 import com.swayog.employee.presentation.dailycommit.DailyCommitScreen
-import com.swayog.employee.presentation.subadmin.SubAdminCustomersScreen
-import com.swayog.employee.presentation.subadmin.SubAdminCustomerDetailsScreen
-import com.swayog.employee.presentation.subadmin.SubAdminComplaintsScreen
-import com.swayog.employee.presentation.subadmin.SubAdminCalendarScreen
-import com.swayog.employee.presentation.subadmin.SubAdminMapScreen
-import com.swayog.employee.presentation.subadmin.SubAdminEmployeesScreen
+import com.swayog.employee.presentation.subadmin.*
 
 @Composable
 fun SwayogNavHost(
@@ -69,6 +64,9 @@ fun SwayogNavHost(
                 },
                 onNavigateToSubAdminEmployees = {
                     navController.navigate(Screen.SubAdminEmployees.route)
+                },
+                onNavigateToSubAdminFinancials = {
+                    navController.navigate(Screen.SubAdminFinancials.route)
                 }
             )
         }
@@ -160,7 +158,11 @@ fun SwayogNavHost(
         }
 
         composable(Screen.SubAdminEmployees.route) {
-            SubAdminEmployeesScreen(
+            SubAdminEmployeesScreen()
+        }
+
+        composable(Screen.SubAdminFinancials.route) {
+            SubAdminFinancialsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -176,9 +178,12 @@ sealed class Screen(val route: String) {
     data object Settings : Screen("settings")
     data object DailyCommit : Screen("daily_commit")
     data object SubAdminCustomers : Screen("subadmin_customers")
-    data object SubAdminCustomerDetails : Screen("subadmin_customer_details/{customerId}")
+    data object SubAdminCustomerDetails : Screen("subadmin_customer_details/{customerId}") {
+        fun createRoute(customerId: Int) = "subadmin_customer_details/$customerId"
+    }
     data object SubAdminComplaints : Screen("subadmin_complaints")
     data object SubAdminCalendar : Screen("subadmin_calendar")
     data object SubAdminMap : Screen("subadmin_map")
     data object SubAdminEmployees : Screen("subadmin_employees")
+    data object SubAdminFinancials : Screen("subadmin_financials")
 }

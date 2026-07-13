@@ -58,7 +58,7 @@ fun SwayogTextField(
             visualTransformation = visualTransformation,
             trailingIcon = trailingIcon,
             singleLine = singleLine,
-            colors = TextFieldDefaults.outlinedTextFieldColors(
+            colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                 unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                 errorBorderColor = MaterialTheme.colorScheme.error,

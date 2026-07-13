@@ -3,10 +3,12 @@ package com.swayog.employee.presentation.subadmin
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.Customer
+import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.ServiceRequest
 import com.swayog.employee.data.model.UpdateServiceRequestRequest
 import com.swayog.employee.data.model.User
 import com.swayog.employee.data.repository.CustomerRepository
+import com.swayog.employee.data.repository.EmployeeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +20,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SubAdminMapViewModel @Inject constructor(
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val employeeRepository: EmployeeRepository
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -27,8 +30,8 @@ class SubAdminMapViewModel @Inject constructor(
     private val _complaints = MutableStateFlow<List<ServiceRequest>>(emptyList())
     val complaints: StateFlow<List<ServiceRequest>> = _complaints.asStateFlow()
 
-    private val _employees = MutableStateFlow<List<User>>(emptyList())
-    val employees: StateFlow<List<User>> = _employees.asStateFlow()
+    private val _employees = MutableStateFlow<List<Employee>>(emptyList())
+    val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -59,7 +62,7 @@ class SubAdminMapViewModel @Inject constructor(
                         .onFailure { _errorMessage.value = it.message ?: "Failed to fetch complaints" }
                 },
                 launch {
-                    customerRepository.getSubAdminEmployees()
+                    employeeRepository.getInternalUsers("EMPLOYEE")
                         .onSuccess { _employees.value = it }
                 }
             )

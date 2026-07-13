@@ -55,15 +55,35 @@ fun SubAdminMapScreen(
     var isPerformingAction by remember { mutableStateOf(false) }
 
     val activePins = remember(customers, complaints, selectedFilter) {
+        val cityCoords = mapOf(
+            "pune" to LatLng(18.5204, 73.8567),
+            "mumbai" to LatLng(19.076, 72.8777),
+            "delhi" to LatLng(28.7041, 77.1025),
+            "bangalore" to LatLng(12.9716, 77.5946),
+            "chennai" to LatLng(13.0827, 80.2707),
+            "kolkata" to LatLng(22.5726, 88.3639),
+            "hyderabad" to LatLng(17.385, 78.4867),
+            "ahmedabad" to LatLng(23.0225, 72.5714),
+            "jaipur" to LatLng(26.9124, 75.7873),
+            "surat" to LatLng(21.1702, 72.8311)
+        )
         val list = mutableListOf<MapPinType>()
         if (selectedFilter == 0 || selectedFilter == 1) {
-            customers.filter { it.latitude != null && it.longitude != null }.forEach {
-                list.add(MapPinType.Amc(it))
+            customers.forEach { cust ->
+                val lat = cust.latitude ?: cityCoords[cust.city.lowercase().trim()]?.latitude
+                val lng = cust.longitude ?: cityCoords[cust.city.lowercase().trim()]?.longitude
+                if (lat != null && lng != null) {
+                    list.add(MapPinType.Amc(cust.copy(latitude = lat, longitude = lng)))
+                }
             }
         }
         if (selectedFilter == 0 || selectedFilter == 2) {
-            complaints.filter { it.latitude != null && it.longitude != null }.forEach {
-                list.add(MapPinType.Complaint(it))
+            complaints.forEach { req ->
+                val lat = req.latitude ?: cityCoords[req.customerCity?.lowercase()?.trim()]?.latitude
+                val lng = req.longitude ?: cityCoords[req.customerCity?.lowercase()?.trim()]?.longitude
+                if (lat != null && lng != null) {
+                    list.add(MapPinType.Complaint(req.copy(latitude = lat, longitude = lng)))
+                }
             }
         }
         list
@@ -258,6 +278,17 @@ fun SubAdminMapScreen(
                                             text = "Address: $it",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+
+                                    req.assignedEmployeeId?.let { techId ->
+                                        val techName = employees.find { it.id == techId }?.fullName ?: "Technician"
+                                        Text(
+                                            text = "Assigned to: $techName",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(top = 4.dp)
                                         )
                                     }
 

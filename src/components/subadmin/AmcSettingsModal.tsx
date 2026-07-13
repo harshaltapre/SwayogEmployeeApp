@@ -154,8 +154,9 @@ export function AmcSettingsModal({ customer, open, onOpenChange }: AmcSettingsMo
         queryClient.invalidateQueries({ queryKey: ["tasks"] });
         onOpenChange(false);
       },
-      onError: (err) => {
-        toast({ title: "Update Failed", description: err instanceof Error ? err.message : "Error saving settings", variant: "destructive" });
+      onError: (err: any) => {
+        const errMsg = err?.error || err?.message || (err instanceof Error ? err.message : "Error saving settings");
+        toast({ title: "Update Failed", description: errMsg, variant: "destructive" });
       }
     });
   };

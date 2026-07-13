@@ -13,10 +13,6 @@ export function isLocalFrontendHost(): boolean {
   return host === "localhost" || host === "127.0.0.1";
 }
 
-export function isCapacitor(): boolean {
-  return typeof window !== "undefined" && !!(window as any).Capacitor;
-}
-
 /**
  * Resolves the backend API origin for fetch calls.
  * - Env overrides win when set (VITE_AUTH_API_BASE_URL / VITE_API_BASE_URL).
@@ -32,11 +28,6 @@ export function resolveConfiguredApiBaseUrl(): string | null {
   const apiBase = (import.meta.env.VITE_API_BASE_URL ?? "").trim();
   if (apiBase.length > 0) {
     return normalizeApiBaseUrl(apiBase);
-  }
-
-  // If running inside a Capacitor mobile app, fall back to host machine's emulator loopback IP
-  if (isCapacitor()) {
-    return "http://10.0.2.2:4000";
   }
 
   // Use the current origin in local development to leverage the Vite proxy (configured in vite.config.ts).

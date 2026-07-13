@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.*
 import com.swayog.employee.data.repository.CustomerRepository
+import com.swayog.employee.data.repository.EmployeeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +14,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SubAdminComplaintsViewModel @Inject constructor(
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val employeeRepository: EmployeeRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<SubAdminComplaintsState>(SubAdminComplaintsState.Initial)
@@ -22,8 +24,8 @@ class SubAdminComplaintsViewModel @Inject constructor(
     private val _complaints = MutableStateFlow<List<ServiceRequest>>(emptyList())
     val complaints: StateFlow<List<ServiceRequest>> = _complaints.asStateFlow()
 
-    private val _employees = MutableStateFlow<List<User>>(emptyList())
-    val employees: StateFlow<List<User>> = _employees.asStateFlow()
+    private val _employees = MutableStateFlow<List<Employee>>(emptyList())
+    val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
 
     private val _actionState = MutableStateFlow<ComplaintActionState>(ComplaintActionState.Idle)
     val actionState: StateFlow<ComplaintActionState> = _actionState.asStateFlow()
@@ -46,7 +48,7 @@ class SubAdminComplaintsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            customerRepository.getSubAdminEmployees()
+            employeeRepository.getInternalUsers("EMPLOYEE")
                 .onSuccess {
                     _employees.value = it
                 }

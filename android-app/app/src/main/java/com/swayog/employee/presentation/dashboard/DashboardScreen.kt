@@ -43,6 +43,7 @@ fun DashboardScreen(
     onNavigateToSubAdminComplaints: () -> Unit,
     onNavigateToSubAdminCalendar: () -> Unit,
     onNavigateToSubAdminEmployees: () -> Unit,
+    onNavigateToSubAdminFinancials: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val dashboardState by viewModel.dashboardState.collectAsState()
@@ -135,6 +136,9 @@ fun DashboardScreen(
                         IconButton(onClick = onNavigateToProfile) {
                             Icon(Icons.Default.Person, contentDescription = "Profile")
                         }
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
                     }
                 )
             }
@@ -204,6 +208,7 @@ fun DashboardScreen(
                                 onNavigateToCalendar = { currentTab = 3 },
                                 onNavigateToMap = { currentTab = 4 },
                                 onNavigateToEmployees = onNavigateToSubAdminEmployees,
+                                onNavigateToFinancials = onNavigateToSubAdminFinancials,
                                 modifier = Modifier.padding(paddingValues)
                             )
                         }
