@@ -5,10 +5,10 @@ import com.google.gson.annotations.SerializedName
 data class Customer(
     val id: Int,
     val customerCode: String,
-    @SerializedName("name")
+    @SerializedName("name", alternate = ["fullName"])
     val fullName: String,
     val email: String,
-    @SerializedName("phone")
+    @SerializedName("phone", alternate = ["phoneNumber"])
     val phoneNumber: String,
     val city: String,
     val address: String,

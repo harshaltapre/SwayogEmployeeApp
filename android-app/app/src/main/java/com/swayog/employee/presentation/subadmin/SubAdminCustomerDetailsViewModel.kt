@@ -18,7 +18,11 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    private val customerId: Int? = savedStateHandle["customerId"]
+    private val customerId: Int? = when (val id = savedStateHandle.get<Any>("customerId")) {
+        is Int -> id
+        is String -> id.toIntOrNull()
+        else -> null
+    }
 
     private val _summaryState = MutableStateFlow<CustomerDetailsState<CustomerSummary>>(CustomerDetailsState.Loading)
     val summaryState: StateFlow<CustomerDetailsState<CustomerSummary>> = _summaryState.asStateFlow()
@@ -31,6 +35,12 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
 
     private val _credentialsUpdateState = MutableStateFlow<CredentialsUpdateState>(CredentialsUpdateState.Idle)
     val credentialsUpdateState: StateFlow<CredentialsUpdateState> = _credentialsUpdateState.asStateFlow()
+
+    private val _scheduleActionState = MutableStateFlow<ScheduleActionState>(ScheduleActionState.Idle)
+    val scheduleActionState: StateFlow<ScheduleActionState> = _scheduleActionState.asStateFlow()
+
+    private val _employees = MutableStateFlow<List<User>>(emptyList())
+    val employees: StateFlow<List<User>> = _employees.asStateFlow()
 
     init {
         loadData()
@@ -61,6 +71,22 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
                 }
                 .onFailure {
                     _generationState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch generation data")
+                }
+        }
+
+        viewModelScope.launch {
+            customerRepository.getSubAdminEmployees()
+                .onSuccess { list ->
+                    _employees.value = list.filter { emp ->
+                        val role = emp.role.lowercase()
+                        val jobRole = emp.employeeProfile?.jobRole?.lowercase() ?: ""
+                        role.contains("technician") || role.contains("engineer") ||
+                                jobRole.contains("technician") || jobRole.contains("engineer") ||
+                                jobRole.contains("field") || jobRole.contains("intern") || role.contains("employee")
+                    }
+                }
+                .onFailure { error ->
+                    android.util.Log.e("SubAdminDetails", "Failed to fetch employees: ${error.message}")
                 }
         }
 
@@ -125,6 +151,36 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     fun resetUpdateState() {
         _credentialsUpdateState.value = CredentialsUpdateState.Idle
     }
+
+    fun scheduleAmcVisit(
+        scheduledDate: String,
+        timeSlot: String?,
+        assignedEmployeeId: String?,
+        notes: String?
+    ) {
+        viewModelScope.launch {
+            _scheduleActionState.value = ScheduleActionState.Loading
+            val request = CreateAmcVisitRequest(
+                customerId = customerId,
+                scheduledDate = scheduledDate,
+                timeSlot = timeSlot,
+                assignedEmployeeId = assignedEmployeeId,
+                notes = notes
+            )
+            customerRepository.createAmcVisit(request)
+                .onSuccess {
+                    _scheduleActionState.value = ScheduleActionState.Success("AMC visit scheduled successfully!")
+                    loadData()
+                }
+                .onFailure {
+                    _scheduleActionState.value = ScheduleActionState.Error(it.message ?: "Failed to schedule AMC visit")
+                }
+        }
+    }
+
+    fun resetScheduleActionState() {
+        _scheduleActionState.value = ScheduleActionState.Idle
+    }
 }
 
 sealed class CustomerDetailsState<out T> {
@@ -139,3 +195,11 @@ sealed class CredentialsUpdateState {
     data class Success(val customer: Customer) : CredentialsUpdateState()
     data class Error(val message: String) : CredentialsUpdateState()
 }
+
+sealed class ScheduleActionState {
+    object Idle : ScheduleActionState()
+    object Loading : ScheduleActionState()
+    data class Success(val message: String) : ScheduleActionState()
+    data class Error(val message: String) : ScheduleActionState()
+}
+
