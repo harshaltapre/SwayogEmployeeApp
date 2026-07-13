@@ -213,18 +213,35 @@ export const createInvoice = async (req: Request, res: Response) => {
   const file = req.file;
   const proofUrl = file ? `/uploads/invoices/${file.filename}` : undefined;
 
+  const typeMapping: Record<string, string> = {
+    installation: "INSTALLATION",
+    amc: "AMC",
+    repair: "REPAIR",
+    service: "SERVICE",
+    other: "OTHER"
+  };
+  const statusMapping: Record<string, string> = {
+    pending: "PENDING",
+    paid: "PAID",
+    failed: "FAILED",
+    cancelled: "CANCELLED"
+  };
+
+  const mappedInvoiceType = typeMapping[String(invoiceType || "installation").toLowerCase()] || "INSTALLATION";
+  const mappedPaymentStatus = statusMapping[String(status || "pending").toLowerCase()] || "PENDING";
+
   const invoice = await prisma.invoice.create({
     data: {
       customerId: Number(customerId),
-      invoiceType: invoiceType || "installation",
+      invoiceType: mappedInvoiceType,
       description,
       amount: Number(amount),
-      paymentStatus: status || "pending",
+      paymentStatus: mappedPaymentStatus,
       paymentMethod: paymentMethod || "online",
       proofUrl,
       invoiceNumber: invoiceNumber || null,
       // If status is paid, assume fully paid
-      amountPaid: status === "paid" ? Number(amount) : 0,
+      amountPaid: String(status).toLowerCase() === "paid" ? Number(amount) : 0,
       invoiceDate: date ? new Date(date) : new Date(),
     },
   });
@@ -241,8 +258,16 @@ export const updateInvoice = async (req: Request, res: Response) => {
   if (amount !== undefined) data.amount = Number(amount);
   if (invoiceNumber !== undefined) data.invoiceNumber = invoiceNumber;
   if (status !== undefined) {
-    data.paymentStatus = status;
-    if (status === "paid" && amountPaid === undefined) {
+    const statusMapping: Record<string, string> = {
+      pending: "PENDING",
+      paid: "PAID",
+      failed: "FAILED",
+      cancelled: "CANCELLED"
+    };
+    const normalizedStatus = String(status).toLowerCase();
+    data.paymentStatus = statusMapping[normalizedStatus] || "PENDING";
+    
+    if (normalizedStatus === "paid" && amountPaid === undefined) {
       const current = await prisma.invoice.findUnique({ where: { id } });
       data.amountPaid = current?.amount ?? 0;
     }

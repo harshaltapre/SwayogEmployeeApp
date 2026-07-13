@@ -4,19 +4,17 @@ import { getRequestIp } from "./rate-limit.js";
 
 export class ApiError extends Error {
   statusCode: number;
-  errorCode?: string;
   details?: unknown;
 
-  constructor(statusCode: number, message: string, details?: unknown, errorCode?: string) {
+  constructor(statusCode: number, message: string, details?: unknown) {
     super(message);
     this.statusCode = statusCode;
     this.details = details;
-    this.errorCode = errorCode;
   }
 }
 
 export function notFoundHandler(_req: Request, _res: Response, next: NextFunction): void {
-  next(new ApiError(404, "Route not found", undefined, "ROUTE_NOT_FOUND"));
+  next(new ApiError(404, "Route not found"));
 }
 
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
@@ -27,7 +25,7 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   };
 
   if (err instanceof ApiError) {
-    logger.warn(`API Error ${err.statusCode} (${err.message})`, { ...reqInfo, details: err.details, errorCode: err.errorCode });
+    logger.warn(`API Error ${err.statusCode} (${err.message})`, { ...reqInfo, details: err.details });
 
     const details =
       err.details && typeof err.details === "object"
@@ -40,7 +38,6 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
 
     res.status(err.statusCode).json({
       error: err.message,
-      errorCode: err.errorCode,
       details: err.details,
     });
     return;

@@ -717,51 +717,44 @@ fun ServiceCoordinatorDashboardContent(
                             modifier = Modifier.padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            // Row 1: Heading (full width, left-aligned)
+                            Text(
+                                text = "Generation History",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // Row 2: Period filters (full width, evenly distributed)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Text(
-                                    text = "Generation History",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                // Period filters
-                                @OptIn(ExperimentalLayoutApi::class)
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier.weight(2f)
-                                ) {
-                                    listOf("realtime", "daily", "monthly", "yearly").forEach { p ->
-                                        val isSelected = selectedPeriod == p
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(
-                                                    if (isSelected) MaterialTheme.colorScheme.primary
-                                                    else MaterialTheme.colorScheme.surfaceVariant
-                                                )
-                                                .clickable { viewModel.setPeriod(p) }
-                                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = p.replaceFirstChar { it.uppercase() },
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                                                else MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                listOf("realtime", "daily", "monthly", "yearly").forEach { p ->
+                                    val isSelected = selectedPeriod == p
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.surfaceVariant
                                             )
-                                        }
+                                            .clickable { viewModel.setPeriod(p) }
+                                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = p.replaceFirstChar { it.uppercase() },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                            else MaterialTheme.colorScheme.onSurface,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             }
@@ -786,6 +779,7 @@ fun ServiceCoordinatorDashboardContent(
                             } else if (inverterHistory.isNotEmpty()) {
                                 GenerationChart(
                                     history = inverterHistory,
+                                    selectedPeriod = selectedPeriod,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(160.dp)
@@ -882,14 +876,14 @@ fun ServiceCoordinatorDashboardContent(
                                 }
                             }
 
-                            Row(
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 // Contact Card
                                 Column(
                                     modifier = Modifier
-                                        .weight(1f)
+                                        .fillMaxWidth()
                                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                                         .padding(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -956,7 +950,7 @@ fun ServiceCoordinatorDashboardContent(
                                 // System Card
                                 Column(
                                     modifier = Modifier
-                                        .weight(1f)
+                                        .fillMaxWidth()
                                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                                         .padding(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1457,8 +1451,11 @@ fun AmcVisitItem(visit: AmcVisit, technicianName: String) {
 @Composable
 fun GenerationChart(
     history: List<GenerationHistory>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selectedPeriod: String = "daily"
 ) {
+    val isRealtime = selectedPeriod == "realtime"
+    
     Canvas(modifier = modifier) {
         val width = size.width
         val height = size.height
@@ -1467,10 +1464,12 @@ fun GenerationChart(
         val activeWidth = width - 2 * padding
         val activeHeight = height - 2 * padding
 
-        val maxVal = maxOf(
-            history.maxOf { it.actualGeneration },
-            history.maxOf { it.expectedGeneration ?: 0.0 }
-        ).coerceAtLeast(10.0)
+        // Use power for realtime, generation for other periods
+        val maxVal = if (isRealtime) {
+            history.maxOf { it.power ?: 0.0 }.coerceAtLeast(1.0)
+        } else {
+            history.maxOf { it.generation }.coerceAtLeast(10.0)
+        }
 
         // Draw dotted grid lines
         val gridLines = 4
@@ -1486,33 +1485,26 @@ fun GenerationChart(
             )
         }
 
-        // Plot Actual & Expected coordinates
-        val pointsActual = mutableListOf<Offset>()
-        val pointsExpected = mutableListOf<Offset>()
+        // Plot coordinates
+        val points = mutableListOf<Offset>()
 
         history.forEachIndexed { idx, item ->
             val fraction = if (history.size > 1) idx.toFloat() / (history.size - 1) else 0.5f
             val x = padding + activeWidth * fraction
             
-            // Actual
-            val yActual = height - padding - (activeHeight * (item.actualGeneration / maxVal).toFloat())
-            pointsActual.add(Offset(x, yActual))
-
-            // Expected
-            item.expectedGeneration?.let { exp ->
-                val yExpected = height - padding - (activeHeight * (exp / maxVal).toFloat())
-                pointsExpected.add(Offset(x, yExpected))
-            }
+            val value = if (isRealtime) item.power ?: 0.0 else item.generation
+            val y = height - padding - (activeHeight * (value / maxVal).toFloat())
+            points.add(Offset(x, y))
         }
 
-        // Draw Area under Actual Path
-        if (pointsActual.isNotEmpty()) {
+        // Draw Area under Path (for realtime)
+        if (isRealtime && points.isNotEmpty()) {
             val areaPath = Path().apply {
-                moveTo(pointsActual.first().x, height - padding)
-                pointsActual.forEach { offset ->
+                moveTo(points.first().x, height - padding)
+                points.forEach { offset ->
                     lineTo(offset.x, offset.y)
                 }
-                lineTo(pointsActual.last().x, height - padding)
+                lineTo(points.last().x, height - padding)
                 close()
             }
             
@@ -1520,60 +1512,48 @@ fun GenerationChart(
                 path = areaPath,
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF386FA4).copy(alpha = 0.35f),
-                        Color(0xFF386FA4).copy(alpha = 0.0f)
+                        Color(0xFF10B981).copy(alpha = 0.4f),
+                        Color(0xFF10B981).copy(alpha = 0.0f)
                     ),
-                    startY = pointsActual.minOf { it.y },
+                    startY = points.minOf { it.y },
                     endY = height - padding
                 )
             )
         }
 
-        // Draw Actual Generation Line
-        if (pointsActual.size > 1) {
-            val actualPath = Path().apply {
-                moveTo(pointsActual.first().x, pointsActual.first().y)
-                for (i in 1 until pointsActual.size) {
-                    lineTo(pointsActual[i].x, pointsActual[i].y)
+        // Draw Line/Area based on period
+        if (points.size > 1) {
+            if (isRealtime) {
+                // Area chart for realtime power
+                val path = Path().apply {
+                    moveTo(points.first().x, points.first().y)
+                    for (i in 1 until points.size) {
+                        lineTo(points[i].x, points[i].y)
+                    }
                 }
-            }
-            drawPath(
-                path = actualPath,
-                color = Color(0xFF386FA4),
-                style = Stroke(width = 6f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-            )
-        }
-
-        // Draw Expected Generation Line (Dashed)
-        if (pointsExpected.size > 1) {
-            val expectedPath = Path().apply {
-                moveTo(pointsExpected.first().x, pointsExpected.first().y)
-                for (i in 1 until pointsExpected.size) {
-                    lineTo(pointsExpected[i].x, pointsExpected[i].y)
-                }
-            }
-            drawPath(
-                path = expectedPath,
-                color = Color.Gray.copy(alpha = 0.8f),
-                style = Stroke(
-                    width = 4f,
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f), 0f)
+                drawPath(
+                    path = path,
+                    color = Color(0xFF10B981),
+                    style = Stroke(width = 3f, cap = StrokeCap.Round, join = StrokeJoin.Round)
                 )
-            )
-        }
-
-        // Draw dots on actual points
-        pointsActual.forEach { pt ->
-            drawCircle(
-                color = Color(0xFF386FA4),
-                radius = 6f,
-                center = pt
-            )
-            drawCircle(
-                color = Color.White,
-                radius = 3f,
-                center = pt
-            )
+            } else {
+                // Bar chart for daily/monthly/yearly generation
+                val barWidth = (activeWidth / history.size) * 0.6f
+                history.forEachIndexed { idx, item ->
+                    val value = item.generation
+                    val fraction = if (history.size > 1) idx.toFloat() / (history.size - 1) else 0.5f
+                    val x = padding + activeWidth * fraction - barWidth / 2
+                    val barHeight = (activeHeight * (value / maxVal).toFloat())
+                    val y = height - padding - barHeight
+                    
+                    drawRoundRect(
+                        color = Color(0xFF0EA5E9),
+                        topLeft = Offset(x, y),
+                        size = Size(barWidth, barHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f)
+                    )
+                }
+            }
         }
     }
 }

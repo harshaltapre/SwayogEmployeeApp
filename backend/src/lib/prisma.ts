@@ -1,7 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { encryptToken, decryptToken } from "./encryption.js";
 import { mockDb } from "./mock-database.js";
-import { env } from "../config/env.js";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: any;
@@ -210,7 +209,7 @@ function getPrisma(): any {
               error?.code === "P1008" ||
               error?.code === "P1017";
 
-            if (isConnectionError && process.env.NODE_ENV === 'development' && env.MOCK_DATABASE === 'true') {
+            if (isConnectionError && process.env.NODE_ENV === 'development') {
               console.warn("[Prisma] Database connection lost or unavailable. Dynamically switching to mock database fallback.");
               mockMode = true;
               await ensureMockDbInitialized();
@@ -219,8 +218,6 @@ function getPrisma(): any {
               if (modelProp && typeof modelProp[operation] === 'function') {
                 return modelProp[operation](args);
               }
-            } else if (isConnectionError) {
-              console.error("[Prisma] CRITICAL: Database connection lost or unavailable! Fallback disabled.");
             }
             throw error;
           }
@@ -261,15 +258,8 @@ export const prisma: any = new Proxy({} as any, {
               const errStr = String(error?.message || "");
               const isConnectionError = 
                 errStr.includes("Can't reach database server") || 
-                errStr.includes("EADDRNOTAVAIL") ||
                 errStr.includes("ECONNREFUSED") ||
-                errStr.includes("connection refused") ||
-                error?.code === "P2024" ||
-                error?.code === "P1001" ||
-                error?.code === "P1002" ||
-                error?.code === "P1003" ||
-                error?.code === "P1008" ||
-                error?.code === "P1017";
+                error?.code === "P1001";
               if (isConnectionError && process.env.NODE_ENV === 'development') {
                 console.warn("[Prisma] Database connection lost on raw query. Switching to mock client.");
                 mockMode = true;
@@ -303,13 +293,12 @@ export async function ensurePrismaInitialized() {
     await client.$queryRaw`SELECT 1`;
     return client;
   } catch (error: any) {
-    if (process.env.NODE_ENV === 'development' && env.MOCK_DATABASE === 'true') {
+    if (process.env.NODE_ENV === 'development') {
       console.warn("[Prisma] ensurePrismaInitialized failed to connect. Forcing mock database fallback.");
       mockMode = true;
       await ensureMockDbInitialized();
       return createMockPrismaWrapper();
     }
-    console.error("[Prisma] CRITICAL: ensurePrismaInitialized failed to connect to database!");
     throw error;
   }
 }

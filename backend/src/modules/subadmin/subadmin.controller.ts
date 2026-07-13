@@ -106,35 +106,33 @@ export async function getAllServiceRequests(req: Request, res: Response): Promis
   ]);
 
   res.status(200).json({
-    success: true,
-    message: "Requests fetched successfully",
-    data: requests.map((r) => ({
-      id: r.id,
-      customerId: r.customerId,
-      customer_id: r.customerId,
-      customerName: r.customer.fullName,
-      customerEmail: r.customer.email,
-      customerPhone: r.customer.phoneNumber,
-      customerCity: r.customer.city,
-      customerCode: r.customer.customerCode,
-      title: r.title,
-      description: r.description,
-      status: r.status.toLowerCase(),
-      scheduledDate: r.scheduledDate,
-      scheduled_date: r.scheduledDate,
-      scheduledTime: r.scheduledTime,
-      scheduled_time: r.scheduledTime,
-      address: r.address,
-      latitude: r.latitude,
-      longitude: r.longitude,
-      createdAt: r.createdAt.toISOString(),
-    })),
-    meta: {
+    data: {
+      requests: requests.map((r) => ({
+        id: r.id,
+        customerId: r.customerId,
+        customer_id: r.customerId,
+        customerName: r.customer.fullName,
+        customerEmail: r.customer.email,
+        customerPhone: r.customer.phoneNumber,
+        customerCity: r.customer.city,
+        customerCode: r.customer.customerCode,
+        title: r.title,
+        description: r.description,
+        status: r.status.toLowerCase(),
+        scheduledDate: r.scheduledDate,
+        scheduled_date: r.scheduledDate,
+        scheduledTime: r.scheduledTime,
+        scheduled_time: r.scheduledTime,
+        address: r.address,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        createdAt: r.createdAt.toISOString(),
+      })),
       pagination: {
         total,
         limit: take,
         offset: skip,
-      }
+      },
     },
   });
 }
@@ -902,12 +900,10 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
   }
 
   res.status(200).json({
-    success: true,
-    message: "Generation history fetched successfully",
-    data: history,
-    meta: {
+    data: {
       customerId,
       period,
+      history,
       isSimulated,
     },
   });

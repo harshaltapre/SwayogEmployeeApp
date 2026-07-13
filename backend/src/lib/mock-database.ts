@@ -8,15 +8,18 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-let __dirname: string = "";
+// Handle both ESM and CJS environments
+let mockDbDir: string;
 try {
   // Try ESM approach first
-  __dirname = path.dirname(fileURLToPath(import.meta.url));
+  mockDbDir = path.dirname(fileURLToPath(import.meta.url));
 } catch {
   // Fallback for CJS environment: use global __dirname if defined, or process.cwd()
-  __dirname = typeof globalThis !== "undefined" && (globalThis as any).__dirname 
-    ? (globalThis as any).__dirname 
-    : process.cwd();
+  mockDbDir = typeof __dirname !== "undefined"
+    ? __dirname
+    : (typeof globalThis !== "undefined" && (globalThis as any).__dirname
+        ? (globalThis as any).__dirname
+        : process.cwd());
 }
 
 interface MockUser {
@@ -50,9 +53,9 @@ interface MockUser {
 class MockDatabase {
   private users: Map<string, MockUser> = new Map();
   private initialized = false;
-  private readonly seedUsersPath = path.join(__dirname, "../../mock-users.json");
+  private readonly seedUsersPath = path.join(mockDbDir, "../../mock-users.json");
   private readonly runtimeUsersPath = path.join(
-    __dirname,
+    mockDbDir,
     "../../mock-users.runtime.json"
   );
 

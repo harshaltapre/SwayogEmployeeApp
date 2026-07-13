@@ -17,7 +17,6 @@ const boolString = z.enum(["true", "false"]);
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
-  MOCK_DATABASE: boolString.default("false"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required").transform(v => v.replace(/^['"]|['"]$/g, '')),
   DIRECT_URL: z.string().default(""),
   JWT_ACCESS_SECRET: z.string().min(32, "JWT_ACCESS_SECRET must be at least 32 chars"),

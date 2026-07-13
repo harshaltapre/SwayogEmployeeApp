@@ -37,7 +37,7 @@ customerRoutes.get(
 customerRoutes.post(
   "/",
   authenticateAccessToken,
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.PARTNER),
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.PARTNER, UserRole.SUB_ADMIN, UserRole.EMPLOYEE),
   validateBody(createCustomerSchema),
   asyncHandler(createCustomerHandler),
 );
@@ -45,7 +45,7 @@ customerRoutes.post(
 customerRoutes.patch(
   "/:id",
   authenticateAccessToken,
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.PARTNER),
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.PARTNER, UserRole.SUB_ADMIN, UserRole.EMPLOYEE),
   validateBody(updateCustomerSchema),
   asyncHandler(updateCustomerHandler),
 );
@@ -53,6 +53,6 @@ customerRoutes.patch(
 customerRoutes.delete(
   "/:id",
   authenticateAccessToken,
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUB_ADMIN, UserRole.EMPLOYEE),
   asyncHandler(deleteCustomerHandler),
 );

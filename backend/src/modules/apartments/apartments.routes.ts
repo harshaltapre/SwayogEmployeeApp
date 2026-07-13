@@ -31,7 +31,7 @@ apartmentsRoutes.get(
 apartmentsRoutes.post(
   "/",
   authenticateAccessToken,
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.PARTNER),
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.PARTNER, UserRole.SUB_ADMIN, UserRole.EMPLOYEE),
   validateBody(createApartmentSchema),
   asyncHandler(createApartmentHandler),
 );
@@ -39,6 +39,6 @@ apartmentsRoutes.post(
 apartmentsRoutes.delete(
   "/:id",
   authenticateAccessToken,
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUB_ADMIN, UserRole.EMPLOYEE),
   asyncHandler(deleteApartmentHandler),
 );

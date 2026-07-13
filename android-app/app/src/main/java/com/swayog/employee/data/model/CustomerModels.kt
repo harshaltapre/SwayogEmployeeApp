@@ -59,10 +59,9 @@ data class InverterGeneration(
 
 data class GenerationHistory(
     val date: String,
-    val actualGeneration: Double,
-    val expectedGeneration: Double?,
-    val generationDropPct: Double?,
-    val isAlert: Boolean
+    val label: String,
+    val generation: Double,
+    val power: Double? = null // For realtime period
 )
 
 data class UpdateCredentialsRequest(

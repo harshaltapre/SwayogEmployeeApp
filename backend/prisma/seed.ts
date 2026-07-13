@@ -176,7 +176,7 @@ async function main() {
             visitsList.push({
               customerId: createdCustomer.id,
               scheduledDate,
-              status: "PENDING",
+              status: "pending",
             });
           }
         }

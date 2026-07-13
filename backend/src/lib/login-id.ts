@@ -91,16 +91,40 @@ export async function generateNextPartnerCode(): Promise<string> {
 }
 
 export async function generateNextCustomerCode(): Promise<string> {
-  const customers = await prisma.customer.findMany({
-    select: {
-      customerCode: true,
-    },
-  });
+  const [customers, users] = await Promise.all([
+    prisma.customer.findMany({
+      select: {
+        customerCode: true,
+      },
+    }),
+    prisma.user.findMany({
+      where: {
+        loginId: {
+          startsWith: "SWA_CUST_",
+        },
+      },
+      select: {
+        loginId: true,
+      },
+    }),
+  ]);
 
   let maxNum = 0;
   for (const c of customers) {
     if (c.customerCode) {
       const match = c.customerCode.match(/(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+
+  for (const u of users) {
+    if (u.loginId) {
+      const match = u.loginId.match(/(\d+)$/);
       if (match) {
         const num = parseInt(match[1], 10);
         if (!isNaN(num) && num > maxNum) {

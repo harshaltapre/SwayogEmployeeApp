@@ -166,8 +166,8 @@ export const updateAmcSettings = async (req: Request, res: Response) => {
     }
   });
 
-  const start = existingCustomer.contractStartDate ? new Date(existingCustomer.contractStartDate) : null;
-  const end = existingCustomer.contractEndDate ? new Date(existingCustomer.contractEndDate) : null;
+  let start = existingCustomer.contractStartDate ? new Date(existingCustomer.contractStartDate) : null;
+  let end = existingCustomer.contractEndDate ? new Date(existingCustomer.contractEndDate) : null;
   const useVariableTiming = req.body.useVariableTiming === true;
   const scheduleMonth = req.body.scheduleMonth; // e.g. "2026-06"
 
@@ -180,11 +180,20 @@ export const updateAmcSettings = async (req: Request, res: Response) => {
     targetMonthEnd = new Date(year, month, 0, 23, 59, 59, 999);
   }
 
+  // Fallback: If customer has no contract dates, but we have a selected schedule month,
+  // use the selected month's boundaries.
+  if (!start && targetMonthStart) {
+    start = targetMonthStart;
+  }
+  if (!end && targetMonthEnd) {
+    end = targetMonthEnd;
+  }
+
   // Regenerate visits if contract dates exist
   if (start && end && cleaningsPerMonth > 0) {
     const deleteWhere: any = {
       customerId: id,
-      status: "pending"
+      status: AmcVisitStatus.PENDING
     };
 
     if (targetMonthStart && targetMonthEnd) {
@@ -322,7 +331,9 @@ export const listAmcVisits = async (req: Request, res: Response) => {
         select: {
           fullName: true,
           city: true,
-          phoneNumber: true
+          phoneNumber: true,
+          apartmentId: true,
+          apartment: true
         }
       },
       assignedEmployee: {
@@ -526,4 +537,215 @@ export const updateAmcVisit = async (req: Request, res: Response) => {
   };
 
   res.json({ status: "success", data: formattedVisit });
+};
+
+/**
+ * Update AMC settings for all active AMC customers of an apartment and regenerate visits
+ */
+export const updateApartmentAmcSettings = async (req: Request, res: Response) => {
+  const { apartmentId } = req.params;
+  const { 
+    clientType, 
+    monthlyCleaningRate, 
+    remarks,
+    cleaningsPerMonth,
+    cleaningWindow1,
+    cleaningWindow2,
+    cleaningWindow3,
+    cleaningWindow4,
+    cleaningWindow5,
+    cleaningWindow6,
+    cleaningWindow7,
+    cleaningWindow8,
+    paymentTerms,
+    assignedEmployeeId,
+    nextSurveyDate,
+  } = req.body;
+
+  const aptId = Number(apartmentId);
+  const normalizedAssignedEmployeeId = normalizeAssignedEmployeeId(assignedEmployeeId);
+  const manualVisitDate = parseManualVisitDate(nextSurveyDate);
+
+  const apartment = await prisma.apartment.findUnique({
+    where: { id: aptId },
+    include: {
+      customers: {
+        where: {
+          status: "ACTIVE",
+          amcStatus: "ACTIVE"
+        }
+      }
+    }
+  });
+
+  if (!apartment) {
+    throw new ApiError(404, "Apartment not found");
+  }
+
+  const customers = apartment.customers;
+  if (customers.length === 0) {
+    res.json({ status: "success", message: "No active AMC customers in this apartment to update" });
+    return;
+  }
+
+  const scheduleMonth = req.body.scheduleMonth;
+  let targetMonthStart: Date | null = null;
+  let targetMonthEnd: Date | null = null;
+
+  if (scheduleMonth) {
+    const [year, month] = scheduleMonth.split("-").map(Number);
+    targetMonthStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    targetMonthEnd = new Date(year, month, 0, 23, 59, 59, 999);
+  }
+
+  for (const cust of customers) {
+    await prisma.customer.update({
+      where: { id: cust.id },
+      data: {
+        clientType,
+        monthlyCleaningRate: monthlyCleaningRate ? Number(monthlyCleaningRate) : null,
+        remarks,
+        cleaningsPerMonth: Number(cleaningsPerMonth),
+        cleaningWindow1,
+        cleaningWindow2,
+        cleaningWindow3,
+        cleaningWindow4,
+        cleaningWindow5,
+        cleaningWindow6,
+        cleaningWindow7,
+        cleaningWindow8,
+        paymentTerms,
+        assignedEmployeeId: normalizedAssignedEmployeeId,
+      }
+    });
+
+    let start = cust.contractStartDate ? new Date(cust.contractStartDate) : null;
+    let end = cust.contractEndDate ? new Date(cust.contractEndDate) : null;
+    const useVariableTiming = req.body.useVariableTiming === true;
+
+    // Fallback: If customer has no contract dates, but we have a selected schedule month,
+    // use the selected month's boundaries.
+    if (!start && targetMonthStart) {
+      start = targetMonthStart;
+    }
+    if (!end && targetMonthEnd) {
+      end = targetMonthEnd;
+    }
+
+    if (start && end && cleaningsPerMonth > 0) {
+      const deleteWhere: any = {
+        customerId: cust.id,
+        status: AmcVisitStatus.PENDING
+      };
+
+      if (targetMonthStart && targetMonthEnd) {
+        deleteWhere.scheduledDate = {
+          gte: targetMonthStart,
+          lte: targetMonthEnd
+        };
+      }
+
+      await prisma.amcVisit.deleteMany({
+        where: deleteWhere
+      });
+
+      const windows = [
+        cleaningWindow1, cleaningWindow2, cleaningWindow3, cleaningWindow4,
+        cleaningWindow5, cleaningWindow6, cleaningWindow7, cleaningWindow8
+      ].filter(Boolean);
+
+      const newVisits: Array<{ 
+        customerId: number; 
+        scheduledDate: Date; 
+        status: AmcVisitStatus; 
+        assignedEmployeeId: string | null;
+        cleaningNumber: number;
+        timeSlot: string;
+      }> = [];
+
+      let currentMonth = new Date(start);
+      currentMonth.setDate(1);
+
+      if (targetMonthStart) {
+        const contractStartMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+        const contractEndMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+        const targetMonthCompare = new Date(targetMonthStart.getFullYear(), targetMonthStart.getMonth(), 1);
+
+        if (targetMonthCompare >= contractStartMonth && targetMonthCompare <= contractEndMonth) {
+          currentMonth = targetMonthCompare;
+          const loopEnd = new Date(targetMonthCompare);
+
+          while (currentMonth <= loopEnd) {
+            for (let i = 0; i < Number(cleaningsPerMonth); i++) {
+              const window = windows[i] || "1-28";
+              const visitDay = resolveVisitDay(window, currentMonth);
+              const scheduledDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), visitDay, 10, 0, 0);
+
+              const timeSlot = useVariableTiming 
+                ? (req.body[`cleaningTimeSlot${i+1}`] || "09:00")
+                : (req.body.cleaningTimeSlot1 || "09:00");
+
+              if (scheduledDate >= start && scheduledDate <= end) {
+                newVisits.push({
+                  customerId: cust.id,
+                  scheduledDate,
+                  status: AmcVisitStatus.PENDING,
+                  assignedEmployeeId: normalizedAssignedEmployeeId,
+                  cleaningNumber: i + 1,
+                  timeSlot: timeSlot
+                });
+              }
+            }
+            currentMonth.setMonth(currentMonth.getMonth() + 1);
+          }
+        }
+      } else {
+        while (currentMonth <= end) {
+          for (let i = 0; i < Number(cleaningsPerMonth); i++) {
+            const window = windows[i] || "1-28";
+            const visitDay = resolveVisitDay(window, currentMonth);
+            const scheduledDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), visitDay, 10, 0, 0);
+
+            const timeSlot = useVariableTiming 
+              ? (req.body[`cleaningTimeSlot${i+1}`] || "09:00")
+              : (req.body.cleaningTimeSlot1 || "09:00");
+
+            if (scheduledDate >= start && scheduledDate <= end) {
+              newVisits.push({
+                customerId: cust.id,
+                scheduledDate,
+                status: AmcVisitStatus.PENDING,
+                assignedEmployeeId: normalizedAssignedEmployeeId,
+                cleaningNumber: i + 1,
+                timeSlot: timeSlot
+              });
+            }
+          }
+          currentMonth.setMonth(currentMonth.getMonth() + 1);
+        }
+      }
+
+      if (newVisits.length > 0) {
+        await prisma.amcVisit.createMany({
+          data: newVisits
+        });
+      }
+    }
+
+    if (manualVisitDate) {
+      await upsertAmcVisitForDate(cust.id, manualVisitDate, normalizedAssignedEmployeeId);
+    }
+  }
+
+  const authUserId = req.auth?.userId || "system";
+  const userObj = await prisma.user.findUnique({ where: { id: authUserId } });
+  const userName = userObj?.fullName || req.auth?.loginId || "System";
+
+  await createAdminNotification({
+    type: "CLEANING_SCHEDULE",
+    message: `${userName} scheduled/updated AMC cleaning plan for apartment "${apartment.name}" (${cleaningsPerMonth} cleanings/month) for all ${customers.length} customers.`,
+    employeeId: authUserId,
+  });
+
+  res.json({ status: "success", message: `AMC Settings applied to all ${customers.length} customers in ${apartment.name}` });
 };
