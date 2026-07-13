@@ -37,6 +37,7 @@ fun SubAdminCustomerDetailsScreen(
     val summaryState by viewModel.summaryState.collectAsState()
     val generationState by viewModel.generationState.collectAsState()
     val historyState by viewModel.historyState.collectAsState()
+    val amcVisitsState by viewModel.amcVisitsState.collectAsState()
     val updateState by viewModel.credentialsUpdateState.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -139,7 +140,7 @@ fun SubAdminCustomerDetailsScreen(
                                 historyState = historyState,
                                 onPeriodChange = { viewModel.loadHistory(it) }
                             )
-                            2 -> AmcTabContent(customer = customer)
+                            2 -> AmcTabContent(customer = customer, amcVisitsState = amcVisitsState)
                         }
                     }
                 }
@@ -462,9 +463,8 @@ fun InverterTabContent(
         }
     }
 }
-
 @Composable
-fun AmcTabContent(customer: Customer) {
+fun AmcTabContent(customer: Customer, amcVisitsState: CustomerDetailsState<List<AmcVisit>>) {
     val statusUpper = customer.amcStatus.uppercase()
     val (statusColor, statusBg) = when (statusUpper) {
         "ACTIVE" -> Color(0xFF10B981) to Color(0xFFD1FAE5)
@@ -510,6 +510,94 @@ fun AmcTabContent(customer: Customer) {
                 DetailRow(icon = Icons.Default.CalendarToday, label = "AMC Expiry Date", value = customer.amcExpiryDate ?: "No Contract Listed")
                 DetailRow(icon = Icons.Default.Construction, label = "Installation Date", value = customer.installationDate)
                 DetailRow(icon = Icons.Default.Event, label = "Warranty Expiry", value = customer.warrantyExpiry ?: "Expired / Out of Warranty")
+            }
+        }
+
+        SwayogCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "AMC Cleaning Visit Log",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                when (amcVisitsState) {
+                    is CustomerDetailsState.Loading -> {
+                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    is CustomerDetailsState.Error -> {
+                        Text(text = amcVisitsState.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    is CustomerDetailsState.Success -> {
+                        val visits = amcVisitsState.data
+                        if (visits.isEmpty()) {
+                            Text(text = "No AMC visits recorded yet.", color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
+                        } else {
+                            visits.forEach { visit ->
+                                AmcVisitTimelineItem(visit = visit)
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AmcVisitTimelineItem(visit: AmcVisit) {
+    val isCompleted = visit.status.equals("completed", ignoreCase = true)
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .background(
+                        if (isCompleted) Color(0xFF10B981) else Color(0xFFF59E0B),
+                        CircleShape
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .width(2.dp)
+                    .height(50.dp)
+                    .background(Color.LightGray)
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Cleaning #${visit.cleaningNumber ?: 1}",
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "Scheduled: ${visit.scheduledDate} ${visit.timeSlot ?: ""}",
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+            if (!visit.visitNotes.isNullOrBlank()) {
+                Text(
+                    text = "Notes: ${visit.visitNotes}",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            if (isCompleted) {
+                Text(
+                    text = "Completed: ${visit.completedAt ?: "Yes"}",
+                    fontSize = 10.sp,
+                    color = Color(0xFF10B981),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
         }
     }
