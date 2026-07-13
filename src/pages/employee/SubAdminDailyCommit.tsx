@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { Paperclip, Send, CheckCircle2, AlertCircle } from "lucide-react";
-import { SidebarLayout } from "@/components/SidebarLayout";
+import { SubAdminLayout } from "@/components/subadmin/SubAdminLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ function todayIso() {
   return format(new Date(), "yyyy-MM-dd");
 }
 
-export default function DailyCommitPage() {
+export default function SubAdminDailyCommitPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -152,7 +152,7 @@ export default function DailyCommitPage() {
   if (!user) return null;
 
   return (
-    <SidebarLayout>
+    <SubAdminLayout>
       <div className="max-w-3xl mx-auto space-y-6">
         <PageHeader
           title="Daily Commit"
@@ -342,6 +342,6 @@ export default function DailyCommitPage() {
           </p>
         )}
       </div>
-    </SidebarLayout>
+    </SubAdminLayout>
   );
 }

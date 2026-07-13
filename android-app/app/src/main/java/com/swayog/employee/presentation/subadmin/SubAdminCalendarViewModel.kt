@@ -65,7 +65,7 @@ class SubAdminCalendarViewModel @Inject constructor(
                 val list = mutableListOf<CalendarEvent>()
                 
                 complaintsResult.onSuccess { requests ->
-                    requests.filter { it.status.lowercase() == "scheduled" && it.scheduledDate != null }.forEach {
+                    requests.filter { it.scheduledDate != null }.forEach {
                         list.add(
                             CalendarEvent(
                                 id = "complaint_${it.id}",
@@ -83,7 +83,7 @@ class SubAdminCalendarViewModel @Inject constructor(
                 }
 
                 visitsResult.onSuccess { visits ->
-                    visits.filter { it.status.lowercase() == "scheduled" }.forEach {
+                    visits.filter { !it.scheduledDate.isNullOrBlank() }.forEach {
                         list.add(
                             CalendarEvent(
                                 id = "amc_${it.id}",

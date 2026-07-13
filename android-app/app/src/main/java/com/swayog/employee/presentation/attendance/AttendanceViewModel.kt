@@ -9,9 +9,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import com.swayog.employee.data.local.preferences.DataStoreManager
-import kotlinx.coroutines.flow.filterNotNull
 import java.util.Calendar
 import javax.inject.Inject
 
@@ -23,6 +25,12 @@ class AttendanceViewModel @Inject constructor(
 
     private val _attendanceState = MutableStateFlow<AttendanceState>(AttendanceState.Initial)
     val attendanceState: StateFlow<AttendanceState> = _attendanceState.asStateFlow()
+
+    val profilePhotoUrl: StateFlow<String?> = dataStoreManager.profilePhotoUrl.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
 
     private val _todayAttendance = MutableStateFlow<AttendanceRecord?>(null)
     val todayAttendance: StateFlow<AttendanceRecord?> = _todayAttendance.asStateFlow()

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import {
   BarChart2, IndianRupee, UserCog, Globe, Package, AlertTriangle,
   MapPin, Shield, Bell, Lock, Zap, ChevronRight, Users2, Settings,
-  LogOut, X, CheckCircle, Info, Trash2, RefreshCw, Menu,
+  LogOut, X, CheckCircle, Info, Trash2, RefreshCw, Menu, CalendarCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -24,6 +24,7 @@ import UsersTab from "./UsersTab";
 import CustomersTab from "./CustomersTab";
 import SettingsTab from "./SettingsTab";
 import MessagesTab from "./MessagesTab";
+import AdminAttendance from "@/pages/admin/Attendance";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // ─── Notification Types ───────────────────────────────────────────────────────
@@ -73,6 +74,7 @@ const NAV = [
   { id: "financials", label: "Financials", icon: <IndianRupee size={16} /> },
   { id: "users", label: "User Management", icon: <Users2 size={16} /> },
   { id: "employees", label: "Employees", icon: <UserCog size={16} /> },
+  { id: "attendance", label: "Attendance Tracking", icon: <CalendarCheck size={16} /> },
   { id: "customers", label: "Customers", icon: <Users2 size={16} /> },
   { id: "partners", label: "Partners", icon: <Globe size={16} /> },
   { id: "messages", label: "Messages", icon: <Bell size={16} /> },
@@ -280,6 +282,7 @@ export default function SuperAdminDashboard() {
       case "financials": return <FinancialsTab />;
       case "users": return <UsersTab />;
       case "employees": return <EmployeesTab />;
+      case "attendance": return <AdminAttendance isTab={true} />;
       case "customers": return <CustomersTab />;
       case "partners": return <PartnersTab />;
       case "messages": return <MessagesTab />;

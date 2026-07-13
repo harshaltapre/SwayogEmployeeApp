@@ -30,8 +30,14 @@ class DataStoreManager @Inject constructor(
         val BIOMETRIC_ENABLED = booleanPreferencesKey("biometric_enabled")
         val DARK_MODE = booleanPreferencesKey("dark_mode")
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
+        val COMPACT_VIEW_ENABLED = booleanPreferencesKey("compact_view_enabled")
+        val ANIMATIONS_ENABLED = booleanPreferencesKey("animations_enabled")
+        val PROFILE_VISIBILITY_ENABLED = booleanPreferencesKey("profile_visibility_enabled")
+        val SHOW_STATUS_ENABLED = booleanPreferencesKey("show_status_enabled")
+        val ACTIVITY_SHARING_ENABLED = booleanPreferencesKey("activity_sharing_enabled")
         val LANGUAGE = stringPreferencesKey("language")
         val SERVER_URL = stringPreferencesKey("server_url")
+        val PROFILE_PHOTO_URL = stringPreferencesKey("profile_photo_url")
     }
     
     val authToken: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -62,6 +68,10 @@ class DataStoreManager @Inject constructor(
         preferences[PreferencesKeys.JOB_ROLE]
     }
     
+    val profilePhotoUrl: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.PROFILE_PHOTO_URL]
+    }
+    
     val isLoggedIn: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.IS_LOGGED_IN] ?: false
     }
@@ -76,6 +86,26 @@ class DataStoreManager @Inject constructor(
 
     val notificationsEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.NOTIFICATIONS_ENABLED] ?: true
+    }
+
+    val compactViewEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.COMPACT_VIEW_ENABLED] ?: false
+    }
+
+    val animationsEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.ANIMATIONS_ENABLED] ?: true
+    }
+
+    val profileVisibilityEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.PROFILE_VISIBILITY_ENABLED] ?: true
+    }
+
+    val showStatusEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.SHOW_STATUS_ENABLED] ?: true
+    }
+
+    val activitySharingEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.ACTIVITY_SHARING_ENABLED] ?: true
     }
     
     val language: Flow<String> = context.dataStore.data.map { preferences ->
@@ -115,7 +145,8 @@ class DataStoreManager @Inject constructor(
         email: String,
         name: String,
         role: String,
-        jobRole: String?
+        jobRole: String?,
+        profilePhotoUrl: String? = null
     ) {
         try {
             context.dataStore.edit { preferences ->
@@ -124,7 +155,18 @@ class DataStoreManager @Inject constructor(
                 preferences[PreferencesKeys.USER_NAME] = name
                 preferences[PreferencesKeys.USER_ROLE] = role
                 jobRole?.let { preferences[PreferencesKeys.JOB_ROLE] = it }
+                profilePhotoUrl?.let { preferences[PreferencesKeys.PROFILE_PHOTO_URL] = it }
                 preferences[PreferencesKeys.IS_LOGGED_IN] = true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
+    suspend fun saveProfilePhoto(url: String) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.PROFILE_PHOTO_URL] = url
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -165,6 +207,56 @@ class DataStoreManager @Inject constructor(
         try {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.NOTIFICATIONS_ENABLED] = enabled
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun setCompactViewEnabled(enabled: Boolean) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.COMPACT_VIEW_ENABLED] = enabled
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun setAnimationsEnabled(enabled: Boolean) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.ANIMATIONS_ENABLED] = enabled
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun setProfileVisibilityEnabled(enabled: Boolean) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.PROFILE_VISIBILITY_ENABLED] = enabled
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun setShowStatusEnabled(enabled: Boolean) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SHOW_STATUS_ENABLED] = enabled
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun setActivitySharingEnabled(enabled: Boolean) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.ACTIVITY_SHARING_ENABLED] = enabled
             }
         } catch (e: Exception) {
             e.printStackTrace()

@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -13,6 +13,9 @@ import {
   IndianRupee,
   Sun,
   Users,
+  CalendarCheck,
+  FileText,
+  Settings,
 } from "lucide-react";
 
 import { Button } from "../ui/button";
@@ -28,6 +31,28 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
 
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
+
+  const tourSteps = [
+    {
+      title: "Welcome to Swayog Energy ⚡",
+      desc: "This dashboard allows you to manage tasks, attendance, daily commits, and track Waaree solar panels. Let's take a quick 4-step tour to understand how it works!",
+    },
+    {
+      title: "Landmark Attendance System 📍",
+      desc: "Check-in daily with secure selfie face recognition. The app automatically bakes in your name, date, time, and GPS coordinates as a watermark on the check-in photo. Ensure you upload a profile photo in settings first!",
+    },
+    {
+      title: "Daily Commits & Work Submissions 📝",
+      desc: "Log your daily commits detailing your tasks worked on, work summary, hours spent, and tomorrow's plan. Clear and accurate reports help managers track project progress without confusion.",
+    },
+    {
+      title: "Account Settings & Personalization ⚙️",
+      desc: "Personalize your profile page, choose light/dark/system themes, and upload your profile photo template which is required for secure attendance check-ins.",
+    }
+  ];
+
   if (!user) return null;
 
   const navItems = [
@@ -38,6 +63,9 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
     { name: "Employee Section", href: "/subadmin/employees", icon: UserCog },
     { name: "Calendar", href: "/subadmin/calendar", icon: Calendar },
     { name: "Financials", href: "/subadmin/financials", icon: IndianRupee },
+    { name: "Attendance", href: "/subadmin/attendance", icon: CalendarCheck },
+    { name: "Daily Commit", href: "/subadmin/daily-commit", icon: FileText },
+    { name: "Settings", href: "/subadmin/settings", icon: Settings },
   ];
 
 
@@ -123,7 +151,7 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
   );
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background text-foreground">
       {/* Desktop sidebar */}
       <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-sidebar border-r border-sidebar-border">
         <NavContent />
@@ -156,6 +184,84 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
           </div>
         </main>
       </div>
+
+      {/* Onboarding Tour Button */}
+      <button
+        onClick={() => {
+          setTourStep(0);
+          setTourOpen(true);
+        }}
+        className="fixed bottom-6 right-6 z-[70] flex h-12 items-center gap-2 rounded-full bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 text-sm font-semibold shadow-lg transition-transform hover:scale-105"
+      >
+        <span className="relative flex h-3 w-3">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+        </span>
+        💡 Quick Tour
+      </button>
+
+      {/* Tour Dialog */}
+      {tourOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-700 p-6 space-y-4 text-white shadow-2xl relative">
+            <button
+              onClick={() => setTourOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-amber-500 uppercase tracking-widest">
+                Step {tourStep + 1} of {tourSteps.length}
+              </span>
+              <h3 className="text-lg font-bold">
+                {tourSteps[tourStep].title}
+              </h3>
+            </div>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              {tourSteps[tourStep].desc}
+            </p>
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex gap-1">
+                {tourSteps.map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "h-1.5 w-6 rounded-full transition-colors",
+                      idx === tourStep ? "bg-amber-500" : "bg-slate-700"
+                    )}
+                  />
+                ))}
+              </div>
+              <div className="flex gap-2">
+                {tourStep > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs text-slate-800 dark:text-slate-100 hover:bg-slate-800 hover:text-white"
+                    onClick={() => setTourStep((s) => s - 1)}
+                  >
+                    Back
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  className="bg-amber-500 hover:bg-amber-600 text-white text-xs border-0"
+                  onClick={() => {
+                    if (tourStep < tourSteps.length - 1) {
+                      setTourStep((s) => s + 1);
+                    } else {
+                      setTourOpen(false);
+                    }
+                  }}
+                >
+                  {tourStep === tourSteps.length - 1 ? "Finish" : "Next"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

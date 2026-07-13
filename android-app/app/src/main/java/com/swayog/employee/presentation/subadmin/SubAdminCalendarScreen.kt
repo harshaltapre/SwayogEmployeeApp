@@ -43,6 +43,7 @@ fun SubAdminCalendarScreen(
     var selectedFilter by remember { mutableIntStateOf(0) }
     var isCreateDialogOpen by remember { mutableStateOf(false) }
     var selectedEventForUpdate by remember { mutableStateOf<CalendarEvent?>(null) }
+    var selectedEventForDetails by remember { mutableStateOf<CalendarEvent?>(null) }
 
     val filteredEvents = remember(events, selectedFilter) {
         when (selectedFilter) {
@@ -106,6 +107,22 @@ fun SubAdminCalendarScreen(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
+            } else if (state is SubAdminCalendarState.Error) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = (state as SubAdminCalendarState.Error).message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Button(onClick = { viewModel.loadEvents() }) {
+                            Text("Retry")
+                        }
+                    }
+                }
             } else if (filteredEvents.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
@@ -146,9 +163,7 @@ fun SubAdminCalendarScreen(
                             CalendarEventItem(
                                 event = event,
                                 onClick = {
-                                    if (event.type.contains("AMC", ignoreCase = true)) {
-                                        selectedEventForUpdate = event
-                                    }
+                                    selectedEventForDetails = event
                                 }
                             )
                         }
@@ -179,6 +194,118 @@ fun SubAdminCalendarScreen(
                 },
                 isLoading = actionState is CalendarActionState.Loading
             )
+        }
+
+        selectedEventForDetails?.let { event ->
+            CalendarEventDetailsDialog(
+                event = event,
+                employees = employees,
+                onDismiss = { selectedEventForDetails = null },
+                onRescheduleClick = {
+                    selectedEventForDetails = null
+                    selectedEventForUpdate = event
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun CalendarEventDetailsDialog(
+    event: CalendarEvent,
+    employees: List<com.swayog.employee.data.model.Employee>,
+    onDismiss: () -> Unit,
+    onRescheduleClick: () -> Unit
+) {
+    val assignedEmployee = remember(event, employees) {
+        employees.find { it.id.toString() == event.assignedEmployeeId }
+    }
+    val isAmc = event.type.contains("AMC", ignoreCase = true)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Event Details",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Surface(
+                        color = if (isAmc) Color(0xFFD1FAE5) else Color(0xFFDBEAFE),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = event.type,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isAmc) Color(0xFF10B981) else Color(0xFF3B82F6)
+                        )
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(text = "Title", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Text(text = event.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+
+                    Text(text = "Description", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Text(text = event.description, style = MaterialTheme.typography.bodyMedium)
+
+                    Text(text = "Scheduled Date & Time", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Text(
+                        text = "${event.date.substringBefore("T")} ${event.time ?: ""}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    Text(text = "Address / Location", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Text(text = event.address, style = MaterialTheme.typography.bodyMedium)
+
+                    if (isAmc) {
+                        Text(text = "Assigned Personnel", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text(
+                            text = assignedEmployee?.let { "${it.fullName} (${it.role})" } ?: "Unassigned",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isAmc) {
+                        Button(
+                            onClick = onRescheduleClick,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Reschedule")
+                        }
+                    }
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = if (isAmc) Modifier.weight(1f) else Modifier.fillMaxWidth()
+                    ) {
+                        Text("Close")
+                    }
+                }
+            }
         }
     }
 }
@@ -527,7 +654,8 @@ fun CalendarEventItem(event: CalendarEvent, onClick: () -> Unit = {}) {
                 Text(
                     text = event.address,
                     style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1
+                    maxLines = 3,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
         }

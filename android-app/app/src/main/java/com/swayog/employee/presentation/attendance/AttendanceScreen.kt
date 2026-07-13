@@ -48,6 +48,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import com.swayog.employee.presentation.common.utils.WatermarkHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,8 +63,10 @@ fun AttendanceScreen(
     val monthlyRecords by viewModel.monthlyRecords.collectAsState()
     val state by viewModel.attendanceState.collectAsState()
     val performance by viewModel.performance.collectAsState()
+    val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
 
     var showCamera by remember { mutableStateOf(false) }
+    var showEnrollmentBlocker by remember { mutableStateOf(false) }
     var currentLatitude by remember { mutableStateOf<Double?>(null) }
     var currentLongitude by remember { mutableStateOf<Double?>(null) }
 
@@ -140,6 +143,56 @@ fun AttendanceScreen(
         if (currentState is AttendanceState.Error) {
             Toast.makeText(context, currentState.message, Toast.LENGTH_LONG).show()
         }
+    }
+
+    if (showCamera) {
+        FaceVerificationScreen(
+            onVerificationSuccess = { bitmap ->
+                showCamera = false
+                // Apply Watermark
+                val watermarkedBitmap = WatermarkHelper.addWatermark(bitmap, currentLatitude, currentLongitude)
+                
+                // Convert to Base64
+                val outputStream = ByteArrayOutputStream()
+                watermarkedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+                val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.DEFAULT)
+                
+                // Call checkIn
+                viewModel.checkIn(base64String, currentLatitude, currentLongitude) { result ->
+                    if (result.isSuccess) {
+                        Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Check-in failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            onVerificationFailed = { error ->
+                showCamera = false
+                Toast.makeText(context, "Verification failed: $error", Toast.LENGTH_LONG).show()
+            },
+            onCancel = {
+                showCamera = false
+            }
+        )
+        return
+    }
+
+    if (showEnrollmentBlocker) {
+        AlertDialog(
+            onDismissRequest = { showEnrollmentBlocker = false },
+            title = { Text("Profile Photo Required") },
+            text = { Text("You must enroll your face by uploading a profile photo in Settings before you can check in.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showEnrollmentBlocker = false
+                    // we don't have a direct navController here, just a toast telling them what to do.
+                    // If we want to navigate, we should add onNavigateToSettings to AttendanceScreen parameters.
+                    Toast.makeText(context, "Please go to Settings to update your Profile Photo.", Toast.LENGTH_LONG).show()
+                }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -370,13 +423,17 @@ fun AttendanceScreen(
                                     SwayogButton(
                                         text = "Check In",
                                         onClick = {
-                                            permissionLauncher.launch(
-                                                arrayOf(
-                                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                                                    Manifest.permission.CAMERA
+                                            if (profilePhotoUrl.isNullOrEmpty()) {
+                                                showEnrollmentBlocker = true
+                                            } else {
+                                                permissionLauncher.launch(
+                                                    arrayOf(
+                                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                                                        Manifest.permission.CAMERA
+                                                    )
                                                 )
-                                            )
+                                            }
                                         },
                                         enabled = todayAttendance == null,
                                         modifier = Modifier.weight(1f)

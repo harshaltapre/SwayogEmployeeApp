@@ -21,6 +21,7 @@ import AdminComplaints from "@/pages/admin/Complaints";
 import AdminInventory from "@/pages/admin/Inventory";
 import AdminFinancials from "@/pages/admin/Financials";
 import AdminSettings from "@/pages/admin/Settings";
+import AdminAttendance from "@/pages/admin/Attendance";
 
 import EmployeeDashboard from "@/pages/employee/Dashboard";
 import EmployeeTasks from "@/pages/employee/Tasks";
@@ -51,6 +52,9 @@ import SubAdminCalendar from "@/pages/employee/SubAdminCalendar";
 import SubAdminFinancials from "@/pages/employee/SubAdminFinancials";
 import WaareeSolarDashboard from "@/pages/employee/WaareeSolarDashboard";
 import SubAdminCustomers from "@/pages/employee/SubAdminCustomers";
+import SubAdminAttendance from "@/pages/employee/SubAdminAttendance";
+import SubAdminDailyCommit from "@/pages/employee/SubAdminDailyCommit";
+import SubAdminSettings from "@/pages/employee/SubAdminSettings";
 
 
 
@@ -103,6 +107,7 @@ function Router() {
 
       {/* Super Admin Routes */}
       <ProtectedRoute path="/super-admin/dashboard" component={SuperAdminDashboard} allowedRoles={['super_admin']} />
+      <ProtectedRoute path="/super-admin/attendance" component={AdminAttendance} allowedRoles={['super_admin']} />
 
       {/* Admin Routes */}
       <ProtectedRoute path="/admin/dashboard" component={AdminDashboard} allowedRoles={['admin', 'super_admin']} />
@@ -117,6 +122,7 @@ function Router() {
       <ProtectedRoute path="/admin/inventory" component={AdminInventory} allowedRoles={['admin', 'super_admin']} />
       <ProtectedRoute path="/admin/financials" component={AdminFinancials} allowedRoles={['admin', 'super_admin']} />
       <ProtectedRoute path="/admin/settings" component={AdminSettings} allowedRoles={['admin', 'super_admin']} />
+      <ProtectedRoute path="/admin/attendance" component={AdminAttendance} allowedRoles={['admin', 'super_admin']} />
       <ProtectedRoute path="/admin/daily-commits" component={DailyCommitTracking} allowedRoles={['admin', 'super_admin']} />
       
       {/* Employee Routes */}
@@ -157,6 +163,9 @@ function Router() {
       <ProtectedRoute path="/subadmin/calendar" component={SubAdminCalendar} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/financials" component={SubAdminFinancials} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/waaree-solar" component={WaareeSolarDashboard} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
+      <ProtectedRoute path="/subadmin/attendance" component={SubAdminAttendance} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
+      <ProtectedRoute path="/subadmin/daily-commit" component={SubAdminDailyCommit} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
+      <ProtectedRoute path="/subadmin/settings" component={SubAdminSettings} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
 
       {/* Legacy compatibility redirect */}
       <Route path="/subadmin/service-requests">

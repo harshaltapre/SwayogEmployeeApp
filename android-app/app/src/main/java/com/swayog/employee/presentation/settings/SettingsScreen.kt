@@ -22,6 +22,16 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.presentation.common.components.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.launch
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Base64
+import java.io.ByteArrayOutputStream
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +44,11 @@ fun SettingsScreen(
     val darkMode by viewModel.darkMode.collectAsState()
     val biometricEnabled by viewModel.biometricEnabled.collectAsState()
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
+    val compactViewEnabled by viewModel.compactViewEnabled.collectAsState()
+    val animationsEnabled by viewModel.animationsEnabled.collectAsState()
+    val profileVisibilityEnabled by viewModel.profileVisibilityEnabled.collectAsState()
+    val showStatusEnabled by viewModel.showStatusEnabled.collectAsState()
+    val activitySharingEnabled by viewModel.activitySharingEnabled.collectAsState()
     val language by viewModel.language.collectAsState()
 
     val userName by viewModel.userName.collectAsState()
@@ -44,6 +59,127 @@ fun SettingsScreen(
     var showLanguageDialog by remember { mutableStateOf(false) }
     var cacheSize by remember { mutableStateOf(viewModel.getCacheSize()) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var showPhotoPickerChoice by remember { mutableStateOf(false) }
+    
+    val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
+    val uploadingPhoto by viewModel.uploadingPhoto.collectAsState()
+    val uploadError by viewModel.uploadError.collectAsState()
+    
+    LaunchedEffect(uploadError) {
+        if (uploadError != null) {
+            Toast.makeText(context, uploadError, Toast.LENGTH_SHORT).show()
+            viewModel.clearUploadError()
+        }
+    }
+
+    val processBitmapAndUpload = { bitmap: Bitmap ->
+        val scaled = Bitmap.createScaledBitmap(bitmap, 240, 240, true)
+        val outputStream = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+        val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.DEFAULT)
+        viewModel.uploadProfilePhoto(base64String)
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        bitmap?.let { processBitmapAndUpload(it) }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            try {
+                cameraLauncher.launch()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to launch camera: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Camera permission is required to take a photo", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                // Decode bounds safely first
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(it)?.use { stream ->
+                    BitmapFactory.decodeStream(stream, null, options)
+                }
+
+                // Calculate inSampleSize
+                var inSampleSize = 1
+                val reqWidth = 480
+                val reqHeight = 480
+                val height = options.outHeight
+                val width = options.outWidth
+                if (height > reqHeight || width > reqWidth) {
+                    val halfHeight = height / 2
+                    val halfWidth = width / 2
+                    while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                        inSampleSize *= 2
+                    }
+                }
+
+                // Decode the downsampled image
+                options.inSampleSize = inSampleSize
+                options.inJustDecodeBounds = false
+                context.contentResolver.openInputStream(it)?.use { stream ->
+                    val bitmap = BitmapFactory.decodeStream(stream, null, options)
+                    if (bitmap != null) {
+                        processBitmapAndUpload(bitmap)
+                    } else {
+                        Toast.makeText(context, "Failed to read image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error loading image: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    if (showPhotoPickerChoice) {
+        AlertDialog(
+            onDismissRequest = { showPhotoPickerChoice = false },
+            title = { Text("Update Profile Photo") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Choose an option to update your photo:")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Button(onClick = {
+                            showPhotoPickerChoice = false
+                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                        }) {
+                            Icon(Icons.Default.CameraAlt, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Camera")
+                        }
+                        Button(onClick = {
+                            showPhotoPickerChoice = false
+                            galleryLauncher.launch("image/*")
+                        }) {
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Gallery")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPhotoPickerChoice = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -79,15 +215,49 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .size(64.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
+                                .background(MaterialTheme.colorScheme.primary)
+                                .clickable { showPhotoPickerChoice = true },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = initials,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
+                            if (!profilePhotoUrl.isNullOrEmpty()) {
+                                AsyncImage(
+                                    model = profilePhotoUrl,
+                                    contentDescription = "Profile Photo",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Text(
+                                    text = initials,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                            
+                            // Edit overlay
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.secondary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Photo",
+                                    tint = MaterialTheme.colorScheme.onSecondary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                            
+                            if (uploadingPhoto) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.width(16.dp))
@@ -185,6 +355,65 @@ fun SettingsScreen(
                             description = "Enable dark layout styling",
                             checked = darkMode,
                             onCheckedChange = { viewModel.setDarkMode(it) }
+                        )
+                    }
+                }
+            }
+            
+            item {
+                SwayogCard {
+                    Column {
+                        Text(
+                            text = "Display Options",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SettingToggle(
+                            title = "Compact View",
+                            description = "Show more information on screen",
+                            checked = compactViewEnabled,
+                            onCheckedChange = { viewModel.setCompactViewEnabled(it) }
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SettingToggle(
+                            title = "Animations",
+                            description = "Enable smooth transitions",
+                            checked = animationsEnabled,
+                            onCheckedChange = { viewModel.setAnimationsEnabled(it) }
+                        )
+                    }
+                }
+            }
+            
+            item {
+                SwayogCard {
+                    Column {
+                        Text(
+                            text = "Privacy Settings",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SettingToggle(
+                            title = "Profile Visibility",
+                            description = "Allow other employees to view your profile",
+                            checked = profileVisibilityEnabled,
+                            onCheckedChange = { viewModel.setProfileVisibilityEnabled(it) }
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SettingToggle(
+                            title = "Show Status",
+                            description = "Display your online status to team",
+                            checked = showStatusEnabled,
+                            onCheckedChange = { viewModel.setShowStatusEnabled(it) }
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SettingToggle(
+                            title = "Activity Sharing",
+                            description = "Share your activity with managers",
+                            checked = activitySharingEnabled,
+                            onCheckedChange = { viewModel.setActivitySharingEnabled(it) }
                         )
                     }
                 }

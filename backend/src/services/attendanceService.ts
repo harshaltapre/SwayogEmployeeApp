@@ -29,6 +29,41 @@ import path from "path";
 import { env } from "../config/env.js";
 import { sendAdminEmailIfConfigured } from "../lib/mailer.js";
 
+const RULES_FILE_PATH = path.join(process.cwd(), "data", "attendance-rules.json");
+
+function getRules() {
+  try {
+    if (fs.existsSync(RULES_FILE_PATH)) {
+      return JSON.parse(fs.readFileSync(RULES_FILE_PATH, "utf8"));
+    }
+  } catch (err) {
+    console.error("Failed to read rules file:", err);
+  }
+  return {
+    shiftStart: "09:15",
+    faceRequired: true,
+    geofenceEnabled: false,
+    officeLat: 18.5204,
+    officeLng: 73.8567,
+    officeRadius: 150,
+  };
+}
+
+function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // metres
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // in meters
+}
+
 export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: string | null; latitude?: number | null; longitude?: number | null }) {
   const today = startOfDay(new Date());
   const existing = await prisma.attendanceRecord.findUnique({
@@ -39,10 +74,30 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
     throw new Error("Already checked in today");
   }
 
+  const rules = getRules();
+
+  // Validate geofence
+  if (rules.geofenceEnabled) {
+    if (opts?.latitude === null || opts?.longitude === null || opts?.latitude === undefined || opts?.longitude === undefined) {
+      throw new Error("Geofencing is enabled. Access to GPS location is required to check in.");
+    }
+    
+    const dist = getDistanceInMeters(
+      Number(opts.latitude),
+      Number(opts.longitude),
+      rules.officeLat,
+      rules.officeLng
+    );
+    if (dist > rules.officeRadius) {
+      throw new Error(`Location verification failed. You are ${Math.round(dist)}m away from the office (Allowed radius: ${rules.officeRadius}m).`);
+    }
+  }
+
   const now = new Date();
-  const nineThirty = new Date(today);
-  nineThirty.setHours(9, 30, 0, 0);
-  const status = now > nineThirty ? "LATE" : "PRESENT";
+  const [sh, sm] = rules.shiftStart.split(":").map(Number);
+  const graceTime = new Date(today);
+  graceTime.setHours(sh, sm, 0, 0);
+  const status = now > graceTime ? "LATE" : "PRESENT";
 
   // Upsert attendance record (existing behavior)
   const attendance = await prisma.attendanceRecord.upsert({

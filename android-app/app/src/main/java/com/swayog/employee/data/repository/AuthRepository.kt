@@ -40,7 +40,8 @@ class AuthRepository @Inject constructor(
                     email = user.email,
                     name = user.fullName,
                     role = user.role,
-                    jobRole = user.employeeProfile?.jobRole
+                    jobRole = user.employeeProfile?.jobRole,
+                    profilePhotoUrl = user.profileImageUrl
                 )
                 
                 // Save user to local database
@@ -96,7 +97,8 @@ class AuthRepository @Inject constructor(
                     email = user.email,
                     name = user.fullName,
                     role = user.role,
-                    jobRole = user.employeeProfile?.jobRole
+                    jobRole = user.employeeProfile?.jobRole,
+                    profilePhotoUrl = user.profileImageUrl
                 )
                 
                 Result.success(authResponse)
@@ -179,6 +181,24 @@ class AuthRepository @Inject constructor(
                 Result.success(response.body()!!.data!!)
             } else {
                 Result.failure(Exception("Failed to get user"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateProfilePhoto(base64Image: String): Result<User> {
+        return try {
+            val response = apiService.updateProfilePhoto(UpdateProfilePhotoRequest(base64Image))
+            if (response.isSuccessful && response.body()?.data != null) {
+                val user = response.body()!!.data!!
+                user.profileImageUrl?.let { url ->
+                    dataStoreManager.saveProfilePhoto(url)
+                }
+                Result.success(user)
+            } else {
+                val errorMsg = response.body()?.message ?: parseErrorMessage(response)
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)

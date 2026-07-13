@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { SidebarLayout } from "@/components/SidebarLayout";
+import { SubAdminLayout } from "@/components/subadmin/SubAdminLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -84,6 +84,12 @@ function getCurrentLocation(): Promise<string> {
   });
 }
 
+// Check error types and return string messages
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
@@ -110,6 +116,7 @@ function getEmployeeStorageKey(employeeId: string): string {
   return `swayog_attendance_${employeeId}`;
 }
 
+// Load attendance records
 function loadAttendance(employeeId: string): AttendanceRecord[] {
   try {
     const stored = localStorage.getItem(getEmployeeStorageKey(employeeId));
@@ -151,7 +158,7 @@ function CalendarCell({ record, day, isToday }: { record?: AttendanceRecord; day
 }
 
 // ───── Main component ─────────────────────────────────────────────────────────
-export default function EmployeeAttendance() {
+export default function SubAdminAttendance() {
   const { user } = useAuth();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -614,7 +621,7 @@ export default function EmployeeAttendance() {
       const faceMatchEnforced = rules ? rules.faceRequired : true;
 
       if (faceMatchEnforced && !storedProfilePhoto) {
-        throw new Error("Please upload your profile photo in Employee Settings before check-in.");
+        throw new Error("Please upload your profile photo in Settings before check-in.");
       }
 
       // Step 3: Biometric matching against stored photo
@@ -685,7 +692,7 @@ export default function EmployeeAttendance() {
 
       closeCamera();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to complete check-in.";
+      const message = getErrorMessage(error);
       setLocationError(message);
     } finally {
       setIsCapturingCheckIn(false);
@@ -797,7 +804,7 @@ export default function EmployeeAttendance() {
   if (!user) return null;
 
   return (
-    <SidebarLayout>
+    <SubAdminLayout>
       <PageHeader title="My Attendance" description="Track your daily check-ins, work hours, and attendance history." />
 
       {/* ── Live Check-In Card ───────────────────────────────────────────────── */}
@@ -1021,7 +1028,7 @@ export default function EmployeeAttendance() {
           <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-700 p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-white text-lg font-semibold flex items-center gap-2">
-                <Camera className="h-5 w-5 text-emerald-400" /> Employee Selfie Verification
+                <Camera className="h-5 w-5 text-emerald-400" /> Selfie Verification
               </h3>
               <Button variant="ghost" className="text-slate-300 hover:text-white" onClick={closeCamera}>
                 <XIcon className="h-4 w-4" />
@@ -1040,7 +1047,7 @@ export default function EmployeeAttendance() {
             </div>
 
             <p className="text-xs text-slate-300">
-              Look at the camera and capture a live selfie. Check-in will be allowed only after selfie and employee face verification with current location.
+              Look at the camera and capture a live selfie. Check-in will be allowed only after selfie and face verification with current location.
             </p>
 
             <div className="flex justify-end gap-2">
@@ -1294,6 +1301,6 @@ export default function EmployeeAttendance() {
           })()}
         </CardContent>
       </Card>
-    </SidebarLayout>
+    </SubAdminLayout>
   );
 }

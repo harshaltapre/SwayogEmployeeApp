@@ -24,6 +24,11 @@ interface ApiService {
     
     @GET("auth/me")
     suspend fun getCurrentUser(): Response<ApiResponse<User>>
+    
+    @PATCH("users/me/profile-photo")
+    suspend fun updateProfilePhoto(
+        @Body request: UpdateProfilePhotoRequest
+    ): Response<ApiResponse<User>>
 
     @GET("health")
     suspend fun checkHealth(): Response<Unit>

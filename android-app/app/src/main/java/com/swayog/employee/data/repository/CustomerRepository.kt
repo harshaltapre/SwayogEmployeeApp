@@ -504,7 +504,7 @@ class CustomerRepository @Inject constructor(
 
         return try {
 
-            val response = apiService.getAmcVisits(null)
+            val response = apiService.getSubAdminAmcVisits(null, null, null, null)
 
             if (response.isSuccessful && response.body()?.data != null) {
 

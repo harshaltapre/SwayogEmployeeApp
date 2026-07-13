@@ -10,11 +10,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.swayog.employee.data.repository.AuthRepository
 import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
+    private val authRepository: AuthRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -35,6 +37,37 @@ class SettingsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = true
     )
+
+    val compactViewEnabled: StateFlow<Boolean> = dataStoreManager.compactViewEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    val animationsEnabled: StateFlow<Boolean> = dataStoreManager.animationsEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = true
+    )
+
+    val profileVisibilityEnabled: StateFlow<Boolean> = dataStoreManager.profileVisibilityEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = true
+    )
+
+    val showStatusEnabled: StateFlow<Boolean> = dataStoreManager.showStatusEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = true
+    )
+
+    val activitySharingEnabled: StateFlow<Boolean> = dataStoreManager.activitySharingEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = true
+    )
+
 
     val language: StateFlow<String> = dataStoreManager.language.stateIn(
         scope = viewModelScope,
@@ -65,6 +98,36 @@ class SettingsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = null
     )
+    
+    val profilePhotoUrl: StateFlow<String?> = dataStoreManager.profilePhotoUrl.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+    
+    private val _uploadingPhoto = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val uploadingPhoto: StateFlow<Boolean> = _uploadingPhoto
+
+    private val _uploadError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val uploadError: StateFlow<String?> = _uploadError
+
+    fun uploadProfilePhoto(base64Image: String) {
+        viewModelScope.launch {
+            _uploadingPhoto.value = true
+            _uploadError.value = null
+            
+            val result = authRepository.updateProfilePhoto(base64Image)
+            if (result.isFailure) {
+                _uploadError.value = result.exceptionOrNull()?.message ?: "Failed to upload photo"
+            }
+            
+            _uploadingPhoto.value = false
+        }
+    }
+
+    fun clearUploadError() {
+        _uploadError.value = null
+    }
 
     fun setDarkMode(enabled: Boolean) {
         viewModelScope.launch {
@@ -81,6 +144,36 @@ class SettingsViewModel @Inject constructor(
     fun setNotificationsEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.setNotificationsEnabled(enabled)
+        }
+    }
+
+    fun setCompactViewEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            dataStoreManager.setCompactViewEnabled(enabled)
+        }
+    }
+
+    fun setAnimationsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            dataStoreManager.setAnimationsEnabled(enabled)
+        }
+    }
+
+    fun setProfileVisibilityEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            dataStoreManager.setProfileVisibilityEnabled(enabled)
+        }
+    }
+
+    fun setShowStatusEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            dataStoreManager.setShowStatusEnabled(enabled)
+        }
+    }
+
+    fun setActivitySharingEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            dataStoreManager.setActivitySharingEnabled(enabled)
         }
     }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { SidebarLayout } from '@/components/SidebarLayout';
+import { SubAdminLayout } from '@/components/subadmin/SubAdminLayout';
 import { useAuth } from '@/lib/auth';
 import { useLocation } from 'wouter';
 import {
@@ -22,7 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 type SettingsSection = 'profile' | 'general' | 'appearance' | 'privacy' | 'about';
 type ThemeMode = 'light' | 'dark' | 'system';
 
-export default function EmployeeSettings() {
+export default function SubAdminSettings() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -34,7 +34,7 @@ export default function EmployeeSettings() {
 
   // Editable fields in state
   const [fullName, setFullName] = useState(user?.name || '');
-  const [designation, setDesignation] = useState(user?.designation || 'Employee');
+  const [designation, setDesignation] = useState(user?.designation || 'Service Coordinator');
   const [department, setDepartment] = useState(user?.department || 'Operations');
   const [phone, setPhone] = useState('');
 
@@ -97,7 +97,7 @@ export default function EmployeeSettings() {
   };
 
   const handleBackClick = () => {
-    navigate('/employee/dashboard');
+    navigate('/subadmin/dashboard');
   };
 
   const normalizeProfilePhoto = async (file: File): Promise<string> => {
@@ -568,7 +568,7 @@ export default function EmployeeSettings() {
   };
 
   return (
-    <SidebarLayout>
+    <SubAdminLayout>
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900/40 p-3 sm:p-4 md:p-6 lg:p-8 text-foreground">
         <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
           <div className="rounded-2xl border border-border bg-card p-4 md:p-6 shadow-sm">
@@ -611,7 +611,7 @@ export default function EmployeeSettings() {
             </div>
 
             <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-lg border border-border px-3 py-2">Signed in as {user?.name || 'Employee'}</div>
+              <div className="rounded-lg border border-border px-3 py-2">Signed in as {user?.name || 'Service Coordinator'}</div>
               <div className="rounded-lg border border-border px-3 py-2 capitalize">Current section: {activeSection}</div>
               <button
                 onClick={handleLogout}
@@ -632,6 +632,6 @@ export default function EmployeeSettings() {
           {renderSection()}
         </div>
       </div>
-    </SidebarLayout>
+    </SubAdminLayout>
   );
 }

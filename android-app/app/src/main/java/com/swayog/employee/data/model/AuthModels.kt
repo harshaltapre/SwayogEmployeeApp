@@ -45,6 +45,10 @@ data class RefreshTokenRequest(
     val refreshToken: String
 )
 
+data class UpdateProfilePhotoRequest(
+    val profileImageUrl: String
+)
+
 data class AuthResponse(
     val user: User,
     @SerializedName("accessToken")
@@ -58,6 +62,7 @@ data class User(
     val email: String,
     val role: String,
     val isActive: Boolean,
+    val profileImageUrl: String? = null,
     val loginId: String? = null,
     val employeeCode: String? = null,
     val phoneNumber: String? = null,

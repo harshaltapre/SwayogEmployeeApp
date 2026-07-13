@@ -116,3 +116,16 @@ export const useEmployeeMonthlyAttendance = (employeeId: string, month: number, 
   enabled: !!employeeId,
 });
 
+export const useAttendanceRules = () => useQuery({
+  queryKey: ["attendance-rules"],
+  queryFn: () => apiClient.get("/attendance/rules").then((r) => r.data),
+});
+
+export const useUpdateAttendanceRules = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rules: any) => apiClient.post("/attendance/rules", rules).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance-rules"] }),
+  });
+};
+

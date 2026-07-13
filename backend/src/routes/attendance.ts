@@ -4,11 +4,62 @@ import { authenticateAccessToken, authorizeRoles } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { prisma } from "../lib/prisma.js";
 import * as AttendanceService from "../services/attendanceService.js";
+import fs from "fs";
+import path from "path";
+
+const RULES_FILE_PATH = path.join(process.cwd(), "data", "attendance-rules.json");
+
+function getRules() {
+  try {
+    if (!fs.existsSync(path.dirname(RULES_FILE_PATH))) {
+      fs.mkdirSync(path.dirname(RULES_FILE_PATH), { recursive: true });
+    }
+    if (fs.existsSync(RULES_FILE_PATH)) {
+      return JSON.parse(fs.readFileSync(RULES_FILE_PATH, "utf8"));
+    }
+  } catch (err) {
+    console.error("Failed to read rules file, using defaults:", err);
+  }
+  return {
+    shiftStart: "09:15",
+    faceRequired: true,
+    geofenceEnabled: false,
+    officeLat: 18.5204,
+    officeLng: 73.8567,
+    officeRadius: 150,
+  };
+}
+
+function saveRules(rules: any) {
+  try {
+    if (!fs.existsSync(path.dirname(RULES_FILE_PATH))) {
+      fs.mkdirSync(path.dirname(RULES_FILE_PATH), { recursive: true });
+    }
+    fs.writeFileSync(RULES_FILE_PATH, JSON.stringify(rules, null, 2), "utf8");
+    return true;
+  } catch (err) {
+    console.error("Failed to write rules file:", err);
+    return false;
+  }
+}
 
 const router = Router();
 
 const employeeAuth = [authenticateAccessToken, authorizeRoles(UserRole.EMPLOYEE, UserRole.SUB_ADMIN)];
 const adminAuth = [authenticateAccessToken, authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.DEPARTMENT_HEAD, UserRole.TEAM_LEAD, UserRole.SUB_ADMIN)];
+
+router.get("/rules", authenticateAccessToken, asyncHandler(async (req, res) => {
+  res.json(getRules());
+}));
+
+router.post("/rules", adminAuth, asyncHandler(async (req, res) => {
+  const success = saveRules(req.body);
+  if (success) {
+    res.json({ success: true, rules: getRules() });
+  } else {
+    res.status(500).json({ error: "Failed to save settings on server" });
+  }
+}));
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   try {
@@ -150,7 +201,8 @@ router.get(
   asyncHandler(async (req, res) => {
     const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
     const year = parseInt(req.query.year as string) || new Date().getFullYear();
-    const snapshots = await prisma.performanceSnapshot.findMany({
+    
+    let snapshots = await prisma.performanceSnapshot.findMany({
       where: { month, year },
       include: {
         employee: {
@@ -164,6 +216,38 @@ router.get(
       },
       orderBy: { performanceScore: "desc" },
     });
+
+    if (snapshots.length === 0) {
+      // Find all employees and sub-admins
+      const employees = await prisma.user.findMany({
+        where: { role: { in: [UserRole.EMPLOYEE, UserRole.SUB_ADMIN] } },
+      });
+      
+      for (const emp of employees) {
+        try {
+          await AttendanceService.recalculateMonthlyPerformance(emp.id, month, year);
+        } catch (err) {
+          console.error(`Failed to generate performance snapshot for ${emp.fullName}:`, err);
+        }
+      }
+
+      // Re-fetch calculations
+      snapshots = await prisma.performanceSnapshot.findMany({
+        where: { month, year },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              fullName: true,
+              loginId: true,
+              employeeProfile: { select: { jobRole: true, zone: true } },
+            },
+          },
+        },
+        orderBy: { performanceScore: "desc" },
+      });
+    }
+
     res.json({ snapshots });
   }),
 );
