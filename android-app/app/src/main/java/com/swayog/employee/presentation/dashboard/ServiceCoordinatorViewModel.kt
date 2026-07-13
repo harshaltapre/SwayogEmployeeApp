@@ -160,7 +160,7 @@ class ServiceCoordinatorViewModel @Inject constructor(
 
     private fun loadEmployeesList() {
         viewModelScope.launch {
-            employeeRepository.getInternalUsers("EMPLOYEE")
+            employeeRepository. getInternalUsers("EMPLOYEE")
                 .onSuccess { _employees.value = it }
         }
     }
