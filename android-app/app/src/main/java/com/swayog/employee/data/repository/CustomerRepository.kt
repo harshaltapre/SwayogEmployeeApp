@@ -251,8 +251,15 @@ class CustomerRepository @Inject constructor(
             val response = apiService.getCustomerSummary(customerId)
 
             if (response.isSuccessful && response.body()?.data != null) {
-
-                Result.success(response.body()!!.data!!.customer)
+                val data = response.body()!!.data!!
+                val customerSummary = CustomerSummary(
+                    customer = data.customer,
+                    openComplaints = data.serviceRequestStats.pending,
+                    pendingAmcVisits = data.customer.pendingVisits ?: 0,
+                    serviceRequestStats = data.serviceRequestStats,
+                    inverterData = null
+                )
+                Result.success(customerSummary)
 
             } else {
 

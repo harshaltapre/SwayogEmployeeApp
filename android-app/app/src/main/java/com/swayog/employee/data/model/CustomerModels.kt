@@ -46,6 +46,7 @@ data class ServiceRequestStats(
     val total: Int,
     val pending: Int,
     val completed: Int,
+    @SerializedName("scheduled")
     val inProgress: Int
 )
 
@@ -61,8 +62,8 @@ data class InverterGeneration(
 )
 
 data class CustomerSummaryResponse(
-    val customer: CustomerSummary,
-    val completedVisits: Int
+    val customer: Customer,
+    val serviceRequestStats: ServiceRequestStats
 )
 
 data class InverterGenerationHistoryResponse(
