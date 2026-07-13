@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.*
 import com.swayog.employee.data.repository.CustomerRepository
+import com.swayog.employee.data.repository.EmployeeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +16,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SubAdminCustomerDetailsViewModel @Inject constructor(
     private val customerRepository: CustomerRepository,
+    private val employeeRepository: EmployeeRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -39,8 +41,8 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     private val _scheduleActionState = MutableStateFlow<ScheduleActionState>(ScheduleActionState.Idle)
     val scheduleActionState: StateFlow<ScheduleActionState> = _scheduleActionState.asStateFlow()
 
-    private val _employees = MutableStateFlow<List<User>>(emptyList())
-    val employees: StateFlow<List<User>> = _employees.asStateFlow()
+    private val _employees = MutableStateFlow<List<Employee>>(emptyList())
+    val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
 
     init {
         loadData()
@@ -75,7 +77,7 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            customerRepository.getSubAdminEmployees()
+            employeeRepository.getInternalUsers("EMPLOYEE")
                 .onSuccess { list ->
                     _employees.value = list.filter { emp ->
                         val role = emp.role.lowercase()
@@ -161,7 +163,7 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             _scheduleActionState.value = ScheduleActionState.Loading
             val request = CreateAmcVisitRequest(
-                customerId = customerId,
+                customerId = customerId ?: 0,
                 scheduledDate = scheduledDate,
                 timeSlot = timeSlot,
                 assignedEmployeeId = assignedEmployeeId,

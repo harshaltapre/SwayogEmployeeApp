@@ -689,7 +689,7 @@ fun EditCredentialsDialog(
 @Composable
 fun ScheduleAmcVisitDialog(
     customer: Customer,
-    employees: List<User>,
+    employees: List<Employee>,
     onDismiss: () -> Unit,
     onSubmit: (String, String?, String?, String?) -> Unit,
     isLoading: Boolean
@@ -832,7 +832,7 @@ fun ScheduleAmcVisitDialog(
                         )
                         employees.forEach { employee ->
                             DropdownMenuItem(
-                                text = { Text("${employee.fullName} (${employee.employeeCode ?: "No Code"})") },
+                                text = { Text("${employee.fullName} (${employee.loginId})") },
                                 onClick = {
                                     assignedEmployeeId = employee.id
                                     selectedEmployeeName = employee.fullName
