@@ -223,8 +223,9 @@ fun EmployeeGridCard(employee: Employee, onClick: (Employee) -> Unit) {
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    val displayRole = employee.employeeProfile?.jobRole?.replace("_", " ")?.split(" ")?.joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } } ?: employee.role.replaceFirstChar { it.uppercase() }
                     Text(
-                        text = employee.role,
+                        text = displayRole,
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
@@ -278,7 +279,8 @@ fun EmployeeListCard(employee: Employee, onClick: (Employee) -> Unit) {
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(employee.fullName, fontWeight = FontWeight.Bold)
-                Text("${employee.role} • ${employee.zone}", fontSize = 12.sp, color = Color.Gray)
+                val displayRole = employee.employeeProfile?.jobRole?.replace("_", " ")?.split(" ")?.joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } } ?: employee.role.replaceFirstChar { it.uppercase() }
+                Text("$displayRole • ${employee.zone}", fontSize = 12.sp, color = Color.Gray)
             }
             Text(
                 if (employee.isActive) "Active" else "Inactive",

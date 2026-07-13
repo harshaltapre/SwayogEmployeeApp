@@ -40,7 +40,18 @@ class SubAdminEmployeesViewModel @Inject constructor(
             
             // Load employees
             val employeeResult = employeeRepository.getInternalUsers("EMPLOYEE")
-            val employees = employeeResult.getOrNull() ?: emptyList()
+            val allowedRoles = listOf(
+                "electrical engineer", "electrical_engineer",
+                "site survey engineer", "site_survey_engineer",
+                "o&m technician", "om_technician",
+                "service engineer", "service_engineer",
+                "field technician", "field_technician",
+                "technician", "intern", "employee"
+            )
+            val employees = (employeeResult.getOrNull() ?: emptyList()).filter { emp ->
+                val role = emp.employeeProfile?.jobRole ?: emp.role
+                allowedRoles.contains(role.lowercase())
+            }
             
             // Load tasks
             val taskResult = taskRepository.getAllTasks()

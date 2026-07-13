@@ -35,6 +35,9 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     private val _historyState = MutableStateFlow<CustomerDetailsState<List<GenerationHistory>>>(CustomerDetailsState.Loading)
     val historyState: StateFlow<CustomerDetailsState<List<GenerationHistory>>> = _historyState.asStateFlow()
 
+    private val _amcVisitsState = MutableStateFlow<CustomerDetailsState<List<AmcVisit>>>(CustomerDetailsState.Loading)
+    val amcVisitsState: StateFlow<CustomerDetailsState<List<AmcVisit>>> = _amcVisitsState.asStateFlow()
+
     private val _credentialsUpdateState = MutableStateFlow<CredentialsUpdateState>(CredentialsUpdateState.Idle)
     val credentialsUpdateState: StateFlow<CredentialsUpdateState> = _credentialsUpdateState.asStateFlow()
 
@@ -90,6 +93,17 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
                 .onFailure { error ->
                     android.util.Log.e("SubAdminDetails", "Failed to fetch employees: ${error.message}")
                 }
+
+            if (customerId != null) {
+                _amcVisitsState.value = CustomerDetailsState.Loading
+                customerRepository.getSubAdminAmcVisits(customerId)
+                    .onSuccess {
+                        _amcVisitsState.value = CustomerDetailsState.Success(it)
+                    }
+                    .onFailure {
+                        _amcVisitsState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch AMC visits")
+                    }
+            }
         }
 
         loadHistory("monthly")

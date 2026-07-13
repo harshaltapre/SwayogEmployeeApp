@@ -96,6 +96,7 @@ interface ApiService {
     @GET("subadmin/service-requests")
     suspend fun getComplaints(): Response<ApiResponse<com.google.gson.JsonElement>>
 
+
     @PATCH("subadmin/service-requests/{requestId}")
     suspend fun updateServiceRequest(
         @Path("requestId") requestId: Int,

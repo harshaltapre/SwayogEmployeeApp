@@ -35,9 +35,12 @@ data class Customer(
 
 data class CustomerSummary(
     val customer: Customer,
+    val openComplaints: Int,
+    val pendingAmcVisits: Int,
     val serviceRequestStats: ServiceRequestStats,
     val inverterData: InverterGeneration?
 )
+
 
 data class ServiceRequestStats(
     val total: Int,
