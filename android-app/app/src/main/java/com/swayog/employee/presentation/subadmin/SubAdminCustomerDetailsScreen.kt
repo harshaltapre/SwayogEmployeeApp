@@ -39,9 +39,11 @@ fun SubAdminCustomerDetailsScreen(
     val historyState by viewModel.historyState.collectAsState()
     val amcVisitsState by viewModel.amcVisitsState.collectAsState()
     val updateState by viewModel.credentialsUpdateState.collectAsState()
+    val scheduleState by viewModel.scheduleActionState.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var isEditOpen by remember { mutableStateOf(false) }
+    var isScheduleDialogOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(updateState) {
         when (updateState) {
@@ -53,6 +55,21 @@ fun SubAdminCustomerDetailsScreen(
             is CredentialsUpdateState.Error -> {
                 Toast.makeText(context, (updateState as CredentialsUpdateState.Error).message, Toast.LENGTH_LONG).show()
                 viewModel.resetUpdateState()
+            }
+            else -> {}
+        }
+    }
+
+    LaunchedEffect(scheduleState) {
+        when (scheduleState) {
+            is ScheduleActionState.Success -> {
+                Toast.makeText(context, (scheduleState as ScheduleActionState.Success).message, Toast.LENGTH_SHORT).show()
+                isScheduleDialogOpen = false
+                viewModel.resetScheduleActionState()
+            }
+            is ScheduleActionState.Error -> {
+                Toast.makeText(context, (scheduleState as ScheduleActionState.Error).message, Toast.LENGTH_LONG).show()
+                viewModel.resetScheduleActionState()
             }
             else -> {}
         }
@@ -140,7 +157,11 @@ fun SubAdminCustomerDetailsScreen(
                                 historyState = historyState,
                                 onPeriodChange = { viewModel.loadHistory(it) }
                             )
-                            2 -> AmcTabContent(customer = customer, amcVisitsState = amcVisitsState)
+                            2 -> AmcTabContent(
+                                customer = customer,
+                                amcVisitsState = amcVisitsState,
+                                onScheduleClick = { isScheduleDialogOpen = true }
+                            )
                         }
                     }
                 }
@@ -162,6 +183,19 @@ fun SubAdminCustomerDetailsScreen(
                             )
                         },
                         isLoading = updateState is CredentialsUpdateState.Loading
+                    )
+                }
+
+                if (isScheduleDialogOpen) {
+                    val employees by viewModel.employees.collectAsState()
+                    ScheduleAmcVisitDialog(
+                        customer = customer,
+                        employees = employees,
+                        onDismiss = { isScheduleDialogOpen = false },
+                        onSubmit = { date, time, employee, notes ->
+                            viewModel.scheduleAmcVisit(date, time, employee, notes)
+                        },
+                        isLoading = scheduleState is ScheduleActionState.Loading
                     )
                 }
             }
@@ -464,7 +498,11 @@ fun InverterTabContent(
     }
 }
 @Composable
-fun AmcTabContent(customer: Customer, amcVisitsState: CustomerDetailsState<List<AmcVisit>>) {
+fun AmcTabContent(
+    customer: Customer,
+    amcVisitsState: CustomerDetailsState<List<AmcVisit>>,
+    onScheduleClick: () -> Unit
+) {
     val statusUpper = customer.amcStatus.uppercase()
     val (statusColor, statusBg) = when (statusUpper) {
         "ACTIVE" -> Color(0xFF10B981) to Color(0xFFD1FAE5)
@@ -510,6 +548,18 @@ fun AmcTabContent(customer: Customer, amcVisitsState: CustomerDetailsState<List<
                 DetailRow(icon = Icons.Default.CalendarToday, label = "AMC Expiry Date", value = customer.amcExpiryDate ?: "No Contract Listed")
                 DetailRow(icon = Icons.Default.Construction, label = "Installation Date", value = customer.installationDate)
                 DetailRow(icon = Icons.Default.Event, label = "Warranty Expiry", value = customer.warrantyExpiry ?: "Expired / Out of Warranty")
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Button(
+                    onClick = onScheduleClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.CalendarToday, contentDescription = "Schedule Visit")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Schedule AMC Visit")
+                }
             }
         }
 
@@ -718,6 +768,209 @@ fun EditCredentialsDialog(
                     ) {
                         if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
                         else Text("Save Changes")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ScheduleAmcVisitDialog(
+    customer: Customer,
+    employees: List<Employee>,
+    onDismiss: () -> Unit,
+    onSubmit: (String, String?, String?, String?) -> Unit,
+    isLoading: Boolean
+) {
+    var scheduledDate by remember { mutableStateOf("") }
+    var timeSlot by remember { mutableStateOf("") }
+    var assignedEmployeeId by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+
+    var isEmployeeDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedEmployeeName by remember { mutableStateOf("") }
+    var isDatePickerOpen by remember { mutableStateOf(false) }
+
+    if (isDatePickerOpen) {
+        val datePickerState = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { isDatePickerOpen = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).apply {
+                                timeZone = java.util.TimeZone.getTimeZone("UTC")
+                            }
+                            scheduledDate = sdf.format(java.util.Date(millis))
+                        }
+                        isDatePickerOpen = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { isDatePickerOpen = false }) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Schedule AMC Visit",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "Customer: ${customer.fullName} (${customer.customerCode})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = scheduledDate,
+                        onValueChange = {},
+                        label = { Text("Scheduled Date (YYYY-MM-DD)") },
+                        placeholder = { Text("Select date...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isDatePickerOpen = true },
+                        enabled = false,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            disabledPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        trailingIcon = {
+                            IconButton(onClick = { isDatePickerOpen = true }) {
+                                Icon(Icons.Default.CalendarToday, contentDescription = "Select Date")
+                            }
+                        }
+                    )
+                }
+
+                OutlinedTextField(
+                    value = timeSlot,
+                    onValueChange = { timeSlot = it },
+                    label = { Text("Time Slot (Optional)") },
+                    placeholder = { Text("e.g. 10:00 AM") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = if (selectedEmployeeName.isNotBlank()) "$selectedEmployeeName (${assignedEmployeeId})" else "",
+                        onValueChange = {},
+                        label = { Text("Assign Employee (Optional)") },
+                        placeholder = { Text("Select employee...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isEmployeeDropdownExpanded = true },
+                        enabled = false,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            disabledPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        trailingIcon = {
+                            IconButton(onClick = { isEmployeeDropdownExpanded = true }) {
+                                Icon(
+                                    imageVector = if (isEmployeeDropdownExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                                    contentDescription = "Toggle Dropdown"
+                                )
+                            }
+                        }
+                    )
+
+                    DropdownMenu(
+                        expanded = isEmployeeDropdownExpanded,
+                        onDismissRequest = { isEmployeeDropdownExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Unassigned") },
+                            onClick = {
+                                assignedEmployeeId = ""
+                                selectedEmployeeName = ""
+                                isEmployeeDropdownExpanded = false
+                            }
+                        )
+                        employees.forEach { employee ->
+                            DropdownMenuItem(
+                                text = { Text("${employee.fullName} (${employee.loginId})") },
+                                onClick = {
+                                    assignedEmployeeId = employee.id
+                                    selectedEmployeeName = employee.fullName
+                                    isEmployeeDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes (Optional)") },
+                    placeholder = { Text("Additional notes...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    maxLines = 4
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss, enabled = !isLoading) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            onSubmit(
+                                scheduledDate,
+                                timeSlot.ifBlank { null },
+                                assignedEmployeeId.ifBlank { null },
+                                notes.ifBlank { null }
+                            )
+                        },
+                        enabled = scheduledDate.isNotBlank() && !isLoading
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        } else {
+                            Text("Schedule")
+                        }
                     }
                 }
             }

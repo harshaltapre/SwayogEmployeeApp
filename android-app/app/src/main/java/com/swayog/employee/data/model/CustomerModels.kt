@@ -5,10 +5,10 @@ import com.google.gson.annotations.SerializedName
 data class Customer(
     val id: Int,
     val customerCode: String,
-    @SerializedName("name")
+    @SerializedName("name", alternate = ["fullName"])
     val fullName: String,
     val email: String,
-    @SerializedName("phone")
+    @SerializedName("phone", alternate = ["phoneNumber"])
     val phoneNumber: String,
     val city: String,
     val address: String,
@@ -46,6 +46,7 @@ data class ServiceRequestStats(
     val total: Int,
     val pending: Int,
     val completed: Int,
+    @SerializedName("scheduled")
     val inProgress: Int
 )
 
@@ -61,8 +62,8 @@ data class InverterGeneration(
 )
 
 data class CustomerSummaryResponse(
-    val customer: CustomerSummary,
-    val completedVisits: Int
+    val customer: Customer,
+    val serviceRequestStats: ServiceRequestStats
 )
 
 data class InverterGenerationHistoryResponse(
