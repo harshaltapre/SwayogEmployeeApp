@@ -8,6 +8,7 @@ import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.ServiceRequest
 import com.swayog.employee.data.model.UpdateAmcVisitRequest
 import com.swayog.employee.data.model.User
+import com.swayog.employee.data.model.Customer
 import com.swayog.employee.data.repository.CustomerRepository
 import com.swayog.employee.data.repository.EmployeeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,11 +33,19 @@ class SubAdminCalendarViewModel @Inject constructor(
     private val _employees = MutableStateFlow<List<Employee>>(emptyList())
     val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
 
+    private val _customers = MutableStateFlow<List<Customer>>(emptyList())
+    val customers: StateFlow<List<Customer>> = _customers.asStateFlow()
+
     private val _actionState = MutableStateFlow<CalendarActionState>(CalendarActionState.Idle)
     val actionState: StateFlow<CalendarActionState> = _actionState.asStateFlow()
 
     init {
         loadEvents()
+        viewModelScope.launch {
+            customerRepository.getAllCustomers().collect {
+                _customers.value = it
+            }
+        }
     }
 
     fun loadEvents() {
@@ -55,6 +64,9 @@ class SubAdminCalendarViewModel @Inject constructor(
                 },
                 viewModelScope.launch {
                     employeeRepository.getInternalUsers("EMPLOYEE").onSuccess { _employees.value = it }
+                },
+                viewModelScope.launch {
+                    customerRepository.refreshCustomers(null, null)
                 }
             )
             
@@ -88,11 +100,11 @@ class SubAdminCalendarViewModel @Inject constructor(
                             CalendarEvent(
                                 id = "amc_${it.id}",
                                 type = "AMC Cleaning Visit",
-                                title = "Cleaning Visit #${it.cleaningNumber ?: 1}",
+                                title = "Cleaning: ${it.customer?.fullName ?: "Customer #" + it.customerId}",
                                 description = it.notes ?: "Routine AMC cleaning visit",
                                 date = it.scheduledDate,
                                 time = it.timeSlot,
-                                address = "Customer ID: ${it.customerId}",
+                                address = it.customer?.let { c -> "${c.fullName} (${c.city ?: "No City"})" } ?: "Customer ID: ${it.customerId}",
                                 rawId = it.id,
                                 assignedEmployeeId = it.assignedEmployeeId
                             )

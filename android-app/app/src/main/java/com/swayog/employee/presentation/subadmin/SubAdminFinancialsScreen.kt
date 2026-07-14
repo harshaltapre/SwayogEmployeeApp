@@ -5,8 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -218,17 +220,28 @@ fun AddPaymentDialog(
 ) {
     var selectedCustomerId by remember { mutableStateOf<Int?>(null) }
     var description by remember { mutableStateOf("AMC Payment") }
+    var invoiceNumber by remember { mutableStateOf("") }
     var amountStr by remember { mutableStateOf("") }
-    var paymentMethod by remember { mutableStateOf("Bank Transfer") }
-    var status by remember { mutableStateOf("paid") }
+    var paymentMethod by remember { mutableStateOf("online") }
+    var status by remember { mutableStateOf("pending") }
+    var invoiceType by remember { mutableStateOf("amc") }
     var expandedCustomer by remember { mutableStateOf(false) }
+    var expandedPaymentMethod by remember { mutableStateOf(false) }
+    var expandedStatus by remember { mutableStateOf(false) }
+    var expandedInvoiceType by remember { mutableStateOf(false) }
+
+    val paymentMethods = listOf("online", "cash", "bank_transfer", "upi", "cheque")
+    val statuses = listOf("pending", "paid", "failed")
+    val invoiceTypes = listOf("amc", "service", "installation", "maintenance")
 
     AlertDialog(
         onDismissRequest = { if (!isLoading) onDismiss() },
         title = { Text("Log New Payment") },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Customer Dropdown
@@ -260,6 +273,25 @@ fun AddPaymentDialog(
                     }
                 }
 
+                // Invoice Number
+                SwayogTextField(
+                    value = invoiceNumber,
+                    onValueChange = { invoiceNumber = it },
+                    label = "Invoice Number (Optional)",
+                    placeholder = "e.g. INV-2026-001",
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Description
+                SwayogTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = "Description",
+                    placeholder = "e.g. AMC Quarter 1 Payment",
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Amount
                 SwayogTextField(
                     value = amountStr,
                     onValueChange = { amountStr = it },
@@ -268,12 +300,92 @@ fun AddPaymentDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                SwayogTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = "Description",
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Payment Method Dropdown
+                ExposedDropdownMenuBox(
+                    expanded = expandedPaymentMethod,
+                    onExpandedChange = { expandedPaymentMethod = it }
+                ) {
+                    SwayogTextField(
+                        value = paymentMethod.replaceFirstChar { it.uppercase() },
+                        onValueChange = {},
+                        enabled = false,
+                        label = "Payment Method",
+                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedPaymentMethod,
+                        onDismissRequest = { expandedPaymentMethod = false }
+                    ) {
+                        paymentMethods.forEach { method ->
+                            DropdownMenuItem(
+                                text = { Text(method.replaceFirstChar { it.uppercase() }) },
+                                onClick = {
+                                    paymentMethod = method
+                                    expandedPaymentMethod = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Status Dropdown
+                ExposedDropdownMenuBox(
+                    expanded = expandedStatus,
+                    onExpandedChange = { expandedStatus = it }
+                ) {
+                    SwayogTextField(
+                        value = status.replaceFirstChar { it.uppercase() },
+                        onValueChange = {},
+                        enabled = false,
+                        label = "Status",
+                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedStatus,
+                        onDismissRequest = { expandedStatus = false }
+                    ) {
+                        statuses.forEach { stat ->
+                            DropdownMenuItem(
+                                text = { Text(stat.replaceFirstChar { it.uppercase() }) },
+                                onClick = {
+                                    status = stat
+                                    expandedStatus = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Invoice Type Dropdown
+                ExposedDropdownMenuBox(
+                    expanded = expandedInvoiceType,
+                    onExpandedChange = { expandedInvoiceType = it }
+                ) {
+                    SwayogTextField(
+                        value = invoiceType.replaceFirstChar { it.uppercase() },
+                        onValueChange = {},
+                        enabled = false,
+                        label = "Invoice Type",
+                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedInvoiceType,
+                        onDismissRequest = { expandedInvoiceType = false }
+                    ) {
+                        invoiceTypes.forEach { type ->
+                            DropdownMenuItem(
+                                text = { Text(type.replaceFirstChar { it.uppercase() }) },
+                                onClick = {
+                                    invoiceType = type
+                                    expandedInvoiceType = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -288,8 +400,9 @@ fun AddPaymentDialog(
                             amount = amount,
                             date = sdf.format(Date()),
                             status = status,
-                            invoiceType = "amc",
-                            paymentMethod = paymentMethod
+                            invoiceType = invoiceType,
+                            paymentMethod = paymentMethod,
+                            invoiceNumber = invoiceNumber.takeIf { it.isNotBlank() }
                         )
                         onSubmit(request)
                     }

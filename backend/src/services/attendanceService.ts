@@ -29,24 +29,70 @@ import path from "path";
 import { env } from "../config/env.js";
 import { sendAdminEmailIfConfigured } from "../lib/mailer.js";
 
-const RULES_FILE_PATH = path.join(process.cwd(), "data", "attendance-rules.json");
-
-function getRules() {
+export async function getRulesAsync() {
   try {
-    if (fs.existsSync(RULES_FILE_PATH)) {
-      return JSON.parse(fs.readFileSync(RULES_FILE_PATH, "utf8"));
+    let dbRule = await prisma.attendanceRule.findUnique({
+      where: { id: "default" },
+    });
+    if (!dbRule) {
+      dbRule = await prisma.attendanceRule.create({
+        data: {
+          id: "default",
+          shiftStart: "09:15",
+          faceRequired: true,
+          geofenceEnabled: false,
+          officeLat: 18.5204,
+          officeLng: 73.8567,
+          officeRadius: 150.0,
+          faceMatchThreshold: parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55"),
+        },
+      });
     }
+    return dbRule;
   } catch (err) {
-    console.error("Failed to read rules file:", err);
+    console.error("Failed to read rules from DB, returning defaults:", err);
+    return {
+      id: "default",
+      shiftStart: "09:15",
+      faceRequired: true,
+      geofenceEnabled: false,
+      officeLat: 18.5204,
+      officeLng: 73.8567,
+      officeRadius: 150.0,
+      faceMatchThreshold: parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55"),
+    };
   }
-  return {
-    shiftStart: "09:15",
-    faceRequired: true,
-    geofenceEnabled: false,
-    officeLat: 18.5204,
-    officeLng: 73.8567,
-    officeRadius: 150,
-  };
+}
+
+export async function saveRulesAsync(rules: any) {
+  try {
+    await prisma.attendanceRule.upsert({
+      where: { id: "default" },
+      create: {
+        id: "default",
+        shiftStart: rules.shiftStart ?? "09:15",
+        faceRequired: rules.faceRequired !== false,
+        geofenceEnabled: rules.geofenceEnabled === true,
+        officeLat: rules.officeLat != null ? parseFloat(rules.officeLat) : 18.5204,
+        officeLng: rules.officeLng != null ? parseFloat(rules.officeLng) : 73.8567,
+        officeRadius: rules.officeRadius != null ? parseFloat(rules.officeRadius) : 150.0,
+        faceMatchThreshold: rules.faceMatchThreshold != null ? parseFloat(rules.faceMatchThreshold) : 0.55,
+      },
+      update: {
+        shiftStart: rules.shiftStart ?? "09:15",
+        faceRequired: rules.faceRequired !== false,
+        geofenceEnabled: rules.geofenceEnabled === true,
+        officeLat: rules.officeLat != null ? parseFloat(rules.officeLat) : 18.5204,
+        officeLng: rules.officeLng != null ? parseFloat(rules.officeLng) : 73.8567,
+        officeRadius: rules.officeRadius != null ? parseFloat(rules.officeRadius) : 150.0,
+        faceMatchThreshold: rules.faceMatchThreshold != null ? parseFloat(rules.faceMatchThreshold) : 0.55,
+      },
+    });
+    return true;
+  } catch (err) {
+    console.error("Failed to save rules to DB:", err);
+    return false;
+  }
 }
 
 function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -74,7 +120,7 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
     throw new Error("Already checked in today");
   }
 
-  const rules = getRules();
+  const rules = await getRulesAsync();
 
   // Validate geofence
   if (rules.geofenceEnabled) {

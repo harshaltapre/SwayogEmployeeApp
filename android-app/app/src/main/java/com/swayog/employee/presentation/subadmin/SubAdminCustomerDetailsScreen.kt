@@ -240,7 +240,7 @@ fun CustomerHeader(customer: Customer) {
                     shape = RoundedCornerShape(6.dp)
                 ) {
                     Text(
-                        text = "Stage ${customer.projectStage}",
+                        text = "Stage ${customer.projectStage ?: 0}",
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
@@ -281,7 +281,7 @@ fun OverviewTabContent(
 
                 DetailRow(icon = Icons.Default.Email, label = "Email", value = customer.email)
                 DetailRow(icon = Icons.Default.Phone, label = "Phone", value = customer.phoneNumber)
-                DetailRow(icon = Icons.Default.LocationOn, label = "Address", value = "${customer.address}, ${customer.city}")
+                DetailRow(icon = Icons.Default.LocationOn, label = "Address", value = "${customer.address ?: ""}, ${customer.city ?: ""}")
             }
         }
 
@@ -546,7 +546,7 @@ fun AmcTabContent(
                 }
 
                 DetailRow(icon = Icons.Default.CalendarToday, label = "AMC Expiry Date", value = customer.amcExpiryDate ?: "No Contract Listed")
-                DetailRow(icon = Icons.Default.Construction, label = "Installation Date", value = customer.installationDate)
+                DetailRow(icon = Icons.Default.Construction, label = "Installation Date", value = customer.installationDate ?: "N/A")
                 DetailRow(icon = Icons.Default.Event, label = "Warranty Expiry", value = customer.warrantyExpiry ?: "Expired / Out of Warranty")
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -702,9 +702,9 @@ fun EditCredentialsDialog(
     var apiKey by remember { mutableStateOf(customer.inverterApiKey ?: "") }
     var loginId by remember { mutableStateOf(customer.inverterLoginId ?: "") }
     var password by remember { mutableStateOf(customer.inverterPassword ?: "") }
-    var city by remember { mutableStateOf(customer.city) }
-    var address by remember { mutableStateOf(customer.address) }
-    var stage by remember { mutableIntStateOf(customer.projectStage) }
+    var city by remember { mutableStateOf(customer.city ?: "") }
+    var address by remember { mutableStateOf(customer.address ?: "") }
+    var stage by remember { mutableIntStateOf(customer.projectStage ?: 0) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(

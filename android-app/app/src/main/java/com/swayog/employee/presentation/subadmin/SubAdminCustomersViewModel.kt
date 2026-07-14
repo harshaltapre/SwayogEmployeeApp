@@ -36,13 +36,13 @@ class SubAdminCustomersViewModel @Inject constructor(
                     customer.fullName.contains(query, ignoreCase = true) ||
                     customer.customerCode.contains(query, ignoreCase = true) ||
                     customer.phoneNumber.contains(query, ignoreCase = true)
-            val matchesCity = city.isBlank() || customer.city.equals(city, ignoreCase = true)
+            val matchesCity = city.isBlank() || customer.city?.equals(city, ignoreCase = true) == true
             matchesQuery && matchesCity
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val cities: StateFlow<List<String>> = _customers.map { list ->
-        list.map { it.city }.distinct().sorted()
+        list.mapNotNull { it.city }.distinct().sorted()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {

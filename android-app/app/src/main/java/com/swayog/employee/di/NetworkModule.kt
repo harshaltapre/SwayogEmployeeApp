@@ -18,6 +18,8 @@ import okhttp3.logging.HttpLoggingInterceptor
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -93,10 +95,63 @@ object NetworkModule {
                 requestBuilder.build()
             }
             
-            val response = chain.proceed(request)
+            var response = chain.proceed(request)
             
             if (response.code == 401) {
-                runBlocking { dataStoreManager.clearAll() }
+                val refreshToken = runBlocking { dataStoreManager.refreshToken.first() }
+                if (refreshToken != null) {
+                    val currentBaseUrl = request.url.newBuilder().encodedPath("").build().toString()
+                    val refreshUrl = "${currentBaseUrl}api/v1/auth/refresh"
+                    
+                    val refreshJson = JSONObject().put("refreshToken", refreshToken).toString()
+                    val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+                    val refreshRequest = okhttp3.Request.Builder()
+                        .url(refreshUrl)
+                        .post(refreshJson.toRequestBody(mediaType))
+                        .header("bypass-tunnel-reminder", "true")
+                        .build()
+                    
+                    val basicClient = OkHttpClient.Builder()
+                        .connectTimeout(10, TimeUnit.SECONDS)
+                        .readTimeout(10, TimeUnit.SECONDS)
+                        .build()
+                    
+                    try {
+                        val refreshResponse = basicClient.newCall(refreshRequest).execute()
+                        if (refreshResponse.isSuccessful && refreshResponse.body != null) {
+                            val responseBodyStr = refreshResponse.body!!.string()
+                            val json = JSONObject(responseBodyStr)
+                            val dataObj = json.optJSONObject("data")
+                            val newAccessToken = dataObj?.optString("accessToken")
+                            val newRefreshToken = dataObj?.optString("refreshToken")
+                            
+                            if (!newAccessToken.isNullOrBlank() && !newRefreshToken.isNullOrBlank()) {
+                                runBlocking {
+                                    dataStoreManager.saveAuthToken(newAccessToken)
+                                    dataStoreManager.saveRefreshToken(newRefreshToken)
+                                }
+                                
+                                response.close()
+                                
+                                val newRequest = request.newBuilder()
+                                    .header("Authorization", "Bearer $newAccessToken")
+                                    .build()
+                                response = chain.proceed(newRequest)
+                            } else {
+                                runBlocking { dataStoreManager.clearAll() }
+                            }
+                        } else {
+                            val code = refreshResponse.code
+                            if (code == 400 || code == 401 || code == 403) {
+                                runBlocking { dataStoreManager.clearAll() }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("NetworkModule", "Token refresh error", e)
+                    }
+                } else {
+                    runBlocking { dataStoreManager.clearAll() }
+                }
             }
             
             response

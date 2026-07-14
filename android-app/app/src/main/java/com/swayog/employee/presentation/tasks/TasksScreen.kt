@@ -26,7 +26,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.data.model.Task
 import com.swayog.employee.presentation.common.components.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksScreen(
     onNavigateBack: () -> Unit,
@@ -245,7 +244,6 @@ fun TasksScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskCard(
     task: Task,
@@ -393,7 +391,6 @@ fun TaskCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskDetailDialog(
     task: Task,

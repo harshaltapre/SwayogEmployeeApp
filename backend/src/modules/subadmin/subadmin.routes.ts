@@ -19,20 +19,8 @@ import {
   markVisitCompleted,
   updateAmcVisit
 } from "./amc.controller.js";
-import { listInternalUsersHandler } from "../users/users.controller.js";
-import { listInternalUsersQuerySchema } from "../users/users.schemas.js";
-import { validateQuery } from "../../middleware/validate.js";
 
 export const subadminRoutes = Router();
-
-// Get all internal users (staff directory) for the sub-admin portal
-subadminRoutes.get(
-  "/employees",
-  authenticateAccessToken,
-  requireMinRole(UserRole.EMPLOYEE),
-  validateQuery(listInternalUsersQuerySchema),
-  asyncHandler(listInternalUsersHandler)
-);
 
 /**
  * Sub-Admin routes require a valid token and SUB_ADMIN role or higher.

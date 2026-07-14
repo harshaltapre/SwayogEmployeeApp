@@ -10,10 +10,10 @@ data class Customer(
     val email: String,
     @SerializedName("phone", alternate = ["phoneNumber"])
     val phoneNumber: String,
-    val city: String,
-    val address: String,
-    val systemSizeKw: Float,
-    val installationDate: String,
+    val city: String?,
+    val address: String?,
+    val systemSizeKw: Float?,
+    val installationDate: String?,
     val warrantyExpiry: String?,
     val panelBrand: String?,
     val inverterBrand: String?,
@@ -21,7 +21,7 @@ data class Customer(
     val amcStatus: String,
     val amcExpiryDate: String?,
     val status: String,
-    val projectStage: Int,
+    val projectStage: Int?,
     val latitude: Double?,
     val longitude: Double?,
     val inverterLoginId: String?,
@@ -117,4 +117,9 @@ data class UpdateServiceRequestRequest(
     val scheduledDate: String? = null,
     val scheduledTime: String? = null,
     val assignedEmployeeId: String? = null
+)
+
+data class ServiceRequestsResponse(
+    val requests: List<ServiceRequest>,
+    val pagination: Pagination? = null
 )

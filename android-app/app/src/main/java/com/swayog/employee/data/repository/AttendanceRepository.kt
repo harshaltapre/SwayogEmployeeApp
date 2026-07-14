@@ -37,35 +37,10 @@ class AttendanceRepository @Inject constructor(
         return try {
             val response = apiService.getTodayAttendance()
             
-            if (response.isSuccessful) {
-                val body = response.body()
-                
-                when {
-                    body?.data != null -> {
-                        val data = body.data
-                        val gson = com.google.gson.Gson()
-                        
-                        val attendanceRecord = when (data) {
-                            is AttendanceRecord -> data
-                            is List<*> -> {
-                                val firstItem = data.firstOrNull()
-                                if (firstItem != null) {
-                                    gson.fromJson(gson.toJson(firstItem), AttendanceRecord::class.java)
-                                } else null
-                            }
-                            else -> {
-                                gson.fromJson(gson.toJson(data), AttendanceRecord::class.java)
-                            }
-                        }
-                        
-                        Result.success(attendanceRecord)
-                    }
-                    else -> {
-                        Result.success(null)
-                    }
-                }
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!.record)
             } else {
-                Result.failure(Exception("Failed to fetch attendance"))
+                Result.success(null)
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -81,8 +56,8 @@ class AttendanceRepository @Inject constructor(
             val response = apiService.checkIn(
                 CheckInRequest(selfie, latitude, longitude)
             )
-            if (response.isSuccessful && response.body()?.data != null) {
-                val checkInResponse = response.body()!!.data!!
+            if (response.isSuccessful && response.body()?.result != null) {
+                val checkInResponse = response.body()!!.result!!
                 
                 // Save to local database
                 val attendanceEntity = AttendanceEntity(
@@ -160,8 +135,8 @@ class AttendanceRepository @Inject constructor(
     ): Result<PerformanceSnapshot> {
         return try {
             val response = apiService.getPerformance(month, year)
-            if (response.isSuccessful && response.body()?.data != null) {
-                Result.success(response.body()!!.data!!)
+            if (response.isSuccessful && response.body()?.snapshot != null) {
+                Result.success(response.body()!!.snapshot!!)
             } else {
                 // Return mock performance if API fails (useful for mock testing)
                 Result.success(PerformanceSnapshot(
@@ -180,6 +155,36 @@ class AttendanceRepository @Inject constructor(
                     tasksCompleted = 42,
                     workSubmissions = 38
                 ))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun syncMonthlyAttendance(month: Int, year: Int): Result<List<AttendanceRecord>> {
+        return try {
+            val response = apiService.getMonthlyAttendance(month, year)
+            if (response.isSuccessful && response.body() != null) {
+                val records = response.body()!!.records
+                val entities = records.map { record ->
+                    AttendanceEntity(
+                        id = record.id,
+                        employeeId = record.employeeId,
+                        date = record.date,
+                        checkInTime = record.checkInTime,
+                        checkOutTime = record.checkOutTime,
+                        totalMinutes = record.totalMinutes,
+                        status = record.status,
+                        notes = record.notes,
+                        checkInSelfieUrl = null,
+                        checkInLocation = null,
+                        isSynced = true
+                    )
+                }
+                attendanceDao.insertAll(entities)
+                Result.success(records)
+            } else {
+                Result.failure(Exception("Failed to sync monthly attendance: ${response.message()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

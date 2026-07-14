@@ -19,7 +19,24 @@ data class SubAdminEmployeesUiState(
     val employees: List<Employee> = emptyList(),
     val tasks: List<Task> = emptyList(),
     val error: String? = null
-)
+) {
+    val filteredEmployees: List<Employee>
+        get() = employees.filter { emp ->
+            val role = (emp.role ?: "").lowercase()
+            val allowedRoles = setOf(
+                "electrical engineer", "electrical_engineer",
+                "site survey engineer", "site_survey_engineer",
+                "o&m technician", "om_technician",
+                "service engineer", "service_engineer",
+                "field technician", "field_technician",
+                "technician", "intern", "employee"
+            )
+            allowedRoles.contains(role)
+        }
+
+    val avgRating: Double
+        get() = if (filteredEmployees.isEmpty()) 0.0 else filteredEmployees.map { it.rating ?: 0.0 }.average()
+}
 
 @HiltViewModel
 class SubAdminEmployeesViewModel @Inject constructor(
@@ -40,18 +57,7 @@ class SubAdminEmployeesViewModel @Inject constructor(
             
             // Load employees
             val employeeResult = employeeRepository.getInternalUsers("EMPLOYEE")
-            val allowedRoles = listOf(
-                "electrical engineer", "electrical_engineer",
-                "site survey engineer", "site_survey_engineer",
-                "o&m technician", "om_technician",
-                "service engineer", "service_engineer",
-                "field technician", "field_technician",
-                "technician", "intern", "employee"
-            )
-            val employees = (employeeResult.getOrNull() ?: emptyList()).filter { emp ->
-                val role = emp.employeeProfile?.jobRole ?: emp.role
-                allowedRoles.contains(role.lowercase())
-            }
+            val employees = employeeResult.getOrNull() ?: emptyList()
             
             // Load tasks
             val taskResult = taskRepository.getAllTasks()

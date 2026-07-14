@@ -86,8 +86,6 @@ class MockDatabase {
 
     try {
       // Prefer runtime data if available, fallback to seed file.
-      console.log("[MockDB] seedUsersPath resolved path:", this.seedUsersPath);
-      console.log("[MockDB] runtimeUsersPath resolved path:", this.runtimeUsersPath);
       const mockUsers = this.readUsersFromDisk();
 
       // Initialize users map
@@ -114,8 +112,6 @@ class MockDatabase {
     skip?: number
   ): Promise<MockUser[]> {
     let results = Array.from(this.users.values());
-    console.log("[MockDB] findManyUsers: initially has", results.length, "users. size of map:", this.users.size);
-    console.log("[MockDB] findManyUsers: where = ", JSON.stringify(where));
 
     // Apply filters
     if (where) {
@@ -135,13 +131,7 @@ class MockDatabase {
           return false;
 
         // Role filter
-        if (where.role) {
-          if (typeof where.role === "object" && where.role.in) {
-            if (!where.role.in.includes(user.role)) return false;
-          } else if (user.role !== where.role) {
-            return false;
-          }
-        }
+        if (where.role && user.role !== where.role) return false;
 
         // Active status filter
         if (where.isActive !== undefined && user.isActive !== where.isActive)

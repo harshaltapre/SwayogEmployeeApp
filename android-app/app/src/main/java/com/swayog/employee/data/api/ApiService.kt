@@ -40,12 +40,18 @@ interface ApiService {
     ): Response<ApiResponse<TasksResponse>>
     
     @GET("employee/attendance/today")
-    suspend fun getTodayAttendance(): Response<ApiResponse<Any>>
+    suspend fun getTodayAttendance(): Response<TodayAttendanceResponse>
+    
+    @GET("employee/attendance/face/enrollment")
+    suspend fun getFaceEnrollmentStatus(): Response<FaceEnrollmentStatusResponse>
+    
+    @POST("employee/attendance/face/enroll")
+    suspend fun enrollFace(@Body request: FaceEnrollmentRequest): Response<ApiResponse<Unit>>
     
     @POST("employee/attendance/check-in")
     suspend fun checkIn(
         @Body request: CheckInRequest
-    ): Response<ApiResponse<CheckInResponse>>
+    ): Response<CheckInApiResponse>
     
     @POST("employee/attendance/check-out")
     suspend fun checkOut(): Response<ApiResponse<Unit>>
@@ -59,7 +65,13 @@ interface ApiService {
     suspend fun getPerformance(
         @Query("month") month: Int,
         @Query("year") year: Int
-    ): Response<ApiResponse<PerformanceSnapshot>>
+    ): Response<PerformanceResponse>
+    
+    @GET("employee/attendance/monthly")
+    suspend fun getMonthlyAttendance(
+        @Query("month") month: Int,
+        @Query("year") year: Int
+    ): Response<MonthlyAttendanceResponse>
     
     @GET("employee/daily-commits")
     suspend fun getDailyCommits(): Response<ApiResponse<List<DailyCommit>>>
@@ -99,7 +111,7 @@ interface ApiService {
     ): Response<ApiResponse<Customer>>
     
     @GET("subadmin/service-requests")
-    suspend fun getComplaints(): Response<ApiResponse<com.google.gson.JsonElement>>
+    suspend fun getComplaints(): Response<ApiResponse<ServiceRequestsResponse>>
 
 
     @PATCH("subadmin/service-requests/{requestId}")

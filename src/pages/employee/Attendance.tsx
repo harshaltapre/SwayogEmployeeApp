@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { SidebarLayout } from "@/components/SidebarLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,9 +24,14 @@ import {
   Camera,
   MapPin,
   Upload,
+  Shield,
+  Eye,
+  Scan,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCheckIn, useAttendanceRules } from "@/hooks/useAttendance";
+import { useCheckIn, useAttendanceRules, useFaceEnrollmentStatus } from "@/hooks/useAttendance";
+import { useFaceApi } from "@/hooks/useFaceApi";
+
 
 // ───── Types ─────────────────────────────────────────────────────────────────
 type AttendanceStatus = "present" | "absent" | "late" | "leave" | "half-day";
@@ -155,6 +160,7 @@ export default function EmployeeAttendance() {
   const { user } = useAuth();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const livenessFrameRef = useRef<ImageData | null>(null); // for liveness detection
   const [mirrorPreview, setMirrorPreview] = useState<boolean>(true);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -166,10 +172,14 @@ export default function EmployeeAttendance() {
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [faceVerificationStatus, setFaceVerificationStatus] = useState<{ step: number; title: string; desc: string; score?: number } | null>(null);
+  const [livenessVerified, setLivenessVerified] = useState(false);
   const today = todayStr();
 
   const checkInMutation = useCheckIn();
   const { data: rules } = useAttendanceRules();
+  const { data: enrollmentData } = useFaceEnrollmentStatus(user?.id ? String(user.id) : undefined);
+  const { detectSingleFace, matchDescriptors, ensureLoaded, isLoaded, isLoading: modelsLoading } = useFaceApi();
+
 
   // Load attendance when component mounts or user changes
   useEffect(() => {
@@ -252,311 +262,12 @@ export default function EmployeeAttendance() {
     saveAttendance(String(user.id), updated);
   };
 
-  type FacePoint = { x: number; y: number };
-
-  type FaceSignature = {
-    histogram: Float32Array;
-    geometry: Float32Array;
-    points: {
-      leftEye: FacePoint;
-      rightEye: FacePoint;
-      nose: FacePoint;
-      mouth: FacePoint;
-    };
-    quality: {
-      brightness: number;
-      contrast: number;
-      sharpness: number;
-      centered: boolean;
-      coverage: number;
-    };
-  };
-
-  const clamp = (value: number, min = 0, max = 1): number => Math.min(max, Math.max(min, value));
-
-  const cosineSimilarity = (a: Float32Array, b: Float32Array): number => {
-    if (a.length !== b.length) return 0;
-    let dot = 0;
-    let normA = 0;
-    let normB = 0;
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-    const denom = Math.sqrt(normA) * Math.sqrt(normB);
-    return denom ? dot / denom : 0;
-  };
-
-  const imageDataFromDataUrl = async (imageDataUrl: string, size = 240): Promise<ImageData> => {
-    const image = new Image();
-    image.src = imageDataUrl;
-    await image.decode();
-
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const context = canvas.getContext("2d");
-    if (!context) {
-      throw new Error("Unable to process face image.");
-    }
-
-    context.drawImage(image, 0, 0, size, size);
-    return context.getImageData(0, 0, size, size);
-  };
-
-  const findDarkPoint = (
-    gray: Float32Array,
-    width: number,
-    height: number,
-    startXRatio: number,
-    endXRatio: number,
-    startYRatio: number,
-    endYRatio: number,
-  ): FacePoint => {
-    const startX = Math.floor(width * startXRatio);
-    const endX = Math.floor(width * endXRatio);
-    const startY = Math.floor(height * startYRatio);
-    const endY = Math.floor(height * endYRatio);
-
-    let bestValue = Number.POSITIVE_INFINITY;
-    let bestX = Math.floor((startX + endX) / 2);
-    let bestY = Math.floor((startY + endY) / 2);
-
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const idx = y * width + x;
-        const current = gray[idx];
-        if (current < bestValue) {
-          bestValue = current;
-          bestX = x;
-          bestY = y;
-        }
-      }
-    }
-
-    return { x: bestX / width, y: bestY / height };
-  };
-
-  const buildFaceSignature = async (imageDataUrl: string): Promise<FaceSignature> => {
-    // First, get a full 240px image to detect rough landmark locations
-    const full = await imageDataFromDataUrl(imageDataUrl, 240);
-    const { width: fullW, height: fullH, data: fullData } = full;
-    const fullPixelCount = fullW * fullH;
-    const grayFull = new Float32Array(fullPixelCount);
-    let brightnessFull = 0;
-    for (let i = 0; i < fullPixelCount; i++) {
-      const base = i * 4;
-      const r = fullData[base];
-      const g = fullData[base + 1];
-      const b = fullData[base + 2];
-      const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-      grayFull[i] = lum;
-      brightnessFull += lum;
-    }
-    brightnessFull /= fullPixelCount;
-
-    const leftEye = findDarkPoint(grayFull, fullW, fullH, 0.14, 0.44, 0.16, 0.5);
-    const rightEye = findDarkPoint(grayFull, fullW, fullH, 0.56, 0.86, 0.16, 0.5);
-    const nose = findDarkPoint(grayFull, fullW, fullH, 0.34, 0.66, 0.38, 0.74);
-    const mouth = findDarkPoint(grayFull, fullW, fullH, 0.24, 0.76, 0.62, 0.92);
-
-    // Build a tighter crop around detected points to avoid clothing/background influence
-    const allX = [leftEye.x, rightEye.x, nose.x, mouth.x];
-    const allY = [leftEye.y, rightEye.y, nose.y, mouth.y];
-    const minX = Math.max(0, Math.min(...allX) - 0.18);
-    const maxX = Math.min(1, Math.max(...allX) + 0.18);
-    const minY = Math.max(0, Math.min(...allY) - 0.18);
-    const maxY = Math.min(1, Math.max(...allY) + 0.18);
-
-    const cropSize = 240;
-    const cropCanvas = document.createElement("canvas");
-    cropCanvas.width = cropSize;
-    cropCanvas.height = cropSize;
-    const ctx = cropCanvas.getContext("2d");
-    if (!ctx) throw new Error("Unable to process face image.");
-
-    const img = new Image();
-    img.src = imageDataUrl;
-    await img.decode();
-
-    const sx = Math.floor(minX * img.width);
-    const sy = Math.floor(minY * img.height);
-    const sWidth = Math.max(32, Math.floor((maxX - minX) * img.width));
-    const sHeight = Math.max(32, Math.floor((maxY - minY) * img.height));
-    ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, cropSize, cropSize);
-
-    const cropped = ctx.getImageData(0, 0, cropSize, cropSize);
-    const { width, height, data } = cropped;
-    const pixelCount = width * height;
-    const gray = new Float32Array(pixelCount);
-    const histogram = new Float32Array(16);
-
-    let brightness = 0;
-    for (let i = 0; i < pixelCount; i++) {
-      const base = i * 4;
-      const r = data[base];
-      const g = data[base + 1];
-      const b = data[base + 2];
-      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-      gray[i] = luminance;
-      brightness += luminance;
-
-      const bin = Math.min(15, Math.floor(luminance * 16));
-      histogram[bin] += 1;
-    }
-    brightness /= pixelCount;
-    for (let i = 0; i < histogram.length; i++) histogram[i] /= pixelCount;
-
-    let variance = 0;
-    let sharpness = 0;
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = y * width + x;
-        const current = gray[idx];
-        variance += (current - brightness) ** 2;
-
-        if (x < width - 1) sharpness += Math.abs(current - gray[idx + 1]);
-        if (y < height - 1) sharpness += Math.abs(current - gray[idx + width]);
-      }
-    }
-
-    const contrast = Math.sqrt(variance / pixelCount);
-    sharpness /= pixelCount * 2;
-
-    const rel = (pt: FacePoint) => ({ x: (pt.x - minX) / (maxX - minX || 1), y: (pt.y - minY) / (maxY - minY || 1) });
-    const leftEyeR = rel(leftEye);
-    const rightEyeR = rel(rightEye);
-    const noseR = rel(nose);
-    const mouthR = rel(mouth);
-
-    const eyeMidX = (leftEyeR.x + rightEyeR.x) / 2;
-    const eyeMidY = (leftEyeR.y + rightEyeR.y) / 2;
-    const eyeDistance = Math.hypot(rightEyeR.x - leftEyeR.x, rightEyeR.y - leftEyeR.y) || 0.0001;
-
-    const geometry = new Float32Array([
-      eyeDistance,
-      (rightEyeR.y - leftEyeR.y) / eyeDistance,
-      (noseR.x - eyeMidX) / eyeDistance,
-      (noseR.y - eyeMidY) / eyeDistance,
-      (mouthR.x - noseR.x) / eyeDistance,
-      (mouthR.y - noseR.y) / eyeDistance,
-    ]);
-
-    const spreadX = Math.max(leftEyeR.x, rightEyeR.x, noseR.x, mouthR.x) - Math.min(leftEyeR.x, rightEyeR.x, noseR.x, mouthR.x);
-    const spreadY = Math.max(leftEyeR.y, rightEyeR.y, noseR.y, mouthR.y) - Math.min(leftEyeR.y, rightEyeR.y, noseR.y, mouthR.y);
-    const coverage = spreadX * spreadY;
-    const centerX = (leftEyeR.x + rightEyeR.x + noseR.x + mouthR.x) / 4;
-    const centerY = (leftEyeR.y + rightEyeR.y + noseR.y + mouthR.y) / 4;
-    const centered = Math.abs(centerX - 0.5) < 0.25 && Math.abs(centerY - 0.5) < 0.3;
-
-    return {
-      histogram,
-      geometry,
-      points: { leftEye: leftEyeR, rightEye: rightEyeR, nose: noseR, mouth: mouthR },
-      quality: { brightness, contrast, sharpness, centered, coverage },
-    };
-  };
-
-  const comparePointGeometry = (reference: FaceSignature, captured: FaceSignature): number => {
-    const pointDistance = (a: FacePoint, b: FacePoint) => Math.hypot(a.x - b.x, a.y - b.y);
-
-    const avgDistance =
-      (pointDistance(reference.points.leftEye, captured.points.leftEye) +
-        pointDistance(reference.points.rightEye, captured.points.rightEye) +
-        pointDistance(reference.points.nose, captured.points.nose) +
-        pointDistance(reference.points.mouth, captured.points.mouth)) /
-      4;
-
-    return clamp(1 - avgDistance * 4);
-  };
-
-  const verifyEmployeeFace = async (
-    referencePhoto: string,
-    capturedPhoto: string,
-  ): Promise<{ isMatch: boolean; reason?: string; score: number }> => {
-    const [referenceSignature, capturedSignature] = await Promise.all([
-      buildFaceSignature(referencePhoto),
-      buildFaceSignature(capturedPhoto),
-    ]);
-
-    // Relaxed lighting thresholds to allow more variation
-    if (capturedSignature.quality.brightness < 0.13 || capturedSignature.quality.brightness > 0.92) {
-      return { isMatch: false, reason: "Lighting is too dark/bright. Move to balanced light and retry.", score: 0 };
-    }
-
-    // Consider low contrast + low sharpness together as a true low-quality signal
-    const isSoftQualityWarning =
-      capturedSignature.quality.contrast < 0.035 && capturedSignature.quality.sharpness < 0.015;
-
-    if (!capturedSignature.quality.centered || capturedSignature.quality.coverage < 0.05) {
-      return { isMatch: false, reason: "Face not centered. Align your full face in the camera frame.", score: 0 };
-    }
-
-    const geometryScore = cosineSimilarity(referenceSignature.geometry, capturedSignature.geometry);
-    const histogramScore = cosineSimilarity(referenceSignature.histogram, capturedSignature.histogram);
-    const pointScore = comparePointGeometry(referenceSignature, capturedSignature);
-
-    // Reduce histogram weight to avoid clothing/background affecting decision
-    const score = geometryScore * 0.6 + histogramScore * 0.15 + pointScore * 0.25;
-
-    const threshold = 0.78; // slightly more tolerant threshold
-    if (isSoftQualityWarning) {
-      return {
-        isMatch: score >= threshold,
-        reason: score >= threshold ? undefined : "Image is low quality (blurry/low contrast). Hold still and retry.",
-        score,
-      };
-    }
-
-    return {
-      isMatch: score >= threshold,
-      reason: score >= threshold ? undefined : "Face mismatch detected. Capture again with a clear front-facing selfie.",
-      score,
-    };
-  };
-
-  const closeCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    setIsCameraReady(false);
-    setIsCameraOpen(false);
-  };
-
-  const startCamera = async () => {
-    setCameraError("");
-    setLocationError("");
-    setIsCameraReady(false);
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 540 } },
-        audio: false,
-      });
-
-      streamRef.current = stream;
-      setIsCameraOpen(true);
-
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          // Apply mirror to preview by default (user expects selfie preview)
-          videoRef.current.style.transform = mirrorPreview ? "scaleX(-1)" : "none";
-          void videoRef.current.play();
-        }
-      }, 0);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to access camera.";
-      setCameraError(`Camera access failed: ${message}`);
-    }
-  };
+  // ═══════════════════════════════════════════════════════════════════════
+  // FACE-API.JS BASED SELFIE CHECK-IN (replaces pixel-comparison approach)
+  // ═══════════════════════════════════════════════════════════════════════
 
   const handleSelfieCheckIn = async () => {
-    if (!user?.id || !videoRef.current) {
-      return;
-    }
+    if (!user?.id || !videoRef.current) return;
 
     setIsCapturingCheckIn(true);
     setLocationError("");
@@ -567,85 +278,151 @@ export default function EmployeeAttendance() {
         throw new Error("Camera is still initializing. Please wait a moment and try again.");
       }
 
-      // Step 1: Detect/Get location first so we can draw it on the watermark
-      setFaceVerificationStatus({ step: 1, title: "Locating Position", desc: "Accessing GPS and establishing geolocation lock..." });
-      const location = await getCurrentLocation().catch((err) => {
-        console.warn("Location error:", err);
-        return "Location Unavailable";
-      });
-      await new Promise((r) => setTimeout(r, 600));
+      // ── Step 1: Get GPS location ─────────────────────────────────────────
+      setFaceVerificationStatus({ step: 1, title: "Detecting Location", desc: "Acquiring GPS coordinates and geolocation lock…" });
+      const location = await getCurrentLocation().catch(() => "Location Unavailable");
+      await new Promise((r) => setTimeout(r, 400));
 
-      setFaceVerificationStatus({ step: 2, title: "Biometric Capture", desc: "Locating facial coordinates, eyes, nose, and mouth contours inside the video frame..." });
+      // ── Step 2: Load face-api.js models ────────────────────────────────
+      setFaceVerificationStatus({ step: 2, title: "Loading AI Models", desc: "Loading face recognition models (ssdMobilenetv1 + faceRecognitionNet)…" });
+      await ensureLoaded();
+
+      // Check enrollment — warn if not enrolled (don't block if faceRequired is false)
+      const faceMatchEnforced = rules ? rules.faceRequired : true;
+      const isEnrolled = enrollmentData?.enrolled ?? false;
+      const storedDescriptors = enrollmentData?.enrollment
+        ? [
+            new Float32Array(enrollmentData.enrollment.descriptor1 as number[]),
+            new Float32Array(enrollmentData.enrollment.descriptor2 as number[]),
+            new Float32Array(enrollmentData.enrollment.descriptor3 as number[]),
+          ]
+        : [];
+
+      if (faceMatchEnforced && !isEnrolled) {
+        throw new Error("Face enrollment required. Please go to Settings → Face ID and enroll your face before checking in.");
+      }
+
+      // ── Step 3: Liveness check (multi-frame motion detection) ──────────
+      setFaceVerificationStatus({ step: 3, title: "Liveness Check", desc: "Detecting eye movement and facial motion to verify you are present in person…" });
+
+      let livenessOk = false;
+      try {
+        // Capture first frame
+        const liveCanvas1 = document.createElement("canvas");
+        liveCanvas1.width = Math.min(video.videoWidth, 320);
+        liveCanvas1.height = Math.min(video.videoHeight, 240);
+        const ctx1 = liveCanvas1.getContext("2d")!;
+        ctx1.drawImage(video, 0, 0, liveCanvas1.width, liveCanvas1.height);
+        const frame1 = ctx1.getImageData(0, 0, liveCanvas1.width, liveCanvas1.height);
+
+        // Wait 600ms for user to naturally move/blink
+        await new Promise((r) => setTimeout(r, 650));
+
+        // Capture second frame
+        const liveCanvas2 = document.createElement("canvas");
+        liveCanvas2.width = liveCanvas1.width;
+        liveCanvas2.height = liveCanvas1.height;
+        const ctx2 = liveCanvas2.getContext("2d")!;
+        ctx2.drawImage(video, 0, 0, liveCanvas2.width, liveCanvas2.height);
+        const frame2 = ctx2.getImageData(0, 0, liveCanvas2.width, liveCanvas2.height);
+
+        // Compute pixel delta between frames — any movement = alive
+        let diffSum = 0;
+        const totalPixels = frame1.data.length / 4;
+        for (let i = 0; i < frame1.data.length; i += 4) {
+          const dr = Math.abs(frame1.data[i] - frame2.data[i]);
+          const dg = Math.abs(frame1.data[i + 1] - frame2.data[i + 1]);
+          const db = Math.abs(frame1.data[i + 2] - frame2.data[i + 2]);
+          diffSum += (dr + dg + db) / 3;
+        }
+        const avgDiff = diffSum / totalPixels;
+
+        // Threshold: > 1.5 avg luminance diff across frames indicates motion (not a still photo)
+        livenessOk = avgDiff > 1.5;
+      } catch {
+        livenessOk = true; // Non-critical: allow if liveness check itself fails
+      }
+
+      if (!livenessOk) {
+        throw new Error("Liveness check failed. It appears you may be showing a photo. Please move or blink, then try again.");
+      }
+      setLivenessVerified(true);
+      await new Promise((r) => setTimeout(r, 300));
+
+      // ── Step 4: Capture selfie frame ────────────────────────────────────
+      setFaceVerificationStatus({ step: 4, title: "Biometric Capture", desc: "Detecting facial landmarks and extracting 128-dim face descriptor…" });
 
       const canvas = document.createElement("canvas");
       canvas.width = video.videoWidth || 720;
       canvas.height = video.videoHeight || 540;
-      const context = canvas.getContext("2d");
-      if (!context) {
-        throw new Error("Unable to capture selfie image.");
-      }
-      // If preview is mirrored for user, flip the draw so captured image is unflipped
+      const context = canvas.getContext("2d")!;
+
+      // Unmirror the capture (mirror is just CSS)
       if (mirrorPreview) {
-        context.save();
+        context.translate(canvas.width, 0);
         context.scale(-1, 1);
-        context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-        context.restore();
-      } else {
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      if (mirrorPreview) {
+        context.setTransform(1, 0, 0, 1, 0, 0);
       }
 
-      // Draw bottom geotag watermark directly onto the canvas before converting to data url
+      // Add geotag watermark
       const barHeight = 44;
       const padding = 12;
       context.fillStyle = "rgba(0, 0, 0, 0.6)";
       context.fillRect(0, canvas.height - barHeight, canvas.width, barHeight);
-
       context.fillStyle = "#ffffff";
       context.font = "bold 13px system-ui, -apple-system, sans-serif";
-      context.fillText(`${user.name || "Employee"} | ${new Date().toLocaleDateString("en-IN")} ${new Date().toLocaleTimeString("en-IN")}`, padding, canvas.height - 26);
-
+      context.fillText(
+        `${user.name || "Employee"} | ${new Date().toLocaleDateString("en-IN")} ${new Date().toLocaleTimeString("en-IN")}`,
+        padding,
+        canvas.height - 26
+      );
       context.fillStyle = "#38bdf8";
       context.font = "500 11px system-ui, -apple-system, sans-serif";
-      context.fillText(`📍 Coordinates: ${location}`, padding, canvas.height - 8);
+      context.fillText(`📍 ${location}`, padding, canvas.height - 8);
 
-      const selfieDataUrl = canvas.toDataURL("image/png");
+      const selfieDataUrl = canvas.toDataURL("image/jpeg", 0.85);
 
-      const storedProfilePhoto = localStorage.getItem(`profilePhoto_${user.id}`);
-      const faceMatchEnforced = rules ? rules.faceRequired : true;
+      // ── Step 5: Face descriptor extraction + matching ───────────────────
+      setFaceVerificationStatus({ step: 5, title: "Face Recognition", desc: "Comparing face descriptor against your enrolled biometric profile…" });
 
-      if (faceMatchEnforced && !storedProfilePhoto) {
-        throw new Error("Please upload your profile photo in Employee Settings before check-in.");
-      }
+      let matchConfidence: number | null = null;
+      let matchDistance: number | null = null;
 
-      // Step 3: Biometric matching against stored photo
-      setFaceVerificationStatus({ step: 3, title: "Landmark Biometric Matching", desc: "Calculating multi-dimensional distance metrics against stored profile template..." });
-      await new Promise((r) => setTimeout(r, 850));
+      if (faceMatchEnforced && isEnrolled && storedDescriptors.length > 0) {
+        // Extract descriptor from the captured (unmirrored) canvas
+        const detResult = await detectSingleFace(canvas, { minConfidence: 0.7 });
+        const liveDescriptor = detResult.descriptor;
 
-      let verificationScore = 0.95;
-      if (faceMatchEnforced && storedProfilePhoto) {
-        const verification = await verifyEmployeeFace(storedProfilePhoto, selfieDataUrl);
-        if (!verification.isMatch) {
+        const threshold = rules?.faceMatchThreshold ?? parseFloat(import.meta.env.VITE_FACE_MATCH_THRESHOLD ?? "0.55");
+        const matchResult = matchDescriptors(liveDescriptor, storedDescriptors, threshold);
+
+        matchDistance = matchResult.minDistance;
+        matchConfidence = matchResult.confidence;
+
+        if (!matchResult.isMatch) {
           throw new Error(
-            verification.reason ||
-              "Face verification failed. Check-in blocked for non-matching person.",
+            `Face verification failed (distance: ${matchResult.minDistance.toFixed(3)}, threshold: ${threshold}). ` +
+            `Please look directly at the camera in good lighting. If issues persist, re-enroll in Settings → Face ID.`
           );
         }
-        verificationScore = verification.score || 0.95;
+      } else if (!faceMatchEnforced) {
+        // Face not enforced — set confidence to null (no match performed)
+        matchConfidence = null;
       }
 
-      // Step 4: Liveness checking & Spoof check simulation
-      setFaceVerificationStatus({ step: 4, title: "Liveness Check & Anti-Spoofing", desc: "Verifying skin reflectance parameters, edge frequencies, and face texture properties...", score: verificationScore });
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((r) => setTimeout(r, 400));
 
       setSelfiePreview(selfieDataUrl);
       setDetectedLocation(location);
 
-      // Parse numeric coords from location string like "Lat x, Lng y"
+      // ── Step 6: Send to server ─────────────────────────────────────────
       let lat: number | null = null;
       let lng: number | null = null;
       const time = nowTime();
       const [hh, mm] = time.split(":").map(Number);
-      
       let isLate = false;
       if (rules?.shiftStart) {
         const [sh, sm] = rules.shiftStart.split(":").map(Number);
@@ -656,15 +433,18 @@ export default function EmployeeAttendance() {
 
       try {
         const match = location.match(/Lat\s*([0-9.+-]+),\s*Lng\s*([0-9.+-]+)/i);
-        if (match) {
-          lat = parseFloat(match[1]);
-          lng = parseFloat(match[2]);
-        }
+        if (match) { lat = parseFloat(match[1]); lng = parseFloat(match[2]); }
       } catch {}
 
       try {
-        const resp = await checkInMutation.mutateAsync({ selfie: selfieDataUrl, latitude: lat, longitude: lng });
-        // Update local attendance state from API response
+        await checkInMutation.mutateAsync({
+          selfie: selfieDataUrl,
+          latitude: lat,
+          longitude: lng,
+          matchConfidence,
+          matchDistance,
+          livenessVerified: livenessOk,
+        });
         const newRecord: AttendanceRecord = {
           date: today,
           checkIn: time,
@@ -690,10 +470,94 @@ export default function EmployeeAttendance() {
     } finally {
       setIsCapturingCheckIn(false);
       setFaceVerificationStatus(null);
+      setLivenessVerified(false);
     }
   };
 
-  // ── Check Out ───────────────────────────────────────────────────────────────
+
+  // (buildFaceSignature + verifyEmployeeFace removed — replaced by face-api.js handleSelfieCheckIn above)
+
+  const closeCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraReady(false);
+    setIsCameraOpen(false);
+  };
+
+  const startCamera = async () => {
+    setCameraError("");
+    setLocationError("");
+    setIsCameraReady(false);
+
+    try {
+      let hasCamera = false;
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        hasCamera = devices.some((d) => d.kind === "videoinput");
+      } catch {
+        hasCamera = true;
+      }
+
+      if (!hasCamera) {
+        setCameraError("No camera found on this device. Please connect a webcam and refresh the page.");
+        return;
+      }
+
+      let stream: MediaStream | null = null;
+      const attempts: MediaStreamConstraints[] = [
+        { video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 540 } }, audio: false },
+        { video: { width: { ideal: 720 }, height: { ideal: 540 } }, audio: false },
+        { video: true, audio: false },
+      ];
+
+      let lastError: unknown = null;
+      for (const constraints of attempts) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          break;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+
+      if (!stream) {
+        throw lastError ?? new Error("Unable to open camera.");
+      }
+
+      streamRef.current = stream;
+      setIsCameraOpen(true);
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.style.transform = mirrorPreview ? "scaleX(-1)" : "none";
+          void videoRef.current.play();
+        }
+      }, 0);
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      const name = error instanceof DOMException ? error.name : "";
+
+      let friendly = "Camera error. Please refresh and try again.";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        friendly = "Camera permission denied. Click the camera icon in your browser address bar and allow access, then refresh.";
+      } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        friendly = "No camera found on this device. Please connect a webcam and refresh the page.";
+      } else if (name === "NotReadableError" || name === "TrackStartError") {
+        friendly = "Camera is busy or in use by another application. Close other apps using the camera, then try again.";
+      } else if (name === "OverconstrainedError") {
+        friendly = "Camera does not support the required settings. Please try again.";
+      } else if (raw) {
+        friendly = raw;
+      }
+      setCameraError(friendly);
+    }
+  };
+
+
+
   const handleCheckOut = () => {
     const time = nowTime();
     const updated = records.map((r) => {
@@ -800,220 +664,310 @@ export default function EmployeeAttendance() {
     <SidebarLayout>
       <PageHeader title="My Attendance" description="Track your daily check-ins, work hours, and attendance history." />
 
-      {/* ── Live Check-In Card ───────────────────────────────────────────────── */}
-      <div className="mb-8">
-        <Card className="bg-gradient-to-r from-[#111827] to-slate-800 text-white border-0 shadow-xl">
-          <CardContent className="p-6">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-              {/* Left: Clock */}
-              <div className="flex flex-col items-center md:items-start gap-1">
-                <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
-                  <Timer className="h-4 w-4" />
-                  <span>Current Time</span>
+      {/* ── Live Check-In Card & Rules Grid ─────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div className="lg:col-span-2">
+          <Card className="bg-gradient-to-r from-[#111827] to-slate-800 text-white border-0 shadow-xl h-full">
+            <CardContent className="p-6">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                {/* Left: Clock */}
+                <div className="flex flex-col items-center md:items-start gap-1">
+                  <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+                    <Timer className="h-4 w-4" />
+                    <span>Current Time</span>
+                  </div>
+                  <div className="text-5xl font-mono font-bold tracking-tight text-white">
+                    {liveTime}
+                  </div>
+                  <div className="text-slate-400 text-sm mt-1">
+                    {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                  </div>
                 </div>
-                <div className="text-5xl font-mono font-bold tracking-tight text-white">
-                  {liveTime}
-                </div>
-                <div className="text-slate-400 text-sm mt-1">
-                  {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-                </div>
-              </div>
 
-              {/* Center: Status */}
-              <div className="flex flex-col items-center gap-2">
-                {todayChecked ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="flex items-center gap-3 text-sm text-slate-300">
-                      <span className="flex items-center gap-1"><LogIn className="h-4 w-4 text-emerald-400" /> Check-In: <strong className="text-white">{todayChecked.checkIn}</strong></span>
+                {/* Center: Status */}
+                <div className="flex flex-col items-center gap-2">
+                  {todayChecked ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="flex items-center gap-3 text-sm text-slate-300">
+                        <span className="flex items-center gap-1"><LogIn className="h-4 w-4 text-emerald-400" /> Check-In: <strong className="text-white">{todayChecked.checkIn}</strong></span>
+                        {todayChecked.checkOut && (
+                          <span className="flex items-center gap-1"><LogOut className="h-4 w-4 text-red-400" /> Check-Out: <strong className="text-white">{todayChecked.checkOut}</strong></span>
+                        )}
+                      </div>
                       {todayChecked.checkOut && (
-                        <span className="flex items-center gap-1"><LogOut className="h-4 w-4 text-red-400" /> Check-Out: <strong className="text-white">{todayChecked.checkOut}</strong></span>
+                        <div className="text-emerald-400 font-semibold flex items-center gap-1">
+                          <CheckCircle2 className="h-5 w-5" /> {todayChecked.workHours}h worked today
+                        </div>
+                      )}
+                      {!todayChecked.checkOut && (
+                        <div className="flex items-center gap-1 text-amber-400 text-sm animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+                          Session in progress…
+                        </div>
+                      )}
+                      {(todayChecked.checkInSelfie || todayChecked.checkInLocation) && (
+                        <div className="mt-2 flex flex-col items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                          {todayChecked.checkInSelfie && (
+                            <img
+                              src={todayChecked.checkInSelfie}
+                              alt="Attendance selfie"
+                              className="h-24 w-24 rounded-xl object-cover border border-slate-600"
+                            />
+                          )}
+                          {todayChecked.checkInLocation && (
+                            <div className="flex items-center gap-2 text-xs text-slate-300">
+                              <MapPin className="h-4 w-4 text-emerald-400" />
+                              <span>{todayChecked.checkInLocation}</span>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
-                    {todayChecked.checkOut && (
-                      <div className="text-emerald-400 font-semibold flex items-center gap-1">
-                        <CheckCircle2 className="h-5 w-5" /> {todayChecked.workHours}h worked today
-                      </div>
-                    )}
-                    {!todayChecked.checkOut && (
-                      <div className="flex items-center gap-1 text-amber-400 text-sm animate-pulse">
-                        <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-                        Session in progress…
-                      </div>
-                    )}
-                    {(todayChecked.checkInSelfie || todayChecked.checkInLocation) && (
-                      <div className="mt-2 flex flex-col items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                        {todayChecked.checkInSelfie && (
-                          <img
-                            src={todayChecked.checkInSelfie}
-                            alt="Attendance selfie"
-                            className="h-24 w-24 rounded-xl object-cover border border-slate-600"
-                          />
-                        )}
-                        {todayChecked.checkInLocation && (
-                          <div className="flex items-center gap-2 text-xs text-slate-300">
-                            <MapPin className="h-4 w-4 text-emerald-400" />
-                            <span>{todayChecked.checkInLocation}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-slate-400 text-sm">You haven't checked in yet today.</div>
-                )}
-              </div>
-
-              {/* Right: Button */}
-              <div className="flex flex-col items-center gap-3">
-                {/* Check-in / Check-out */}
-                <div>
-                  {!todayChecked?.checkIn ? (
-                    <>
-                      <Button
-                        id="btn-check-in"
-                        size="lg"
-                        className="bg-emerald-500 hover:bg-emerald-400 text-white px-8 py-6 text-base font-semibold shadow-lg shadow-emerald-900/50 transition-all hover:scale-105"
-                        onClick={startCamera}
-                        disabled={isCapturingCheckIn}
-                      >
-                        {isCapturingCheckIn ? (
-                          <>
-                            <Upload className="mr-2 h-5 w-5 animate-pulse" /> Capturing...
-                          </>
-                        ) : (
-                          <>
-                            <Camera className="mr-2 h-5 w-5" /> Selfie & Check In
-                          </>
-                        )}
-                      </Button>
-                    </>
-                  ) : !todayChecked.checkOut ? (
-                    <Button
-                      id="btn-check-out"
-                      size="lg"
-                      className="bg-red-500 hover:bg-red-400 text-white px-8 py-6 text-base font-semibold shadow-lg shadow-red-900/50 transition-all hover:scale-105"
-                      onClick={handleCheckOut}
-                    >
-                      <LogOut className="mr-2 h-5 w-5" /> Check Out
-                    </Button>
                   ) : (
-                    <div className="flex items-center gap-2 bg-slate-700 px-4 py-3 rounded-xl">
-                      <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                      <span className="text-slate-200 font-medium">Completed for today</span>
-                    </div>
+                    <div className="text-slate-400 text-sm">You haven't checked in yet today.</div>
                   )}
                 </div>
 
-                {/* Break Status / Buttons */}
-                {checkedIn && !todayChecked?.checkOut && !onBreak && (
-                  <div className="relative z-50">
-                    <Button
-                      onClick={() => setShowBreakOptions(!showBreakOptions)}
-                      className="bg-amber-500 hover:bg-amber-400 text-white px-6 py-2 text-sm font-semibold"
-                    >
-                      <Coffee className="mr-2 h-4 w-4" /> Take Break
-                    </Button>
-                    
-                    {showBreakOptions && (
-                      <div className="absolute top-full mt-2 left-0 bg-white border border-slate-300 rounded-lg shadow-2xl p-2 space-y-1 z-50 w-56 overflow-hidden">
-                        <div className="text-xs font-semibold text-slate-800 mb-1 px-1">Select Break:</div>
-                        {canTakeShortBreak && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="w-full text-xs border-blue-300 hover:bg-blue-50 text-slate-800 font-medium h-auto py-1.5 flex flex-col items-center gap-0.5"
-                            onClick={() => handleStartBreak("short", 10)}
-                          >
-                            <span className="flex items-center justify-center whitespace-nowrap">
-                              <Timer className="h-3 w-3 mr-1 text-blue-600" /> Short Break (10m)
-                            </span>
-                            <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                              {2 - shortBreaksUsed} left
-                            </span>
-                          </Button>
-                        )}
-                        {canTakeLunchBreak && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="w-full text-xs border-amber-300 hover:bg-amber-50 text-slate-800 font-medium h-auto py-1.5 flex flex-col items-center gap-0.5"
-                            onClick={() => handleStartBreak("lunch", 60)}
-                          >
-                            <span className="flex items-center justify-center whitespace-nowrap">
-                              <Coffee className="h-3 w-3 mr-1 text-amber-600" /> Lunch Break (60m)
-                            </span>
-                            <span className={cn("text-xs px-1.5 py-0.5 rounded", lunchBreakUsed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700")}>
-                              {lunchBreakUsed ? "Used" : "Available"}
-                            </span>
-                          </Button>
-                        )}
-                        {!canTakeShortBreak && !canTakeLunchBreak && (
-                          <div className="p-1.5 text-xs text-slate-600 bg-slate-50 rounded text-center font-medium">
-                            ✓ All breaks used
-                          </div>
-                        )}
+                {/* Right: Button */}
+                <div className="flex flex-col items-center gap-3">
+                  {/* Check-in / Check-out */}
+                  <div>
+                    {!todayChecked?.checkIn ? (
+                      <>
+                        <Button
+                          id="btn-check-in"
+                          size="lg"
+                          className="bg-emerald-500 hover:bg-emerald-400 text-white px-8 py-6 text-base font-semibold shadow-lg shadow-emerald-900/50 transition-all hover:scale-105"
+                          onClick={startCamera}
+                          disabled={isCapturingCheckIn}
+                        >
+                          {isCapturingCheckIn ? (
+                            <>
+                              <Upload className="mr-2 h-5 w-5 animate-pulse" /> Capturing...
+                            </>
+                          ) : (
+                            <>
+                              <Camera className="mr-2 h-5 w-5" /> Selfie & Check In
+                            </>
+                          )}
+                        </Button>
+                      </>
+                    ) : !todayChecked.checkOut ? (
+                      <Button
+                        id="btn-check-out"
+                        size="lg"
+                        className="bg-red-500 hover:bg-red-400 text-white px-8 py-6 text-base font-semibold shadow-lg shadow-red-900/50 transition-all hover:scale-105"
+                        onClick={handleCheckOut}
+                      >
+                        <LogOut className="mr-2 h-5 w-5" /> Check Out
+                      </Button>
+                    ) : (
+                      <div className="flex items-center gap-2 bg-slate-700 px-4 py-3 rounded-xl">
+                        <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                        <span className="text-slate-200 font-medium">Completed for today</span>
                       </div>
                     )}
                   </div>
-                )}
 
-                {locationError && (
-                  <div className="max-w-sm rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-2 text-xs text-red-200 text-center">
-                    {locationError}
-                  </div>
-                )}
+                  {/* Break Status / Buttons */}
+                  {checkedIn && !todayChecked?.checkOut && !onBreak && (
+                    <div className="relative z-50">
+                      <Button
+                        onClick={() => setShowBreakOptions(!showBreakOptions)}
+                        className="bg-amber-500 hover:bg-amber-400 text-white px-6 py-2 text-sm font-semibold"
+                      >
+                        <Coffee className="mr-2 h-4 w-4" /> Take Break
+                      </Button>
+                      
+                      {showBreakOptions && (
+                        <div className="absolute top-full mt-2 left-0 bg-white border border-slate-300 rounded-lg shadow-2xl p-2 space-y-1 z-50 w-56 overflow-hidden">
+                          <div className="text-xs font-semibold text-slate-800 mb-1 px-1">Select Break:</div>
+                          {canTakeShortBreak && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full text-xs border-blue-300 hover:bg-blue-50 text-slate-800 font-medium h-auto py-1.5 flex flex-col items-center gap-0.5"
+                              onClick={() => handleStartBreak("short", 10)}
+                            >
+                              <span className="flex items-center justify-center whitespace-nowrap">
+                                <Timer className="h-3 w-3 mr-1 text-blue-600" /> Short Break (10m)
+                              </span>
+                              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                                {2 - shortBreaksUsed} left
+                              </span>
+                            </Button>
+                          )}
+                          {canTakeLunchBreak && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full text-xs border-amber-300 hover:bg-amber-50 text-slate-800 font-medium h-auto py-1.5 flex flex-col items-center gap-0.5"
+                              onClick={() => handleStartBreak("lunch", 60)}
+                            >
+                              <span className="flex items-center justify-center whitespace-nowrap">
+                                <Coffee className="h-3 w-3 mr-1 text-amber-600" /> Lunch Break (60m)
+                              </span>
+                              <span className={cn("text-xs px-1.5 py-0.5 rounded", lunchBreakUsed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700")}>
+                                {lunchBreakUsed ? "Used" : "Available"}
+                              </span>
+                            </Button>
+                          )}
+                          {!canTakeShortBreak && !canTakeLunchBreak && (
+                            <div className="p-1.5 text-xs text-slate-600 bg-slate-50 rounded text-center font-medium">
+                              ✓ All breaks used
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                {cameraError && (
-                  <div className="max-w-sm rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-2 text-xs text-red-200 text-center">
-                    {cameraError}
-                  </div>
-                )}
+                  {locationError && (
+                    <div className="max-w-sm rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-2 text-xs text-red-200 text-center">
+                      {locationError}
+                    </div>
+                  )}
 
-                {!todayChecked?.checkIn && (selfiePreview || detectedLocation) && (
-                  <div className="max-w-sm rounded-xl border border-slate-700 bg-slate-900/80 p-4 space-y-3">
-                    {selfiePreview && (
-                      <img src={selfiePreview} alt="Selfie preview" className="mx-auto h-24 w-24 rounded-xl object-cover border border-slate-600" />
-                    )}
-                    {detectedLocation && (
-                      <div className="flex items-center justify-center gap-2 text-xs text-slate-300">
-                        <MapPin className="h-4 w-4 text-emerald-400" />
-                        <span>Detected location: {detectedLocation}</span>
+                  {cameraError && (
+                    <div className="max-w-sm rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-2 text-xs text-red-200 text-center">
+                      {cameraError}
+                    </div>
+                  )}
+
+                  {!todayChecked?.checkIn && (selfiePreview || detectedLocation) && (
+                    <div className="max-w-sm rounded-xl border border-slate-700 bg-slate-900/80 p-4 space-y-3">
+                      {selfiePreview && (
+                        <img src={selfiePreview} alt="Selfie preview" className="mx-auto h-24 w-24 rounded-xl object-cover border border-slate-600" />
+                      )}
+                      {detectedLocation && (
+                        <div className="flex items-center justify-center gap-2 text-xs text-slate-300">
+                          <MapPin className="h-4 w-4 text-emerald-400" />
+                          <span>Detected location: {detectedLocation}</span>
+                        </div>
+                      )}
+                      <p className="text-[11px] text-slate-400 text-center">Camera selfie and detected location are required for check-in.</p>
+                    </div>
+                  )}
+
+                  {onBreak && (
+                    <div className="bg-amber-100 border-2 border-amber-300 px-4 py-3 rounded-lg text-center space-y-2">
+                      <div className="flex items-center justify-center gap-2 mb-1">
+                        <Pause className="h-4 w-4 text-amber-600 animate-pulse" />
+                        <span className="text-xs font-semibold text-amber-700">On Break</span>
                       </div>
-                    )}
-                    <p className="text-[11px] text-slate-400 text-center">Camera selfie and detected location are required for check-in.</p>
-                  </div>
-                )}
-
-                {onBreak && (
-                  <div className="bg-amber-100 border-2 border-amber-300 px-4 py-3 rounded-lg text-center space-y-2">
-                    <div className="flex items-center justify-center gap-2 mb-1">
-                      <Pause className="h-4 w-4 text-amber-600 animate-pulse" />
-                      <span className="text-xs font-semibold text-amber-700">On Break</span>
+                      <div className="text-2xl font-mono font-bold text-amber-600">
+                        {Math.floor(breakTimeRemaining / 60)}:{pad(breakTimeRemaining % 60)}
+                      </div>
+                      <p className="text-xs text-amber-600 mt-1">Break time remaining</p>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="w-full text-xs mt-2"
+                        onClick={handleEndBreak}
+                      >
+                        <XIcon className="h-3 w-3 mr-1" /> End Break
+                      </Button>
                     </div>
-                    <div className="text-2xl font-mono font-bold text-amber-600">
-                      {Math.floor(breakTimeRemaining / 60)}:{pad(breakTimeRemaining % 60)}
-                    </div>
-                    <p className="text-xs text-amber-600 mt-1">Break time remaining</p>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="w-full text-xs mt-2"
-                      onClick={handleEndBreak}
-                    >
-                      <XIcon className="h-3 w-3 mr-1" /> End Break
-                    </Button>
-                  </div>
-                )}
+                  )}
 
-                {todayChecked && (
-                  <Badge className={cn("border text-xs", statusConfig[todayChecked.status].color)}>
-                    {statusConfig[todayChecked.status].label}
-                  </Badge>
+                  {todayChecked && (
+                    <Badge className={cn("border text-xs", statusConfig[todayChecked.status].color)}>
+                      {statusConfig[todayChecked.status].label}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="lg:col-span-1">
+          {/* ── Active Verification Policy Card ───────────────────────────────────── */}
+          <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden hover:shadow-2xl transition-all duration-300 h-full flex flex-col justify-between">
+            <CardHeader className="bg-gradient-to-r from-indigo-50/50 to-violet-50/50 dark:from-slate-950 dark:to-slate-900 border-b border-slate-100 dark:border-slate-800 py-3 px-4">
+              <CardTitle className="text-xs font-bold flex items-center gap-2 text-indigo-950 dark:text-indigo-300">
+                <Shield className="h-4 w-4 text-indigo-600 dark:text-indigo-400 animate-pulse" />
+                Biometric & Location Rules
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-3.5 text-slate-700 dark:text-slate-300 flex-1 flex flex-col justify-center">
+              {/* Shift Timing */}
+              <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Official Shift Starts</p>
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{rules?.shiftStart || "09:15"} AM</p>
+                </div>
+                <Clock className="h-4 w-4 text-slate-400" />
+              </div>
+
+              {/* Face Verification Rule */}
+              <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Face Recognition ID</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      {rules?.faceRequired ? "Required" : "Optional"}
+                    </span>
+                    <Badge className={cn(
+                      "text-[9px] px-1 py-0.2 border font-bold uppercase tracking-wider",
+                      rules?.faceRequired
+                        ? "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/30"
+                        : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800/40 dark:text-slate-300 dark:border-slate-700"
+                    )}>
+                      {rules?.faceRequired ? "Enforced" : "Relaxed"}
+                    </Badge>
+                  </div>
+                </div>
+                <Scan className="h-4 w-4 text-slate-400" />
+              </div>
+
+              {/* User Enrollment Status */}
+              <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Your Face ID status</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={cn(
+                      "w-2 h-2 rounded-full inline-block animate-pulse",
+                      enrollmentData?.enrolled ? "bg-emerald-500" : "bg-rose-500"
+                    )} />
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      {enrollmentData?.enrolled ? "Enrolled (Ready)" : "Not Registered"}
+                    </span>
+                  </div>
+                </div>
+                {!enrollmentData?.enrolled && (
+                  <a
+                    href="/employee/settings"
+                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 hover:underline flex items-center gap-0.5"
+                  >
+                    Enroll <ChevronRight className="h-3 w-3" />
+                  </a>
                 )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
+
+              {/* Geofence Rule */}
+              <div className="flex items-start justify-between">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Location Geofencing</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      {rules?.geofenceEnabled ? "Office Bounds" : "Anywhere"}
+                    </span>
+                    <Badge className={cn(
+                      "text-[9px] px-1 py-0.2 border font-bold uppercase tracking-wider",
+                      rules?.geofenceEnabled
+                        ? "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/30"
+                        : "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/30"
+                    )}>
+                      {rules?.geofenceEnabled ? `Within ${rules?.officeRadius || 150}m` : "No limits"}
+                    </Badge>
+                  </div>
+                </div>
+                <MapPin className="h-4 w-4 text-slate-400" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {isCameraOpen && (

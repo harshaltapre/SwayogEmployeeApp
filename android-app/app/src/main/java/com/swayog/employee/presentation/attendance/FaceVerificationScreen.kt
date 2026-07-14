@@ -33,30 +33,72 @@ import com.google.mlkit.vision.face.FaceDetectorOptions
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FaceVerificationScreen(
+    profilePhotoUrl: String?,
     onVerificationSuccess: (Bitmap) -> Unit,
     onVerificationFailed: (String) -> Unit,
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
 
-    var faceStatusText by remember { mutableStateOf("Position your face in the circle") }
+    var faceStatusText by remember { mutableStateOf("Initializing face template...") }
     var isProcessing by remember { mutableStateOf(false) }
+    var isInitializing by remember { mutableStateOf(true) }
+    var referenceSignature by remember { mutableStateOf<FaceMatchingHelper.FaceSignature?>(null) }
+    var lastCheckTime by remember { mutableStateOf(0L) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
 
-    // ML Kit Face Detector
+    // ML Kit Face Detector with Landmarks Enabled
     val faceDetector = remember {
         val options = FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-            .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
+            .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
             .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
             .build()
         FaceDetection.getClient(options)
+    }
+
+    // Extract reference signature on load
+    LaunchedEffect(profilePhotoUrl) {
+        if (!profilePhotoUrl.isNullOrEmpty()) {
+            val sig = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                try {
+                    val base64Data = if (profilePhotoUrl.startsWith("data:image")) {
+                        profilePhotoUrl.substringAfter("base64,")
+                    } else {
+                        profilePhotoUrl
+                    }
+                    val decodedBytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                    val refBitmap = android.graphics.BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                    if (refBitmap != null) {
+                        FaceMatchingHelper.extractSignature(refBitmap)
+                    } else null
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    null
+                }
+            }
+            if (sig != null) {
+                referenceSignature = sig
+                isInitializing = false
+                faceStatusText = "Position your face in the circle"
+            } else {
+                isInitializing = false
+                faceStatusText = "Error: Invalid enrollment photo face"
+                onVerificationFailed("No face detected in your profile photo. Please re-upload a clear selfie in Settings.")
+            }
+        } else {
+            isInitializing = false
+            faceStatusText = "No profile photo uploaded"
+            onVerificationFailed("Please upload your profile photo in Settings before check-in.")
+        }
     }
 
     DisposableEffect(Unit) {
@@ -91,7 +133,7 @@ fun FaceVerificationScreen(
                         .build()
                         .also { analysis ->
                             analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                                if (isProcessing) {
+                                if (isProcessing || isInitializing || referenceSignature == null) {
                                     imageProxy.close()
                                     return@setAnalyzer
                                 }
@@ -105,7 +147,7 @@ fun FaceVerificationScreen(
                                             if (faces.isEmpty()) {
                                                 faceStatusText = "No face detected"
                                             } else if (faces.size > 1) {
-                                                faceStatusText = "Multiple faces detected. Please ensure only you are in frame."
+                                                faceStatusText = "Multiple faces detected. Ensure only you are in frame."
                                             } else {
                                                 val face = faces.first()
                                                 val leftEyeOpenProb = face.leftEyeOpenProbability
@@ -115,16 +157,32 @@ fun FaceVerificationScreen(
                                                     if (leftEyeOpenProb < 0.2f && rightEyeOpenProb < 0.2f) {
                                                         faceStatusText = "Please open your eyes"
                                                     } else {
-                                                        faceStatusText = "Face Detected. Hold still..."
-                                                        
-                                                        val capturedBitmap = previewView.bitmap
-                                                        if (capturedBitmap != null) {
-                                                            isProcessing = true
-                                                            onVerificationSuccess(capturedBitmap)
+                                                        val now = System.currentTimeMillis()
+                                                        if (now - lastCheckTime > 1500L) {
+                                                            lastCheckTime = now
+                                                            val capturedBitmap = previewView.bitmap
+                                                            if (capturedBitmap != null) {
+                                                                faceStatusText = "Verifying identity..."
+                                                                scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                                                                    val liveSig = FaceMatchingHelper.extractSignature(capturedBitmap)
+                                                                    if (liveSig != null) {
+                                                                        val score = FaceMatchingHelper.calculateSimilarity(referenceSignature!!, liveSig)
+                                                                        if (score >= 0.78) {
+                                                                            faceStatusText = "Match Success!"
+                                                                            isProcessing = true
+                                                                            onVerificationSuccess(capturedBitmap)
+                                                                        } else {
+                                                                            faceStatusText = "Verification failed: Face mismatch."
+                                                                        }
+                                                                    } else {
+                                                                        faceStatusText = "Face not aligned. Move to better lighting."
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 } else {
-                                                    faceStatusText = "Detecting face features..."
+                                                    faceStatusText = "Detecting features..."
                                                 }
                                             }
                                         }

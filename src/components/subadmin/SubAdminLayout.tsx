@@ -33,6 +33,21 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
 
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStep, setTourStep] = useState(0);
+  const [quickTourEnabled, setQuickTourEnabledState] = useState<boolean>(() => {
+    const saved = localStorage.getItem('quickTourEnabled');
+    return saved === null ? true : saved === 'true';
+  });
+
+  // Keep in sync when localStorage changes (e.g. Settings page updates it)
+  useState(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'quickTourEnabled') {
+        setQuickTourEnabledState(e.newValue === null ? true : e.newValue === 'true');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  });
 
   const tourSteps = [
     {
@@ -185,20 +200,22 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
         </main>
       </div>
 
-      {/* Onboarding Tour Button */}
-      <button
-        onClick={() => {
-          setTourStep(0);
-          setTourOpen(true);
-        }}
-        className="fixed bottom-6 right-6 z-[70] flex h-12 items-center gap-2 rounded-full bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 text-sm font-semibold shadow-lg transition-transform hover:scale-105"
-      >
-        <span className="relative flex h-3 w-3">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
-        </span>
-        💡 Quick Tour
-      </button>
+      {/* Onboarding Tour Button — hidden when user has disabled it in Settings */}
+      {quickTourEnabled && (
+        <button
+          onClick={() => {
+            setTourStep(0);
+            setTourOpen(true);
+          }}
+          className="fixed bottom-6 right-6 z-[70] flex h-12 items-center gap-2 rounded-full bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 text-sm font-semibold shadow-lg transition-transform hover:scale-105"
+        >
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+          </span>
+          💡 Quick Tour
+        </button>
+      )}
 
       {/* Tour Dialog */}
       {tourOpen && (

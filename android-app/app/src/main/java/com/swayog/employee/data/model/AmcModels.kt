@@ -2,6 +2,12 @@ package com.swayog.employee.data.model
 
 import com.google.gson.annotations.SerializedName
 
+data class AmcCustomerInfo(
+    val fullName: String,
+    val city: String?,
+    val phoneNumber: String?
+)
+
 data class AmcVisit(
     val id: String,
     val customerId: Int,
@@ -18,7 +24,8 @@ data class AmcVisit(
     val beforeImageUrl: String?,
     val afterImageUrl: String?,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String,
+    val customer: AmcCustomerInfo? = null
 )
 
 data class UpdateAmcVisitRequest(

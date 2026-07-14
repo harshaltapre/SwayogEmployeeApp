@@ -32,6 +32,7 @@ import com.swayog.employee.presentation.common.components.SwayogTopBar
 @Composable
 fun SubAdminCalendarScreen(
     onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier,
     viewModel: SubAdminCalendarViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -70,6 +71,7 @@ fun SubAdminCalendarScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             SwayogTopBar(
                 title = "Schedule Calendar",
@@ -150,7 +152,7 @@ fun SubAdminCalendarScreen(
                                 modifier = Modifier.padding(bottom = 8.dp)
                             ) {
                                 Text(
-                                    text = date,
+                                    text = formatEventDate(date),
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
@@ -174,8 +176,10 @@ fun SubAdminCalendarScreen(
 
         // Create AMC Visit Dialog
         if (isCreateDialogOpen) {
+            val customers by viewModel.customers.collectAsState()
             CreateAmcVisitDialog(
                 employees = employees,
+                customers = customers,
                 onDismiss = { isCreateDialogOpen = false },
                 onSubmit = { request ->
                     viewModel.createAmcVisit(request)
@@ -314,11 +318,22 @@ fun CalendarEventDetailsDialog(
 @Composable
 fun CreateAmcVisitDialog(
     employees: List<com.swayog.employee.data.model.Employee>,
+    customers: List<com.swayog.employee.data.model.Customer>,
     onDismiss: () -> Unit,
     onSubmit: (CreateAmcVisitRequest) -> Unit,
     isLoading: Boolean
 ) {
-    var customerId by remember { mutableStateOf("") }
+    var selectedCustomerId by remember { mutableStateOf("") }
+    var customerSearchQuery by remember { mutableStateOf("") }
+    var customerDropdownExpanded by remember { mutableStateOf(false) }
+
+    val filteredCustomers = remember(customers, customerSearchQuery) {
+        customers.filter {
+            it.fullName.contains(customerSearchQuery, ignoreCase = true) ||
+            it.id.toString().contains(customerSearchQuery)
+        }
+    }
+
     var scheduledDate by remember { mutableStateOf("") }
     var timeSlot by remember { mutableStateOf("") }
     var assignedEmployeeId by remember { mutableStateOf("") }
@@ -343,14 +358,46 @@ fun CreateAmcVisitDialog(
                     fontWeight = FontWeight.Bold
                 )
 
-                OutlinedTextField(
-                    value = customerId,
-                    onValueChange = { customerId = it },
-                    label = { Text("Customer ID") },
-                    placeholder = { Text("Enter customer ID") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                ExposedDropdownMenuBox(
+                    expanded = customerDropdownExpanded,
+                    onExpandedChange = { customerDropdownExpanded = !customerDropdownExpanded }
+                ) {
+                    val selectedCustomerName = customers.find { it.id.toString() == selectedCustomerId }?.fullName ?: ""
+                    OutlinedTextField(
+                        value = customerSearchQuery.ifEmpty { selectedCustomerName },
+                        onValueChange = { 
+                            customerSearchQuery = it
+                            customerDropdownExpanded = true
+                        },
+                        label = { Text("Select Customer") },
+                        placeholder = { Text("Search by name...") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = customerDropdownExpanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = customerDropdownExpanded,
+                        onDismissRequest = { customerDropdownExpanded = false }
+                    ) {
+                        if (filteredCustomers.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("No customers found") },
+                                onClick = {}
+                            )
+                        } else {
+                            filteredCustomers.take(10).forEach { customer ->
+                                DropdownMenuItem(
+                                    text = { Text("${customer.fullName} (ID: ${customer.id})") },
+                                    onClick = {
+                                        selectedCustomerId = customer.id.toString()
+                                        customerSearchQuery = ""
+                                        customerDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = scheduledDate,
@@ -429,7 +476,7 @@ fun CreateAmcVisitDialog(
                     Button(
                         onClick = {
                             val request = CreateAmcVisitRequest(
-                                customerId = customerId.toIntOrNull() ?: 0,
+                                customerId = selectedCustomerId.toIntOrNull() ?: 0,
                                 scheduledDate = scheduledDate,
                                 timeSlot = timeSlot.ifBlank { null },
                                 assignedEmployeeId = assignedEmployeeId.ifBlank { null },
@@ -437,7 +484,7 @@ fun CreateAmcVisitDialog(
                             )
                             onSubmit(request)
                         },
-                        enabled = customerId.isNotBlank() && scheduledDate.isNotBlank() && !isLoading
+                        enabled = selectedCustomerId.isNotBlank() && scheduledDate.isNotBlank() && !isLoading
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(
@@ -659,5 +706,26 @@ fun CalendarEventItem(event: CalendarEvent, onClick: () -> Unit = {}) {
                 )
             }
         }
+    }
+}
+
+fun formatEventDate(isoDateString: String): String {
+    return try {
+        val inputFormat = if (isoDateString.contains("T")) {
+            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.getDefault()).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+        } else {
+            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+        }
+        val date = inputFormat.parse(isoDateString)
+        if (date != null) {
+            val outputFormat = java.text.SimpleDateFormat("EEE, MMM dd, yyyy", java.util.Locale.getDefault())
+            outputFormat.format(date)
+        } else {
+            isoDateString
+        }
+    } catch (e: Exception) {
+        isoDateString
     }
 }

@@ -16,7 +16,8 @@ data class AttendanceRecord(
 data class CheckInRequest(
     val selfie: String?,
     val latitude: Double?,
-    val longitude: Double?
+    val longitude: Double?,
+    val matchConfidence: Float? = null
 )
 
 data class CheckInResponse(
@@ -55,4 +56,36 @@ data class PerformanceSnapshot(
     val tasksAssigned: Int,
     val tasksCompleted: Int,
     val workSubmissions: Int
+)
+
+data class TodayAttendanceResponse(
+    val record: AttendanceRecord?
+)
+
+data class CheckInApiResponse(
+    val success: Boolean,
+    val result: CheckInResponse?
+)
+
+data class PerformanceResponse(
+    val snapshot: PerformanceSnapshot?
+)
+
+data class MonthlyAttendanceResponse(
+    val records: List<AttendanceRecord>,
+    val present: Int,
+    val absent: Int,
+    val halfDays: Int,
+    val workingDays: Int,
+    val attendancePercent: Double
+)
+
+data class FaceEnrollmentStatusResponse(
+    val isEnrolled: Boolean,
+    val enrolledAt: String? = null
+)
+
+data class FaceEnrollmentRequest(
+    val faceEmbedding: List<Float>,
+    val facePhotoUrl: String? = null
 )

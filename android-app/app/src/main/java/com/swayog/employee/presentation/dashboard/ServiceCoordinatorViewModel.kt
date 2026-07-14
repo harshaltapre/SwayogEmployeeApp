@@ -75,7 +75,7 @@ class ServiceCoordinatorViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val cities: StateFlow<List<String>> = customers.map { list ->
-        list.mapNotNull { it.city.trim().ifEmpty { null } }.distinct().sorted()
+        list.mapNotNull { it.city?.trim()?.ifEmpty { null } }.distinct().sorted()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var telemetryPollingJob: Job? = null

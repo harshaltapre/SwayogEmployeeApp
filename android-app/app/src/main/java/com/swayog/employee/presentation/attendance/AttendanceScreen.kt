@@ -50,7 +50,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 import com.swayog.employee.presentation.common.utils.WatermarkHelper
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AttendanceScreen(
     onNavigateBack: () -> Unit,
@@ -147,6 +146,7 @@ fun AttendanceScreen(
 
     if (showCamera) {
         FaceVerificationScreen(
+            profilePhotoUrl = profilePhotoUrl,
             onVerificationSuccess = { bitmap ->
                 showCamera = false
                 // Apply Watermark

@@ -39,6 +39,7 @@ interface AttendanceRule {
   officeLat: number;
   officeLng: number;
   officeRadius: number; // in meters
+  faceMatchThreshold?: number;
 }
 
 const DEFAULT_RULES: AttendanceRule = {
@@ -48,6 +49,7 @@ const DEFAULT_RULES: AttendanceRule = {
   officeLat: 18.5204, // Default Pune lat
   officeLng: 73.8567, // Default Pune lng
   officeRadius: 150,
+  faceMatchThreshold: 0.55,
 };
 
 const ConditionalWrapper = ({ condition, wrapper, children }: { condition: boolean; wrapper: (children: React.ReactNode) => React.ReactNode; children: React.ReactNode }) =>
@@ -251,6 +253,32 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
               </Card>
             </div>
 
+            {/* Active Policy Status Bar */}
+            <div className="flex flex-wrap gap-3 items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <div className="flex items-center gap-2">
+                <Shield className="h-4 w-4 text-primary animate-pulse" />
+                <span>Active Server Verification Policies:</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge className={cn(
+                  "border text-[10px] px-2 py-0.5 font-bold uppercase",
+                  rules.faceRequired
+                    ? "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/30"
+                    : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800/40 dark:text-slate-300 dark:border-slate-700"
+                )}>
+                  Face Match: {rules.faceRequired ? `Enforced (Threshold: ${(rules.faceMatchThreshold ?? 0.55).toFixed(2)})` : "Relaxed"}
+                </Badge>
+                <Badge className={cn(
+                  "border text-[10px] px-2 py-0.5 font-bold uppercase",
+                  rules.geofenceEnabled
+                    ? "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/30"
+                    : "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/30"
+                )}>
+                  Geofence: {rules.geofenceEnabled ? `Active (${rules.officeRadius}m)` : "Anywhere"}
+                </Badge>
+              </div>
+            </div>
+
             {/* ── Filter & Search Header ───────────────────────────────────── */}
             <Card className="shadow-sm">
               <CardHeader className="pb-4">
@@ -416,6 +444,26 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                       <span className="text-sm font-semibold">Enforce Compulsory Face Matching</span>
                     </div>
                     <p className="text-xs text-slate-500">Verify check-in selfies against profile image template.</p>
+                    {rules.faceRequired && (
+                      <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-border space-y-2 max-w-sm">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                          <span>Match Confidence Threshold</span>
+                          <span className="text-primary font-mono font-bold text-sm">{(rules.faceMatchThreshold ?? 0.55).toFixed(2)}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.30"
+                          max="0.85"
+                          step="0.05"
+                          value={rules.faceMatchThreshold ?? 0.55}
+                          onChange={(e) => setRules((r) => ({ ...r, faceMatchThreshold: parseFloat(e.target.value) }))}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                        <p className="text-[10px] text-slate-400">
+                          Lower values are more relaxed (easier match). Higher values are stricter (harder match, prevents spoofing). Default is 0.55.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

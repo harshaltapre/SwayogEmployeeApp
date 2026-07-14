@@ -189,16 +189,21 @@ class AuthRepository @Inject constructor(
 
     suspend fun updateProfilePhoto(base64Image: String): Result<User> {
         return try {
-            val response = apiService.updateProfilePhoto(UpdateProfilePhotoRequest(base64Image))
-            if (response.isSuccessful && response.body()?.data != null) {
-                val user = response.body()!!.data!!
-                user.profileImageUrl?.let { url ->
-                    dataStoreManager.saveProfilePhoto(url)
-                }
-                Result.success(user)
+            dataStoreManager.saveProfilePhoto(base64Image)
+            // Fetch current user details if available, and attach the local profile photo
+            val userResponse = apiService.getCurrentUser()
+            if (userResponse.isSuccessful && userResponse.body()?.data != null) {
+                val user = userResponse.body()!!.data!!
+                Result.success(user.copy(profileImageUrl = base64Image))
             } else {
-                val errorMsg = response.body()?.message ?: parseErrorMessage(response)
-                Result.failure(Exception(errorMsg))
+                Result.success(User(
+                    id = dataStoreManager.userId.first() ?: "",
+                    fullName = dataStoreManager.userName.first() ?: "",
+                    email = dataStoreManager.userEmail.first() ?: "",
+                    role = dataStoreManager.userRole.first() ?: "",
+                    isActive = true,
+                    profileImageUrl = base64Image
+                ))
             }
         } catch (e: Exception) {
             Result.failure(e)

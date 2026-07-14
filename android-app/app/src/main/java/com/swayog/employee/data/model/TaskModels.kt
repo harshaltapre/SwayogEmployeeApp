@@ -9,17 +9,17 @@ data class Task(
     val customerName: String,
     val customerPhone: String,
     val address: String,
-    val latitude: Double?,
-    val longitude: Double?,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val status: String,
     val scheduledTime: String,
-    val employeeUserId: String,
-    val assignedById: String,
-    val completionMessage: String?,
-    val completionDocumentUrl: String?,
-    val completedAt: String?,
+    val employeeUserId: String? = null,
+    val assignedById: String? = null,
+    val completionMessage: String? = null,
+    val completionDocumentUrl: String? = null,
+    val completedAt: String? = null,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String? = null
 )
 
 data class CreateTaskRequest(

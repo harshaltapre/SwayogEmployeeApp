@@ -11,6 +11,7 @@ import {
   Lock,
   LogOut,
   Moon,
+  Monitor,
   Save,
   Search,
   Settings as SettingsIcon,
@@ -19,10 +20,11 @@ import {
   Upload,
   User,
   AlertTriangle,
+  Sliders,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type SettingsSection = 'profile' | 'security' | 'preferences' | 'system';
+type SettingsSection = 'profile' | 'general' | 'security' | 'preferences' | 'system';
 
 export default function AdminSettings() {
   const { user, logout } = useAuth();
@@ -48,8 +50,27 @@ export default function AdminSettings() {
   const [marketingUpdatesEnabled, setMarketingUpdatesEnabled] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
 
+  // General settings
+  const [quickTourEnabled, setQuickTourEnabled] = useState<boolean>(() => {
+    const s = localStorage.getItem('quickTourEnabled');
+    return s === null ? true : s === 'true';
+  });
+  const handleQuickTourToggle = (val: boolean) => {
+    setQuickTourEnabled(val);
+    localStorage.setItem('quickTourEnabled', String(val));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quickTourEnabled', newValue: String(val) }));
+  };
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [taskReminders, setTaskReminders] = useState(true);
+  const [attendanceAlerts, setAttendanceAlerts] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [compactSidebar, setCompactSidebar] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [selectedTimezone, setSelectedTimezone] = useState('IST (UTC+5:30)');
+
   const sections = [
     { id: 'profile' as const, label: 'Profile', icon: User },
+    { id: 'general' as const, label: 'General', icon: Sliders },
     { id: 'security' as const, label: 'Security', icon: Shield },
     { id: 'preferences' as const, label: 'Preferences', icon: SettingsIcon },
     { id: 'system' as const, label: 'System', icon: Info },
@@ -169,6 +190,96 @@ export default function AdminSettings() {
                     placeholder="Tell your team about your responsibilities and background"
                   />
                   <p className="text-xs text-muted-foreground mt-2">{bio.length}/500 characters</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'general':
+        return (
+          <div className="space-y-6">
+            {/* Dashboard Preferences */}
+            <div className={sectionCardClassName}>
+              <div className="border-b border-border px-6 py-4 bg-muted/30">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Monitor className="h-4 w-4 text-primary" />
+                  Dashboard Preferences
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">Control how the dashboard behaves and appears for you.</p>
+              </div>
+              <div className="divide-y divide-border">
+                {([
+                  { label: 'Quick Tour Button', hint: 'Show the floating 💡 Quick Tour button on the dashboard', checked: quickTourEnabled, onChange: handleQuickTourToggle },
+                  { label: 'Auto-Refresh Data', hint: 'Automatically refresh dashboard stats every 30 seconds', checked: autoRefresh, onChange: setAutoRefresh },
+                  { label: 'Compact Sidebar', hint: 'Use a narrower sidebar to give more space to content', checked: compactSidebar, onChange: setCompactSidebar },
+                ] as const).map((row) => (
+                  <div key={row.label} className="flex items-center justify-between gap-4 px-6 py-4">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{row.label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{row.hint}</p>
+                    </div>
+                    {renderToggle(row.checked, row.onChange as (v: boolean) => void)}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Work Preferences */}
+            <div className={sectionCardClassName}>
+              <div className="border-b border-border px-6 py-4 bg-muted/30">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-primary" />
+                  Work Preferences
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">Manage notification and work-flow settings.</p>
+              </div>
+              <div className="divide-y divide-border">
+                {([
+                  { label: 'Email Notifications', hint: 'Receive important updates via email', checked: emailNotifications, onChange: setEmailNotifications },
+                  { label: 'Task Reminders', hint: 'Get reminded about upcoming and overdue tasks', checked: taskReminders, onChange: setTaskReminders },
+                  { label: 'Attendance Alerts', hint: 'Receive alerts for employee check-in/out events', checked: attendanceAlerts, onChange: setAttendanceAlerts },
+                ] as const).map((row) => (
+                  <div key={row.label} className="flex items-center justify-between gap-4 px-6 py-4">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{row.label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{row.hint}</p>
+                    </div>
+                    {renderToggle(row.checked, row.onChange)}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Language & Region */}
+            <div className={sectionCardClassName}>
+              <div className="border-b border-border px-6 py-4 bg-muted/30">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-primary" />
+                  Language &amp; Region
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">Set your preferred language and time zone.</p>
+              </div>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-2">Language</label>
+                  <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)} className={inputClassName}>
+                    <option>English</option>
+                    <option>Hindi</option>
+                    <option>Marathi</option>
+                    <option>Spanish</option>
+                    <option>French</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-2">Time Zone</label>
+                  <select value={selectedTimezone} onChange={(e) => setSelectedTimezone(e.target.value)} className={inputClassName}>
+                    <option>IST (UTC+5:30)</option>
+                    <option>PST (UTC-8)</option>
+                    <option>EST (UTC-5)</option>
+                    <option>GMT (UTC+0)</option>
+                    <option>CET (UTC+1)</option>
+                  </select>
                 </div>
               </div>
             </div>

@@ -14,7 +14,10 @@ data class Employee(
     val department: Department?,
     val reportingManagerId: String?,
     val employeeProfile: EmployeeProfile?,
-    val partnerProfile: PartnerProfile?
+    val partnerProfile: PartnerProfile?,
+    val rating: Double? = null,
+    val activeTasksCount: Int? = null,
+    val status: String? = null
 ) {
     // Helper property to match the frontend 'zone' flattening
     val zone: String

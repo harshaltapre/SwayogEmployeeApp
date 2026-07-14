@@ -18,8 +18,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from "@/hooks/use-toast";
+import { useProfilePhoto } from "@/hooks/useProfilePhoto";
+import { FaceEnroll } from "@/components/face/FaceEnroll";
 
-type SettingsSection = 'profile' | 'general' | 'appearance' | 'privacy' | 'about';
+
+type SettingsSection = 'profile' | 'general' | 'appearance' | 'privacy' | 'about' | 'face';
+
 type ThemeMode = 'light' | 'dark' | 'system';
 
 export default function EmployeeSettings() {
@@ -29,8 +33,21 @@ export default function EmployeeSettings() {
   const [activeSection, setActiveSection] = useState<SettingsSection>('profile');
   const [theme, setTheme] = useState<ThemeMode>('system');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [profilePhotoPreview, setProfilePhotoPreview] = useState<string>('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [quickTourEnabled, setQuickTourEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('quickTourEnabled');
+    return saved === null ? true : saved === 'true';
+  });
+
+  // Profile photo — synced with server so it works across mobile + PC
+  const { photo: profilePhotoPreview, uploading: photoUploading, uploadPhoto } = useProfilePhoto(user?.id);
+
+  const handleQuickTourToggle = (val: boolean) => {
+    setQuickTourEnabled(val);
+    localStorage.setItem('quickTourEnabled', String(val));
+    // Notify other tabs/components via storage event
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quickTourEnabled', newValue: String(val) }));
+  };
 
   // Editable fields in state
   const [fullName, setFullName] = useState(user?.name || '');
@@ -38,17 +55,12 @@ export default function EmployeeSettings() {
   const [department, setDepartment] = useState(user?.department || 'Operations');
   const [phone, setPhone] = useState('');
 
-  // Initialize theme and photo from localStorage
+  // Initialize theme from localStorage
   useEffect(() => {
     const savedTheme = (localStorage.getItem('theme') as ThemeMode) || 'system';
     setTheme(savedTheme);
     applyTheme(savedTheme);
-    
-    const savedProfilePhoto = localStorage.getItem(`profilePhoto_${user?.id}`);
-    if (savedProfilePhoto) {
-      setProfilePhotoPreview(savedProfilePhoto);
-    }
-  }, [user?.id]);
+  }, []);
 
   // Listen for system theme changes
   useEffect(() => {
@@ -136,40 +148,12 @@ export default function EmployeeSettings() {
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        toast({
-          title: "File too large",
-          description: "File size exceeds 2MB limit",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      if (!['image/jpeg', 'image/png', 'image/gif'].includes(file.type)) {
-        toast({
-          title: "Invalid Format",
-          description: "Only JPG, PNG, and GIF formats are supported",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      try {
-        const photoData = await normalizeProfilePhoto(file);
-        setProfilePhotoPreview(photoData);
-        localStorage.setItem(`profilePhoto_${user?.id}`, photoData);
-        toast({
-          title: "Photo Uploaded",
-          description: "✓ Profile photo uploaded successfully!",
-        });
-      } catch {
-        toast({
-          title: "Upload Failed",
-          description: "Unable to process the uploaded image. Please try another file.",
-          variant: "destructive",
-        });
-      }
+    if (!file) return;
+    const result = await uploadPhoto(file);
+    if (result.success) {
+      toast({ title: "Photo Uploaded", description: "✓ Profile photo saved and synced across all your devices!" });
+    } else {
+      toast({ title: "Upload Failed", description: result.error || "Unable to process the image.", variant: "destructive" });
     }
   };
 
@@ -193,11 +177,13 @@ export default function EmployeeSettings() {
 
   const sections = [
     { id: 'profile' as const, label: 'Profile', icon: User },
+    { id: 'face' as const, label: 'Face ID', icon: Shield },
     { id: 'general' as const, label: 'General', icon: SettingsIcon },
     { id: 'appearance' as const, label: 'Appearance', icon: Palette },
     { id: 'privacy' as const, label: 'Privacy', icon: Shield },
     { id: 'about' as const, label: 'About', icon: Info },
   ];
+
 
   const inputClassName =
     'w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
@@ -252,7 +238,27 @@ export default function EmployeeSettings() {
 
   const renderSection = () => {
     switch (activeSection) {
+      case 'face':
+        return (
+          <div className="space-y-6">
+            <div className={sectionCardClassName}>
+              <div className="border-b border-border px-6 py-4 bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-950/40 dark:to-violet-950/40">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  Face ID & Biometric Enrollment
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Enroll your face for secure biometric check-in. Your face data is stored as a mathematical descriptor — no photos are stored permanently.
+                </p>
+              </div>
+              <div className="p-6">
+                <FaceEnroll />
+              </div>
+            </div>
+          </div>
+        );
       case 'profile':
+
         return (
           <div className="space-y-6">
             <div className={sectionCardClassName}>
@@ -338,6 +344,11 @@ export default function EmployeeSettings() {
                 label="Attendance Alerts"
                 hint="Receive alerts for attendance-related events"
                 control={<ToggleSwitch checked={true} onChange={() => {}} />}
+              />
+              <SettingRow
+                label="Quick Tour Button"
+                hint="Show the floating 💡 Quick Tour button on the dashboard"
+                control={<ToggleSwitch checked={quickTourEnabled} onChange={handleQuickTourToggle} />}
               />
             </SettingCard>
 

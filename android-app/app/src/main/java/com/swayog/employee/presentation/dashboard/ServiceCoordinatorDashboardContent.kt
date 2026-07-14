@@ -1008,23 +1008,24 @@ fun ServiceCoordinatorDashboardContent(
                                         }
                                     }
 
-                                    selectedCustomer.installationDate.let { instDate ->
-                                        Column {
-                                            Text("Installation Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                                            Text(
-                                                text = try {
+                                    val instDate = selectedCustomer.installationDate
+                                    Column {
+                                        Text("Installation Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                                        Text(
+                                            text = if (instDate != null) {
+                                                try {
                                                     val parser = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                                                     val date = parser.parse(instDate.substringBefore("T"))
                                                     SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(date!!)
                                                 } catch (_: Exception) {
                                                     instDate.substringBefore("T")
-                                                },
+                                                }
+                                            } else "N/A",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
                                     }
-                                }
                             }
                         }
                     }
@@ -1691,9 +1692,9 @@ fun UpdateCredentialsDialog(
     var passwordVal by remember { mutableStateOf(customer.inverterPassword ?: "") }
     var apiKey by remember { mutableStateOf(customer.inverterApiKey ?: "") }
     var deviceSn by remember { mutableStateOf(customer.inverterDeviceSn ?: "") }
-    var city by remember { mutableStateOf(customer.city) }
-    var address by remember { mutableStateOf(customer.address) }
-    var stageStr by remember { mutableStateOf(customer.projectStage.toString()) }
+    var city by remember { mutableStateOf(customer.city ?: "") }
+    var address by remember { mutableStateOf(customer.address ?: "") }
+    var stageStr by remember { mutableStateOf(customer.projectStage?.toString() ?: "0") }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(

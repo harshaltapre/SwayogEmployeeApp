@@ -31,6 +31,7 @@ import com.swayog.employee.presentation.common.components.*
 @Composable
 fun SubAdminComplaintsScreen(
     onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier,
     viewModel: SubAdminComplaintsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -69,6 +70,7 @@ fun SubAdminComplaintsScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             SwayogTopBar(
                 title = "Service Requests",

@@ -34,6 +34,7 @@ model User {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   AttendanceRecord    AttendanceRecord[]
+  faceEnrollment      FaceEnrollment?
   checkIns            CheckIn[]
   auditLogs           AuditLog[]            @relation("audit_actor")
   customerProfile     Customer?
@@ -420,35 +421,48 @@ model Message {
 }
 
 model AttendanceRecord {
-  id           String           @id @default(uuid())
-  employeeId   String
-  date         DateTime         @db.Date
-  checkInTime  DateTime?
-  checkOutTime DateTime?
-  totalMinutes Int?
-  status       AttendanceStatus @default(PRESENT)
-  notes        String?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @default(now()) @updatedAt
-  employee     User             @relation(fields: [employeeId], references: [id])
+  id             String           @id @default(uuid())
+  employeeId     String
+  date           DateTime         @db.Date
+  checkInTime    DateTime?
+  checkOutTime   DateTime?
+  totalMinutes   Int?
+  status         AttendanceStatus @default(PRESENT)
+  notes          String?
+  reviewedBy     String?
+  manualOverride Boolean          @default(false)
+  overrideReason String?
+  flagged        Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now()) @updatedAt
+  employee       User             @relation(fields: [employeeId], references: [id])
 
   @@unique([employeeId, date])
   @@index([date])
   @@index([employeeId])
+  @@index([flagged])
 }
 
 model CheckIn {
-  id         String        @id @default(cuid())
-  employeeId String
-  employee   User          @relation(fields: [employeeId], references: [id])
-  selfieUrl  String?
-  latitude   Float?
-  longitude  Float?
-  status     CheckInStatus @default(CHECKED_IN)
-  createdAt  DateTime      @default(now())
+  id               String        @id @default(cuid())
+  employeeId       String
+  employee         User          @relation(fields: [employeeId], references: [id])
+  selfieUrl        String?
+  latitude         Float?
+  longitude        Float?
+  status           CheckInStatus @default(CHECKED_IN)
+  matchConfidence  Float?        // 1 - euclidean_distance; null if no face enrollment
+  matchDistance    Float?        // raw euclidean distance from face-api.js
+  livenessVerified Boolean       @default(false)
+  manualOverride   Boolean       @default(false)
+  overrideReason   String?
+  reviewedBy       String?       // userId of admin who reviewed
+  flagged          Boolean       @default(false)
+  createdAt        DateTime      @default(now())
 
   @@index([employeeId])
   @@index([createdAt])
+  @@index([flagged])
 }
 
 model AdminNotification {
@@ -468,6 +482,24 @@ model AdminNotification {
 enum CheckInStatus {
   CHECKED_IN
   CHECKED_OUT
+}
+
+// ---------------------------------------------------------------------------
+// Face Enrollment (biometric descriptors for face recognition)
+// ---------------------------------------------------------------------------
+
+model FaceEnrollment {
+  id           String   @id @default(uuid())
+  employeeId   String   @unique
+  descriptor1  Json     // Float32Array serialized as number[] (128 dimensions)
+  descriptor2  Json
+  descriptor3  Json
+  enrolledAt   DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  modelVersion String   @default("face-api-ssd-mobilenetv1-v1")
+  employee     User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
 }
 
 model PerformanceSnapshot {
@@ -815,4 +847,16 @@ enum PaymentStatus {
   COMPLETED
   FAILED
   REFUNDED
+}
+
+model AttendanceRule {
+  id                 String   @id @default("default")
+  shiftStart         String   @default("09:15")
+  faceRequired       Boolean  @default(true)
+  geofenceEnabled    Boolean  @default(false)
+  officeLat          Float    @default(18.5204)
+  officeLng          Float    @default(73.8567)
+  officeRadius       Float    @default(150.0)
+  faceMatchThreshold Float    @default(0.55)
+  updatedAt          DateTime @updatedAt
 }

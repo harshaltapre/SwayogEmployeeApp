@@ -27,7 +27,6 @@ import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.Task
 import com.swayog.employee.presentation.common.components.SwayogCard
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubAdminEmployeesScreen(
     viewModel: SubAdminEmployeesViewModel = hiltViewModel()
@@ -38,20 +37,11 @@ fun SubAdminEmployeesScreen(
     var viewMode by remember { mutableStateOf("grid") }
 
     if (selectedEmployee != null) {
-        // Employee Details Screen mock (we will implement EmployeeDetailContent later)
-        Column(modifier = Modifier.fillMaxSize()) {
-            TopAppBar(
-                title = { Text(selectedEmployee!!.fullName) },
-                navigationIcon = {
-                    IconButton(onClick = { selectedEmployee = null }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Employee Detail Content")
-            }
-        }
+        EmployeeDetailContent(
+            employee = selectedEmployee!!,
+            tasks = uiState.tasks.filter { it.employeeUserId == selectedEmployee!!.id },
+            onBack = { selectedEmployee = null }
+        )
         return
     }
 
@@ -113,7 +103,9 @@ fun SubAdminEmployeesScreen(
         } else {
             if (selectedTabIndex == 0) {
                 StaffDirectoryTab(
-                    employees = uiState.employees,
+                    employees = uiState.filteredEmployees,
+                    avgRating = uiState.avgRating,
+                    isLoading = uiState.isLoading,
                     viewMode = viewMode,
                     onViewModeChange = { viewMode = it },
                     onEmployeeClick = { selectedEmployee = it }
@@ -131,6 +123,8 @@ fun SubAdminEmployeesScreen(
 @Composable
 fun StaffDirectoryTab(
     employees: List<Employee>,
+    avgRating: Double,
+    isLoading: Boolean,
     viewMode: String,
     onViewModeChange: (String) -> Unit,
     onEmployeeClick: (Employee) -> Unit
@@ -144,7 +138,8 @@ fun StaffDirectoryTab(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard(title = "Total Staff", value = employees.size.toString(), icon = Icons.Default.Group)
+                StatCard(title = "Total Staff", value = if (isLoading) "..." else employees.size.toString(), icon = Icons.Default.Group)
+                StatCard(title = "Avg Rating", value = if (isLoading) "..." else String.format("%.1f", avgRating), icon = Icons.Default.Star, iconColor = Color(0xFF16A34A))
             }
             Row(
                 modifier = Modifier
@@ -191,6 +186,199 @@ fun StaffDirectoryTab(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun EmployeeDetailContent(
+    employee: Employee,
+    tasks: List<Task>,
+    onBack: () -> Unit
+) {
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(employee.fullName) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Employee Profile Card
+            SwayogCard {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .background(Color(0xFF0F172A), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = employee.fullName.first().toString(),
+                            color = Color.White,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = employee.fullName,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = employee.role,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.Gray
+                        )
+                        Row(
+                            modifier = Modifier.padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text(employee.phoneNumber ?: "N/A", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text(employee.email, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            // Stats Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                StatCard(title = "Active Tasks", value = tasks.size.toString(), icon = Icons.Default.Assignment)
+                StatCard(title = "Rating", value = String.format("%.1f", employee.rating ?: 0.0), icon = Icons.Default.Star, iconColor = Color(0xFF16A34A))
+                StatCard(title = "Zone", value = employee.zone, icon = Icons.Default.LocationOn)
+            }
+
+            // Tabs
+            TabRow(
+                selectedTabIndex = selectedTabIndex,
+                containerColor = Color(0xFFF1F5F9),
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)),
+                indicator = { }
+            ) {
+                val tabs = listOf("Assigned Tasks", "Profile")
+                tabs.forEachIndexed { index, title ->
+                    val selected = selectedTabIndex == index
+                    Tab(
+                        selected = selected,
+                        onClick = { selectedTabIndex = index },
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) Color.White else Color.Transparent),
+                        text = {
+                            Text(
+                                text = title,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selected) Color(0xFF0F172A) else Color(0xFF64748B)
+                            )
+                        }
+                    )
+                }
+            }
+
+            // Tab Content
+            if (selectedTabIndex == 0) {
+                if (tasks.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No assigned tasks", color = Color.Gray)
+                    }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(tasks) { task ->
+                            TaskCard(task)
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        InfoRow("Role", employee.role)
+                        InfoRow("Email", employee.email)
+                        InfoRow("Phone", employee.phoneNumber ?: "N/A")
+                        InfoRow("Zone", employee.zone)
+                        InfoRow("Status", employee.status ?: "active")
+                        InfoRow("Created", employee.createdAt)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TaskCard(task: Task) {
+    SwayogCard {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = task.jobType,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Badge(
+                    containerColor = when (task.status) {
+                        "completed" -> Color(0xFFDCFCE7)
+                        "in_progress" -> Color(0xFFDBEAFE)
+                        else -> Color(0xFFFEF3C7)
+                    },
+                    contentColor = when (task.status) {
+                        "completed" -> Color(0xFF166534)
+                        "in_progress" -> Color(0xFF1E40AF)
+                        else -> Color(0xFF92400E)
+                    }
+                ) {
+                    Text(task.status.replace("_", " "), fontSize = 10.sp)
+                }
+            }
+            Text(task.description, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            if (task.scheduledTime.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(task.scheduledTime, fontSize = 12.sp, color = Color.Gray)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, fontWeight = FontWeight.Bold, color = Color.Gray)
+        Text(value)
     }
 }
 
@@ -329,7 +517,7 @@ fun AssignedTasksTab(tasks: List<Task>, employees: List<Employee>) {
 }
 
 @Composable
-fun StatCard(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+fun StatCard(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, iconColor: Color? = null) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         shape = RoundedCornerShape(12.dp)
@@ -343,7 +531,7 @@ fun StatCard(title: String, value: String, icon: androidx.compose.ui.graphics.ve
                     .background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                     .padding(8.dp)
             ) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Icon(icon, contentDescription = null, tint = iconColor ?: MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column {

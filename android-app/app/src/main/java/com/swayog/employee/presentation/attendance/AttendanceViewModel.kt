@@ -70,6 +70,10 @@ class AttendanceViewModel @Inject constructor(
             val calendar = Calendar.getInstance()
             val month = calendar.get(Calendar.MONTH) + 1
             val year = calendar.get(Calendar.YEAR)
+            
+            // Sync monthly attendance history to Room cache in the background
+            attendanceRepository.syncMonthlyAttendance(month, year)
+
             attendanceRepository.getPerformance(month, year)
                 .onSuccess { snapshot ->
                     _performance.value = snapshot

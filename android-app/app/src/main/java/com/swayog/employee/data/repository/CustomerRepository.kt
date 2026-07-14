@@ -425,22 +425,12 @@ class CustomerRepository @Inject constructor(
         return try {
             val response = apiService.getComplaints()
             if (response.isSuccessful && response.body()?.data != null) {
-                val data = response.body()!!.data!!
-                val list = if (data.isJsonArray) {
-                    com.google.gson.Gson().fromJson(data, Array<ServiceRequest>::class.java).toList()
-                } else if (data.isJsonObject && data.asJsonObject.has("requests")) {
-                    com.google.gson.Gson().fromJson(data.asJsonObject.get("requests"), Array<ServiceRequest>::class.java).toList()
-                } else {
-                    emptyList()
-                }
+                val list = response.body()!!.data!!.requests
                 Result.success(list)
             } else {
                 Result.failure(Exception("Failed to fetch complaints: ${response.message()}"))
-
             }
-
         } catch (e: Exception) {
-
             Result.failure(e)
 
         }

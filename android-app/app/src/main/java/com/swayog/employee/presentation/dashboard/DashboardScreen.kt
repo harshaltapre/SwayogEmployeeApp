@@ -14,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -105,7 +108,6 @@ fun DashboardScreen(
             String.format("%02d:%02d:%02d", hours, minutes, seconds)
         } catch (_: Exception) { null }
     }
-
     Scaffold(
         topBar = {
             if (!isServiceCoordinator || currentTab == 0) {
@@ -115,24 +117,6 @@ fun DashboardScreen(
                         IconButton(onClick = { viewModel.retryLoading() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
-                        IconButton(onClick = onNavigateToProfile) {
-                            Icon(Icons.Default.Person, contentDescription = "Profile")
-                        }
-                        IconButton(onClick = onNavigateToSettings) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
-                        }
-                    }
-                )
-            } else if (isServiceCoordinator) {
-                SwayogTopBar(
-                    title = when (currentTab) {
-                        1 -> "Service Requests"
-                        2 -> "Customers"
-                        3 -> "Calendar"
-                        4 -> "Map"
-                        else -> "Dashboard"
-                    },
-                    actions = {
                         IconButton(onClick = onNavigateToProfile) {
                             Icon(Icons.Default.Person, contentDescription = "Profile")
                         }
@@ -214,7 +198,8 @@ fun DashboardScreen(
                         }
                         1 -> {
                             SubAdminComplaintsScreen(
-                                onNavigateBack = { currentTab = 0 }
+                                onNavigateBack = { currentTab = 0 },
+                                modifier = Modifier.padding(paddingValues)
                             )
                         }
                         2 -> {
@@ -222,18 +207,21 @@ fun DashboardScreen(
                                 onNavigateBack = { currentTab = 0 },
                                 onNavigateToDetails = { customerId ->
                                     onNavigateToSubAdminCustomerDetails(customerId)
-                                }
+                                },
+                                modifier = Modifier.padding(paddingValues)
                             )
                         }
                         3 -> {
                             SubAdminCalendarScreen(
-                                onNavigateBack = { currentTab = 0 }
+                                onNavigateBack = { currentTab = 0 },
+                                modifier = Modifier.padding(paddingValues)
                             )
                         }
                         4 -> {
                             SubAdminMapScreen(
                                 onNavigateBack = { currentTab = 0 },
-                                onNavigateToEmployees = onNavigateToSubAdminEmployees
+                                onNavigateToEmployees = onNavigateToSubAdminEmployees,
+                                modifier = Modifier.padding(paddingValues)
                             )
                         }
                     }
@@ -708,6 +696,7 @@ fun QuickActionCard(
 
 @Composable
 fun TaskItem(task: com.swayog.employee.data.model.Task) {
+    val context = LocalContext.current
     val jobTypeEmoji = when (task.jobType.lowercase()) {
         "installation" -> "🔧"
         "service" -> "🛠️"
@@ -723,42 +712,26 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
         )
     ) {
         Column(
-            modifier = Modifier.padding(12.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(text = jobTypeEmoji, fontSize = 16.sp)
-                Text(
-                    text = task.jobType,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = task.customerName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.AccessTime,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
-                Text(
-                    text = task.scheduledTime,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
-                Spacer(modifier = Modifier.weight(1f))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(text = jobTypeEmoji, fontSize = 16.sp)
+                    Text(
+                        text = task.jobType,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                
                 val statusColor = when (task.status.lowercase()) {
                     "completed" -> Color(0xFF0B6E4F) // BrandGreen
                     "in_progress" -> Color(0xFFD1603D) // BrandOrange
@@ -777,6 +750,75 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+            }
+
+            Text(
+                text = "Customer: ${task.customerName}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Row(
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = task.address,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .clickable {
+                        try {
+                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${task.customerPhone}"))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    .padding(vertical = 2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Phone,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = task.customerPhone,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AccessTime,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+                Text(
+                    text = task.scheduledTime,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
             }
         }
     }

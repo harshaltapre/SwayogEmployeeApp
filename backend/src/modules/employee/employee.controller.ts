@@ -74,6 +74,17 @@ export async function getMyTasks(req: Request, res: Response): Promise<void> {
   const [tasks, total] = await Promise.all([
     prisma.task.findMany({
       where,
+      select: {
+        id: true,
+        jobType: true,
+        description: true,
+        customerName: true,
+        customerPhone: true,
+        address: true,
+        status: true,
+        scheduledTime: true,
+        createdAt: true,
+      },
       orderBy: {
         scheduledTime: "asc",
       },

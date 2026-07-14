@@ -13,7 +13,7 @@ class FinancialRepository @Inject constructor(
     suspend fun getInvoices(invoiceType: String? = null): Result<List<Invoice>> {
         return try {
             val response = apiService.getInvoices(invoiceType)
-            if (response.isSuccessful && response.body()?.success == true) {
+            if (response.isSuccessful && response.body()?.isSuccess == true) {
                 // The API response payload is usually `response.body()!!.data`
                 Result.success(response.body()!!.data ?: emptyList())
             } else {
@@ -27,7 +27,7 @@ class FinancialRepository @Inject constructor(
     suspend fun createInvoice(request: CreateInvoiceRequest): Result<Invoice> {
         return try {
             val response = apiService.createInvoice(request)
-            if (response.isSuccessful && response.body()?.success == true) {
+            if (response.isSuccessful && response.body()?.isSuccess == true) {
                 Result.success(response.body()!!.data!!)
             } else {
                 Result.failure(Exception(response.body()?.message ?: "Failed to log payment"))

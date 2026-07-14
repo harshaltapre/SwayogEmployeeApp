@@ -129,3 +129,79 @@ export const useUpdateAttendanceRules = () => {
   });
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// FACE RECOGNITION HOOKS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface FaceEnrollmentStatus {
+  enrolled: boolean;
+  enrollment: {
+    id: string;
+    employeeId: string;
+    descriptor1: number[];
+    descriptor2: number[];
+    descriptor3: number[];
+    enrolledAt: string;
+    modelVersion: string;
+  } | null;
+}
+
+/** Get current user's face enrollment status + descriptors */
+export const useFaceEnrollmentStatus = (userId?: string) => useQuery({
+  queryKey: ["face-enrollment", "status", userId],
+  queryFn: () => apiClient.get("/attendance/face/enrollment").then((r) => r.data as FaceEnrollmentStatus),
+  enabled: !!userId,
+  staleTime: 5 * 60_000,
+});
+
+/** Enroll face: POST 3 descriptors */
+export const useEnrollFace = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { descriptor1: number[]; descriptor2: number[]; descriptor3: number[] }) =>
+      apiClient.post("/attendance/face/enroll", data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["face-enrollment"] });
+    },
+  });
+};
+
+/** SuperAdmin: delete an employee's face enrollment */
+export const useDeleteFaceEnrollment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (employeeId: string) =>
+      apiClient.delete(`/attendance/face/enrollment/${employeeId}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["face-enrollment"] });
+      qc.invalidateQueries({ queryKey: ["admin", "face-enrollments"] });
+    },
+  });
+};
+
+/** Admin/SuperAdmin: list all employees with enrollment status */
+export const useFaceEnrollmentList = () => useQuery({
+  queryKey: ["admin", "face-enrollments"],
+  queryFn: () => apiClient.get("/attendance/face/enrollments").then((r) => r.data.enrollments),
+  refetchInterval: 60_000,
+});
+
+/** Admin: manual override/correct a check-in */
+export const useOverrideCheckIn = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ checkInId, reason, status }: { checkInId: string; reason: string; status?: string }) =>
+      apiClient.patch(`/attendance/checkin/${checkInId}/override`, { reason, status }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "checkin-notifications"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+    },
+  });
+};
+
+/** Admin: list today's check-ins with face recognition metadata */
+export const useAdminCheckIns = () => useQuery({
+  queryKey: ["admin", "checkins"],
+  queryFn: () => apiClient.get("/attendance/admin/checkins").then((r) => r.data.checkins),
+  refetchInterval: 30_000,
+});

@@ -210,10 +210,6 @@ export async function listInternalUsers(actorRole: InternalUserRole, query: List
   const where: any = {
     role: query.role ?? { in: visibleRoles },
   };
-  console.log("[listInternalUsers] actorRole:", actorRole);
-  console.log("[listInternalUsers] visibleRoles:", visibleRoles);
-  console.log("[listInternalUsers] query:", JSON.stringify(query));
-  console.log("[listInternalUsers] where clause:", JSON.stringify(where));
 
   if (query.search) {
     where.OR = [

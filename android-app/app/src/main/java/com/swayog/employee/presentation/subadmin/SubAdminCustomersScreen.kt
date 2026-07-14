@@ -30,6 +30,7 @@ import com.swayog.employee.presentation.common.components.*
 fun SubAdminCustomersScreen(
     onNavigateBack: () -> Unit,
     onNavigateToDetails: (Int) -> Unit,
+    modifier: Modifier = Modifier,
     viewModel: SubAdminCustomersViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -46,6 +47,7 @@ fun SubAdminCustomersScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             SwayogTopBar(
                 title = "AMC Customers",
@@ -219,7 +221,7 @@ fun CustomerListItem(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = customer.city,
+                        text = customer.city ?: "N/A",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium
                     )

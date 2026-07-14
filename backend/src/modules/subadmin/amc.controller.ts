@@ -124,12 +124,11 @@ export const updateAmcSettings = async (req: Request, res: Response) => {
     paymentTerms,
     assignedEmployeeId,
     nextSurveyDate,
-    manualVisitDate: reqManualVisitDate,
   } = req.body;
 
   const id = Number(customerId);
   const normalizedAssignedEmployeeId = normalizeAssignedEmployeeId(assignedEmployeeId);
-  const manualVisitDate = parseManualVisitDate(nextSurveyDate || reqManualVisitDate);
+  const manualVisitDate = parseManualVisitDate(nextSurveyDate);
 
   const existingCustomer = await prisma.customer.findUnique({
     where: { id }
@@ -561,12 +560,11 @@ export const updateApartmentAmcSettings = async (req: Request, res: Response) =>
     paymentTerms,
     assignedEmployeeId,
     nextSurveyDate,
-    manualVisitDate: reqManualVisitDate,
   } = req.body;
 
   const aptId = Number(apartmentId);
   const normalizedAssignedEmployeeId = normalizeAssignedEmployeeId(assignedEmployeeId);
-  const manualVisitDate = parseManualVisitDate(nextSurveyDate || reqManualVisitDate);
+  const manualVisitDate = parseManualVisitDate(nextSurveyDate);
 
   const apartment = await prisma.apartment.findUnique({
     where: { id: aptId },

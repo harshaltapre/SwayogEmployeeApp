@@ -41,6 +41,7 @@ sealed class MapPinType {
 fun SubAdminMapScreen(
     onNavigateBack: () -> Unit,
     onNavigateToEmployees: () -> Unit = {},
+    modifier: Modifier = Modifier,
     viewModel: SubAdminMapViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -70,8 +71,8 @@ fun SubAdminMapScreen(
         val list = mutableListOf<MapPinType>()
         if (selectedFilter == 0 || selectedFilter == 1) {
             customers.forEach { cust ->
-                val lat = cust.latitude ?: cityCoords[cust.city.lowercase().trim()]?.latitude
-                val lng = cust.longitude ?: cityCoords[cust.city.lowercase().trim()]?.longitude
+                val lat = cust.latitude ?: cityCoords[cust.city?.lowercase()?.trim()]?.latitude
+                val lng = cust.longitude ?: cityCoords[cust.city?.lowercase()?.trim()]?.longitude
                 if (lat != null && lng != null) {
                     list.add(MapPinType.Amc(cust.copy(latitude = lat, longitude = lng)))
                 }
@@ -102,6 +103,7 @@ fun SubAdminMapScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             SwayogTopBar(
                 title = "Geospatial Sites Map",
