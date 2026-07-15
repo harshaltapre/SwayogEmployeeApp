@@ -77,6 +77,32 @@ class TaskRepository @Inject constructor(
             }
         }
     }
+
+    fun getAllTasksFlow(): Flow<List<Task>> {
+        return taskDao.getAllTasks().map { entities ->
+            entities.map { entity ->
+                Task(
+                    id = entity.id,
+                    jobType = entity.jobType,
+                    description = entity.description,
+                    customerName = entity.customerName,
+                    customerPhone = entity.customerPhone,
+                    address = entity.address,
+                    latitude = entity.latitude,
+                    longitude = entity.longitude,
+                    status = entity.status,
+                    scheduledTime = entity.scheduledTime,
+                    employeeUserId = entity.employeeUserId,
+                    assignedById = entity.assignedById,
+                    completionMessage = entity.completionMessage,
+                    completionDocumentUrl = entity.completionDocumentUrl,
+                    completedAt = entity.completedAt,
+                    createdAt = entity.createdAt,
+                    updatedAt = entity.updatedAt
+                )
+            }
+        }
+    }
     
     suspend fun refreshTasks(employeeUserId: String): Result<List<Task>> {
         return try {
@@ -124,7 +150,33 @@ class TaskRepository @Inject constructor(
         return try {
             val response = apiService.getTasks(employeeUserId, status)
             if (response.isSuccessful && response.body()?.data != null) {
-                Result.success(response.body()!!.data!!)
+                val tasks = response.body()!!.data!!
+                withContext(Dispatchers.IO) {
+                    val entities = tasks.map { task ->
+                        TaskEntity(
+                            id = task.id,
+                            jobType = task.jobType,
+                            description = task.description,
+                            customerName = task.customerName,
+                            customerPhone = task.customerPhone,
+                            address = task.address,
+                            latitude = task.latitude,
+                            longitude = task.longitude,
+                            status = task.status,
+                            scheduledTime = task.scheduledTime,
+                            employeeUserId = task.employeeUserId,
+                            assignedById = task.assignedById,
+                            completionMessage = task.completionMessage,
+                            completionDocumentUrl = task.completionDocumentUrl,
+                            completedAt = task.completedAt,
+                            createdAt = task.createdAt,
+                            updatedAt = task.updatedAt,
+                            isSynced = true
+                        )
+                    }
+                    taskDao.insertTasks(entities)
+                }
+                Result.success(tasks)
             } else {
                 Result.failure(Exception("Failed to fetch all tasks: ${response.message()}"))
             }

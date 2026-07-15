@@ -77,10 +77,10 @@ data class User(
 )
 
 data class EmployeeProfile(
-    val id: String,
-    val userId: String,
-    val jobRole: String,
-    val zone: String?,
-    val monthlySalaryInr: Int?,
-    val isActive: Boolean
+    val id: String? = null,
+    val userId: String? = null,
+    val jobRole: String? = null,
+    val zone: String? = null,
+    val monthlySalaryInr: Int? = null,
+    val isActive: Boolean? = null
 )

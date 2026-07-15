@@ -17,9 +17,7 @@ async function run() {
     });
 
     console.log("API returned employees count:", employeesRes.data.data.length);
-    employeesRes.data.data.forEach((emp: any) => {
-      console.log(`Email: ${emp.email}, Role: ${emp.role}, JobRole: ${emp.employeeProfile?.jobRole}`);
-    });
+    console.log("FIRST EMPLOYEE:", JSON.stringify(employeesRes.data.data[0], null, 2));
   } catch (err: any) {
     console.error("Error occurred:", err.response?.data || err);
   }

@@ -26,9 +26,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.Task
 import com.swayog.employee.presentation.common.components.SwayogCard
+import com.swayog.employee.presentation.common.components.SwayogTopBar
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubAdminEmployeesScreen(
+    onNavigateBack: () -> Unit,
     viewModel: SubAdminEmployeesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -45,67 +48,86 @@ fun SubAdminEmployeesScreen(
         return
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF8FAFC))
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Employee Section",
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-            color = Color(0xFF0F172A)
-        )
-        Text(
-            text = "Manage staff and track assigned tasks.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF64748B),
-            modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
-        )
-
-        TabRow(
-            selectedTabIndex = selectedTabIndex,
-            containerColor = Color(0xFFF1F5F9),
-            modifier = Modifier.clip(RoundedCornerShape(8.dp)),
-            indicator = { } // Remove default indicator
-        ) {
-            val tabs = listOf("Staff Directory", "Assigned Tasks")
-            tabs.forEachIndexed { index, title ->
-                val selected = selectedTabIndex == index
-                Tab(
-                    selected = selected,
-                    onClick = { selectedTabIndex = index },
-                    modifier = Modifier
-                        .padding(4.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (selected) Color.White else Color.Transparent),
-                    text = {
-                        Text(
-                            text = title,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (selected) Color(0xFF0F172A) else Color(0xFF64748B)
-                        )
+    Scaffold(
+        topBar = {
+            SwayogTopBar(
+                title = "Staff Section",
+                showBackButton = true,
+                onBackClick = onNavigateBack,
+                actions = {
+                    IconButton(onClick = { viewModel.loadData() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
-                )
-            }
+                }
+            )
         }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF8FAFC))
+                .padding(paddingValues)
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "Manage staff and track assigned tasks.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF64748B),
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            TabRow(
+                selectedTabIndex = selectedTabIndex,
+                containerColor = Color(0xFFF1F5F9),
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)),
+                indicator = { } // Remove default indicator
+            ) {
+                val tabs = listOf("Staff Directory", "Assigned Tasks")
+                tabs.forEachIndexed { index, title ->
+                    val selected = selectedTabIndex == index
+                    Tab(
+                        selected = selected,
+                        onClick = { selectedTabIndex = index },
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) Color.White else Color.Transparent),
+                        text = {
+                            Text(
+                                text = title,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selected) Color(0xFF0F172A) else Color(0xFF64748B)
+                            )
+                        }
+                    )
+                }
+            }
 
-        if (uiState.isLoading) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (uiState.isLoading && uiState.employees.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else if (uiState.error != null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(uiState.error!!, color = MaterialTheme.colorScheme.error)
-            }
         } else {
+            if (uiState.error != null) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Text(
+                        uiState.error!!,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(8.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
             if (selectedTabIndex == 0) {
                 StaffDirectoryTab(
                     employees = uiState.filteredEmployees,
                     avgRating = uiState.avgRating,
-                    isLoading = uiState.isLoading,
                     viewMode = viewMode,
                     onViewModeChange = { viewMode = it },
                     onEmployeeClick = { selectedEmployee = it }
@@ -117,6 +139,7 @@ fun SubAdminEmployeesScreen(
                 )
             }
         }
+        }
     }
 }
 
@@ -124,7 +147,6 @@ fun SubAdminEmployeesScreen(
 fun StaffDirectoryTab(
     employees: List<Employee>,
     avgRating: Double,
-    isLoading: Boolean,
     viewMode: String,
     onViewModeChange: (String) -> Unit,
     onEmployeeClick: (Employee) -> Unit
@@ -138,8 +160,8 @@ fun StaffDirectoryTab(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard(title = "Total Staff", value = if (isLoading) "..." else employees.size.toString(), icon = Icons.Default.Group)
-                StatCard(title = "Avg Rating", value = if (isLoading) "..." else String.format("%.1f", avgRating), icon = Icons.Default.Star, iconColor = Color(0xFF16A34A))
+                StatCard(title = "Total Staff", value = employees.size.toString(), icon = Icons.Default.Group)
+                StatCard(title = "Avg Rating", value = String.format("%.1f", avgRating), icon = Icons.Default.Star, iconColor = Color(0xFF16A34A))
             }
             Row(
                 modifier = Modifier
@@ -189,6 +211,7 @@ fun StaffDirectoryTab(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmployeeDetailContent(
     employee: Employee,

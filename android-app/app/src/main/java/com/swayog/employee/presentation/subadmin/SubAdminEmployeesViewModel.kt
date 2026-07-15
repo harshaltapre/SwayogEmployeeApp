@@ -49,27 +49,42 @@ class SubAdminEmployeesViewModel @Inject constructor(
     val uiState: StateFlow<SubAdminEmployeesUiState> = _uiState.asStateFlow()
 
     init {
+        observeData()
         loadData()
+    }
+
+    private fun observeData() {
+        viewModelScope.launch {
+            employeeRepository.getInternalUsersFlow("EMPLOYEE").collect { employees ->
+                _uiState.update { it.copy(employees = employees) }
+            }
+        }
+        viewModelScope.launch {
+            taskRepository.getAllTasksFlow().collect { tasks ->
+                _uiState.update { it.copy(tasks = tasks) }
+            }
+        }
     }
 
     fun loadData() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             
-            // Load employees
+            // Trigger background refresh
             val employeeResult = employeeRepository.getInternalUsers("EMPLOYEE")
-            val employees = employeeResult.getOrNull() ?: emptyList()
-            
-            // Load tasks
             val taskResult = taskRepository.getAllTasks()
-            val tasks = taskResult.getOrNull() ?: emptyList()
             
-            val error = if (employeeResult.isFailure && taskResult.isFailure) {
-                "Failed: Emp[${employeeResult.exceptionOrNull()?.message}] Task[${taskResult.exceptionOrNull()?.message}]"
-            } else if (employeeResult.isFailure) {
-                "Failed to load employees: ${employeeResult.exceptionOrNull()?.message}"
-            } else if (taskResult.isFailure) {
-                "Failed to load tasks: ${taskResult.exceptionOrNull()?.message}"
+            val error = if (employeeResult.isFailure || taskResult.isFailure) {
+                val empErr = employeeResult.exceptionOrNull()?.message ?: ""
+                val taskErr = taskResult.exceptionOrNull()?.message ?: ""
+                
+                // If we already have data in DB, maybe just show a subtle warning?
+                // For now, keep the error display but it will be overlayed on cached data
+                if (empErr.contains("401") || taskErr.contains("401")) {
+                    "Session Expired. Please login again. (Showing cached data)"
+                } else {
+                    "Sync Failed: $empErr $taskErr".trim()
+                }
             } else {
                 null
             }
@@ -77,8 +92,6 @@ class SubAdminEmployeesViewModel @Inject constructor(
             _uiState.update { 
                 it.copy(
                     isLoading = false,
-                    employees = employees,
-                    tasks = tasks,
                     error = error
                 )
             }

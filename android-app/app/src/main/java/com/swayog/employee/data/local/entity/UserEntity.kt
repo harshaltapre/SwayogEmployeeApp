@@ -21,5 +21,6 @@ data class UserEntity(
     val jobRole: String?,
     val zone: String?,
     val monthlySalaryInr: Int?,
-    val profilePhotoUrl: String?
+    val profilePhotoUrl: String?,
+    val rating: Double? = 0.0
 )

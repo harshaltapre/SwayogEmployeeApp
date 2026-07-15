@@ -164,7 +164,9 @@ fun SwayogNavHost(
         }
 
         composable(Screen.SubAdminEmployees.route) {
-            SubAdminEmployeesScreen()
+            SubAdminEmployeesScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
 
         composable(Screen.SubAdminFinancials.route) {
