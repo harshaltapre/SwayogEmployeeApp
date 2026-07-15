@@ -214,6 +214,10 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
     console.error("Failed to notify admins:", err);
   }
 
+  await recalculateMonthlyPerformance(employeeId).catch((err) => {
+    console.error("Failed to recalculate performance on check-in:", err);
+  });
+
   return { attendance, checkInRecord };
 }
 

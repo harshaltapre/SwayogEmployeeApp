@@ -1,0 +1,4 @@
+- [ ] Update `gradle-wrapper.properties` to Gradle 9.6.1-all
+- [ ] Run `./gradlew help --warning-mode all` to identify deprecations
+- [ ] Fix identified deprecations in `build.gradle.kts` files
+- [ ] Verify build success and lack of warnings
