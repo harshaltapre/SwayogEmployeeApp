@@ -524,10 +524,13 @@ class CustomerRepository @Inject constructor(
     suspend fun createAmcVisit(request: CreateAmcVisitRequest): Result<Unit> {
         return try {
             val body = mapOf(
-                "manualVisitDate" to request.scheduledDate,
-                "assignedEmployeeId" to request.assignedEmployeeId
+                "customerId" to request.customerId.toString(),
+                "scheduledDate" to request.scheduledDate,
+                "scheduledTime" to request.timeSlot,
+                "assignedEmployeeId" to request.assignedEmployeeId,
+                "notes" to request.notes
             )
-            val response = apiService.createAmcVisit(request.customerId, body)
+            val response = apiService.createAmcVisit(body)
             if (response.isSuccessful) {
                 Result.success(Unit)
             } else {

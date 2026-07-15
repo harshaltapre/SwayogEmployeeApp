@@ -38,6 +38,7 @@ import androidx.compose.ui.layout.ContentScale
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onLogout: () -> Unit,
+    onNavigateToFaceEnrollment: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -435,6 +436,41 @@ fun SettingsScreen(
                             checked = biometricEnabled,
                             onCheckedChange = { viewModel.setBiometricEnabled(it) }
                         )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        val isFaceEnrolled by viewModel.isFaceEnrolled.collectAsState()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Face ID Enrollment",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = if (isFaceEnrolled) "Enrolled - Tap to re-enroll or delete" else "Not enrolled",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isFaceEnrolled) Color(0xFF10B981) else Color.Gray
+                                )
+                            }
+                            if (isFaceEnrolled) {
+                                TextButton(onClick = { viewModel.deleteFaceEnrollment() }) {
+                                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                                }
+                            } else {
+                                Button(
+                                    onClick = onNavigateToFaceEnrollment,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(36.dp)
+                                ) {
+                                    Text("Enroll")
+                                }
+                            }
+                        }
                     }
                 }
             }

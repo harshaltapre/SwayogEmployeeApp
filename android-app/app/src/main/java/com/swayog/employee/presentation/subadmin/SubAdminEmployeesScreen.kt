@@ -175,13 +175,13 @@ fun StaffDirectoryTab(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(employees) { employee ->
+                items(employees, key = { it.id }) { employee ->
                     EmployeeGridCard(employee, onEmployeeClick)
                 }
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(employees) { employee ->
+                items(employees, key = { it.id }) { employee ->
                     EmployeeListCard(employee, onEmployeeClick)
                 }
             }
@@ -338,31 +338,31 @@ fun TaskCard(task: Task) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = task.jobType,
+                    text = task.jobType ?: "Unknown",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Badge(
-                    containerColor = when (task.status) {
+                    containerColor = when (task.status?.lowercase()) {
                         "completed" -> Color(0xFFDCFCE7)
                         "in_progress" -> Color(0xFFDBEAFE)
                         else -> Color(0xFFFEF3C7)
                     },
-                    contentColor = when (task.status) {
+                    contentColor = when (task.status?.lowercase()) {
                         "completed" -> Color(0xFF166534)
                         "in_progress" -> Color(0xFF1E40AF)
                         else -> Color(0xFF92400E)
                     }
                 ) {
-                    Text(task.status.replace("_", " "), fontSize = 10.sp)
+                    Text((task.status ?: "Unknown").replace("_", " "), fontSize = 10.sp)
                 }
             }
-            Text(task.description, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-            if (task.scheduledTime.isNotEmpty()) {
+            Text(task.description ?: "", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            if (!task.scheduledTime.isNullOrEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(task.scheduledTime, fontSize = 12.sp, color = Color.Gray)
+                    Text(task.scheduledTime ?: "", fontSize = 12.sp, color = Color.Gray)
                 }
             }
         }
@@ -494,12 +494,12 @@ fun AssignedTasksTab(tasks: List<Task>, employees: List<Employee>) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(task.jobType, fontWeight = FontWeight.Bold)
-                        Text(task.status, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(task.jobType ?: "Unknown", fontWeight = FontWeight.Bold)
+                        Text(task.status ?: "Unknown", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(task.customerName, fontSize = 14.sp)
-                    Text(task.scheduledTime, fontSize = 12.sp, color = Color.Gray)
+                    Text(task.customerName ?: "Unknown", fontSize = 14.sp)
+                    Text(task.scheduledTime ?: "", fontSize = 12.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Gray)

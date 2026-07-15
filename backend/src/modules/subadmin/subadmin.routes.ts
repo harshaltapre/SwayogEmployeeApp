@@ -16,6 +16,7 @@ import {
   updateAmcSettings,
   updateApartmentAmcSettings,
   listAmcVisits,
+  createAmcVisit,
   markVisitCompleted,
   updateAmcVisit
 } from "./amc.controller.js";
@@ -111,6 +112,14 @@ subadminRoutes.get(
   authenticateAccessToken,
   requireMinRole(UserRole.EMPLOYEE),
   asyncHandler(listAmcVisits)
+);
+
+// Create a new explicit AMC visit
+subadminRoutes.post(
+  "/amc-visits",
+  authenticateAccessToken,
+  requireMinRole(UserRole.EMPLOYEE),
+  asyncHandler(createAmcVisit)
 );
 
 // Mark AMC visit completed

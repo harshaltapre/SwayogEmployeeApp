@@ -12,6 +12,7 @@ import com.swayog.employee.presentation.profile.ProfileScreen
 import com.swayog.employee.presentation.settings.SettingsScreen
 import com.swayog.employee.presentation.dailycommit.DailyCommitScreen
 import com.swayog.employee.presentation.subadmin.*
+import com.swayog.employee.presentation.attendance.face.FaceEnrollmentScreen
 
 @Composable
 fun SwayogNavHost(
@@ -97,15 +98,20 @@ fun SwayogNavHost(
         
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToFaceEnrollment = { navController.navigate(Screen.FaceEnrollment.route) },
                 onLogout = {
-                    onLogout()
                     navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Dashboard.route) { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                     }
+                    onLogout()
                 }
+            )
+        }
+        
+        composable(Screen.FaceEnrollment.route) {
+            FaceEnrollmentScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
         
@@ -186,4 +192,5 @@ sealed class Screen(val route: String) {
     data object SubAdminMap : Screen("subadmin_map")
     data object SubAdminEmployees : Screen("subadmin_employees")
     data object SubAdminFinancials : Screen("subadmin_financials")
+    data object FaceEnrollment : Screen("face_enrollment")
 }

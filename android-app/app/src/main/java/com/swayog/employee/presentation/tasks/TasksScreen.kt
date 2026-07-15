@@ -47,10 +47,10 @@ fun TasksScreen(
         }
         if (searchQuery.isBlank()) tabFiltered
         else tabFiltered.filter {
-            it.customerName.contains(searchQuery, ignoreCase = true) ||
-                    it.jobType.contains(searchQuery, ignoreCase = true) ||
-                    it.description.contains(searchQuery, ignoreCase = true) ||
-                    it.address.contains(searchQuery, ignoreCase = true)
+            (it.customerName ?: "").contains(searchQuery, ignoreCase = true) ||
+                    (it.jobType ?: "").contains(searchQuery, ignoreCase = true) ||
+                    (it.description ?: "").contains(searchQuery, ignoreCase = true) ||
+                    (it.address ?: "").contains(searchQuery, ignoreCase = true)
         }
     }
 
@@ -191,7 +191,7 @@ fun TasksScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(filteredTasks) { task ->
+                        items(filteredTasks, key = { it.id }) { task ->
                             TaskCard(
                                 task = task,
                                 onViewDetails = { selectedTask = task }
@@ -228,8 +228,8 @@ fun TasksScreen(
                             }
                         }
                     },
-                    onCompleteTask = { msg, doc ->
-                        viewModel.completeTask(task.id, msg, doc) { result ->
+                    onCompleteTask = { msg, doc, beforeImg, afterImg ->
+                        viewModel.completeTask(task.id, msg, doc, beforeImg, afterImg) { result ->
                             if (result.isSuccess) {
                                 selectedTask = null
                                 viewModel.refresh()
@@ -250,7 +250,7 @@ fun TaskCard(
     onViewDetails: () -> Unit
 ) {
     val context = LocalContext.current
-    val jobTypeEmoji = when (task.jobType.lowercase()) {
+    val jobTypeEmoji = when (task.jobType?.lowercase()) {
         "installation" -> "🔧"
         "service" -> "🛠️"
         "amc visit" -> "📋"
@@ -259,7 +259,7 @@ fun TaskCard(
         else -> "📌"
     }
 
-    val statusColor = when (task.status.lowercase()) {
+    val statusColor = when (task.status?.lowercase()) {
         "completed" -> Color(0xFF0B6E4F) // BrandGreen
         "in_progress" -> Color(0xFFD1603D) // BrandOrange
         "assigned" -> Color(0xFF386FA4) // BrandBlue
@@ -278,7 +278,7 @@ fun TaskCard(
                     Text(text = jobTypeEmoji, fontSize = 20.sp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = task.jobType,
+                        text = task.jobType ?: "Unknown",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -290,7 +290,7 @@ fun TaskCard(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = task.status.replace("_", " ").replaceFirstChar { it.uppercase() },
+                        text = (task.status ?: "Unknown").replace("_", " ").replaceFirstChar { it.uppercase() },
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
@@ -301,7 +301,7 @@ fun TaskCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = task.description,
+                text = task.description ?: "",
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2
@@ -314,7 +314,7 @@ fun TaskCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(text = task.customerName, style = MaterialTheme.typography.bodyMedium)
+                Text(text = task.customerName ?: "Unknown", style = MaterialTheme.typography.bodyMedium)
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -325,7 +325,7 @@ fun TaskCard(
             ) {
                 Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFD1603D)) // BrandOrange
                 Text(
-                    text = task.scheduledTime,
+                    text = task.scheduledTime ?: "",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFD1603D), // BrandOrange
                     fontWeight = FontWeight.Medium
@@ -340,7 +340,7 @@ fun TaskCard(
             ) {
                 Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp))
                 Text(
-                    text = task.address,
+                    text = task.address ?: "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 3,
@@ -396,13 +396,15 @@ fun TaskDetailDialog(
     task: Task,
     onDismiss: () -> Unit,
     onStartTask: () -> Unit,
-    onCompleteTask: (String, String?) -> Unit
+    onCompleteTask: (String, String?, String?, String?) -> Unit
 ) {
     val context = LocalContext.current
     var completionMessage by remember { mutableStateOf("") }
     var docUrl by remember { mutableStateOf("") }
+    var beforeImageUrl by remember { mutableStateOf<String?>(null) }
+    var afterImageUrl by remember { mutableStateOf<String?>(null) }
 
-    val jobTypeEmoji = when (task.jobType.lowercase()) {
+    val jobTypeEmoji = when (task.jobType?.lowercase()) {
         "installation" -> "🔧"
         "service" -> "🛠️"
         "amc visit" -> "📋"
@@ -442,14 +444,14 @@ fun TaskDetailDialog(
                 Divider()
 
                 Text(
-                    text = task.jobType,
+                    text = task.jobType ?: "Unknown",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
 
                 Text(
-                    text = task.description,
+                    text = task.description ?: "",
                     style = MaterialTheme.typography.bodyMedium
                 )
 
@@ -465,28 +467,28 @@ fun TaskDetailDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Customer: ${task.customerName}", fontWeight = FontWeight.Bold)
+                            Text("Customer: ${task.customerName ?: "Unknown"}", fontWeight = FontWeight.Bold)
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.clickable {
-                                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${task.customerPhone}"))
+                                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${task.customerPhone ?: ""}"))
                                 context.startActivity(intent)
                             }
                         ) {
                             Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Phone: ${task.customerPhone}", color = MaterialTheme.colorScheme.primary)
+                            Text("Phone: ${task.customerPhone ?: "Unknown"}", color = MaterialTheme.colorScheme.primary)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Address: ${task.address}")
+                            Text("Address: ${task.address ?: "Unknown"}")
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Scheduled: ${task.scheduledTime}")
+                            Text("Scheduled: ${task.scheduledTime ?: "Unknown"}")
                         }
                     }
                 }
@@ -494,7 +496,7 @@ fun TaskDetailDialog(
                 // Navigate to Maps button
                 OutlinedButton(
                     onClick = {
-                        val encodedAddress = Uri.encode(task.address)
+                        val encodedAddress = Uri.encode(task.address ?: "")
                         val mapUri = Uri.parse("geo:0,0?q=$encodedAddress")
                         context.startActivity(Intent(Intent.ACTION_VIEW, mapUri))
                     },
@@ -539,14 +541,42 @@ fun TaskDetailDialog(
                             label = "Document Link (Optional)",
                             placeholder = "URL of report blueprint, or proof"
                         )
+                        
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { beforeImageUrl = "https://mock-image.com/before.jpg" },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = if (beforeImageUrl != null) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text(if (beforeImageUrl != null) "✓ Before Image" else "Upload Before Image")
+                            }
+                            
+                            OutlinedButton(
+                                onClick = { afterImageUrl = "https://mock-image.com/after.jpg" },
+                                modifier = Modifier.weight(1f),
+                                enabled = beforeImageUrl != null, // Enforce order
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = if (afterImageUrl != null) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text(if (afterImageUrl != null) "✓ After Image" else "Upload After Image")
+                            }
+                        }
 
                         SwayogButton(
                             text = "Mark Task Completed",
+                            enabled = beforeImageUrl != null && afterImageUrl != null && completionMessage.trim().isNotBlank(),
                             onClick = {
                                 if (completionMessage.trim().isBlank()) {
                                     Toast.makeText(context, "Completion description is required", Toast.LENGTH_SHORT).show()
+                                } else if (beforeImageUrl == null) {
+                                    Toast.makeText(context, "Before Image is required", Toast.LENGTH_SHORT).show()
+                                } else if (afterImageUrl == null) {
+                                    Toast.makeText(context, "After Image is required", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    onCompleteTask(completionMessage, docUrl.trim().ifEmpty { null })
+                                    onCompleteTask(completionMessage, docUrl.trim().ifEmpty { null }, beforeImageUrl, afterImageUrl)
                                 }
                             }
                         )

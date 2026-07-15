@@ -422,6 +422,43 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
 };
 
 /**
+ * Create a new one-off AMC visit explicitly
+ */
+export const createAmcVisit = async (req: Request, res: Response) => {
+  const { customerId, scheduledDate, scheduledTime, assignedEmployeeId, notes } = req.body;
+  
+  if (!customerId || !scheduledDate) {
+    throw new ApiError(400, "customerId and scheduledDate are required");
+  }
+
+  const dateObj = new Date(scheduledDate);
+  if (scheduledTime) {
+    const [hours, minutes] = scheduledTime.split(":").map(Number);
+    if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+      dateObj.setHours(hours, minutes, 0, 0);
+    }
+  } else {
+    dateObj.setHours(10, 0, 0, 0);
+  }
+
+  const visit = await prisma.amcVisit.create({
+    data: {
+      customerId: Number(customerId),
+      scheduledDate: dateObj,
+      status: AmcVisitStatus.PENDING,
+      assignedEmployeeId: assignedEmployeeId === "none" ? null : assignedEmployeeId,
+      notes
+    },
+    include: {
+      customer: true,
+      assignedEmployee: true
+    }
+  });
+
+  res.json({ status: "success", data: visit });
+};
+
+/**
  * Update AMC visit (date and assignment)
  */
 export const updateAmcVisit = async (req: Request, res: Response) => {

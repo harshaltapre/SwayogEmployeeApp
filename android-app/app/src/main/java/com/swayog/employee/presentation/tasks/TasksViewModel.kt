@@ -61,9 +61,22 @@ class TasksViewModel @Inject constructor(
         }
     }
 
-    fun completeTask(taskId: Int, message: String, documentUrl: String?, onResult: (Result<Task>) -> Unit) {
+    fun completeTask(
+        taskId: Int, 
+        message: String, 
+        documentUrl: String?, 
+        beforeImageUrl: String? = null,
+        afterImageUrl: String? = null,
+        onResult: (Result<Task>) -> Unit
+    ) {
         viewModelScope.launch {
-            val res = taskRepository.completeTask(taskId, message, documentUrl)
+            val res = taskRepository.completeTask(
+                taskId = taskId, 
+                completionMessage = message, 
+                completionDocumentUrl = documentUrl,
+                beforeImageUrl = beforeImageUrl,
+                afterImageUrl = afterImageUrl
+            )
             onResult(res)
         }
     }

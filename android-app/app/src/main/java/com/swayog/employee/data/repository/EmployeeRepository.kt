@@ -15,10 +15,10 @@ class EmployeeRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to fetch employees: ${response.message()}"))
+                Result.failure(Exception("Failed to fetch employees: ${response.code()} ${response.message()}"))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception("Failed to fetch employees: ${e.toString()}"))
         }
     }
 }

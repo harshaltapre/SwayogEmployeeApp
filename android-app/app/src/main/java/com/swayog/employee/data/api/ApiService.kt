@@ -42,12 +42,6 @@ interface ApiService {
     @GET("employee/attendance/today")
     suspend fun getTodayAttendance(): Response<TodayAttendanceResponse>
     
-    @GET("employee/attendance/face/enrollment")
-    suspend fun getFaceEnrollmentStatus(): Response<FaceEnrollmentStatusResponse>
-    
-    @POST("employee/attendance/face/enroll")
-    suspend fun enrollFace(@Body request: FaceEnrollmentRequest): Response<ApiResponse<Unit>>
-    
     @POST("employee/attendance/check-in")
     suspend fun checkIn(
         @Body request: CheckInRequest
@@ -59,6 +53,20 @@ interface ApiService {
     @POST("employee/attendance/work-description")
     suspend fun saveWorkDescription(
         @Body request: WorkDescriptionRequest
+    ): Response<ApiResponse<Unit>>
+    
+    // Face Recognition Endpoints
+    @POST("attendance/face/enroll")
+    suspend fun enrollFace(
+        @Body request: FaceEnrollRequest
+    ): Response<ApiResponse<Unit>>
+
+    @GET("attendance/face/enrollment")
+    suspend fun getFaceEnrollmentStatus(): Response<FaceEnrollmentStatusResponse>
+    
+    @DELETE("attendance/face/enrollment/{employeeId}")
+    suspend fun deleteFaceEnrollment(
+        @Path("employeeId") employeeId: String
     ): Response<ApiResponse<Unit>>
     
     @GET("employee/attendance/performance")
@@ -140,7 +148,7 @@ interface ApiService {
         @Query("employeeUserId") employeeUserId: String? = null,
         @Query("status") status: String? = null,
         @Query("limit") limit: Int? = 300
-    ): Response<ApiResponse<List<Task>>>
+    ): Response<ApiResponse<List<com.swayog.employee.data.model.Task>>>
 
     @POST("tasks")
     suspend fun createTask(
@@ -159,7 +167,7 @@ interface ApiService {
         @Body request: AssignTaskRequest
     ): Response<ApiResponse<Task>>
     
-    @POST("tasks/{taskId}/complete")
+    @PATCH("tasks/{taskId}/complete")
     suspend fun completeTask(
         @Path("taskId") taskId: Int,
         @Body request: CompleteTaskRequest
@@ -171,11 +179,10 @@ interface ApiService {
         @Query("employeeId") employeeId: String?
     ): Response<ApiResponse<List<AmcVisit>>>
     
-    @PATCH("subadmin/customers/{customerId}/amc-settings")
+    @POST("subadmin/amc-visits")
     suspend fun createAmcVisit(
-        @Path("customerId") customerId: Int,
         @Body request: Map<String, String?>
-    ): Response<ApiResponse<Any>>
+    ): Response<ApiResponse<Unit>>
     
     @PATCH("subadmin/amc-visits/{visitId}")
     suspend fun updateAmcVisit(

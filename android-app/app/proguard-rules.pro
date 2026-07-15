@@ -53,6 +53,8 @@
 # Coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-dontwarn kotlinx.coroutines.**
+-dontwarn java.lang.ClassValue
 
 # DataStore
 -dontwarn androidx.datastore.**

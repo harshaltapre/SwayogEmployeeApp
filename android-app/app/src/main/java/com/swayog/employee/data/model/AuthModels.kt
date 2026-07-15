@@ -17,13 +17,13 @@ data class ApiResponseMeta(
 )
 
 data class ApiResponse<T>(
-    val success: Boolean,
+    val success: Boolean? = true,
     val status: String? = null,
     val message: String? = null,
     val data: T?,
     val meta: ApiResponseMeta? = null
 ) {
-    val isSuccess: Boolean get() = success || status == "success" || status == "Success" || data != null
+    val isSuccess: Boolean get() = success == true || status == "success" || status == "Success" || data != null
 }
 
 data class LoginRequest(

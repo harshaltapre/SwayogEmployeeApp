@@ -53,6 +53,8 @@ fun ServiceCoordinatorDashboardContent(
     onNavigateToMap: () -> Unit,
     onNavigateToEmployees: () -> Unit,
     onNavigateToFinancials: () -> Unit,
+    onNavigateToAttendance: () -> Unit,
+    onNavigateToDailyCommits: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -201,6 +203,26 @@ fun ServiceCoordinatorDashboardContent(
                             onClick = onNavigateToFinancials,
                             modifier = Modifier.weight(1f)
                         )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        QuickActionCard(
+                            icon = Icons.Default.Fingerprint,
+                            label = "Attendance",
+                            color = Color(0xFFE83F6F), // Distinct color
+                            onClick = onNavigateToAttendance,
+                            modifier = Modifier.weight(1f)
+                        )
+                        QuickActionCard(
+                            icon = Icons.Default.EditNote,
+                            label = "Timesheets",
+                            color = Color(0xFF0F4C5C), // Distinct color
+                            onClick = onNavigateToDailyCommits,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.weight(1f)) // Empty spacer for alignment
                     }
                 }
             }

@@ -32,6 +32,12 @@ class SettingsViewModel @Inject constructor(
         initialValue = false
     )
 
+    val isFaceEnrolled: StateFlow<Boolean> = dataStoreManager.isFaceEnrolled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
     val notificationsEnabled: StateFlow<Boolean> = dataStoreManager.notificationsEnabled.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -208,6 +214,22 @@ class SettingsViewModel @Inject constructor(
             size < 1024 -> "$size B"
             size < 1024 * 1024 -> "${size / 1024} KB"
             else -> String.format("%.1f MB", size / (1024.0 * 1024.0))
+        }
+    }
+
+    fun logout(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                authRepository.logout()
+            } finally {
+                onSuccess()
+            }
+        }
+    }
+
+    fun deleteFaceEnrollment() {
+        viewModelScope.launch {
+            dataStoreManager.clearFaceEnrollment()
         }
     }
 }

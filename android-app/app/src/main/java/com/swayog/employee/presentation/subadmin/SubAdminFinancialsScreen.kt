@@ -116,7 +116,7 @@ fun SubAdminFinancialsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(invoices) { invoice ->
+                    items(invoices, key = { it.id }) { invoice ->
                         InvoiceCard(invoice = invoice)
                     }
                 }

@@ -232,7 +232,7 @@ fun DailyCommitScreen(
                         }
                     }
                 } else {
-                    items(commitsHistory.reversed()) { commit ->
+                    items(commitsHistory.reversed(), key = { it.id }) { commit ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(

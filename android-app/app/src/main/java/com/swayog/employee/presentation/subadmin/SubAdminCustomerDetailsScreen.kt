@@ -724,7 +724,38 @@ fun EditCredentialsDialog(
                     fontWeight = FontWeight.Bold
                 )
 
-                OutlinedTextField(value = brand, onValueChange = { brand = it }, label = { Text("Inverter Brand") }, modifier = Modifier.fillMaxWidth())
+                var expanded by remember { mutableStateOf(false) }
+                val brands = listOf("Waaree", "KSolar", "UTL", "Microtek", "Luminous", "Growatt", "Other")
+                
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded }
+                ) {
+                    OutlinedTextField(
+                        value = brand,
+                        onValueChange = { brand = it },
+                        label = { Text("Inverter Brand") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        brands.forEach { selectionOption ->
+                            DropdownMenuItem(
+                                text = { Text(selectionOption) },
+                                onClick = {
+                                    brand = selectionOption
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(value = sn, onValueChange = { sn = it }, label = { Text("Device SN") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("API Key") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = loginId, onValueChange = { loginId = it }, label = { Text("Login ID") }, modifier = Modifier.fillMaxWidth())

@@ -27,13 +27,26 @@ import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.clustering.Clustering
 import com.swayog.employee.data.model.Customer
 import com.swayog.employee.data.model.ServiceRequest
 import com.swayog.employee.presentation.common.components.*
 
-sealed class MapPinType {
-    data class Amc(val customer: Customer) : MapPinType()
-    data class Complaint(val request: ServiceRequest) : MapPinType()
+import com.google.maps.android.clustering.ClusterItem
+
+sealed class MapPinType : ClusterItem {
+    data class Amc(val customer: Customer) : MapPinType() {
+        override fun getPosition(): LatLng = LatLng(customer.latitude!!, customer.longitude!!)
+        override fun getTitle(): String = customer.fullName
+        override fun getSnippet(): String = "AMC Site"
+        override fun getZIndex(): Float? = null
+    }
+    data class Complaint(val request: ServiceRequest) : MapPinType() {
+        override fun getPosition(): LatLng = LatLng(request.latitude!!, request.longitude!!)
+        override fun getTitle(): String = request.title
+        override fun getSnippet(): String = "Complaint"
+        override fun getZIndex(): Float? = null
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,7 +64,8 @@ fun SubAdminMapScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
 
     var selectedFilter by remember { mutableIntStateOf(0) } // 0: All, 1: AMC, 2: Complaints
-    var selectedPin by remember { mutableStateOf<MapPinType?>(null) }
+    var selectedLocationPins by remember { mutableStateOf<List<MapPinType>?>(null) }
+    var selectedComplaintToSchedule by remember { mutableStateOf<ServiceRequest?>(null) }
     var isScheduleOpen by remember { mutableStateOf(false) }
     var isPerformingAction by remember { mutableStateOf(false) }
 
@@ -92,6 +106,15 @@ fun SubAdminMapScreen(
 
     // Camera initial position centering on first pin or defaults to Pune
     val defaultLatLng = LatLng(18.5204, 73.8567)
+    val groupedPins = remember(activePins) {
+        activePins.groupBy { pin ->
+            when (pin) {
+                is MapPinType.Amc -> LatLng(pin.customer.latitude!!, pin.customer.longitude!!)
+                is MapPinType.Complaint -> LatLng(pin.request.latitude!!, pin.request.longitude!!)
+            }
+        }
+    }
+    
     val cameraPositionState = rememberCameraPositionState {
         val firstPin = activePins.firstOrNull()
         val center = when (firstPin) {
@@ -128,9 +151,9 @@ fun SubAdminMapScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Filters Row
                 TabRow(selectedTabIndex = selectedFilter) {
-                    Tab(selected = selectedFilter == 0, onClick = { selectedFilter = 0; selectedPin = null }, text = { Text("All Sites") })
-                    Tab(selected = selectedFilter == 1, onClick = { selectedFilter = 1; selectedPin = null }, text = { Text("AMC Sites") })
-                    Tab(selected = selectedFilter == 2, onClick = { selectedFilter = 2; selectedPin = null }, text = { Text("Complaints") })
+                    Tab(selected = selectedFilter == 0, onClick = { selectedFilter = 0; selectedLocationPins = null }, text = { Text("All Sites") })
+                    Tab(selected = selectedFilter == 1, onClick = { selectedFilter = 1; selectedLocationPins = null }, text = { Text("AMC Sites") })
+                    Tab(selected = selectedFilter == 2, onClick = { selectedFilter = 2; selectedLocationPins = null }, text = { Text("Complaints") })
                 }
 
                 // Google Map
@@ -140,43 +163,26 @@ fun SubAdminMapScreen(
                         .weight(1f),
                     cameraPositionState = cameraPositionState
                 ) {
-                    activePins.forEach { pin ->
-                        when (pin) {
-                            is MapPinType.Amc -> {
-                                val customer = pin.customer
-                                val latLng = LatLng(customer.latitude!!, customer.longitude!!)
-                                Marker(
-                                    state = MarkerState(position = latLng),
-                                    title = customer.fullName,
-                                    snippet = "AMC Status: ${customer.amcStatus}",
-                                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN),
-                                    onClick = {
-                                        selectedPin = pin
-                                        true
-                                    }
-                                )
-                            }
-                            is MapPinType.Complaint -> {
-                                val req = pin.request
-                                val latLng = LatLng(req.latitude!!, req.longitude!!)
-                                val hue = if (req.status.lowercase() == "scheduled") {
-                                    BitmapDescriptorFactory.HUE_BLUE
-                                } else {
-                                    BitmapDescriptorFactory.HUE_RED
-                                }
-                                Marker(
-                                    state = MarkerState(position = latLng),
-                                    title = req.title,
-                                    snippet = "Status: ${req.status}",
-                                    icon = BitmapDescriptorFactory.defaultMarker(hue),
-                                    onClick = {
-                                        selectedPin = pin
-                                        true
-                                    }
-                                )
-                            }
+                    Clustering(
+                        items = activePins,
+                        onClusterClick = { cluster ->
+                            selectedLocationPins = cluster.items.toList()
+                            true
+                        },
+                        onClusterItemClick = { item ->
+                            selectedLocationPins = listOf(item)
+                            true
+                        },
+                        clusterItemContent = { item ->
+                            val tint = if (item is MapPinType.Complaint) Color.Red else Color.Green
+                            Icon(
+                                Icons.Default.LocationOn,
+                                contentDescription = "Pin",
+                                tint = tint,
+                                modifier = Modifier.size(36.dp)
+                            )
                         }
-                    }
+                    )
                 }
             }
 
@@ -201,7 +207,7 @@ fun SubAdminMapScreen(
             }
 
             // Info Dialog / Details Card Overlay at bottom
-            selectedPin?.let { pin ->
+            selectedLocationPins?.let { pins ->
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -209,35 +215,43 @@ fun SubAdminMapScreen(
                         .padding(16.dp)
                 ) {
                     SwayogCard(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 400.dp)
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                .padding(16.dp)
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = when (pin) {
-                                        is MapPinType.Amc -> "AMC Site Details"
-                                        is MapPinType.Complaint -> "Complaint Ticket"
-                                    },
+                                    text = if (pins.size > 1) "${pins.size} Sites at this location" else "Site Details",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 IconButton(
-                                    onClick = { selectedPin = null },
+                                    onClick = { selectedLocationPins = null },
                                     modifier = Modifier.size(24.dp)
                                 ) {
                                     Icon(Icons.Default.Close, contentDescription = "Close Card")
                                 }
                             }
+                            
+                            val scrollState = rememberScrollState()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(scrollState),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                pins.forEachIndexed { index, pin ->
+                                    if (index > 0) Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
                             when (pin) {
                                 is MapPinType.Amc -> {
@@ -265,10 +279,20 @@ fun SubAdminMapScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
+                                        text = "Customer: ${req.customerName ?: "Unknown"}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Scheduled: ${req.scheduledDate ?: "N/A"} ${req.scheduledTime ?: ""}".trim(),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                    )
+                                    Text(
                                         text = "Status: ${req.status.uppercase()}",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (req.status.lowercase() == "resolved") Color(0xFF10B981) else MaterialTheme.colorScheme.primary
+                                        color = if (req.status.lowercase() == "resolved" || req.status.lowercase() == "completed") Color(0xFF10B981) else MaterialTheme.colorScheme.primary
                                     )
                                     Text(
                                         text = req.description,
@@ -302,7 +326,10 @@ fun SubAdminMapScreen(
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             Button(
-                                                onClick = { isScheduleOpen = true },
+                                                onClick = { 
+                                                    selectedComplaintToSchedule = req
+                                                    isScheduleOpen = true 
+                                                },
                                                 modifier = Modifier.weight(1f)
                                             ) {
                                                 Text(if (req.status.lowercase() == "scheduled") "Reschedule" else "Schedule")
@@ -315,7 +342,8 @@ fun SubAdminMapScreen(
                                                             isPerformingAction = false
                                                             res.onSuccess {
                                                                 Toast.makeText(context, "Complaint marked as Resolved!", Toast.LENGTH_SHORT).show()
-                                                                selectedPin = null
+                                                                selectedLocationPins = null
+                                                                viewModel.loadData()
                                                             }.onFailure {
                                                                 Toast.makeText(context, it.message ?: "Failed to resolve complaint", Toast.LENGTH_LONG).show()
                                                             }
@@ -333,15 +361,20 @@ fun SubAdminMapScreen(
                             }
                         }
                     }
+                        }
+                    }
                 }
             }
 
             // Visit Scheduling dialog inside map
-            if (isScheduleOpen && selectedPin is MapPinType.Complaint) {
-                val req = (selectedPin as MapPinType.Complaint).request
+            if (isScheduleOpen && selectedComplaintToSchedule != null) {
+                val req = selectedComplaintToSchedule!!
                 ScheduleVisitDialog(
                     employees = employees,
-                    onDismiss = { isScheduleOpen = false },
+                    onDismiss = { 
+                        isScheduleOpen = false
+                        selectedComplaintToSchedule = null 
+                    },
                     onSubmit = { date, time, techId ->
                         isPerformingAction = true
                         viewModel.scheduleVisit(req.id, date, time, techId) { res ->
@@ -349,7 +382,8 @@ fun SubAdminMapScreen(
                             isScheduleOpen = false
                             res.onSuccess {
                                 Toast.makeText(context, "Visit scheduled successfully!", Toast.LENGTH_SHORT).show()
-                                selectedPin = null
+                                selectedComplaintToSchedule = null
+                                viewModel.loadData()
                             }.onFailure {
                                 Toast.makeText(context, it.message ?: "Failed to schedule visit", Toast.LENGTH_LONG).show()
                             }

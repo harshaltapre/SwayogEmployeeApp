@@ -23,15 +23,16 @@ data class SubAdminEmployeesUiState(
     val filteredEmployees: List<Employee>
         get() = employees.filter { emp ->
             val role = (emp.role ?: "").lowercase()
+            val jobRole = (emp.employeeProfile?.jobRole ?: "").lowercase()
             val allowedRoles = setOf(
                 "electrical engineer", "electrical_engineer",
                 "site survey engineer", "site_survey_engineer",
                 "o&m technician", "om_technician",
                 "service engineer", "service_engineer",
                 "field technician", "field_technician",
-                "technician", "intern", "employee"
+                "technician", "intern", "employee", "service coordinator", "service_coordinator"
             )
-            allowedRoles.contains(role)
+            allowedRoles.contains(role) || allowedRoles.contains(jobRole)
         }
 
     val avgRating: Double
@@ -64,11 +65,11 @@ class SubAdminEmployeesViewModel @Inject constructor(
             val tasks = taskResult.getOrNull() ?: emptyList()
             
             val error = if (employeeResult.isFailure && taskResult.isFailure) {
-                "Failed to load employees and tasks."
+                "Failed: Emp[${employeeResult.exceptionOrNull()?.message}] Task[${taskResult.exceptionOrNull()?.message}]"
             } else if (employeeResult.isFailure) {
-                "Failed to load employees."
+                "Failed to load employees: ${employeeResult.exceptionOrNull()?.message}"
             } else if (taskResult.isFailure) {
-                "Failed to load tasks."
+                "Failed to load tasks: ${taskResult.exceptionOrNull()?.message}"
             } else {
                 null
             }

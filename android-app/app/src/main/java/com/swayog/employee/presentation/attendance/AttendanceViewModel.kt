@@ -41,6 +41,12 @@ class AttendanceViewModel @Inject constructor(
     private val _monthlyRecords = MutableStateFlow<List<AttendanceRecord>>(emptyList())
     val monthlyRecords: StateFlow<List<AttendanceRecord>> = _monthlyRecords.asStateFlow()
 
+    val faceDescriptors: StateFlow<List<List<Float>>> = dataStoreManager.faceDescriptors.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
     init {
         loadData()
         viewModelScope.launch {
@@ -85,10 +91,10 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
-    fun checkIn(selfie: String?, latitude: Double?, longitude: Double?, onResult: (Result<Unit>) -> Unit) {
+    fun checkIn(selfie: String?, latitude: Double?, longitude: Double?, matchConfidence: Float? = null, onResult: (Result<Unit>) -> Unit) {
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Loading
-            attendanceRepository.checkIn(selfie, latitude, longitude)
+            attendanceRepository.checkIn(selfie, latitude, longitude, matchConfidence)
                 .onSuccess { response ->
                     _todayAttendance.value = response.attendanceRecord
                     loadData()

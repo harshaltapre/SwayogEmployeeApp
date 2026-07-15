@@ -38,6 +38,12 @@ class DataStoreManager @Inject constructor(
         val LANGUAGE = stringPreferencesKey("language")
         val SERVER_URL = stringPreferencesKey("server_url")
         val PROFILE_PHOTO_URL = stringPreferencesKey("profile_photo_url")
+        
+        // Face recognition
+        val FACE_ENROLLED = booleanPreferencesKey("face_enrolled")
+        val FACE_DESCRIPTOR_1 = stringPreferencesKey("face_descriptor_1")
+        val FACE_DESCRIPTOR_2 = stringPreferencesKey("face_descriptor_2")
+        val FACE_DESCRIPTOR_3 = stringPreferencesKey("face_descriptor_3")
     }
     
     val authToken: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -163,6 +169,56 @@ class DataStoreManager @Inject constructor(
         }
     }
     
+    suspend fun clearAuthData() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(PreferencesKeys.AUTH_TOKEN)
+            preferences.remove(PreferencesKeys.REFRESH_TOKEN)
+            preferences.remove(PreferencesKeys.USER_ID)
+            preferences.remove(PreferencesKeys.USER_EMAIL)
+            preferences.remove(PreferencesKeys.USER_NAME)
+            preferences.remove(PreferencesKeys.USER_ROLE)
+            preferences.remove(PreferencesKeys.JOB_ROLE)
+            preferences.remove(PreferencesKeys.IS_LOGGED_IN)
+            preferences.remove(PreferencesKeys.PROFILE_PHOTO_URL)
+            
+            // Clear face enrollment data on logout
+            preferences.remove(PreferencesKeys.FACE_ENROLLED)
+            preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_1)
+            preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
+            preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
+        }
+    }
+    
+    // Face Enrollment Storage
+    val isFaceEnrolled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.FACE_ENROLLED] ?: false
+    }
+
+    val faceDescriptors: Flow<List<List<Float>>> = context.dataStore.data.map { preferences ->
+        val d1 = preferences[PreferencesKeys.FACE_DESCRIPTOR_1]?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
+        val d2 = preferences[PreferencesKeys.FACE_DESCRIPTOR_2]?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
+        val d3 = preferences[PreferencesKeys.FACE_DESCRIPTOR_3]?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
+        listOf(d1, d2, d3).filter { it.isNotEmpty() }
+    }
+
+    suspend fun saveFaceEnrollment(descriptor1: List<Float>, descriptor2: List<Float>, descriptor3: List<Float>) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.FACE_ENROLLED] = true
+            preferences[PreferencesKeys.FACE_DESCRIPTOR_1] = descriptor1.joinToString(",")
+            preferences[PreferencesKeys.FACE_DESCRIPTOR_2] = descriptor2.joinToString(",")
+            preferences[PreferencesKeys.FACE_DESCRIPTOR_3] = descriptor3.joinToString(",")
+        }
+    }
+
+    suspend fun clearFaceEnrollment() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(PreferencesKeys.FACE_ENROLLED)
+            preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_1)
+            preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
+            preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
+        }
+    }
+
     suspend fun saveProfilePhoto(url: String) {
         try {
             context.dataStore.edit { preferences ->

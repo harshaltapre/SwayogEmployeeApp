@@ -50,11 +50,12 @@ class AttendanceRepository @Inject constructor(
     suspend fun checkIn(
         selfie: String?,
         latitude: Double?,
-        longitude: Double?
+        longitude: Double?,
+        matchConfidence: Float? = null
     ): Result<CheckInResponse> {
         return try {
             val response = apiService.checkIn(
-                CheckInRequest(selfie, latitude, longitude)
+                CheckInRequest(selfie, latitude, longitude, matchConfidence)
             )
             if (response.isSuccessful && response.body()?.result != null) {
                 val checkInResponse = response.body()!!.result!!

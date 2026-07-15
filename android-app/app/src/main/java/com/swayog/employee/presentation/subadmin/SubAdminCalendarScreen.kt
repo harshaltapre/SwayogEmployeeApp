@@ -272,7 +272,7 @@ fun CalendarEventDetailsDialog(
 
                     Text(text = "Scheduled Date & Time", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                     Text(
-                        text = "${event.date.substringBefore("T")} ${event.time ?: ""}",
+                        text = "${formatEventDate(event.date)} ${event.time ?: ""}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -283,7 +283,7 @@ fun CalendarEventDetailsDialog(
                     if (isAmc) {
                         Text(text = "Assigned Personnel", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                         Text(
-                            text = assignedEmployee?.let { "${it.fullName} (${it.role})" } ?: "Unassigned",
+                            text = assignedEmployee?.let { "${it.fullName} - ${it.role}" } ?: "Unassigned",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -387,7 +387,7 @@ fun CreateAmcVisitDialog(
                         } else {
                             filteredCustomers.take(10).forEach { customer ->
                                 DropdownMenuItem(
-                                    text = { Text("${customer.fullName} (ID: ${customer.id})") },
+                                    text = { Text(customer.fullName) },
                                     onClick = {
                                         selectedCustomerId = customer.id.toString()
                                         customerSearchQuery = ""
@@ -423,7 +423,7 @@ fun CreateAmcVisitDialog(
                 ) {
                     val selectedName = employees.find { it.id.toString() == assignedEmployeeId }?.fullName ?: ""
                     OutlinedTextField(
-                        value = if (assignedEmployeeId.isEmpty()) "" else "$selectedName (ID: $assignedEmployeeId)",
+                        value = if (assignedEmployeeId.isEmpty()) "" else selectedName,
                         onValueChange = { },
                         readOnly = true,
                         label = { Text("Assign Employee (Optional)") },
@@ -556,7 +556,7 @@ fun UpdateAmcVisitDialog(
                 ) {
                     val selectedName = employees.find { it.id.toString() == assignedEmployeeId }?.fullName ?: ""
                     OutlinedTextField(
-                        value = if (assignedEmployeeId.isEmpty()) "" else "$selectedName (ID: $assignedEmployeeId)",
+                        value = if (assignedEmployeeId.isEmpty()) "" else selectedName,
                         onValueChange = { },
                         readOnly = true,
                         label = { Text("Assign Employee (Optional)") },

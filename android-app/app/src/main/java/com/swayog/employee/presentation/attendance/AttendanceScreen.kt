@@ -62,7 +62,7 @@ fun AttendanceScreen(
     val monthlyRecords by viewModel.monthlyRecords.collectAsState()
     val state by viewModel.attendanceState.collectAsState()
     val performance by viewModel.performance.collectAsState()
-    val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
+    val faceDescriptors by viewModel.faceDescriptors.collectAsState()
 
     var showCamera by remember { mutableStateOf(false) }
     var showEnrollmentBlocker by remember { mutableStateOf(false) }
@@ -146,8 +146,8 @@ fun AttendanceScreen(
 
     if (showCamera) {
         FaceVerificationScreen(
-            profilePhotoUrl = profilePhotoUrl,
-            onVerificationSuccess = { bitmap ->
+            faceDescriptors = faceDescriptors,
+            onVerificationSuccess = { bitmap, matchConfidence ->
                 showCamera = false
                 // Apply Watermark
                 val watermarkedBitmap = WatermarkHelper.addWatermark(bitmap, currentLatitude, currentLongitude)
@@ -158,7 +158,7 @@ fun AttendanceScreen(
                 val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.DEFAULT)
                 
                 // Call checkIn
-                viewModel.checkIn(base64String, currentLatitude, currentLongitude) { result ->
+                viewModel.checkIn(base64String, currentLatitude, currentLongitude, matchConfidence) { result ->
                     if (result.isSuccess) {
                         Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
                     } else {
@@ -180,14 +180,12 @@ fun AttendanceScreen(
     if (showEnrollmentBlocker) {
         AlertDialog(
             onDismissRequest = { showEnrollmentBlocker = false },
-            title = { Text("Profile Photo Required") },
-            text = { Text("You must enroll your face by uploading a profile photo in Settings before you can check in.") },
+            title = { Text("Face Enrollment Required") },
+            text = { Text("You must enroll your face in Settings before you can check in.") },
             confirmButton = {
                 TextButton(onClick = {
                     showEnrollmentBlocker = false
-                    // we don't have a direct navController here, just a toast telling them what to do.
-                    // If we want to navigate, we should add onNavigateToSettings to AttendanceScreen parameters.
-                    Toast.makeText(context, "Please go to Settings to update your Profile Photo.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Please go to Settings to enroll your face.", Toast.LENGTH_LONG).show()
                 }) {
                     Text("OK")
                 }
@@ -423,7 +421,7 @@ fun AttendanceScreen(
                                     SwayogButton(
                                         text = "Check In",
                                         onClick = {
-                                            if (profilePhotoUrl.isNullOrEmpty()) {
+                                            if (faceDescriptors.isEmpty()) {
                                                 showEnrollmentBlocker = true
                                             } else {
                                                 permissionLauncher.launch(
@@ -700,7 +698,7 @@ fun AttendanceScreen(
                             }
                         }
                     } else {
-                        items(monthlyRecords.reversed().take(15)) { log ->
+                        items(monthlyRecords.reversed().take(15), key = { it.id }) { log ->
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(

@@ -6,8 +6,11 @@ import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.swayog.employee.data.repository.AttendanceRepository
 import com.swayog.employee.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.util.*
 import javax.inject.Inject
 
@@ -80,48 +83,48 @@ class DashboardViewModel @Inject constructor(
             var hasError = false
             var errorMessage = ""
 
-            // 1. Load Tasks - Most Likely Culprit
-            taskRepository.refreshTasks(userIdValue)
-                .onSuccess { taskList ->
-                    _tasks.value = taskList
+            withContext(Dispatchers.IO) {
+                val tasksDeferred = async { taskRepository.refreshTasks(userIdValue) }
+                val attendanceDeferred = async { attendanceRepository.getTodayAttendance() }
+                
+                val now = Calendar.getInstance()
+                val perfDeferred = async { 
+                    attendanceRepository.getPerformance(
+                        now.get(Calendar.MONTH) + 1,
+                        now.get(Calendar.YEAR)
+                    )
                 }
-                .onFailure { error ->
+
+                val taskRes = tasksDeferred.await()
+                val attendanceRes = attendanceDeferred.await()
+                val perfRes = perfDeferred.await()
+
+                taskRes.onSuccess { taskList ->
+                    _tasks.value = taskList
+                }.onFailure { error ->
                     hasError = true
                     errorMessage += "Tasks: ${error.message}. "
-                    // Safe fallback
                     _tasks.value = emptyList()
                 }
 
-            // 2. Load Today's Attendance
-            attendanceRepository.getTodayAttendance()
-                .onSuccess { attendance ->
+                attendanceRes.onSuccess { attendance ->
                     _todayAttendance.value = attendance
-                }
-                .onFailure { error ->
+                }.onFailure { error ->
                     hasError = true
                     errorMessage += "Attendance: ${error.message}. "
                     _todayAttendance.value = null
                 }
 
-            // 3. Load Performance
-            val now = Calendar.getInstance()
-            attendanceRepository.getPerformance(
-                now.get(Calendar.MONTH) + 1,
-                now.get(Calendar.YEAR)
-            )
-                .onSuccess { perf ->
+                perfRes.onSuccess { perf ->
                     _performance.value = perf
-                }
-                .onFailure { error ->
+                }.onFailure { error ->
                     hasError = true
                     errorMessage += "Performance: ${error.message}. "
                 }
+            }
 
-            // Final State
             if (hasError) {
-                _dashboardState.value = DashboardState.Error(
-                    "Failed to load dashboard data: $errorMessage"
-                )
+                _dashboardState.value = DashboardState.Error(errorMessage.trim())
             } else {
                 _dashboardState.value = DashboardState.Success
             }

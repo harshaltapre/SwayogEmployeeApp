@@ -97,11 +97,21 @@ object NetworkModule {
             
             var response = chain.proceed(request)
             
-            if (response.code == 401) {
+            val requestPath = request.url.encodedPath
+            val isAuthRequest = requestPath.contains("auth/login") || requestPath.contains("auth/refresh")
+            
+            if (response.code == 401 && !isAuthRequest) {
                 val refreshToken = runBlocking { dataStoreManager.refreshToken.first() }
                 if (refreshToken != null) {
-                    val currentBaseUrl = request.url.newBuilder().encodedPath("").build().toString()
-                    val refreshUrl = "${currentBaseUrl}api/v1/auth/refresh"
+                    val currentBaseUrl = request.url.newBuilder()
+                        .encodedPath("/")
+                        .build()
+                        .toString()
+                    val refreshUrl = if (currentBaseUrl.endsWith("/")) {
+                        "${currentBaseUrl}api/v1/auth/refresh"
+                    } else {
+                        "${currentBaseUrl}/api/v1/auth/refresh"
+                    }
                     
                     val refreshJson = JSONObject().put("refreshToken", refreshToken).toString()
                     val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
@@ -161,10 +171,15 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(
+        @ApplicationContext context: Context,
         loggingInterceptor: HttpLoggingInterceptor,
         authInterceptor: Interceptor
     ): OkHttpClient {
+        val cacheSize = (10 * 1024 * 1024).toLong() // 10 MB
+        val cache = okhttp3.Cache(context.cacheDir, cacheSize)
+
         return OkHttpClient.Builder()
+            .cache(cache)
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(10, TimeUnit.SECONDS)

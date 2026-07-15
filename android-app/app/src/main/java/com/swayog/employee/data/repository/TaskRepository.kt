@@ -12,6 +12,8 @@ import com.swayog.employee.data.sync.SyncWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -81,29 +83,31 @@ class TaskRepository @Inject constructor(
             val response = apiService.getEmployeeTasks(employeeUserId)
             if (response.isSuccessful && response.body()?.data != null) {
                 val tasks = response.body()!!.data!!.tasks
-                val entities = tasks.map { task ->
-                    TaskEntity(
-                        id = task.id,
-                        jobType = task.jobType,
-                        description = task.description,
-                        customerName = task.customerName,
-                        customerPhone = task.customerPhone,
-                        address = task.address,
-                        latitude = task.latitude,
-                        longitude = task.longitude,
-                        status = task.status,
-                        scheduledTime = task.scheduledTime,
-                        employeeUserId = task.employeeUserId,
-                        assignedById = task.assignedById,
-                        completionMessage = task.completionMessage,
-                        completionDocumentUrl = task.completionDocumentUrl,
-                        completedAt = task.completedAt,
-                        createdAt = task.createdAt,
-                        updatedAt = task.updatedAt,
-                        isSynced = true
-                    )
+                withContext(Dispatchers.IO) {
+                    val entities = tasks.map { task ->
+                        TaskEntity(
+                            id = task.id,
+                            jobType = task.jobType,
+                            description = task.description,
+                            customerName = task.customerName,
+                            customerPhone = task.customerPhone,
+                            address = task.address,
+                            latitude = task.latitude,
+                            longitude = task.longitude,
+                            status = task.status,
+                            scheduledTime = task.scheduledTime,
+                            employeeUserId = task.employeeUserId,
+                            assignedById = task.assignedById,
+                            completionMessage = task.completionMessage,
+                            completionDocumentUrl = task.completionDocumentUrl,
+                            completedAt = task.completedAt,
+                            createdAt = task.createdAt,
+                            updatedAt = task.updatedAt,
+                            isSynced = true
+                        )
+                    }
+                    taskDao.insertTasks(entities)
                 }
-                taskDao.insertTasks(entities)
                 Result.success(tasks)
             } else {
                 Result.failure(Exception("Failed to refresh tasks: ${response.message()}"))
@@ -189,12 +193,19 @@ class TaskRepository @Inject constructor(
     suspend fun completeTask(
         taskId: Int,
         completionMessage: String,
-        completionDocumentUrl: String?
+        completionDocumentUrl: String?,
+        beforeImageUrl: String? = null,
+        afterImageUrl: String? = null
     ): Result<Task> {
         return try {
             val response = apiService.completeTask(
                 taskId,
-                CompleteTaskRequest(completionMessage, completionDocumentUrl)
+                CompleteTaskRequest(
+                    message = completionMessage, 
+                    documentUrl = completionDocumentUrl,
+                    beforeImageUrl = beforeImageUrl,
+                    afterImageUrl = afterImageUrl
+                )
             )
             if (response.isSuccessful && response.body()?.data != null) {
                 val task = response.body()!!.data!!

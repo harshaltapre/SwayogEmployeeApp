@@ -20,6 +20,27 @@ data class CheckInRequest(
     val matchConfidence: Float? = null
 )
 
+data class FaceEnrollRequest(
+    val descriptor1: List<Float>,
+    val descriptor2: List<Float>,
+    val descriptor3: List<Float>
+)
+
+data class FaceEnrollment(
+    val id: String,
+    val employeeId: String,
+    val descriptor1: List<Float>,
+    val descriptor2: List<Float>,
+    val descriptor3: List<Float>,
+    val enrolledAt: String,
+    val modelVersion: String
+)
+
+data class FaceEnrollmentStatusResponse(
+    val enrolled: Boolean,
+    val enrollment: FaceEnrollment?
+)
+
 data class CheckInResponse(
     val checkIn: CheckIn,
     val attendanceRecord: AttendanceRecord
@@ -78,14 +99,4 @@ data class MonthlyAttendanceResponse(
     val halfDays: Int,
     val workingDays: Int,
     val attendancePercent: Double
-)
-
-data class FaceEnrollmentStatusResponse(
-    val isEnrolled: Boolean,
-    val enrolledAt: String? = null
-)
-
-data class FaceEnrollmentRequest(
-    val faceEmbedding: List<Float>,
-    val facePhotoUrl: String? = null
 )

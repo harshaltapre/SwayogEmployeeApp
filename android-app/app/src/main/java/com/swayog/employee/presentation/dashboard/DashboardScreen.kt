@@ -193,6 +193,8 @@ fun DashboardScreen(
                                 onNavigateToMap = { currentTab = 4 },
                                 onNavigateToEmployees = onNavigateToSubAdminEmployees,
                                 onNavigateToFinancials = onNavigateToSubAdminFinancials,
+                                onNavigateToAttendance = onNavigateToAttendance,
+                                onNavigateToDailyCommits = onNavigateToDailyCommit,
                                 modifier = Modifier.padding(paddingValues)
                             )
                         }
@@ -697,7 +699,7 @@ fun QuickActionCard(
 @Composable
 fun TaskItem(task: com.swayog.employee.data.model.Task) {
     val context = LocalContext.current
-    val jobTypeEmoji = when (task.jobType.lowercase()) {
+    val jobTypeEmoji = when (task.jobType?.lowercase()) {
         "installation" -> "🔧"
         "service" -> "🛠️"
         "amc visit" -> "📋"
@@ -726,13 +728,13 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
                 ) {
                     Text(text = jobTypeEmoji, fontSize = 16.sp)
                     Text(
-                        text = task.jobType,
+                        text = task.jobType ?: "Unknown",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
                 
-                val statusColor = when (task.status.lowercase()) {
+                val statusColor = when (task.status?.lowercase()) {
                     "completed" -> Color(0xFF0B6E4F) // BrandGreen
                     "in_progress" -> Color(0xFFD1603D) // BrandOrange
                     "assigned" -> Color(0xFF386FA4) // BrandBlue
@@ -743,7 +745,7 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
-                        text = task.status.replace("_", " ").replaceFirstChar { it.uppercase() },
+                        text = (task.status ?: "Unknown").replace("_", " ").replaceFirstChar { it.uppercase() },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = statusColor,
@@ -770,7 +772,7 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = task.address,
+                    text = task.address ?: "No Address",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                 )
@@ -782,8 +784,11 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
                 modifier = Modifier
                     .clickable {
                         try {
-                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${task.customerPhone}"))
-                            context.startActivity(intent)
+                            val phone = task.customerPhone
+                            if (!phone.isNullOrBlank()) {
+                                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))
+                                context.startActivity(intent)
+                            }
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
@@ -797,7 +802,7 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = task.customerPhone,
+                    text = task.customerPhone ?: "No Phone",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium
@@ -815,7 +820,7 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )
                 Text(
-                    text = task.scheduledTime,
+                    text = task.scheduledTime ?: "Not Scheduled",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )

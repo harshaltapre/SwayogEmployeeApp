@@ -23,7 +23,34 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             dataStoreManager.userId.filterNotNull().collect { id ->
                 val user = userDao.getUserById(id)
-                _currentUser.value = user
+                if (user != null) {
+                    _currentUser.value = user
+                } else {
+                    // Fallback to datastore values to prevent infinite loading
+                    val email = dataStoreManager.userEmail.firstOrNull() ?: ""
+                    val name = dataStoreManager.userName.firstOrNull() ?: "Unknown"
+                    val role = dataStoreManager.userRole.firstOrNull() ?: "EMPLOYEE"
+                    val jobRole = dataStoreManager.jobRole.firstOrNull()
+                    
+                    _currentUser.value = UserEntity(
+                        id = id,
+                        loginId = id,
+                        employeeCode = null,
+                        email = email,
+                        phoneNumber = null,
+                        fullName = name,
+                        role = role,
+                        designationTitle = role,
+                        departmentId = null,
+                        reportingManagerId = null,
+                        isActive = true,
+                        createdAt = "",
+                        jobRole = jobRole,
+                        zone = null,
+                        monthlySalaryInr = null,
+                        profilePhotoUrl = null
+                    )
+                }
             }
         }
     }
@@ -32,7 +59,9 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             dataStoreManager.userId.firstOrNull()?.let { id ->
                 val user = userDao.getUserById(id)
-                _currentUser.value = user
+                if (user != null) {
+                    _currentUser.value = user
+                }
             }
         }
     }

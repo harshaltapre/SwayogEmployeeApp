@@ -55,7 +55,9 @@ android {
     
     kotlinOptions {
         jvmTarget = "17"
-        freeCompilerArgs = freeCompilerArgs + "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+        freeCompilerArgs = freeCompilerArgs + listOf(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+        )
     }
     
     buildFeatures {
@@ -84,6 +86,7 @@ hilt {
 ksp {
     arg("room.incremental", "false")
     arg("hilt.correctErrorTypes", "true")
+    arg("hilt.incremental", "false")
 }
 
 dependencies {
@@ -133,6 +136,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-maps:18.2.0")
     implementation("com.google.android.gms:play-services-location:21.0.1")
     implementation("com.google.maps.android:maps-compose:4.3.0")
+    implementation("com.google.maps.android:maps-compose-utils:4.3.0")
     
     // Camera
     implementation("androidx.camera:camera-core:1.4.1")
