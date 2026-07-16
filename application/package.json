@@ -1,0 +1,21 @@
+{
+  "name": "swayog-android-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android wrapper for the existing Swayog dashboard using Capacitor.",
+  "scripts": {
+    "android:init": "npx cap add android",
+    "sync": "npx cap sync android",
+    "open": "npx cap open android",
+    "build:web": "cd .. && npm run build",
+    "build:android": "npm run build:web && npm run sync && npm run open"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.1.1",
+    "@capacitor/core": "^7.1.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.1.1",
+    "typescript": "^5.6.3"
+  }
+}

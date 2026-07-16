@@ -12,7 +12,7 @@ async function main() {
   // 1. Pull all non-customer users from remote
   const remoteUsers = await remote.user.findMany({
     where: { role: { in: ['EMPLOYEE', 'SUB_ADMIN', 'ADMIN', 'DEPARTMENT_HEAD', 'TEAM_LEAD'] } },
-    include: { employeeProfile: true }
+    include: { employeeProfile: true, faceEnrollment: true }
   });
 
   console.log(`Found ${remoteUsers.length} users in remote DB to sync.`);
@@ -33,6 +33,7 @@ async function main() {
           departmentId: user.departmentId,
           reportingManagerId: user.reportingManagerId,
           isActive: user.isActive,
+          profileImageUrl: user.profileImageUrl,
         },
         create: {
           id: user.id,
@@ -43,8 +44,10 @@ async function main() {
           passwordHash: user.passwordHash,
           role: user.role,
           designationTitle: user.designationTitle,
+          departmentId: user.departmentId,
           reportingManagerId: user.reportingManagerId,
           isActive: user.isActive,
+          profileImageUrl: user.profileImageUrl,
         }
       });
 
@@ -67,6 +70,31 @@ async function main() {
             partnerId: user.employeeProfile.partnerId,
             monthlySalaryInr: user.employeeProfile.monthlySalaryInr,
             isActive: user.employeeProfile.isActive,
+          }
+        });
+      }
+
+      // Upsert face enrollment if it exists remote
+      if (user.faceEnrollment) {
+        await local.faceEnrollment.upsert({
+          where: { employeeId: user.id },
+          update: {
+            descriptor1: user.faceEnrollment.descriptor1,
+            descriptor2: user.faceEnrollment.descriptor2,
+            descriptor3: user.faceEnrollment.descriptor3,
+            modelVersion: user.faceEnrollment.modelVersion,
+            enrolledAt: user.faceEnrollment.enrolledAt,
+            updatedAt: user.faceEnrollment.updatedAt,
+          },
+          create: {
+            id: user.faceEnrollment.id,
+            employeeId: user.id,
+            descriptor1: user.faceEnrollment.descriptor1,
+            descriptor2: user.faceEnrollment.descriptor2,
+            descriptor3: user.faceEnrollment.descriptor3,
+            modelVersion: user.faceEnrollment.modelVersion,
+            enrolledAt: user.faceEnrollment.enrolledAt,
+            updatedAt: user.faceEnrollment.updatedAt,
           }
         });
       }

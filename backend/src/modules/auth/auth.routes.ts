@@ -11,8 +11,9 @@ import {
   meHandler,
   refreshHandler,
   registerHandler,
+  changePasswordHandler,
 } from "./auth.controller.js";
-import { loginSchema, logoutSchema, refreshSchema, registerSchema } from "./auth.schemas.js";
+import { loginSchema, logoutSchema, refreshSchema, registerSchema, changePasswordSchema } from "./auth.schemas.js";
 
 export const authRoutes = Router();
 
@@ -65,3 +66,4 @@ authRoutes.post("/login", loginRateLimit, validateBody(loginSchema), asyncHandle
 authRoutes.post("/refresh", refreshRateLimit, validateBody(refreshSchema), asyncHandler(refreshHandler));
 authRoutes.post("/logout", logoutRateLimit, validateBody(logoutSchema), asyncHandler(logoutHandler));
 authRoutes.get("/me", authenticateAccessToken, meRateLimit, asyncHandler(meHandler));
+authRoutes.post("/change-password", authenticateAccessToken, validateBody(changePasswordSchema), asyncHandler(changePasswordHandler));

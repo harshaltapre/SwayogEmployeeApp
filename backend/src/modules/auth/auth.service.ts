@@ -39,6 +39,7 @@ const authUserSelect = {
   lastFailedLoginAt: true,
   createdAt: true,
   updatedAt: true,
+  profileImageUrl: true,
 } as const;
 
 /** Same shape as session user (no password hash). */
@@ -63,6 +64,7 @@ const publicUserSelect = {
   lockoutUntil: true,
   lastFailedLoginAt: true,
   createdAt: true,
+  profileImageUrl: true,
 } as const;
 
 type AuthUser = Prisma.UserGetPayload<{ select: typeof authUserSelect }>;
@@ -543,4 +545,29 @@ export async function getCurrentUser(userId: string) {
   }
 
   return user;
+}
+
+export async function changePassword(userId: string, input: { currentPassword: string; newPassword: string }) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const passwordMatches = await verifyPassword(input.currentPassword, user.passwordHash);
+  if (!passwordMatches) {
+    throw new ApiError(400, "Current password is incorrect");
+  }
+
+  const newPasswordHash = await hashPassword(input.newPassword);
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      passwordHash: newPasswordHash,
+    },
+  });
+
+  return { success: true };
 }

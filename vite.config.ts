@@ -25,10 +25,6 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('xlsx')) return 'vendor-xlsx';
-            if (id.includes('react') || id.includes('react-dom')) return 'vendor-react';
-            if (id.includes('framer-motion')) return 'vendor-framer-motion';
-            if (id.includes('lucide-react')) return 'vendor-lucide';
-            return 'vendor'; // Fallback for other node_modules
           }
         }
       }

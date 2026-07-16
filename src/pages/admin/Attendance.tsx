@@ -7,6 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useListEmployees } from "@/lib/api-client";
 import { useTeamPerformance, useEmployeeMonthlyAttendance, useAttendanceRules, useUpdateAttendanceRules } from "@/hooks/useAttendance";
+import { resolveConfiguredApiBaseUrl } from "@/lib/resolve-api-base-url";
+
+export function resolveStaticUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("data:")) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  
+  const base = resolveConfiguredApiBaseUrl() || "";
+  return `${base.replace(/\/$/, "")}/${url.replace(/^\//, "")}`;
+}
 import {
   Search,
   MapPin,
@@ -336,11 +346,12 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                         </tr>
                       ) : (
                         filteredEmployees.map((emp: any) => {
-                          const percent = getAttendancePercentForEmployee(emp.id);
-                          const score = getPerformanceScoreForEmployee(emp.id);
+                          const empIdStr = String(emp.userId || emp.id);
+                          const percent = getAttendancePercentForEmployee(empIdStr);
+                          const score = getPerformanceScoreForEmployee(empIdStr);
 
                           return (
-                            <tr key={emp.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                            <tr key={empIdStr} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                               <td className="px-6 py-4 flex items-center gap-3">
                                 <Avatar className="h-10 w-10">
                                   <AvatarFallback className="bg-slate-100 dark:bg-slate-700 text-xs font-bold">
@@ -378,7 +389,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => setSelectedEmployeeId(String(emp.id))}
+                                  onClick={() => setSelectedEmployeeId(empIdStr)}
                                   className="text-xs font-semibold gap-1.5"
                                 >
                                   <Eye className="h-3.5 w-3.5" /> View Log
@@ -535,7 +546,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
           <DialogContent className="max-w-4xl text-slate-900 dark:text-white bg-slate-900 border border-slate-700 max-h-[85vh] overflow-y-auto">
             <DialogHeader className="border-b border-slate-700 pb-3">
               <DialogTitle className="text-white text-lg font-bold">
-                Detailed Log — {employees.find((e: any) => String(e.id) === selectedEmployeeId)?.name || "Employee"}
+                Detailed Log — {employees.find((e: any) => String(e.userId || e.id) === selectedEmployeeId)?.name || "Employee"}
               </DialogTitle>
               <DialogDescription className="text-slate-400">
                 Monthly log records, breakdown status, check-in selfie watermarks, and geolocations.
@@ -614,13 +625,13 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                                   <td className="px-4 py-3">
                                     {checkinSnap?.selfieUrl ? (
                                       <a
-                                        href={checkinSnap.selfieUrl}
+                                        href={resolveStaticUrl(checkinSnap.selfieUrl)}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="relative group block h-10 w-10 overflow-hidden rounded-md border border-slate-700 bg-slate-900 hover:border-amber-500 transition-colors"
                                       >
                                         <img
-                                          src={checkinSnap.selfieUrl}
+                                          src={resolveStaticUrl(checkinSnap.selfieUrl)}
                                           alt="Check-in Selfie"
                                           className="h-full w-full object-cover group-hover:scale-110 transition-transform"
                                         />
