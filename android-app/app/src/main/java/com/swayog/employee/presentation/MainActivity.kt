@@ -21,6 +21,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         setContent {
             val mainViewModel: MainViewModel = hiltViewModel()
             val isLoggedIn by mainViewModel.isLoggedIn.collectAsState()
+            val userRole by mainViewModel.userRole.collectAsState()
+            val jobRole by mainViewModel.jobRole.collectAsState()
             val darkMode by mainViewModel.darkMode.collectAsState()
             
             SwayogEmployeeAppTheme(darkTheme = darkMode) {
@@ -30,6 +32,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 ) {
                     SwayogNavHost(
                         isLoggedIn = isLoggedIn,
+                        userRole = userRole,
+                        jobRole = jobRole,
                         startDestination = if (isLoggedIn) {
                             com.swayog.employee.presentation.navigation.Screen.Dashboard.route
                         } else {

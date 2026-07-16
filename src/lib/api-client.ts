@@ -864,6 +864,13 @@ export async function requestApi<T>(path: string, init?: RequestInit): Promise<T
   return payload as T;
 }
 
+export async function uploadProfilePhoto(photoDataUrl: string): Promise<{ profileImageUrl: string }> {
+  return requestApi<{ profileImageUrl: string }>("/users/internal/profile-photo", {
+    method: "PUT",
+    body: JSON.stringify({ photoDataUrl }),
+  });
+}
+
 function normalizeDateValue(input: string | null | undefined): string | null {
   if (!input) {
     return null;

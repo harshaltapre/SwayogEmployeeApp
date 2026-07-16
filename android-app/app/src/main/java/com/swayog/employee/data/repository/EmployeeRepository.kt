@@ -22,4 +22,8 @@ class EmployeeRepository @Inject constructor(
             Result.failure(Exception("Failed to fetch employees: ${ErrorUtils.formatException(e)}"))
         }
     }
+    
+    suspend fun getAllEmployees(): Result<List<Employee>> {
+        return getInternalUsers(null)
+    }
 }

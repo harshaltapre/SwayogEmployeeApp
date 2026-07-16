@@ -49,7 +49,7 @@ data class RefreshTokenRequest(
 )
 
 data class UpdateProfilePhotoRequest(
-    val profileImageUrl: String
+    val photoDataUrl: String
 )
 
 data class AuthResponse(

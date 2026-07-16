@@ -155,7 +155,7 @@ fun AttendanceScreen(
                 // Convert to Base64
                 val outputStream = ByteArrayOutputStream()
                 watermarkedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
-                val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.DEFAULT)
+                val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
                 
                 // Call checkIn
                 viewModel.checkIn(base64String, currentLatitude, currentLongitude, matchConfidence) { result ->

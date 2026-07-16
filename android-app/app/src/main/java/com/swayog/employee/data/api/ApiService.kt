@@ -25,7 +25,7 @@ interface ApiService {
     @GET("auth/me")
     suspend fun getCurrentUser(): Response<ApiResponse<User>>
     
-    @PATCH("users/me/profile-photo")
+    @PUT("users/internal/profile-photo")
     suspend fun updateProfilePhoto(
         @Body request: UpdateProfilePhotoRequest
     ): Response<ApiResponse<User>>
@@ -101,6 +101,26 @@ interface ApiService {
         @Path("customerId") customerId: Int
     ): Response<ApiResponse<CustomerSummaryResponse>>
     
+    @GET("subadmin/amc/customers")
+    suspend fun getAmcCustomers(): Response<ApiResponse<List<Customer>>>
+    
+    @PUT("subadmin/amc/customers/{customerId}/settings")
+    suspend fun updateAmcSettings(
+        @Path("customerId") customerId: Int,
+        @Body request: AmcSettingsRequest
+    ): Response<ApiResponse<Unit>>
+    
+    @PUT("subadmin/amc/apartments/{apartmentId}/settings")
+    suspend fun updateApartmentAmcSettings(
+        @Path("apartmentId") apartmentId: Int,
+        @Body request: ApartmentAmcSettingsRequest
+    ): Response<ApiResponse<Unit>>
+    
+    @POST("subadmin/customers/bulk-import")
+    suspend fun importCustomersFromExcel(
+        @Body data: List<Map<String, String>>
+    ): Response<ApiResponse<Unit>>
+    
     @GET("subadmin/customers/{customerId}/inverter-generation")
     suspend fun getCustomerInverterGeneration(
         @Path("customerId") customerId: Int
@@ -116,6 +136,12 @@ interface ApiService {
     suspend fun updateCustomerCredentials(
         @Path("customerId") customerId: Int,
         @Body request: UpdateCredentialsRequest
+    ): Response<ApiResponse<Customer>>
+    
+    @PATCH("subadmin/customers/{customerId}/amc-settings")
+    suspend fun updateAmcSettings(
+        @Path("customerId") customerId: Int,
+        @Body request: UpdateAmcSettingsRequest
     ): Response<ApiResponse<Customer>>
     
     @GET("subadmin/service-requests")

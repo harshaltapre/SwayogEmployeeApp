@@ -123,7 +123,20 @@ class DataStoreManager @Inject constructor(
     }
 
     fun getServerUrlBlocking(): String? {
-        return runBlocking { serverUrl.first() }
+        val url = runBlocking { serverUrl.first() }
+        if (url != null && url.contains("vercel.app")) {
+            runBlocking {
+                try {
+                    context.dataStore.edit { preferences ->
+                        preferences.remove(PreferencesKeys.SERVER_URL)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            return null
+        }
+        return url
     }
     
     suspend fun saveAuthToken(token: String) {

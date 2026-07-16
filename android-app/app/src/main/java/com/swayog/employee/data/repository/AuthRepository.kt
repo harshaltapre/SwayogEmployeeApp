@@ -189,23 +189,35 @@ class AuthRepository @Inject constructor(
 
     suspend fun updateProfilePhoto(base64Image: String): Result<User> {
         return try {
+            // 1. Cache locally for instant display
             dataStoreManager.saveProfilePhoto(base64Image)
-            // Fetch current user details if available, and attach the local profile photo
-            val userResponse = apiService.getCurrentUser()
-            if (userResponse.isSuccessful && userResponse.body()?.data != null) {
-                val user = userResponse.body()!!.data!!
-                Result.success(user.copy(profileImageUrl = base64Image))
+
+            // 2. Upload to backend server for cross-platform sync
+            val request = com.swayog.employee.data.model.UpdateProfilePhotoRequest(photoDataUrl = base64Image)
+            val uploadResponse = apiService.updateProfilePhoto(request)
+
+            if (uploadResponse.isSuccessful && uploadResponse.body()?.data != null) {
+                val serverUser = uploadResponse.body()!!.data!!
+                Result.success(serverUser)
             } else {
-                Result.success(User(
-                    id = dataStoreManager.userId.first() ?: "",
-                    fullName = dataStoreManager.userName.first() ?: "",
-                    email = dataStoreManager.userEmail.first() ?: "",
-                    role = dataStoreManager.userRole.first() ?: "",
-                    isActive = true,
-                    profileImageUrl = base64Image
-                ))
+                // Server upload failed — return local user with local photo as fallback
+                val userResponse = apiService.getCurrentUser()
+                if (userResponse.isSuccessful && userResponse.body()?.data != null) {
+                    val user = userResponse.body()!!.data!!
+                    Result.success(user.copy(profileImageUrl = base64Image))
+                } else {
+                    Result.success(User(
+                        id = dataStoreManager.userId.first() ?: "",
+                        fullName = dataStoreManager.userName.first() ?: "",
+                        email = dataStoreManager.userEmail.first() ?: "",
+                        role = dataStoreManager.userRole.first() ?: "",
+                        isActive = true,
+                        profileImageUrl = base64Image
+                    ))
+                }
             }
         } catch (e: Exception) {
+            // Network error — photo is still cached locally
             Result.failure(e)
         }
     }

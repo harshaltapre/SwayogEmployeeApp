@@ -46,3 +46,16 @@ data class CreateAmcVisitRequest(
     val assignedEmployeeId: String?,
     val notes: String?
 )
+
+data class AmcSettingsRequest(
+    val monthlyRate: Int?,
+    val cleaningsPerMonth: Int?,
+    val clientType: String,
+    val consumerNumber: String
+)
+
+data class ApartmentAmcSettingsRequest(
+    val monthlyRate: Int?,
+    val cleaningsPerMonth: Int?,
+    val clientType: String
+)

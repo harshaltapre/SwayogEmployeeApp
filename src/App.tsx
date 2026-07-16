@@ -3,7 +3,7 @@ import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getRoleDashboardPath, useAuth } from "@/lib/auth";
+import { getRoleDashboardPath, useAuth, isSubAdminJobRole, isInventoryExecutiveJobRole } from "@/lib/auth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import NotFound from "@/pages/not-found";
@@ -80,7 +80,17 @@ function ProtectedRoute({ component: Component, allowedRoles, path }: { componen
           return <Redirect to="/login" />;
         }
         
-        if (!allowedRoles.includes(user.role)) {
+        let hasAccess = allowedRoles.includes(user.role);
+
+        // Additional RBAC checks for specialized dashboards to prevent privilege escalation
+        if (path.startsWith("/subadmin/") && user.role === "employee") {
+          hasAccess = isSubAdminJobRole(user.jobRole);
+        }
+        if (path.startsWith("/inventory/") && user.role === "employee") {
+          hasAccess = isInventoryExecutiveJobRole(user.jobRole);
+        }
+
+        if (!hasAccess) {
           return <Redirect to={getRoleDashboardPath(user.role, user.jobRole)} />;
         }
         

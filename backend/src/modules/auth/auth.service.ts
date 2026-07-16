@@ -330,10 +330,18 @@ export async function login(input: LoginInput) {
 
     // CRITICAL SECURITY CHECK: Validate role matches
     if (user.role !== input.role) {
-      // Specialized case: SUB_ADMIN users should be allowed to login using the "EMPLOYEE" role selection
-      const isSubAdminLoggingAsEmployee = (user.role === UserRole.SUB_ADMIN && (input.role as string) === "EMPLOYEE");
+      // Specialized case: All internal staff should be allowed to login to the Employee App (which sends "EMPLOYEE" role)
+      const staffRoles: UserRole[] = [
+        UserRole.SUPER_ADMIN, 
+        UserRole.ADMIN, 
+        UserRole.SUB_ADMIN, 
+        UserRole.DEPARTMENT_HEAD, 
+        UserRole.TEAM_LEAD, 
+        UserRole.EMPLOYEE
+      ];
+      const isStaffLoggingAsEmployee = (staffRoles.includes(user.role) && (input.role as string) === "EMPLOYEE");
 
-      if (!isSubAdminLoggingAsEmployee) {
+      if (!isStaffLoggingAsEmployee) {
         console.warn("[AUTH] Role mismatch for identifier:", input.identifier, "user role:", user.role, "requested role:", input.role);
         // Log the unauthorized access attempt
         await prisma.auditLog.create({

@@ -41,10 +41,12 @@ fun SubAdminCustomerDetailsScreen(
     val employees by viewModel.employees.collectAsState()
     val updateState by viewModel.credentialsUpdateState.collectAsState()
     val scheduleState by viewModel.scheduleActionState.collectAsState()
+    val amcSettingsUpdateState by viewModel.amcSettingsUpdateState.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var isEditOpen by remember { mutableStateOf(false) }
     var isScheduleDialogOpen by remember { mutableStateOf(false) }
+    var isAmcSettingsOpen by remember { mutableStateOf(false) }
 
     android.util.Log.d("SubAdminDetails", "Screen recomposing. Current state: ${summaryState::class.simpleName}")
 
@@ -63,6 +65,22 @@ fun SubAdminCustomerDetailsScreen(
         }
     }
 
+    LaunchedEffect(amcSettingsUpdateState) {
+        when (amcSettingsUpdateState) {
+            is AmcSettingsUpdateState.Success -> {
+                Toast.makeText(context, "AMC settings updated successfully!", Toast.LENGTH_SHORT).show()
+                viewModel.resetAmcSettingsUpdateState()
+                isAmcSettingsOpen = false
+            }
+            is AmcSettingsUpdateState.Error -> {
+                val msg = (amcSettingsUpdateState as AmcSettingsUpdateState.Error).message
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                viewModel.resetAmcSettingsUpdateState()
+            }
+            else -> {}
+        }
+    }
+    
     LaunchedEffect(scheduleState) {
         when (scheduleState) {
             is ScheduleActionState.Success -> {
@@ -164,7 +182,8 @@ fun SubAdminCustomerDetailsScreen(
                                 customer = customer,
                                 amcVisitsState = amcVisitsState,
                                 employees = employees,
-                                onScheduleClick = { isScheduleDialogOpen = true }
+                                onScheduleClick = { isScheduleDialogOpen = true },
+                                onSettingsClick = { isAmcSettingsOpen = true }
                             )
                         }
                     }
@@ -199,6 +218,17 @@ fun SubAdminCustomerDetailsScreen(
                             viewModel.scheduleAmcVisit(date, time, employee, notes)
                         },
                         isLoading = scheduleState is ScheduleActionState.Loading
+                    )
+                }
+
+                if (isAmcSettingsOpen) {
+                    AmcSettingsDialog(
+                        customer = customer,
+                        employees = employees,
+                        onDismiss = { isAmcSettingsOpen = false },
+                        onSave = { request ->
+                            viewModel.updateAmcSettings(request)
+                        }
                     )
                 }
             }
@@ -492,7 +522,8 @@ fun AmcTabContent(
     customer: Customer,
     amcVisitsState: CustomerDetailsState<List<AmcVisit>>,
     employees: List<Employee>,
-    onScheduleClick: () -> Unit
+    onScheduleClick: () -> Unit,
+    onSettingsClick: () -> Unit
 ) {
     val statusUpper = customer.amcStatus.uppercase()
     val (statusColor, statusBg) = when (statusUpper) {
@@ -513,11 +544,20 @@ fun AmcTabContent(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "AMC Contract Summary",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "AMC Contract Summary",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(Icons.Default.Settings, contentDescription = "AMC Settings", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

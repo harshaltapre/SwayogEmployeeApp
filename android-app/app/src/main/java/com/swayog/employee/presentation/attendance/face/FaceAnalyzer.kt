@@ -35,8 +35,12 @@ class FaceAnalyzer(
         if (mediaImage != null) {
             isProcessing = true
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+            val rawBitmap = imageProxy.toBitmap()
             
-            val bitmap = imageProxy.toBitmap()
+            // ML Kit bounding box is based on the rotated image. We must rotate the raw bitmap to match.
+            val matrix = android.graphics.Matrix()
+            matrix.postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
+            val bitmap = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
 
             detector.process(image)
                 .addOnSuccessListener { faces ->

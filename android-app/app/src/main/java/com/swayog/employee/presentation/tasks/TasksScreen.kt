@@ -673,7 +673,10 @@ fun TaskDetailDialog(
                         )
 
                         // Before & After Photos section header
-                        Text(
+                        val requiresPhotos = task.jobType?.let { it.lowercase() in listOf("cleaning", "maintenance", "visit", "service") } == true
+
+                        if (requiresPhotos) {
+                            Text(
                             text = "📷 Before & After Photos (GPS Proof)",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
@@ -779,16 +782,17 @@ fun TaskDetailDialog(
                                 }
                             }
                         }
+                        }
 
                         SwayogButton(
                             text = if (isProcessing) "Processing..." else "Mark Task Completed",
-                            enabled = beforeImageUrl != null && afterImageUrl != null && completionMessage.trim().isNotBlank() && !isProcessing,
+                            enabled = (!requiresPhotos || (beforeImageUrl != null && afterImageUrl != null)) && completionMessage.trim().isNotBlank() && !isProcessing,
                             onClick = {
                                 if (completionMessage.trim().isBlank()) {
                                     Toast.makeText(context, "Completion description is required", Toast.LENGTH_SHORT).show()
-                                } else if (beforeImageUrl == null) {
+                                } else if (requiresPhotos && beforeImageUrl == null) {
                                     Toast.makeText(context, "Before Image is required", Toast.LENGTH_SHORT).show()
-                                } else if (afterImageUrl == null) {
+                                } else if (requiresPhotos && afterImageUrl == null) {
                                     Toast.makeText(context, "After Image is required", Toast.LENGTH_SHORT).show()
                                 } else {
                                     onCompleteTask(

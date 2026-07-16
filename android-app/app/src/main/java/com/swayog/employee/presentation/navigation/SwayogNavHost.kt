@@ -19,8 +19,13 @@ fun SwayogNavHost(
     navController: NavHostController = androidx.navigation.compose.rememberNavController(),
     startDestination: String = Screen.Login.route,
     isLoggedIn: Boolean = true,
+    userRole: String? = null,
+    jobRole: String? = null,
     onLogout: () -> Unit = {}
 ) {
+    val isServiceCoordinator = androidx.compose.runtime.remember(userRole, jobRole) {
+        userRole?.uppercase() == "SUB_ADMIN" || jobRole?.replace(" ", "")?.lowercase() == "servicecoordinator"
+    }
     androidx.compose.runtime.LaunchedEffect(isLoggedIn) {
         if (!isLoggedIn && navController.currentDestination?.route != Screen.Login.route) {
             navController.navigate(Screen.Login.route) {
@@ -132,54 +137,56 @@ fun SwayogNavHost(
             )
         }
 
-        composable(Screen.SubAdminCustomers.route) {
-            SubAdminCustomersScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToDetails = { customerId ->
-                    navController.navigate("subadmin_customer_details/$customerId")
-                }
-            )
-        }
+        if (isServiceCoordinator) {
+            composable(Screen.SubAdminCustomers.route) {
+                SubAdminCustomersScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToDetails = { customerId ->
+                        navController.navigate("subadmin_customer_details/$customerId")
+                    }
+                )
+            }
 
-        composable(
-            route = Screen.SubAdminCustomerDetails.route,
-            arguments = listOf(
-                androidx.navigation.navArgument("customerId") {
-                    type = androidx.navigation.NavType.IntType
-                }
-            )
-        ) {
-            SubAdminCustomerDetailsScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
+            composable(
+                route = Screen.SubAdminCustomerDetails.route,
+                arguments = listOf(
+                    androidx.navigation.navArgument("customerId") {
+                        type = androidx.navigation.NavType.IntType
+                    }
+                )
+            ) {
+                SubAdminCustomerDetailsScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.SubAdminComplaints.route) {
-            SubAdminComplaintsScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
+            composable(Screen.SubAdminComplaints.route) {
+                SubAdminComplaintsScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.SubAdminCalendar.route) {
-            SubAdminCalendarScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
+            composable(Screen.SubAdminCalendar.route) {
+                SubAdminCalendarScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.SubAdminMap.route) {
-            SubAdminMapScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
+            composable(Screen.SubAdminMap.route) {
+                SubAdminMapScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.SubAdminEmployees.route) {
-            SubAdminEmployeesScreen()
-        }
+            composable(Screen.SubAdminEmployees.route) {
+                SubAdminEmployeesScreen()
+            }
 
-        composable(Screen.SubAdminFinancials.route) {
-            SubAdminFinancialsScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+            composable(Screen.SubAdminFinancials.route) {
+                SubAdminFinancialsScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }

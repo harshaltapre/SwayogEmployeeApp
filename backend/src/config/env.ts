@@ -46,7 +46,7 @@ const envSchema = z.object({
   AUTH_LOGOUT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(300000),
   AUTH_ME_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
   AUTH_ME_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
-  AUTH_LOCKOUT_ENABLED: boolString.default("true"),
+  AUTH_LOCKOUT_ENABLED: boolString.default("false"),
   AUTH_LOCKOUT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_LOCKOUT_DURATION_MS: z.coerce.number().int().positive().default(900000),
   RAZORPAY_KEY_ID: z.string().default(""),

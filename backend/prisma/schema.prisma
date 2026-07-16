@@ -33,6 +33,7 @@ model User {
   lastFailedLoginAt   DateTime?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
+  profileImageUrl     String?
   AttendanceRecord    AttendanceRecord[]
   faceEnrollment      FaceEnrollment?
   checkIns            CheckIn[]

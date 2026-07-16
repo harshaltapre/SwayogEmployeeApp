@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { uploadProfilePhoto, buildAssetUrlFromPath } from "@/lib/api-client";
 import { Edit2, Upload, Mail, Phone, Briefcase, Calendar, Shield, Camera, Save, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -91,12 +92,19 @@ export default function EmployeeProfile() {
   if (!user) return null;
 
   const [isEditing, setIsEditing] = useState(false);
-  const [profilePhoto, setProfilePhoto] = useState(loadProfilePhoto(String(user.id)));
+  const [profilePhoto, setProfilePhoto] = useState(() => {
+    // Prefer server-synced URL, fall back to localStorage for backward compat
+    const serverUrl = buildAssetUrlFromPath(user.profileImageUrl);
+    if (serverUrl) return serverUrl;
+    return loadProfilePhoto(String(user.id));
+  });
+  const [isUploading, setIsUploading] = useState(false);
   const [profile, setProfile] = useState<EmployeeProfile>(() => {
     const loaded = loadProfileData(String(user.id), user);
+    const serverUrl = buildAssetUrlFromPath(user.profileImageUrl);
     return {
       ...loaded,
-      profilePhoto: loadProfilePhoto(String(user.id)),
+      profilePhoto: serverUrl || loadProfilePhoto(String(user.id)),
     };
   });
 
@@ -128,16 +136,44 @@ export default function EmployeeProfile() {
     }
 
     const reader = new FileReader();
-    reader.onloadend = () => {
+    reader.onloadend = async () => {
       const photoData = reader.result as string;
+      // Show preview immediately
       setProfilePhoto(photoData);
       setEditData({ ...editData, profilePhoto: photoData });
-      saveProfilePhoto(String(user.id), photoData);
+      setIsUploading(true);
 
-      toast({
-        title: "Photo Updated",
-        description: "Your profile photo has been updated successfully.",
-      });
+      try {
+        const result = await uploadProfilePhoto(photoData);
+        const serverUrl = buildAssetUrlFromPath(result.profileImageUrl);
+        if (serverUrl) {
+          setProfilePhoto(serverUrl);
+          setEditData((prev) => ({ ...prev, profilePhoto: serverUrl }));
+        }
+        // Also cache locally as fallback
+        saveProfilePhoto(String(user.id), photoData);
+
+        // Update user object in auth store so it persists across sessions
+        const authState = useAuth.getState();
+        if (authState.user) {
+          authState.login(authState.token!, { ...authState.user, profileImageUrl: result.profileImageUrl }, authState.refreshToken ?? undefined);
+        }
+
+        toast({
+          title: "Photo Synced",
+          description: "Your profile photo has been uploaded and synced to the server.",
+        });
+      } catch (err: any) {
+        // Keep local preview but warn user sync failed
+        saveProfilePhoto(String(user.id), photoData);
+        toast({
+          title: "Upload Warning",
+          description: err?.error || "Photo saved locally but could not sync to server. It will sync on next attempt.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsUploading(false);
+      }
     };
     reader.readAsDataURL(file);
   };

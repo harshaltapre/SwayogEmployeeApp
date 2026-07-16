@@ -30,7 +30,59 @@ data class Customer(
     val inverterDeviceSn: String?,
     val cleaningsPerMonth: Int? = null,
     val completedVisits: Int? = null,
-    val pendingVisits: Int? = null
+    val pendingVisits: Int? = null,
+    // AMC Settings fields
+    val clientType: String? = null,
+    val consumerNumber: String? = null,
+    val contractStartDate: String? = null,
+    val contractEndDate: String? = null,
+    val monthlyCleaningRate: Double? = null,
+    val paymentTerms: String? = null,
+    val remarks: String? = null,
+    val cleaningWindow1: String? = null,
+    val cleaningWindow2: String? = null,
+    val cleaningWindow3: String? = null,
+    val cleaningWindow4: String? = null,
+    val cleaningWindow5: String? = null,
+    val cleaningWindow6: String? = null,
+    val cleaningWindow7: String? = null,
+    val cleaningWindow8: String? = null,
+    val assignedEmployeeId: String? = null,
+    // Apartment fields
+    val apartmentId: Int? = null,
+    val apartment: Apartment? = null
+)
+
+data class Apartment(
+    val id: Int,
+    val name: String,
+    val address: String?,
+    val city: String?
+)
+
+data class UpdateAmcSettingsRequest(
+    val clientType: String,
+    val consumerNumber: String?,
+    val monthlyCleaningRate: Double,
+    val cleaningsPerMonth: Int,
+    val cleaningWindow1: String,
+    val cleaningWindow2: String?,
+    val cleaningWindow3: String?,
+    val cleaningWindow4: String?,
+    val cleaningWindow5: String?,
+    val cleaningWindow6: String?,
+    val cleaningWindow7: String?,
+    val cleaningWindow8: String?,
+    val nextSurveyDate: String?,
+    val paymentTerms: String?,
+    val remarks: String?,
+    val assignedEmployeeId: String?,
+    val useVariableTiming: Boolean,
+    val cleaningTimeSlot1: String,
+    val cleaningTimeSlot2: String,
+    val cleaningTimeSlot3: String,
+    val cleaningTimeSlot4: String,
+    val scheduleMonth: String
 )
 
 data class CustomerSummary(

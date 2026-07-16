@@ -19,7 +19,7 @@ interface BulkTaskAssignModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const JOB_TYPES = ["Installation", "Service", "AMC Visit", "Complaint", "Survey"];
+const JOB_TYPES = ["Cleaning", "Maintenance", "Visit", "Service", "Installation", "Complaint", "Survey"];
 
 export function BulkTaskAssignModal({ open, onOpenChange }: BulkTaskAssignModalProps) {
   const { toast } = useToast();

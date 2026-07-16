@@ -301,14 +301,85 @@ class CustomerRepository @Inject constructor(
 
     }
 
+    suspend fun getAmcCustomers(): Result<List<Customer>> {
+        return try {
+            val response = apiService.getAmcCustomers()
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to fetch AMC customers"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateAmcSettings(
+        customerId: Int,
+        monthlyRate: Int?,
+        cleaningsPerMonth: Int?,
+        clientType: String,
+        consumerNumber: String
+    ): Result<Unit> {
+        return try {
+            val request = com.swayog.employee.data.model.AmcSettingsRequest(
+                monthlyRate = monthlyRate,
+                cleaningsPerMonth = cleaningsPerMonth,
+                clientType = clientType,
+                consumerNumber = consumerNumber
+            )
+            val response = apiService.updateAmcSettings(customerId, request)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to update AMC settings"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateApartmentAmcSettings(
+        apartmentId: Int,
+        monthlyRate: Int?,
+        cleaningsPerMonth: Int?,
+        clientType: String
+    ): Result<Unit> {
+        return try {
+            val request = com.swayog.employee.data.model.ApartmentAmcSettingsRequest(
+                monthlyRate = monthlyRate,
+                cleaningsPerMonth = cleaningsPerMonth,
+                clientType = clientType
+            )
+            val response = apiService.updateApartmentAmcSettings(apartmentId, request)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to update apartment AMC settings"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun importCustomersFromExcel(data: List<Map<String, String>>): Result<Unit> {
+        return try {
+            val response = apiService.importCustomersFromExcel(data)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to import customers"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     
 
     suspend fun updateCustomerCredentials(
-
         customerId: Int,
-
         request: UpdateCredentialsRequest
-
     ): Result<Customer> {
 
         return try {
@@ -432,9 +503,53 @@ class CustomerRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Result.failure(e)
-
         }
-
+    }
+    
+    suspend fun updateAmcSettings(
+        customerId: Int,
+        request: UpdateAmcSettingsRequest
+    ): Result<Customer> {
+        return try {
+            val response = apiService.updateAmcSettings(customerId, request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                val customer = response.body()!!.data!!
+                
+                // Update local cache for the basic fields
+                val entity = CustomerEntity(
+                    id = customer.id,
+                    customerCode = customer.customerCode,
+                    fullName = customer.fullName,
+                    email = customer.email,
+                    phoneNumber = customer.phoneNumber,
+                    city = customer.city,
+                    address = customer.address,
+                    systemSizeKw = customer.systemSizeKw,
+                    installationDate = customer.installationDate,
+                    warrantyExpiry = customer.warrantyExpiry,
+                    panelBrand = customer.panelBrand,
+                    inverterBrand = customer.inverterBrand,
+                    inverterModel = customer.inverterModel,
+                    amcStatus = customer.amcStatus,
+                    amcExpiryDate = customer.amcExpiryDate,
+                    status = customer.status,
+                    projectStage = customer.projectStage,
+                    latitude = customer.latitude,
+                    longitude = customer.longitude,
+                    inverterLoginId = customer.inverterLoginId,
+                    inverterPassword = customer.inverterPassword,
+                    inverterApiKey = customer.inverterApiKey,
+                    inverterDeviceSn = customer.inverterDeviceSn
+                )
+                customerDao.insertCustomer(entity)
+                
+                Result.success(customer)
+            } else {
+                Result.failure(Exception(response.body()?.message ?: "Failed to update AMC settings"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
 

@@ -23,6 +23,18 @@ class MainViewModel @Inject constructor(
         initialValue = false
     )
 
+    val userRole: StateFlow<String?> = dataStoreManager.userRole.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = null
+    )
+
+    val jobRole: StateFlow<String?> = dataStoreManager.jobRole.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = null
+    )
+
     val darkMode: StateFlow<Boolean> = dataStoreManager.darkMode.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,

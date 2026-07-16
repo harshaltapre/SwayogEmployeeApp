@@ -41,6 +41,9 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     private val _credentialsUpdateState = MutableStateFlow<CredentialsUpdateState>(CredentialsUpdateState.Idle)
     val credentialsUpdateState: StateFlow<CredentialsUpdateState> = _credentialsUpdateState.asStateFlow()
 
+    private val _amcSettingsUpdateState = MutableStateFlow<AmcSettingsUpdateState>(AmcSettingsUpdateState.Idle)
+    val amcSettingsUpdateState: StateFlow<AmcSettingsUpdateState> = _amcSettingsUpdateState.asStateFlow()
+
     private val _scheduleActionState = MutableStateFlow<ScheduleActionState>(ScheduleActionState.Idle)
     val scheduleActionState: StateFlow<ScheduleActionState> = _scheduleActionState.asStateFlow()
 
@@ -172,6 +175,28 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     fun resetUpdateState() {
         _credentialsUpdateState.value = CredentialsUpdateState.Idle
     }
+    
+    fun updateAmcSettings(request: UpdateAmcSettingsRequest) {
+        viewModelScope.launch {
+            if (customerId == null) {
+                _amcSettingsUpdateState.value = AmcSettingsUpdateState.Error("Invalid Customer ID")
+                return@launch
+            }
+            _amcSettingsUpdateState.value = AmcSettingsUpdateState.Loading
+            customerRepository.updateAmcSettings(customerId, request)
+                .onSuccess {
+                    _amcSettingsUpdateState.value = AmcSettingsUpdateState.Success(it)
+                    loadData()
+                }
+                .onFailure {
+                    _amcSettingsUpdateState.value = AmcSettingsUpdateState.Error(it.message ?: "Failed to update AMC settings")
+                }
+        }
+    }
+    
+    fun resetAmcSettingsUpdateState() {
+        _amcSettingsUpdateState.value = AmcSettingsUpdateState.Idle
+    }
 
     fun scheduleAmcVisit(
         scheduledDate: String,
@@ -215,6 +240,13 @@ sealed class CredentialsUpdateState {
     object Loading : CredentialsUpdateState()
     data class Success(val customer: Customer) : CredentialsUpdateState()
     data class Error(val message: String) : CredentialsUpdateState()
+}
+
+sealed class AmcSettingsUpdateState {
+    object Idle : AmcSettingsUpdateState()
+    object Loading : AmcSettingsUpdateState()
+    data class Success(val customer: Customer) : AmcSettingsUpdateState()
+    data class Error(val message: String) : AmcSettingsUpdateState()
 }
 
 sealed class ScheduleActionState {

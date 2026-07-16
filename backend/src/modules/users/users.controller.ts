@@ -1,6 +1,9 @@
+import fs from "fs";
+import path from "path";
 import type { Request, Response } from "express";
 import { UserRole } from "@prisma/client";
 
+import { prisma } from "../../lib/prisma.js";
 import type { AuthContext } from "../../middleware/auth.js";
 import { ApiError } from "../../middleware/error.js";
 import {
@@ -99,4 +102,56 @@ export async function deleteInternalUserHandler(
   const params = req.params as unknown as InternalUserParamsInput;
   const data = await deleteInternalUser(auth.userId, auth.role, params.userId);
   res.status(200).json({ data });
+}
+
+export async function uploadProfilePhotoHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const auth = getAuth(req);
+  const { photoDataUrl } = req.body;
+
+  if (!photoDataUrl || typeof photoDataUrl !== "string") {
+    res.status(400).json({ error: "Missing or invalid photoDataUrl" });
+    return;
+  }
+
+  const matches = photoDataUrl.match(
+    /^data:(image\/(png|jpeg|jpg|webp));base64,(.+)$/,
+  );
+  if (!matches) {
+    res.status(400).json({ error: "Invalid image format. Must be a base64 data URL." });
+    return;
+  }
+
+  const base64Data = matches[3];
+  const uploadsDir = path.join(process.cwd(), "uploads", "profiles");
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  const filename = `${Date.now()}_${auth.userId}.jpg`;
+  const outPath = path.join(uploadsDir, filename);
+
+  try {
+    fs.writeFileSync(outPath, Buffer.from(base64Data, "base64"));
+    const profileImageUrl = `/uploads/profiles/${filename}`;
+
+    const updatedUser = await prisma.user.update({
+      where: { id: auth.userId },
+      data: { profileImageUrl },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        profileImageUrl: true,
+      },
+    });
+
+    res.json({ message: "Profile photo updated successfully", data: updatedUser });
+  } catch (err) {
+    console.error("Error saving profile photo:", err);
+    res.status(500).json({ error: "Failed to save profile photo" });
+  }
 }
