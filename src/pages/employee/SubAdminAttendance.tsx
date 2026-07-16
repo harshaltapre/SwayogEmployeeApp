@@ -618,6 +618,7 @@ export default function SubAdminAttendance() {
 
   // ── Stats ───────────────────────────────────────────────────────────────────
   // Calculate working days up to today (or end of month if target month is in the past)
+  // Company works 6 days/week (Mon–Sat); only Sunday is a day off
   const getWorkingDaysCount = (y: number, m: number) => {
     let count = 0;
     const today = new Date();
@@ -626,7 +627,7 @@ export default function SubAdminAttendance() {
     
     while (current <= endLimit && current <= today) {
       const day = current.getDay();
-      if (day !== 0 && day !== 6) { // skip Sat & Sun
+      if (day !== 0) { // skip Sun only (0=Sun, 6=Sat is a working day)
         count++;
       }
       current.setDate(current.getDate() + 1);

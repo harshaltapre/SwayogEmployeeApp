@@ -461,6 +461,7 @@ fun AttendanceScreen(
                         val currentMonth = calendarMonth
 
                         // Calculate working days up to today for the displayed month
+                        // Company works 6 days/week (Mon–Sat); only Sunday is a day off
                         val workingDays: Int = remember(currentYear, currentMonth) {
                             var count = 0
                             val today = Calendar.getInstance()
@@ -474,7 +475,7 @@ fun AttendanceScreen(
                                 target.set(Calendar.DAY_OF_MONTH, day)
                                 if (target.after(today)) break
                                 val dow = target.get(Calendar.DAY_OF_WEEK)
-                                if (dow != Calendar.SATURDAY && dow != Calendar.SUNDAY) count++
+                                if (dow != Calendar.SUNDAY) count++ // only Sunday off
                                 day++
                             }
                             count
