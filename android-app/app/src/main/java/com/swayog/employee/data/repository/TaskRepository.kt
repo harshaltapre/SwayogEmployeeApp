@@ -81,9 +81,9 @@ class TaskRepository @Inject constructor(
     
     suspend fun refreshTasks(employeeUserId: String): Result<List<Task>> {
         return try {
-            val response = apiService.getEmployeeTasks(employeeUserId)
+            val response = apiService.getTasks(employeeUserId)
             if (response.isSuccessful && response.body()?.data != null) {
-                val tasks = response.body()!!.data!!.tasks
+                val tasks = response.body()!!.data!!
                 withContext(Dispatchers.IO) {
                     val entities = tasks.map { task ->
                         TaskEntity(
