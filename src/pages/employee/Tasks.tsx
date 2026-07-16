@@ -23,18 +23,18 @@ import { cn } from "@/lib/utils";
 
 // ─── Status colour map ────────────────────────────────────────────────────────
 const statusColor: Record<string, string> = {
-  assigned:    "bg-blue-100 text-blue-700 border-blue-200",
+  assigned: "bg-blue-100 text-blue-700 border-blue-200",
   in_progress: "bg-amber-100 text-amber-700 border-amber-200",
-  completed:   "bg-emerald-100 text-emerald-700 border-emerald-200",
-  cancelled:   "bg-red-100 text-red-700 border-red-200",
+  completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  cancelled: "bg-red-100 text-red-700 border-red-200",
 };
 
 const jobTypeIcon: Record<string, string> = {
   Installation: "🔧",
-  Service:      "🛠️",
-  "AMC Visit":  "📋",
-  Complaint:    "⚠️",
-  Survey:       "📐",
+  Service: "🛠️",
+  "AMC Visit": "📋",
+  Complaint: "⚠️",
+  Survey: "📐",
 };
 
 // ─── Mock notes per task (keyed by task id) ────────────────────────────────────
@@ -73,7 +73,7 @@ function watermarkImage(file: File, label: string): Promise<string> {
           resolve(reader.result as string);
           return;
         }
-        
+
         // Standardize sizing
         const maxDim = 1200;
         let w = img.width;
@@ -87,7 +87,7 @@ function watermarkImage(file: File, label: string): Promise<string> {
             h = maxDim;
           }
         }
-        
+
         canvas.width = w;
         canvas.height = h;
         ctx.drawImage(img, 0, 0, w, h);
@@ -200,8 +200,8 @@ function TaskDetailDrawer({
     task.jobType === "Complaint"
       ? { label: "High Priority", cls: "bg-red-100 text-red-700 border-red-200" }
       : task.jobType === "Installation"
-      ? { label: "Standard", cls: "bg-blue-100 text-blue-700 border-blue-200" }
-      : { label: "Normal", cls: "bg-slate-100 text-slate-600 border-slate-200" };
+        ? { label: "Standard", cls: "bg-blue-100 text-blue-700 border-blue-200" }
+        : { label: "Normal", cls: "bg-slate-100 text-slate-600 border-slate-200" };
 
   return (
     <>
@@ -224,7 +224,7 @@ function TaskDetailDrawer({
             </button>
             <div>
               <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-lg">{jobTypeIcon[task.jobType] ?? "📌"}</span>
+                <span className="text-lg">{jobTypeIcon[task.jobType] ?? " "}</span>
                 <span className="font-semibold text-sm text-slate-300 uppercase tracking-wide">
                   {task.jobType}
                 </span>
@@ -291,7 +291,7 @@ function TaskDetailDrawer({
                 <div>
                   <div>{task.address}</div>
                   <a
-                    href={task.latitude && task.longitude 
+                    href={task.latitude && task.longitude
                       ? `https://www.google.com/maps?q=${task.latitude},${task.longitude}`
                       : `https://maps.google.com/?q=${encodeURIComponent(task.address)}`}
                     target="_blank"
@@ -378,15 +378,15 @@ function TaskDetailDrawer({
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Camera className="h-4 w-4" /> Before & After Photos (GPS Proof)
               </h3>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col items-center gap-2 border border-dashed rounded-xl p-3 bg-slate-50/50 hover:bg-slate-50 transition-colors">
                   <span className="text-[10px] font-bold text-slate-550 uppercase">Before Work</span>
                   {beforeImage ? (
                     <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-slate-200">
                       <img src={beforeImage} alt="Before" className="w-full h-full object-cover" />
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={() => { setBeforeImage(null); setBeforeLat(null); setBeforeLng(null); }}
                         className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors"
                       >
@@ -403,10 +403,10 @@ function TaskDetailDrawer({
                           <span className="text-[9px] text-slate-500 font-semibold">Upload Photo</span>
                         </>
                       )}
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
                         onChange={(e) => handlePhotoSelect(e, "before")}
                         disabled={isProcessingBefore}
                       />
@@ -422,8 +422,8 @@ function TaskDetailDrawer({
                   {afterImage ? (
                     <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-slate-200">
                       <img src={afterImage} alt="After" className="w-full h-full object-cover" />
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={() => { setAfterImage(null); setAfterLat(null); setAfterLng(null); }}
                         className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors"
                       >
@@ -440,10 +440,10 @@ function TaskDetailDrawer({
                           <span className="text-[9px] text-slate-500 font-semibold">Upload Photo</span>
                         </>
                       )}
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
                         onChange={(e) => handlePhotoSelect(e, "after")}
                         disabled={isProcessingAfter}
                       />
@@ -463,7 +463,7 @@ function TaskDetailDrawer({
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Camera className="h-4 w-4" /> Location & Work Proof Photos
               </h3>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 {task.beforeImageUrl && (
                   <div className="flex flex-col items-center gap-2 border rounded-xl p-3 bg-slate-50">
@@ -472,9 +472,9 @@ function TaskDetailDrawer({
                       <img src={task.beforeImageUrl} alt="Before" className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
                     </a>
                     {task.beforeLatitude && task.beforeLongitude && (
-                      <a 
-                        href={`https://www.google.com/maps?q=${task.beforeLatitude},${task.beforeLongitude}`} 
-                        target="_blank" 
+                      <a
+                        href={`https://www.google.com/maps?q=${task.beforeLatitude},${task.beforeLongitude}`}
+                        target="_blank"
                         rel="noreferrer"
                         className="text-[9px] font-mono text-blue-600 hover:underline"
                       >
@@ -491,9 +491,9 @@ function TaskDetailDrawer({
                       <img src={task.afterImageUrl} alt="After" className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
                     </a>
                     {task.afterLatitude && task.afterLongitude && (
-                      <a 
-                        href={`https://www.google.com/maps?q=${task.afterLatitude},${task.afterLongitude}`} 
-                        target="_blank" 
+                      <a
+                        href={`https://www.google.com/maps?q=${task.afterLatitude},${task.afterLongitude}`}
+                        target="_blank"
                         rel="noreferrer"
                         className="text-[9px] font-mono text-blue-600 hover:underline"
                       >
@@ -695,8 +695,8 @@ export default function EmployeeTasks() {
   ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const handleMarkComplete = (id: number, payload?: any) => {
-    completeTaskMutation.mutate({ 
-      taskId: id, 
+    completeTaskMutation.mutate({
+      taskId: id,
       data: {
         message: payload?.message || "Task mechanically marked as complete.",
         documentUrl: payload?.documentUrl,
@@ -859,12 +859,12 @@ export default function EmployeeTasks() {
 
   return (
     <SidebarLayout>
-      <PageHeader 
-        title="My Tasks" 
-        description="Manage your assigned installations and services." 
+      <PageHeader
+        title="My Tasks"
+        description="Manage your assigned installations and services."
         action={
           reportsToSomeone ? (
-            <Button 
+            <Button
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 rounded-xl shadow-md border-0 shrink-0"
               onClick={() => setIsDailyTaskOpen(true)}
             >

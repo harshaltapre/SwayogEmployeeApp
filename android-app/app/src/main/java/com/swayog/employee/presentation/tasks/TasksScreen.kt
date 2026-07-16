@@ -285,7 +285,7 @@ fun TaskCard(
         "amc visit" -> "📋"
         "complaint" -> "⚠️"
         "survey" -> "📐"
-        else -> "📌"
+        else -> " "
     }
 
     val statusColor = when (task.status?.lowercase()) {
@@ -539,7 +539,7 @@ fun TaskDetailDialog(
         "amc visit" -> "📋"
         "complaint" -> "⚠️"
         "survey" -> "📐"
-        else -> "📌"
+        else -> " "
     }
 
     Dialog(onDismissRequest = onDismiss) {

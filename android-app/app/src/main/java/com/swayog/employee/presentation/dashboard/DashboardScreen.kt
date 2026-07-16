@@ -705,7 +705,7 @@ fun TaskItem(task: com.swayog.employee.data.model.Task) {
         "amc visit" -> "📋"
         "complaint" -> "⚠️"
         "survey" -> "📐"
-        else -> "📌"
+        else -> " "
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
