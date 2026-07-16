@@ -299,12 +299,12 @@ fun AttendanceScreen(
                                         )
                                         if (record != null) {
                                             Text(
-                                                text = "In: ${record.checkInTime?.substringAfter("T")?.substringBefore(".") ?: ""}",
+                                                text = "In: ${formatUtcToLocalTime(record.checkInTime)}",
                                                 style = MaterialTheme.typography.bodyMedium
                                             )
                                             if (record.checkOutTime != null) {
                                                 Text(
-                                                    text = "Out: ${record.checkOutTime.substringAfter("T").substringBefore(".")}",
+                                                    text = "Out: ${formatUtcToLocalTime(record.checkOutTime)}",
                                                     style = MaterialTheme.typography.bodyMedium
                                                 )
                                             }
@@ -372,23 +372,21 @@ fun AttendanceScreen(
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(Color.LightGray)
                                 ) {
-                                    GoogleMap(
-                                        modifier = Modifier.fillMaxSize(),
-                                        cameraPositionState = cameraPositionState
-                                    ) {
-                                        Marker(
-                                            state = MarkerState(position = mapCenter),
-                                            title = "Your Location",
-                                            snippet = "Verification Spot"
-                                        )
-                                        Circle(
-                                            center = mapCenter,
-                                            radius = 100.0,
-                                            fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                            strokeColor = MaterialTheme.colorScheme.primary,
-                                            strokeWidth = 2f
-                                        )
-                                    }
+                                    androidx.compose.ui.viewinterop.AndroidView(
+                                        factory = { context ->
+                                            android.webkit.WebView(context).apply {
+                                                settings.javaScriptEnabled = true
+                                                webViewClient = android.webkit.WebViewClient()
+                                            }
+                                        },
+                                        update = { webView ->
+                                            val lat = currentLatitude ?: 18.5204
+                                            val lon = currentLongitude ?: 73.8567
+                                            val url = "https://www.openstreetmap.org/export/embed.html?bbox=${lon - 0.005}%2C${lat - 0.003}%2C${lon + 0.005}%2C${lat + 0.003}&layer=mapnik&marker=${lat}%2C${lon}"
+                                            webView.loadUrl(url)
+                                        },
+                                        modifier = Modifier.fillMaxSize()
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -459,55 +457,108 @@ fun AttendanceScreen(
 
                     // Monthly Performance Stats
                     item {
-                        val perf = performance
-                        if (perf != null) {
-                            SwayogCard {
-                                Text(
-                                    text = "This Month's Summary",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceEvenly
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = perf.daysPresent.toString(),
-                                            style = MaterialTheme.typography.headlineMedium,
-                                            color = Color(0xFF0B6E4F), // BrandGreen
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(text = "Present", style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = perf.daysAbsent.toString(),
-                                            style = MaterialTheme.typography.headlineMedium,
-                                            color = MaterialTheme.colorScheme.error,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(text = "Absent", style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = "${perf.attendancePercent}%",
-                                            style = MaterialTheme.typography.headlineMedium,
-                                            color = Color(0xFF386FA4), // BrandBlue
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(text = "Rate", style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = String.format("%.1f", perf.totalHoursLogged),
-                                            style = MaterialTheme.typography.headlineMedium,
-                                            color = Color(0xFFD1603D), // BrandOrange
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(text = "Hours", style = MaterialTheme.typography.bodySmall)
-                                    }
+                        val currentYear = calendarYear
+                        val currentMonth = calendarMonth
+
+                        // Calculate working days up to today for the displayed month
+                        val workingDays: Int = remember(currentYear, currentMonth) {
+                            var count = 0
+                            val today = Calendar.getInstance()
+                            val target = Calendar.getInstance()
+                            target.set(Calendar.YEAR, currentYear)
+                            target.set(Calendar.MONTH, currentMonth)
+                            target.set(Calendar.DAY_OF_MONTH, 1)
+                            val daysInMonth = target.getActualMaximum(Calendar.DAY_OF_MONTH)
+                            var day = 1
+                            while (day <= daysInMonth) {
+                                target.set(Calendar.DAY_OF_MONTH, day)
+                                if (target.after(today)) break
+                                val dow = target.get(Calendar.DAY_OF_WEEK)
+                                if (dow != Calendar.SATURDAY && dow != Calendar.SUNDAY) count++
+                                day++
+                            }
+                            count
+                        }
+
+                        // Filter monthly records to the displayed month
+                        val monthStr = String.format("%04d-%02d", currentYear, currentMonth + 1)
+                        val filteredRecords: List<com.swayog.employee.data.model.AttendanceRecord> =
+                            remember(monthlyRecords, currentYear, currentMonth) {
+                                monthlyRecords.filter { rec -> rec.date.startsWith(monthStr) }
+                            }
+
+                        val presentCount: Int = remember(filteredRecords) {
+                            filteredRecords.count { rec ->
+                                val s = rec.status.uppercase()
+                                s == "PRESENT" || s == "LATE" || s == "HALF_DAY" || s == "HALF-DAY"
+                            }
+                        }
+                        val fullPresentCount: Int = remember(filteredRecords) {
+                            filteredRecords.count { rec ->
+                                val s = rec.status.uppercase()
+                                s == "PRESENT" || s == "LATE"
+                            }
+                        }
+                        val halfDaysCount: Int = remember(filteredRecords) {
+                            filteredRecords.count { rec ->
+                                val s = rec.status.uppercase()
+                                s == "HALF_DAY" || s == "HALF-DAY"
+                            }
+                        }
+                        val absentCount: Int = maxOf(0, workingDays - fullPresentCount - halfDaysCount)
+                        val attendancePercent: Int = if (workingDays > 0) {
+                            Math.round(((fullPresentCount + halfDaysCount * 0.5) / workingDays.toDouble()) * 100).toInt()
+                        } else 0
+                        val totalHours: Double = remember(filteredRecords) {
+                            filteredRecords.sumOf { rec -> (rec.totalMinutes ?: 0) / 60.0 }
+                        }
+
+                        SwayogCard {
+                            Text(
+                                text = "This Month's Summary",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = presentCount.toString(),
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        color = Color(0xFF0B6E4F),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(text = "Present", style = MaterialTheme.typography.bodySmall)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = absentCount.toString(),
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(text = "Absent", style = MaterialTheme.typography.bodySmall)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "${attendancePercent}%",
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        color = Color(0xFF386FA4),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(text = "Rate", style = MaterialTheme.typography.bodySmall)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = String.format("%.1f", totalHours),
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        color = Color(0xFFD1603D),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(text = "Hours", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }
@@ -600,7 +651,7 @@ fun AttendanceScreen(
                                                     set(calendarYear, calendarMonth, day)
                                                 }
                                                 val dateStr = dateFormat.format(cellCal.time)
-                                                val record = monthlyRecords.find { it.date == dateStr }
+                                                val record = monthlyRecords.find { it.date.substringBefore("T") == dateStr }
 
                                                 val dotColor = when (record?.status?.uppercase()) {
                                                     "PRESENT" -> Color(0xFF0B6E4F) // BrandGreen
@@ -714,12 +765,12 @@ fun AttendanceScreen(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = log.date,
+                                            text = formatUtcToLocalDate(log.date),
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = "In: ${log.checkInTime?.substringAfter("T")?.substringBefore(".") ?: "N/A"} | Out: ${log.checkOutTime?.substringAfter("T")?.substringBefore(".") ?: "N/A"}",
+                                            text = "In: ${formatUtcToLocalTime(log.checkInTime)} | Out: ${formatUtcToLocalTime(log.checkOutTime)}",
                                             style = MaterialTheme.typography.bodySmall
                                         )
                                         if (log.totalMinutes != null && log.totalMinutes > 0) {
@@ -906,5 +957,41 @@ fun CalendarLegendItem(color: Color, label: String) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
+    }
+}
+
+private fun formatUtcToLocalTime(isoString: String?): String {
+    if (isoString.isNullOrBlank()) return "N/A"
+    return try {
+        val cleanIso = if (isoString.contains(".")) isoString.substringBefore(".") else isoString.substringBefore("Z")
+        val cleanIsoTime = if (cleanIso.contains("T")) cleanIso else "${cleanIso}T00:00:00"
+        
+        val utcFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault()).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+        val date = utcFormat.parse(cleanIsoTime) ?: return "N/A"
+        
+        val localFormat = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).apply {
+            timeZone = java.util.TimeZone.getDefault()
+        }
+        localFormat.format(date)
+    } catch (e: Exception) {
+        isoString.substringAfter("T").substringBefore(".")
+    }
+}
+
+private fun formatUtcToLocalDate(isoString: String?): String {
+    if (isoString.isNullOrBlank()) return "N/A"
+    return try {
+        val cleanIso = isoString.substringBefore("T")
+        val utcFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+        val date = utcFormat.parse(cleanIso) ?: return "N/A"
+        
+        val localFormat = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
+        localFormat.format(date)
+    } catch (e: Exception) {
+        isoString.substringBefore("T")
     }
 }

@@ -9,6 +9,7 @@ import com.swayog.employee.data.model.UpdateServiceRequestRequest
 import com.swayog.employee.data.model.User
 import com.swayog.employee.data.repository.CustomerRepository
 import com.swayog.employee.data.repository.EmployeeRepository
+import com.swayog.employee.data.local.preferences.DataStoreManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,7 +22,8 @@ import javax.inject.Inject
 @HiltViewModel
 class SubAdminMapViewModel @Inject constructor(
     private val customerRepository: CustomerRepository,
-    private val employeeRepository: EmployeeRepository
+    private val employeeRepository: EmployeeRepository,
+    private val dataStoreManager: DataStoreManager
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -62,6 +64,7 @@ class SubAdminMapViewModel @Inject constructor(
                         .onFailure { error ->
                             if (com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
                                 _errorMessage.value = "Session expired. Redirecting..."
+                                viewModelScope.launch { dataStoreManager.clearAll() }
                             } else {
                                 _errorMessage.value = com.swayog.employee.core.util.ErrorUtils.formatException(error)
                             }

@@ -34,7 +34,10 @@ object ErrorUtils {
      * Checks if the exception is a 401 Unauthorized.
      */
     fun isUnauthorized(e: Throwable?): Boolean {
-        return e is retrofit2.HttpException && e.code() == 401
+        if (e == null) return false
+        if (e is retrofit2.HttpException && e.code() == 401) return true
+        val message = e.message ?: ""
+        return message.contains("401") || message.contains("Unauthorized", ignoreCase = true)
     }
 
     /**

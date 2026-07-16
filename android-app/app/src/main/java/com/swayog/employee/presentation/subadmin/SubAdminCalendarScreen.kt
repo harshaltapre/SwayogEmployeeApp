@@ -249,8 +249,14 @@ fun CalendarEventDetailsDialog(
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
+                    val (typeColor, typeBg) = when {
+                        event.type.contains("AMC", ignoreCase = true) -> Color(0xFF10B981) to Color(0xFFD1FAE5)
+                        event.type.contains("Task", ignoreCase = true) -> Color(0xFF8B5CF6) to Color(0xFFEDE9FE)
+                        event.type.contains("Holiday", ignoreCase = true) || event.type.contains("Festival", ignoreCase = true) -> Color(0xFFF59E0B) to Color(0xFFFEF3C7)
+                        else -> Color(0xFF3B82F6) to Color(0xFFDBEAFE)
+                    }
                     Surface(
-                        color = if (isAmc) Color(0xFFD1FAE5) else Color(0xFFDBEAFE),
+                        color = typeBg,
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
@@ -258,7 +264,7 @@ fun CalendarEventDetailsDialog(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = if (isAmc) Color(0xFF10B981) else Color(0xFF3B82F6)
+                            color = typeColor
                         )
                     }
                 }
@@ -280,10 +286,10 @@ fun CalendarEventDetailsDialog(
                     Text(text = "Address / Location", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                     Text(text = event.address, style = MaterialTheme.typography.bodyMedium)
 
-                    if (isAmc) {
+                    if (event.assignedEmployeeId != null) {
                         Text(text = "Assigned Personnel", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                         Text(
-                            text = assignedEmployee?.let { "${it.fullName} - ${it.role}" } ?: "Unassigned",
+                            text = assignedEmployee?.let { "${it.fullName} - ${it.role}" } ?: "Unassigned (ID: ${event.assignedEmployeeId})",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -684,11 +690,11 @@ fun UpdateAmcVisitDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarEventItem(event: CalendarEvent, onClick: () -> Unit = {}) {
-    val isAmc = event.type.contains("AMC", ignoreCase = true)
-    val (typeColor, typeBg) = if (isAmc) {
-        Color(0xFF10B981) to Color(0xFFD1FAE5) // Green
-    } else {
-        Color(0xFF3B82F6) to Color(0xFFDBEAFE) // Blue
+    val (typeColor, typeBg) = when {
+        event.type.contains("AMC", ignoreCase = true) -> Color(0xFF10B981) to Color(0xFFD1FAE5) // Green
+        event.type.contains("Task", ignoreCase = true) -> Color(0xFF8B5CF6) to Color(0xFFEDE9FE) // Purple
+        event.type.contains("Holiday", ignoreCase = true) || event.type.contains("Festival", ignoreCase = true) -> Color(0xFFF59E0B) to Color(0xFFFEF3C7) // Amber/Orange
+        else -> Color(0xFF3B82F6) to Color(0xFFDBEAFE) // Blue (Complaints)
     }
 
     SwayogCard(

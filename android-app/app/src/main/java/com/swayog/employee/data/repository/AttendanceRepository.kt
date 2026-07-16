@@ -78,7 +78,14 @@ class AttendanceRepository @Inject constructor(
                 
                 Result.success(checkInResponse)
             } else {
-                Result.failure(Exception("Check-in failed"))
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        org.json.JSONObject(body).optString("error", "Check-in failed")
+                    } ?: "Check-in failed"
+                } catch (e: Exception) {
+                    "Check-in failed"
+                }
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
