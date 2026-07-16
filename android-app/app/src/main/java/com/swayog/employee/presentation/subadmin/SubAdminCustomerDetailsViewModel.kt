@@ -48,21 +48,26 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
 
     init {
+        android.util.Log.d("SubAdminDetails", "ViewModel init. customerId: $customerId")
         loadData()
     }
 
     fun loadData() {
         viewModelScope.launch {
             if (customerId == null) {
+                android.util.Log.e("SubAdminDetails", "Invalid Customer ID: null")
                 _summaryState.value = CustomerDetailsState.Error("Invalid Customer ID")
                 return@launch
             }
+            android.util.Log.d("SubAdminDetails", "Fetching summary for customerId: $customerId")
             _summaryState.value = CustomerDetailsState.Loading
             customerRepository.getCustomerSummary(customerId)
                 .onSuccess {
+                    android.util.Log.d("SubAdminDetails", "Summary fetch success: $it")
                     _summaryState.value = CustomerDetailsState.Success(it)
                 }
                 .onFailure {
+                    android.util.Log.e("SubAdminDetails", "Summary fetch failed: ${it.message}", it)
                     _summaryState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch summary")
                 }
         }

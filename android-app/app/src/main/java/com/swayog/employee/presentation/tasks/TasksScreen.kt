@@ -1,14 +1,23 @@
 package com.swayog.employee.presentation.tasks
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.net.Uri
+import android.util.Base64
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -17,14 +26,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.swayog.employee.data.model.Task
 import com.swayog.employee.presentation.common.components.*
+import com.swayog.employee.presentation.common.utils.WatermarkHelper
+import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 @Composable
 fun TasksScreen(
@@ -228,8 +247,18 @@ fun TasksScreen(
                             }
                         }
                     },
-                    onCompleteTask = { msg, doc, beforeImg, afterImg ->
-                        viewModel.completeTask(task.id, msg, doc, beforeImg, afterImg) { result ->
+                    onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng ->
+                        viewModel.completeTask(
+                            taskId = task.id,
+                            message = msg,
+                            documentUrl = doc,
+                            beforeImageUrl = beforeImg,
+                            afterImageUrl = afterImg,
+                            beforeLatitude = bLat,
+                            beforeLongitude = bLng,
+                            afterLatitude = aLat,
+                            afterLongitude = aLng
+                        ) { result ->
                             if (result.isSuccess) {
                                 selectedTask = null
                                 viewModel.refresh()
@@ -396,13 +425,113 @@ fun TaskDetailDialog(
     task: Task,
     onDismiss: () -> Unit,
     onStartTask: () -> Unit,
-    onCompleteTask: (String, String?, String?, String?) -> Unit
+    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?) -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var completionMessage by remember { mutableStateOf("") }
     var docUrl by remember { mutableStateOf("") }
+
+    // Photo state: watermarked base64 data URLs
     var beforeImageUrl by remember { mutableStateOf<String?>(null) }
     var afterImageUrl by remember { mutableStateOf<String?>(null) }
+    // Photo state: watermarked bitmaps for preview
+    var beforeBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var afterBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    // GPS coordinates captured at photo time
+    var beforeLat by remember { mutableStateOf<Double?>(null) }
+    var beforeLng by remember { mutableStateOf<Double?>(null) }
+    var afterLat by remember { mutableStateOf<Double?>(null) }
+    var afterLng by remember { mutableStateOf<Double?>(null) }
+    // Processing flag
+    var isProcessing by remember { mutableStateOf(false) }
+    // Which photo we're currently capturing ("before" or "after")
+    var pendingPhotoType by remember { mutableStateOf<String?>(null) }
+
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+
+    // Helper to get current GPS, watermark the bitmap, and convert to base64
+    fun processPhoto(bitmap: Bitmap, type: String) {
+        coroutineScope.launch {
+            isProcessing = true
+            try {
+                // Get current GPS location
+                var lat: Double? = null
+                var lng: Double? = null
+                try {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                        val location = fusedLocationClient.getCurrentLocation(
+                            Priority.PRIORITY_HIGH_ACCURACY,
+                            CancellationTokenSource().token
+                        ).await()
+                        lat = location?.latitude
+                        lng = location?.longitude
+                    }
+                } catch (_: Exception) { /* GPS unavailable, proceed without */ }
+
+                // Watermark the bitmap
+                val watermarked = WatermarkHelper.addWatermark(bitmap, lat, lng)
+
+                // Convert to base64 data URL
+                val outputStream = ByteArrayOutputStream()
+                watermarked.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+                val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+
+                if (type == "before") {
+                    beforeBitmap = watermarked
+                    beforeImageUrl = base64String
+                    beforeLat = lat
+                    beforeLng = lng
+                } else {
+                    afterBitmap = watermarked
+                    afterImageUrl = base64String
+                    afterLat = lat
+                    afterLng = lng
+                }
+                Toast.makeText(context, "${type.replaceFirstChar { it.uppercase() }} photo captured with GPS stamp ✓", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to process photo: ${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                isProcessing = false
+            }
+        }
+    }
+
+    // Camera launcher (returns a Bitmap thumbnail)
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null && pendingPhotoType != null) {
+            processPhoto(bitmap, pendingPhotoType!!)
+        }
+        pendingPhotoType = null
+    }
+
+    // Permission launcher for camera + location
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
+        if (cameraGranted && pendingPhotoType != null) {
+            cameraLauncher.launch(null)
+        } else if (!cameraGranted) {
+            Toast.makeText(context, "Camera permission is required to capture photos", Toast.LENGTH_SHORT).show()
+            pendingPhotoType = null
+        }
+    }
+
+    fun launchCamera(type: String) {
+        pendingPhotoType = type
+        val cameraGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (cameraGranted) {
+            cameraLauncher.launch(null)
+        } else {
+            permissionLauncher.launch(arrayOf(
+                Manifest.permission.CAMERA,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ))
+        }
+    }
 
     val jobTypeEmoji = when (task.jobType?.lowercase()) {
         "installation" -> "🔧"
@@ -417,12 +546,13 @@ fun TaskDetailDialog(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .wrapContentHeight(),
+                .fillMaxHeight(0.9f),
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -541,33 +671,118 @@ fun TaskDetailDialog(
                             label = "Document Link (Optional)",
                             placeholder = "URL of report blueprint, or proof"
                         )
-                        
+
+                        // Before & After Photos section header
+                        Text(
+                            text = "📷 Before & After Photos (GPS Proof)",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = { beforeImageUrl = "https://mock-image.com/before.jpg" },
+                            // Before Photo
+                            Column(
                                 modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = if (beforeImageUrl != null) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.primary
-                                )
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text(if (beforeImageUrl != null) "✓ Before Image" else "Upload Before Image")
+                                Text("Before Work", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                if (beforeBitmap != null) {
+                                    Box {
+                                        Image(
+                                            bitmap = beforeBitmap!!.asImageBitmap(),
+                                            contentDescription = "Before photo",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(120.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                beforeBitmap = null
+                                                beforeImageUrl = null
+                                                beforeLat = null
+                                                beforeLng = null
+                                            },
+                                            modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
+                                        ) {
+                                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { launchCamera("before") },
+                                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                                        enabled = !isProcessing,
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            if (isProcessing && pendingPhotoType == "before") {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                            } else {
+                                                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(28.dp))
+                                                Text("Take Photo", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            
-                            OutlinedButton(
-                                onClick = { afterImageUrl = "https://mock-image.com/after.jpg" },
+
+                            // After Photo
+                            Column(
                                 modifier = Modifier.weight(1f),
-                                enabled = beforeImageUrl != null, // Enforce order
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = if (afterImageUrl != null) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.primary
-                                )
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text(if (afterImageUrl != null) "✓ After Image" else "Upload After Image")
+                                Text("After Work", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                if (afterBitmap != null) {
+                                    Box {
+                                        Image(
+                                            bitmap = afterBitmap!!.asImageBitmap(),
+                                            contentDescription = "After photo",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(120.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                afterBitmap = null
+                                                afterImageUrl = null
+                                                afterLat = null
+                                                afterLng = null
+                                            },
+                                            modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
+                                        ) {
+                                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { launchCamera("after") },
+                                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                                        enabled = beforeImageUrl != null && !isProcessing,
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            if (isProcessing && pendingPhotoType == "after") {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                            } else {
+                                                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(28.dp))
+                                                Text("Take Photo", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
                         SwayogButton(
-                            text = "Mark Task Completed",
-                            enabled = beforeImageUrl != null && afterImageUrl != null && completionMessage.trim().isNotBlank(),
+                            text = if (isProcessing) "Processing..." else "Mark Task Completed",
+                            enabled = beforeImageUrl != null && afterImageUrl != null && completionMessage.trim().isNotBlank() && !isProcessing,
                             onClick = {
                                 if (completionMessage.trim().isBlank()) {
                                     Toast.makeText(context, "Completion description is required", Toast.LENGTH_SHORT).show()
@@ -576,7 +791,16 @@ fun TaskDetailDialog(
                                 } else if (afterImageUrl == null) {
                                     Toast.makeText(context, "After Image is required", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    onCompleteTask(completionMessage, docUrl.trim().ifEmpty { null }, beforeImageUrl, afterImageUrl)
+                                    onCompleteTask(
+                                        completionMessage,
+                                        docUrl.trim().ifEmpty { null },
+                                        beforeImageUrl,
+                                        afterImageUrl,
+                                        beforeLat,
+                                        beforeLng,
+                                        afterLat,
+                                        afterLng
+                                    )
                                 }
                             }
                         )

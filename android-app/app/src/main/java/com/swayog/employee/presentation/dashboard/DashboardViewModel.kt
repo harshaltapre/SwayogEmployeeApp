@@ -102,24 +102,33 @@ class DashboardViewModel @Inject constructor(
                 taskRes.onSuccess { taskList ->
                     _tasks.value = taskList
                 }.onFailure { error ->
-                    hasError = true
-                    errorMessage += "Tasks: ${error.message}. "
+                    if (com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
+                        errorMessage = "Session expired. Redirecting..."
+                        hasError = true
+                    } else {
+                        hasError = true
+                        errorMessage += "Tasks: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                    }
                     _tasks.value = emptyList()
                 }
 
                 attendanceRes.onSuccess { attendance ->
                     _todayAttendance.value = attendance
                 }.onFailure { error ->
-                    hasError = true
-                    errorMessage += "Attendance: ${error.message}. "
+                    if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
+                        hasError = true
+                        errorMessage += "Attendance: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                    }
                     _todayAttendance.value = null
                 }
 
                 perfRes.onSuccess { perf ->
                     _performance.value = perf
                 }.onFailure { error ->
-                    hasError = true
-                    errorMessage += "Performance: ${error.message}. "
+                    if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
+                        hasError = true
+                        errorMessage += "Performance: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                    }
                 }
             }
 
@@ -155,7 +164,7 @@ class DashboardViewModel @Inject constructor(
                     }
                     .onFailure { error ->
                         _dashboardState.value = DashboardState.Error(
-                            error.message ?: "Failed to save work description"
+                            com.swayog.employee.core.util.ErrorUtils.formatException(error)
                         )
                     }
             }
@@ -166,7 +175,7 @@ class DashboardViewModel @Inject constructor(
         title: String,
         description: String,
         hoursSpent: Double,
-        taskId: Int?,
+        taskId: String?,
         onResult: (Result<Unit>) -> Unit
     ) {
         viewModelScope.launch {
@@ -176,7 +185,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun submitSurvey(
-        taskId: Int?,
+        taskId: String?,
         customerId: Int?,
         roofType: String,
         lengthFt: Double,

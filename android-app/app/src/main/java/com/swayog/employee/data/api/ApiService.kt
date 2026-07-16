@@ -157,19 +157,19 @@ interface ApiService {
     
     @PATCH("tasks/{taskId}")
     suspend fun updateTask(
-        @Path("taskId") taskId: Int,
+        @Path("taskId") taskId: String,
         @Body request: UpdateTaskRequest
     ): Response<ApiResponse<Task>>
     
     @POST("tasks/{taskId}/assign")
     suspend fun assignTask(
-        @Path("taskId") taskId: Int,
+        @Path("taskId") taskId: String,
         @Body request: AssignTaskRequest
     ): Response<ApiResponse<Task>>
     
     @PATCH("tasks/{taskId}/complete")
     suspend fun completeTask(
-        @Path("taskId") taskId: Int,
+        @Path("taskId") taskId: String,
         @Body request: CompleteTaskRequest
     ): Response<ApiResponse<Task>>
     

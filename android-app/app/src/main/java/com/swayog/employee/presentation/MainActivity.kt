@@ -29,6 +29,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     SwayogNavHost(
+                        isLoggedIn = isLoggedIn,
                         startDestination = if (isLoggedIn) {
                             com.swayog.employee.presentation.navigation.Screen.Dashboard.route
                         } else {

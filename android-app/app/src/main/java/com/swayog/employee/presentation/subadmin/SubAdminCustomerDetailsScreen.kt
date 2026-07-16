@@ -38,12 +38,15 @@ fun SubAdminCustomerDetailsScreen(
     val generationState by viewModel.generationState.collectAsState()
     val historyState by viewModel.historyState.collectAsState()
     val amcVisitsState by viewModel.amcVisitsState.collectAsState()
+    val employees by viewModel.employees.collectAsState()
     val updateState by viewModel.credentialsUpdateState.collectAsState()
     val scheduleState by viewModel.scheduleActionState.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var isEditOpen by remember { mutableStateOf(false) }
     var isScheduleDialogOpen by remember { mutableStateOf(false) }
+
+    android.util.Log.d("SubAdminDetails", "Screen recomposing. Current state: ${summaryState::class.simpleName}")
 
     LaunchedEffect(updateState) {
         when (updateState) {
@@ -160,6 +163,7 @@ fun SubAdminCustomerDetailsScreen(
                             2 -> AmcTabContent(
                                 customer = customer,
                                 amcVisitsState = amcVisitsState,
+                                employees = employees,
                                 onScheduleClick = { isScheduleDialogOpen = true }
                             )
                         }
@@ -187,7 +191,6 @@ fun SubAdminCustomerDetailsScreen(
                 }
 
                 if (isScheduleDialogOpen) {
-                    val employees by viewModel.employees.collectAsState()
                     ScheduleAmcVisitDialog(
                         customer = customer,
                         employees = employees,
@@ -269,72 +272,59 @@ fun OverviewTabContent(
     ) {
         // Contact Details Card
         SwayogCard {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Contact Details",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                DetailRow(icon = Icons.Default.Email, label = "Email", value = customer.email)
-                DetailRow(icon = Icons.Default.Phone, label = "Phone", value = customer.phoneNumber)
-                DetailRow(icon = Icons.Default.LocationOn, label = "Address", value = "${customer.address ?: ""}, ${customer.city ?: ""}")
-            }
+            Text(
+                text = "Contact Details",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            DetailRow(icon = Icons.Default.Email, label = "Email", value = customer.email)
+            DetailRow(icon = Icons.Default.Phone, label = "Phone", value = customer.phoneNumber)
+            DetailRow(icon = Icons.Default.LocationOn, label = "Address", value = "${customer.address ?: ""}, ${customer.city ?: ""}")
         }
 
         // Service Stats Card
         SwayogCard {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Service Ticket Analytics",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Service Ticket Analytics",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(16.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    StatBox(label = "Total Issues", value = stats.total.toString(), color = MaterialTheme.colorScheme.primary)
-                    StatBox(label = "Pending", value = stats.pending.toString(), color = Color(0xFFEF4444))
-                    StatBox(label = "Scheduled", value = stats.inProgress.toString(), color = Color(0xFF3B82F6))
-                    StatBox(label = "Resolved", value = stats.completed.toString(), color = Color(0xFF10B981))
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                StatBox(label = "Total Issues", value = stats.total.toString(), color = MaterialTheme.colorScheme.primary)
+                StatBox(label = "Pending", value = stats.pending.toString(), color = Color(0xFFEF4444))
+                StatBox(label = "Scheduled", value = stats.inProgress.toString(), color = Color(0xFF3B82F6))
+                StatBox(label = "Resolved", value = stats.completed.toString(), color = Color(0xFF10B981))
             }
         }
 
         // Credentials Card
         SwayogCard {
-            Column(
-                modifier = Modifier.padding(16.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Inverter Credentials",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = onEditClick) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Credentials", tint = MaterialTheme.colorScheme.primary)
-                    }
+                Text(
+                    text = "Inverter Credentials",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(onClick = onEditClick) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Credentials", tint = MaterialTheme.colorScheme.primary)
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-
-                DetailRow(icon = Icons.Default.Settings, label = "Brand", value = customer.inverterBrand ?: "Not Specified")
-                DetailRow(icon = Icons.Default.QrCode, label = "Device SN", value = customer.inverterDeviceSn ?: "Not Linked")
-                DetailRow(icon = Icons.Default.VpnKey, label = "API Key", value = customer.inverterApiKey ?: "Not Configured")
-                DetailRow(icon = Icons.Default.AccountCircle, label = "Login ID", value = customer.inverterLoginId ?: "Not Configured")
             }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            DetailRow(icon = Icons.Default.Settings, label = "Brand", value = customer.inverterBrand ?: "Not Specified")
+            DetailRow(icon = Icons.Default.QrCode, label = "Device SN", value = customer.inverterDeviceSn ?: "Not Linked")
+            DetailRow(icon = Icons.Default.VpnKey, label = "API Key", value = customer.inverterApiKey ?: "Not Configured")
+            DetailRow(icon = Icons.Default.AccountCircle, label = "Login ID", value = customer.inverterLoginId ?: "Not Configured")
         }
     }
 }
@@ -501,6 +491,7 @@ fun InverterTabContent(
 fun AmcTabContent(
     customer: Customer,
     amcVisitsState: CustomerDetailsState<List<AmcVisit>>,
+    employees: List<Employee>,
     onScheduleClick: () -> Unit
 ) {
     val statusUpper = customer.amcStatus.uppercase()
@@ -589,7 +580,7 @@ fun AmcTabContent(
                             Text(text = "No AMC visits recorded yet.", color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
                         } else {
                             visits.forEach { visit ->
-                                AmcVisitTimelineItem(visit = visit)
+                                AmcVisitTimelineItem(visit = visit, employees = employees)
                                 Spacer(modifier = Modifier.height(12.dp))
                             }
                         }
@@ -601,53 +592,111 @@ fun AmcTabContent(
 }
 
 @Composable
-fun AmcVisitTimelineItem(visit: AmcVisit) {
+fun AmcVisitTimelineItem(visit: AmcVisit, employees: List<com.swayog.employee.data.model.Employee> = emptyList()) {
     val isCompleted = visit.status.equals("completed", ignoreCase = true)
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                modifier = Modifier
-                    .size(16.dp)
-                    .background(
-                        if (isCompleted) Color(0xFF10B981) else Color(0xFFF59E0B),
-                        CircleShape
-                    )
-            )
-            Box(
-                modifier = Modifier
-                    .width(2.dp)
-                    .height(50.dp)
-                    .background(Color.LightGray)
-            )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Cleaning #${visit.cleaningNumber ?: 1}",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "Scheduled: ${visit.scheduledDate} ${visit.timeSlot ?: ""}",
-                fontSize = 12.sp,
-                color = Color.Gray
-            )
-            if (!visit.visitNotes.isNullOrBlank()) {
-                Text(
-                    text = "Notes: ${visit.visitNotes}",
-                    fontSize = 12.sp,
-                    color = Color.DarkGray,
-                    modifier = Modifier.padding(top = 4.dp)
+    
+    val assignedEmployee = employees.find { it.id == visit.assignedEmployeeId || it.loginId == visit.assignedEmployeeId }
+    val employeeName = assignedEmployee?.fullName ?: visit.assignedEmployeeId ?: "Unassigned"
+    val customerName = visit.customer?.fullName ?: "Customer #${visit.customerId}"
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+    ) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .background(
+                            if (isCompleted) Color(0xFF10B981) else Color(0xFFF59E0B),
+                            CircleShape
+                        )
+                )
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .height(70.dp)
+                        .background(Color.LightGray)
                 )
             }
-            if (isCompleted) {
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Cleaning #${visit.cleaningNumber ?: 1}",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        color = (if (isCompleted) Color(0xFF10B981) else Color(0xFFF59E0B)).copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = visit.status.uppercase(),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isCompleted) Color(0xFF10B981) else Color(0xFFF59E0B)
+                        )
+                    }
+                }
                 Text(
-                    text = "Completed: ${visit.completedAt ?: "Yes"}",
-                    fontSize = 10.sp,
-                    color = Color(0xFF10B981),
-                    modifier = Modifier.padding(top = 4.dp)
+                    text = "Customer: $customerName${visit.customer?.city?.let { " • $it" } ?: ""}",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
                 )
+                Text(
+                    text = "Assigned to: $employeeName",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
+                )
+                Text(
+                    text = "Scheduled: ${visit.scheduledDate} ${visit.timeSlot ?: "Anytime"}",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                if (!visit.notes.isNullOrBlank()) {
+                    Text(
+                        text = "Visit note: ${visit.notes}",
+                        fontSize = 12.sp,
+                        color = Color.DarkGray,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                if (!visit.visitNotes.isNullOrBlank()) {
+                    Text(
+                        text = "Completion note: ${visit.visitNotes}",
+                        fontSize = 12.sp,
+                        color = Color.DarkGray,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                if (isCompleted) {
+                    Text(
+                        text = "Completed by ${visit.completedByName ?: employeeName} on ${visit.completedAt ?: "Yes"}",
+                        fontSize = 10.sp,
+                        color = Color(0xFF10B981),
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                if (visit.beforeImageUrl != null || visit.afterImageUrl != null) {
+                    Text(
+                        text = buildString {
+                            append("Photos: ")
+                            append(if (visit.beforeImageUrl != null) "before" else "")
+                            if (visit.beforeImageUrl != null && visit.afterImageUrl != null) append(" / ")
+                            append(if (visit.afterImageUrl != null) "after" else "")
+                        },
+                        fontSize = 10.sp,
+                        color = Color(0xFF0369A1),
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
             }
         }
     }

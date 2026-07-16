@@ -4,6 +4,7 @@ import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.model.Employee
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.swayog.employee.core.util.ErrorUtils
 
 @Singleton
 class EmployeeRepository @Inject constructor(
@@ -15,10 +16,10 @@ class EmployeeRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to fetch employees: ${response.code()} ${response.message()}"))
+                Result.failure(Exception("Failed to fetch employees: ${ErrorUtils.formatResponseError(response)}"))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Failed to fetch employees: ${e.toString()}"))
+            Result.failure(Exception("Failed to fetch employees: ${ErrorUtils.formatException(e)}"))
         }
     }
 }

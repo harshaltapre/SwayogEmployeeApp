@@ -3,7 +3,7 @@ package com.swayog.employee.data.model
 import com.google.gson.annotations.SerializedName
 
 data class Task(
-    val id: Int,
+    val id: String,
     val jobType: String? = null,
     val description: String? = null,
     val customerName: String? = null,
@@ -20,7 +20,15 @@ data class Task(
     val completedAt: String? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null
-)
+) {
+    // Helper to check if this task is actually an AMC visit
+    val isAmcVisit: Boolean
+        get() = id.startsWith("amc_")
+
+    // Extract the actual visit ID if this is an AMC visit
+    val amcVisitId: String?
+        get() = if (isAmcVisit) id.removePrefix("amc_") else null
+}
 
 data class CreateTaskRequest(
     val jobType: String,
@@ -58,7 +66,7 @@ data class CompleteTaskRequest(
 
 data class TaskAssignee(
     val id: String,
-    val taskId: Int,
+    val taskId: String,
     val userId: String,
     val role: String?,
     val status: String,
@@ -80,11 +88,11 @@ data class WorkSubmissionRequest(
     val title: String,
     val description: String,
     val hoursSpent: Double,
-    val taskId: Int? = null
+    val taskId: String? = null
 )
 
 data class SurveySubmissionRequest(
-    val taskId: Int? = null,
+    val taskId: String? = null,
     val customerId: Int? = null,
     val roofType: String,
     val lengthFt: Double,

@@ -340,6 +340,12 @@ fun CreateAmcVisitDialog(
     var notes by remember { mutableStateOf("") }
     
     var employeeDropdownExpanded by remember { mutableStateOf(false) }
+    val selectedCustomer = remember(customers, selectedCustomerId) {
+        customers.find { it.id.toString() == selectedCustomerId }
+    }
+    val selectedEmployee = remember(employees, assignedEmployeeId) {
+        employees.find { it.id.toString() == assignedEmployeeId }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -357,6 +363,29 @@ fun CreateAmcVisitDialog(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Visit Summary",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Customer: ${selectedCustomer?.fullName ?: "Select a customer"}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "Assigned employee: ${selectedEmployee?.fullName ?: "Unassigned"}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
 
                 ExposedDropdownMenuBox(
                     expanded = customerDropdownExpanded,
@@ -514,6 +543,9 @@ fun UpdateAmcVisitDialog(
     var timeSlot by remember(event) { mutableStateOf(event.time ?: "") }
     var assignedEmployeeId by remember(event) { mutableStateOf(event.assignedEmployeeId ?: "") }
     var employeeDropdownExpanded by remember { mutableStateOf(false) }
+    val selectedEmployee = remember(employees, assignedEmployeeId) {
+        employees.find { it.id.toString() == assignedEmployeeId }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -531,6 +563,33 @@ fun UpdateAmcVisitDialog(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Visit Summary",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Customer: ${event.title}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "Site: ${event.address}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "Assigned employee: ${selectedEmployee?.fullName ?: if (assignedEmployeeId.isBlank()) "Unassigned" else assignedEmployeeId}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
 
                 OutlinedTextField(
                     value = scheduledDate,

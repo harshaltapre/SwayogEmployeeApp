@@ -18,8 +18,17 @@ import com.swayog.employee.presentation.attendance.face.FaceEnrollmentScreen
 fun SwayogNavHost(
     navController: NavHostController = androidx.navigation.compose.rememberNavController(),
     startDestination: String = Screen.Login.route,
+    isLoggedIn: Boolean = true,
     onLogout: () -> Unit = {}
 ) {
+    androidx.compose.runtime.LaunchedEffect(isLoggedIn) {
+        if (!isLoggedIn && navController.currentDestination?.route != Screen.Login.route) {
+            navController.navigate(Screen.Login.route) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = startDestination

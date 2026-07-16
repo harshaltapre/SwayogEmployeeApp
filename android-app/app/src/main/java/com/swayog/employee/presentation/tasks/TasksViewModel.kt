@@ -54,7 +54,7 @@ class TasksViewModel @Inject constructor(
         }
     }
 
-    fun updateTaskStatus(taskId: Int, status: String, onResult: (Result<Task>) -> Unit) {
+    fun updateTaskStatus(taskId: String, status: String, onResult: (Result<Task>) -> Unit) {
         viewModelScope.launch {
             val res = taskRepository.updateTaskStatus(taskId, status)
             onResult(res)
@@ -62,11 +62,15 @@ class TasksViewModel @Inject constructor(
     }
 
     fun completeTask(
-        taskId: Int, 
+        taskId: String, 
         message: String, 
         documentUrl: String?, 
         beforeImageUrl: String? = null,
         afterImageUrl: String? = null,
+        beforeLatitude: Double? = null,
+        beforeLongitude: Double? = null,
+        afterLatitude: Double? = null,
+        afterLongitude: Double? = null,
         onResult: (Result<Task>) -> Unit
     ) {
         viewModelScope.launch {
@@ -75,7 +79,11 @@ class TasksViewModel @Inject constructor(
                 completionMessage = message, 
                 completionDocumentUrl = documentUrl,
                 beforeImageUrl = beforeImageUrl,
-                afterImageUrl = afterImageUrl
+                afterImageUrl = afterImageUrl,
+                beforeLatitude = beforeLatitude,
+                beforeLongitude = beforeLongitude,
+                afterLatitude = afterLatitude,
+                afterLongitude = afterLongitude
             )
             onResult(res)
         }

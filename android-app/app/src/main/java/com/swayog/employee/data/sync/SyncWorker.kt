@@ -33,8 +33,8 @@ class SyncWorker @AssistedInject constructor(
             for (item in pendingItems) {
                 val success = try {
                     if (item.endpoint.startsWith("tasks/") && item.method == "PATCH") {
-                        val taskId = item.endpoint.substringAfter("tasks/").toIntOrNull()
-                        if (taskId != null) {
+                        val taskId = item.endpoint.substringAfter("tasks/")
+                        if (taskId.isNotEmpty()) {
                             val json = JSONObject(item.payload)
                             val status = json.optString("status")
                             val response = apiService.updateTask(taskId, UpdateTaskRequest(status = status))

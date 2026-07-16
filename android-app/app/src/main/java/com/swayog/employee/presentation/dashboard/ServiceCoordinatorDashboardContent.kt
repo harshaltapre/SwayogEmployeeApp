@@ -1372,6 +1372,7 @@ fun CredentialRow(
 @Composable
 fun AmcVisitItem(visit: AmcVisit, technicianName: String) {
     val isDone = visit.status.equals("completed", true)
+    val customerName = visit.customer?.fullName ?: "Customer #${visit.customerId}"
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
@@ -1453,9 +1454,32 @@ fun AmcVisitItem(visit: AmcVisit, technicianName: String) {
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "Tech: $technicianName",
+                    text = "Customer: $customerName",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Badge,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Assigned to: $technicianName",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+
+            if (!visit.notes.isNullOrBlank()) {
+                Text(
+                    text = "Visit note: ${visit.notes}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                 )
             }
 
@@ -1471,6 +1495,14 @@ fun AmcVisitItem(visit: AmcVisit, technicianName: String) {
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF0B6E4F),
                     fontWeight = FontWeight.Medium
+                )
+            }
+
+            if (!visit.visitNotes.isNullOrBlank()) {
+                Text(
+                    text = "Completion note: ${visit.visitNotes}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                 )
             }
         }

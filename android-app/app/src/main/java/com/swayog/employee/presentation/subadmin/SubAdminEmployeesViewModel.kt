@@ -6,6 +6,7 @@ import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.Task
 import com.swayog.employee.data.repository.EmployeeRepository
 import com.swayog.employee.data.repository.TaskRepository
+import com.swayog.employee.core.util.ErrorUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,11 +66,30 @@ class SubAdminEmployeesViewModel @Inject constructor(
             val tasks = taskResult.getOrNull() ?: emptyList()
             
             val error = if (employeeResult.isFailure && taskResult.isFailure) {
-                "Failed: Emp[${employeeResult.exceptionOrNull()?.message}] Task[${taskResult.exceptionOrNull()?.message}]"
+                val empExc = employeeResult.exceptionOrNull()
+                val taskExc = taskResult.exceptionOrNull()
+                
+                if (ErrorUtils.isUnauthorized(empExc) || ErrorUtils.isUnauthorized(taskExc)) {
+                    "Session expired. Redirecting to login..."
+                } else {
+                    val empError = empExc?.let { formatException(it) } ?: "Unknown error"
+                    val taskError = taskExc?.let { formatException(it) } ?: "Unknown error"
+                    "Failed: Emp[$empError] Task[$taskError]"
+                }
             } else if (employeeResult.isFailure) {
-                "Failed to load employees: ${employeeResult.exceptionOrNull()?.message}"
+                val empExc = employeeResult.exceptionOrNull()
+                if (ErrorUtils.isUnauthorized(empExc)) {
+                    "Session expired. Redirecting to login..."
+                } else {
+                    "Failed to load employees: ${empExc?.let { formatException(it) } ?: "Unknown error"}"
+                }
             } else if (taskResult.isFailure) {
-                "Failed to load tasks: ${taskResult.exceptionOrNull()?.message}"
+                val taskExc = taskResult.exceptionOrNull()
+                if (ErrorUtils.isUnauthorized(taskExc)) {
+                    "Session expired. Redirecting to login..."
+                } else {
+                    "Failed to load tasks: ${taskExc?.let { formatException(it) } ?: "Unknown error"}"
+                }
             } else {
                 null
             }
@@ -83,5 +103,9 @@ class SubAdminEmployeesViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    private fun formatException(e: Throwable): String {
+        return ErrorUtils.formatException(e)
     }
 }

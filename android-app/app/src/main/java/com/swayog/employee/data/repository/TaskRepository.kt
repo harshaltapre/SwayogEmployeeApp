@@ -8,6 +8,7 @@ import com.swayog.employee.data.local.dao.OutboxQueueDao
 import com.swayog.employee.data.local.entity.TaskEntity
 import com.swayog.employee.data.local.entity.OutboxQueueEntity
 import com.swayog.employee.data.model.*
+import com.swayog.employee.core.util.ErrorUtils
 import com.swayog.employee.data.sync.SyncWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -86,7 +87,7 @@ class TaskRepository @Inject constructor(
                 withContext(Dispatchers.IO) {
                     val entities = tasks.map { task ->
                         TaskEntity(
-                            id = task.id,
+                            id = task.id.toString(),
                             jobType = task.jobType,
                             description = task.description,
                             customerName = task.customerName,
@@ -110,10 +111,10 @@ class TaskRepository @Inject constructor(
                 }
                 Result.success(tasks)
             } else {
-                Result.failure(Exception("Failed to refresh tasks: ${response.message()}"))
+                Result.failure(Exception("Failed to refresh tasks: ${ErrorUtils.formatResponseError(response)}"))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception("Failed to refresh tasks: ${ErrorUtils.formatException(e)}"))
         }
     }
     
@@ -126,14 +127,14 @@ class TaskRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to fetch all tasks: ${response.message()}"))
+                Result.failure(Exception("Failed to fetch all tasks: ${ErrorUtils.formatResponseError(response)}"))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception("Failed to fetch all tasks: ${ErrorUtils.formatException(e)}"))
         }
     }
     
-    suspend fun updateTaskStatus(taskId: Int, status: String): Result<Task> {
+    suspend fun updateTaskStatus(taskId: String, status: String): Result<Task> {
         return try {
             val response = apiService.updateTask(
                 taskId,
@@ -142,7 +143,7 @@ class TaskRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 val task = response.body()!!.data!!
                 val entity = TaskEntity(
-                    id = task.id,
+                    id = task.id.toString(),
                     jobType = task.jobType,
                     description = task.description,
                     customerName = task.customerName,
@@ -191,11 +192,15 @@ class TaskRepository @Inject constructor(
     }
     
     suspend fun completeTask(
-        taskId: Int,
+        taskId: String,
         completionMessage: String,
         completionDocumentUrl: String?,
         beforeImageUrl: String? = null,
-        afterImageUrl: String? = null
+        afterImageUrl: String? = null,
+        beforeLatitude: Double? = null,
+        beforeLongitude: Double? = null,
+        afterLatitude: Double? = null,
+        afterLongitude: Double? = null
     ): Result<Task> {
         return try {
             val response = apiService.completeTask(
@@ -204,7 +209,11 @@ class TaskRepository @Inject constructor(
                     message = completionMessage, 
                     documentUrl = completionDocumentUrl,
                     beforeImageUrl = beforeImageUrl,
-                    afterImageUrl = afterImageUrl
+                    afterImageUrl = afterImageUrl,
+                    beforeLatitude = beforeLatitude,
+                    beforeLongitude = beforeLongitude,
+                    afterLatitude = afterLatitude,
+                    afterLongitude = afterLongitude
                 )
             )
             if (response.isSuccessful && response.body()?.data != null) {
@@ -239,7 +248,7 @@ class TaskRepository @Inject constructor(
         }
     }
 
-    suspend fun submitWork(title: String, description: String, hoursSpent: Double, taskId: Int?): Result<Unit> {
+    suspend fun submitWork(title: String, description: String, hoursSpent: Double, taskId: String?): Result<Unit> {
         return try {
             val response = apiService.submitWork(WorkSubmissionRequest(title, description, hoursSpent, taskId))
             if (response.isSuccessful) {
@@ -253,7 +262,7 @@ class TaskRepository @Inject constructor(
     }
 
     suspend fun submitSurvey(
-        taskId: Int?,
+        taskId: String?,
         customerId: Int?,
         roofType: String,
         lengthFt: Double,

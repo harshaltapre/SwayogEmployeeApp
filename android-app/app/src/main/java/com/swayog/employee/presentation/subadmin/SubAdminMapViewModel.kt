@@ -59,7 +59,13 @@ class SubAdminMapViewModel @Inject constructor(
                 launch {
                     customerRepository.getComplaints()
                         .onSuccess { _complaints.value = it }
-                        .onFailure { _errorMessage.value = it.message ?: "Failed to fetch complaints" }
+                        .onFailure { error ->
+                            if (com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
+                                _errorMessage.value = "Session expired. Redirecting..."
+                            } else {
+                                _errorMessage.value = com.swayog.employee.core.util.ErrorUtils.formatException(error)
+                            }
+                        }
                 },
                 launch {
                     employeeRepository.getInternalUsers("EMPLOYEE")

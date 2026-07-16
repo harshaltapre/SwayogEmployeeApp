@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,7 +21,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
@@ -174,13 +174,36 @@ fun SubAdminMapScreen(
                             true
                         },
                         clusterItemContent = { item ->
-                            val tint = if (item is MapPinType.Complaint) Color.Red else Color.Green
-                            Icon(
-                                Icons.Default.LocationOn,
-                                contentDescription = "Pin",
-                                tint = tint,
-                                modifier = Modifier.size(36.dp)
-                            )
+                            val (color, icon) = when (item) {
+                                is MapPinType.Amc -> Color(0xFF10B981) to "✓" // Green for AMC
+                                is MapPinType.Complaint -> {
+                                    if (item.request.status.lowercase() == "pending") {
+                                        Color(0xFFEF4444) to "!" // Red for pending
+                                    } else {
+                                        Color(0xFF3B82F6) to "📅" // Blue for scheduled
+                                    }
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(Color.White, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .background(color, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = icon,
+                                        color = Color.White,
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     )
                 }
