@@ -21,7 +21,8 @@ import javax.inject.Inject
 @HiltViewModel
 class SubAdminCalendarViewModel @Inject constructor(
     private val customerRepository: CustomerRepository,
-    private val employeeRepository: EmployeeRepository
+    private val employeeRepository: EmployeeRepository,
+    private val taskRepository: com.swayog.employee.data.repository.TaskRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<SubAdminCalendarState>(SubAdminCalendarState.Initial)
@@ -54,7 +55,8 @@ class SubAdminCalendarViewModel @Inject constructor(
             
             var complaintsResult: Result<List<ServiceRequest>> = Result.failure(Exception())
             var visitsResult: Result<List<AmcVisit>> = Result.failure(Exception())
-
+            var tasksResult: Result<List<com.swayog.employee.data.model.Task>> = Result.failure(Exception())
+ 
             val jobs = listOf(
                 viewModelScope.launch {
                     complaintsResult = customerRepository.getComplaints()
@@ -63,17 +65,20 @@ class SubAdminCalendarViewModel @Inject constructor(
                     visitsResult = customerRepository.getAmcVisits()
                 },
                 viewModelScope.launch {
-                    employeeRepository.getInternalUsers("EMPLOYEE").onSuccess { _employees.value = it }
+                    tasksResult = taskRepository.getAllTasks()
+                },
+                viewModelScope.launch {
+                    employeeRepository.getInternalUsers(null).onSuccess { _employees.value = it }
                 },
                 viewModelScope.launch {
                     customerRepository.refreshCustomers(null, null)
                 }
             )
             
-            // Wait for both to finish
+            // Wait for all to finish
             jobs.forEach { it.join() }
 
-            if (complaintsResult.isSuccess || visitsResult.isSuccess) {
+            if (complaintsResult.isSuccess || visitsResult.isSuccess || tasksResult.isSuccess) {
                 val list = mutableListOf<CalendarEvent>()
                 
                 complaintsResult.onSuccess { requests ->
@@ -110,6 +115,64 @@ class SubAdminCalendarViewModel @Inject constructor(
                             )
                         )
                     }
+                }
+
+                tasksResult.onSuccess { tasks ->
+                    tasks.filter { !it.scheduledTime.isNullOrBlank() }.forEach {
+                        val scheduledTime = it.scheduledTime!!
+                        list.add(
+                            CalendarEvent(
+                                id = "task_${it.id}",
+                                type = "Task Assignment",
+                                title = it.jobType ?: "Task Assignment",
+                                description = it.description ?: "Task assignment details",
+                                date = scheduledTime.substringBefore("T"),
+                                time = if (scheduledTime.contains("T")) scheduledTime.substringAfter("T").substringBefore(".") else null,
+                                address = it.address ?: "No Location Specified",
+                                rawId = it.id,
+                                assignedEmployeeId = it.employeeUserId
+                            )
+                        )
+                    }
+                }
+
+                // Add Indian Festivals for 2026 to sync with web
+                val festivals = listOf(
+                    Pair("New Year's Day", "2026-01-01"),
+                    Pair("Makar Sankranti", "2026-01-14"),
+                    Pair("Republic Day", "2026-01-26"),
+                    Pair("Maha Shivaratri", "2026-02-15"),
+                    Pair("Holi", "2026-03-04"),
+                    Pair("Gudi Padwa", "2026-03-19"),
+                    Pair("Ram Navami", "2026-03-27"),
+                    Pair("Eid-ul-Fitr", "2026-03-20"),
+                    Pair("Dr. Ambedkar Jayanti", "2026-04-14"),
+                    Pair("Buddha Purnima", "2026-05-01"),
+                    Pair("Independence Day", "2026-08-15"),
+                    Pair("Raksha Bandhan", "2026-08-28"),
+                    Pair("Janmashtami", "2026-09-04"),
+                    Pair("Ganesh Chaturthi", "2026-09-14"),
+                    Pair("Gandhi Jayanti", "2026-10-02"),
+                    Pair("Dussehra", "2026-10-20"),
+                    Pair("Diwali", "2026-11-08"),
+                    Pair("Guru Nanak Jayanti", "2026-11-24"),
+                    Pair("Christmas Day", "2026-12-25")
+                )
+                
+                festivals.forEach { (name, date) ->
+                    list.add(
+                        CalendarEvent(
+                            id = "festival_${name.replace(" ", "_")}",
+                            type = "Holiday/Festival",
+                            title = name,
+                            description = "Indian Festival / Public Holiday",
+                            date = date,
+                            time = null,
+                            address = "India",
+                            rawId = name,
+                            assignedEmployeeId = null
+                        )
+                    )
                 }
 
                 // Sort by date ascending

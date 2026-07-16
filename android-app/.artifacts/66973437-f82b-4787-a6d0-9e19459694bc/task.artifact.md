@@ -1,0 +1,8 @@
+- [ ] Add `rating` to `UserEntity.kt`
+- [ ] Add new methods to `UserDao.kt`
+- [ ] Add `getAllTasks` to `TaskDao.kt`
+- [ ] Update `EmployeeRepository.kt` with DB support
+- [ ] Update `TaskRepository.kt` with DB support
+- [ ] Implement DB-first logic in `SubAdminEmployeesViewModel.kt`
+- [ ] Update `SubAdminEmployeesScreen.kt` with TopBar and non-blocking errors
+- [ ] Build and verify

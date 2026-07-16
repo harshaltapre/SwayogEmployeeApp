@@ -99,13 +99,22 @@ class DashboardViewModel @Inject constructor(
                 val attendanceRes = attendanceDeferred.await()
                 val perfRes = perfDeferred.await()
 
+                val isAuthExpired = com.swayog.employee.core.util.ErrorUtils.isUnauthorized(taskRes.exceptionOrNull()) ||
+                        com.swayog.employee.core.util.ErrorUtils.isUnauthorized(attendanceRes.exceptionOrNull()) ||
+                        com.swayog.employee.core.util.ErrorUtils.isUnauthorized(perfRes.exceptionOrNull())
+
+                if (isAuthExpired) {
+                    errorMessage = "Session expired. Redirecting..."
+                    hasError = true
+                    viewModelScope.launch {
+                        dataStoreManager.clearAll()
+                    }
+                }
+
                 taskRes.onSuccess { taskList ->
                     _tasks.value = taskList
                 }.onFailure { error ->
-                    if (com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
-                        errorMessage = "Session expired. Redirecting..."
-                        hasError = true
-                    } else {
+                    if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
                         hasError = true
                         errorMessage += "Tasks: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
                     }

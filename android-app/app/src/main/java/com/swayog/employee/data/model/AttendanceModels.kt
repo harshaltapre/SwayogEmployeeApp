@@ -42,7 +42,9 @@ data class FaceEnrollmentStatusResponse(
 )
 
 data class CheckInResponse(
+    @SerializedName("checkInRecord")
     val checkIn: CheckIn,
+    @SerializedName("attendance")
     val attendanceRecord: AttendanceRecord
 )
 

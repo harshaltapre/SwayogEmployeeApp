@@ -29,7 +29,7 @@ import {
   Scan,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCheckIn, useAttendanceRules, useFaceEnrollmentStatus } from "@/hooks/useAttendance";
+import { useCheckIn, useAttendanceRules, useFaceEnrollmentStatus, useMonthlyAttendance } from "@/hooks/useAttendance";
 import { useFaceApi } from "@/hooks/useFaceApi";
 
 
@@ -112,35 +112,11 @@ function calcHours(checkIn: string, checkOut: string, breaks: Break[] = []): num
   return parseFloat((totalMinutes / 60).toFixed(1));
 }
 
-// ───── Seed mock historical data ──────────────────────────────────────────────
-function generateMockAttendance(): AttendanceRecord[] {
-  return [];
-}
-
-function getEmployeeStorageKey(employeeId: string): string {
-  return `swayog_attendance_${employeeId}`;
-}
-
-// Load attendance records
-function loadAttendance(employeeId: string): AttendanceRecord[] {
-  try {
-    const stored = localStorage.getItem(getEmployeeStorageKey(employeeId));
-    if (stored) return JSON.parse(stored);
-  } catch {}
-  const mock = generateMockAttendance();
-  localStorage.setItem(getEmployeeStorageKey(employeeId), JSON.stringify(mock));
-  return mock;
-}
-
-function saveAttendance(employeeId: string, records: AttendanceRecord[]) {
-  localStorage.setItem(getEmployeeStorageKey(employeeId), JSON.stringify(records));
-}
-
 // ───── Status config ──────────────────────────────────────────────────────────
 const statusConfig: Record<AttendanceStatus, { label: string; color: string; dot: string }> = {
   present: { label: "Present", color: "bg-emerald-100 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
   late: { label: "Late", color: "bg-amber-100 text-amber-700 border-amber-200", dot: "bg-amber-500" },
-  absent: { label: "Absent", color: "bg-red-100 text-red-700 border-red-200", dot: "bg-red-500" },
+  absent: { label: "Absent", color: "bg-rose-100 text-rose-700 border-rose-200", dot: "bg-rose-500" },
   leave: { label: "Leave", color: "bg-blue-100 text-blue-700 border-blue-200", dot: "bg-blue-500" },
   "half-day": { label: "Half Day", color: "bg-purple-100 text-purple-700 border-purple-200", dot: "bg-purple-500" },
 };
@@ -641,9 +617,32 @@ export default function SubAdminAttendance() {
   };
 
   // ── Stats ───────────────────────────────────────────────────────────────────
+  // Calculate working days up to today (or end of month if target month is in the past)
+  // Company works 6 days/week (Mon–Sat); only Sunday is a day off
+  const getWorkingDaysCount = (y: number, m: number) => {
+    let count = 0;
+    const today = new Date();
+    const endLimit = new Date(y, m, 0);
+    const current = new Date(y, m - 1, 1);
+    
+    while (current <= endLimit && current <= today) {
+      const day = current.getDay();
+      if (day !== 0) { // skip Sun only (0=Sun, 6=Sat is a working day)
+        count++;
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    return count;
+  };
+
+  const workingDays = getWorkingDaysCount(currentDate.getFullYear(), currentDate.getMonth() + 1);
   const thisMonthRecords = records.filter((r) => r.date.startsWith(`${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}`));
+  
   const presentCount = thisMonthRecords.filter((r) => r.status === "present" || r.status === "late" || r.status === "half-day").length;
-  const absentCount = thisMonthRecords.filter((r) => r.status === "absent").length;
+  const fullPresent = thisMonthRecords.filter((r) => r.status === "present" || r.status === "late").length;
+  const halfDays = thisMonthRecords.filter((r) => r.status === "half-day").length;
+  
+  const absentCount = Math.max(0, workingDays - fullPresent - halfDays);
   const lateCount = thisMonthRecords.filter((r) => r.status === "late").length;
   const totalHours = thisMonthRecords.reduce((acc, r) => acc + r.workHours, 0);
 

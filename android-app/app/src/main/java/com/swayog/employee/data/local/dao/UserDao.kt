@@ -12,9 +12,18 @@ interface UserDao {
     
     @Query("SELECT * FROM users WHERE email = :email")
     suspend fun getUserByEmail(email: String): UserEntity?
+
+    @Query("SELECT * FROM users WHERE role = :role OR jobRole = :role")
+    fun getUsersByRole(role: String): Flow<List<UserEntity>>
+
+    @Query("SELECT * FROM users")
+    fun getAllUsers(): Flow<List<UserEntity>>
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: UserEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUsers(users: List<UserEntity>)
     
     @Update
     suspend fun updateUser(user: UserEntity)
