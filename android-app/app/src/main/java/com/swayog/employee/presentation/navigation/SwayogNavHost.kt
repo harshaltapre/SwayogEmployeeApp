@@ -29,7 +29,7 @@ fun SwayogNavHost(
     androidx.compose.runtime.LaunchedEffect(isLoggedIn) {
         if (!isLoggedIn && navController.currentDestination?.route != Screen.Login.route) {
             navController.navigate(Screen.Login.route) {
-                popUpTo(0) { inclusive = true }
+                popUpTo(navController.graph.id) { inclusive = true }
             }
         }
     }

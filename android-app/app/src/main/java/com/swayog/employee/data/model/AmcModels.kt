@@ -47,15 +47,59 @@ data class CreateAmcVisitRequest(
     val notes: String?
 )
 
-data class AmcSettingsRequest(
-    val monthlyRate: Int?,
-    val cleaningsPerMonth: Int?,
+data class UpdateAmcSettingsRequest(
     val clientType: String,
-    val consumerNumber: String
+    val consumerNumber: String? = null,
+    val monthlyCleaningRate: Int?,
+    val cleaningsPerMonth: Int,
+    val cleaningWindow1: String? = null,
+    val cleaningWindow2: String? = null,
+    val cleaningWindow3: String? = null,
+    val cleaningWindow4: String? = null,
+    val cleaningWindow5: String? = null,
+    val cleaningWindow6: String? = null,
+    val cleaningWindow7: String? = null,
+    val cleaningWindow8: String? = null,
+    val nextSurveyDate: String? = null,
+    val paymentTerms: String? = null,
+    val remarks: String? = null,
+    val assignedEmployeeId: String? = null,
+    val useVariableTiming: Boolean = false,
+    val cleaningTimeSlot1: String? = null,
+    val cleaningTimeSlot2: String? = null,
+    val cleaningTimeSlot3: String? = null,
+    val cleaningTimeSlot4: String? = null,
+    val cleaningTimeSlot5: String? = null,
+    val cleaningTimeSlot6: String? = null,
+    val cleaningTimeSlot7: String? = null,
+    val cleaningTimeSlot8: String? = null,
+    val scheduleMonth: String? = null
 )
 
 data class ApartmentAmcSettingsRequest(
-    val monthlyRate: Int?,
-    val cleaningsPerMonth: Int?,
-    val clientType: String
+    val clientType: String,
+    val monthlyCleaningRate: Int?,
+    val cleaningsPerMonth: Int,
+    val cleaningWindow1: String? = null,
+    val cleaningWindow2: String? = null,
+    val cleaningWindow3: String? = null,
+    val cleaningWindow4: String? = null,
+    val cleaningWindow5: String? = null,
+    val cleaningWindow6: String? = null,
+    val cleaningWindow7: String? = null,
+    val cleaningWindow8: String? = null,
+    val nextSurveyDate: String? = null,
+    val paymentTerms: String? = null,
+    val remarks: String? = null,
+    val assignedEmployeeId: String? = null,
+    val useVariableTiming: Boolean = false,
+    val cleaningTimeSlot1: String? = null,
+    val cleaningTimeSlot2: String? = null,
+    val cleaningTimeSlot3: String? = null,
+    val cleaningTimeSlot4: String? = null,
+    val cleaningTimeSlot5: String? = null,
+    val cleaningTimeSlot6: String? = null,
+    val cleaningTimeSlot7: String? = null,
+    val cleaningTimeSlot8: String? = null,
+    val scheduleMonth: String? = null
 )

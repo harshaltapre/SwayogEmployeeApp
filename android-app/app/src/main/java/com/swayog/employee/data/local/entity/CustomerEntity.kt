@@ -28,5 +28,7 @@ data class CustomerEntity(
     val inverterLoginId: String?,
     val inverterPassword: String?,
     val inverterApiKey: String?,
-    val inverterDeviceSn: String?
+    val inverterDeviceSn: String?,
+    val commissionAmount: Double?,
+    val portalPassword: String?
 )

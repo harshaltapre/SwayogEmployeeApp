@@ -48,6 +48,8 @@ data class Customer(
     val cleaningWindow7: String? = null,
     val cleaningWindow8: String? = null,
     val assignedEmployeeId: String? = null,
+    val commissionAmount: Double? = null,
+    val portalPassword: String? = null,
     // Apartment fields
     val apartmentId: Int? = null,
     val apartment: Apartment? = null
@@ -58,31 +60,6 @@ data class Apartment(
     val name: String,
     val address: String?,
     val city: String?
-)
-
-data class UpdateAmcSettingsRequest(
-    val clientType: String,
-    val consumerNumber: String?,
-    val monthlyCleaningRate: Double,
-    val cleaningsPerMonth: Int,
-    val cleaningWindow1: String,
-    val cleaningWindow2: String?,
-    val cleaningWindow3: String?,
-    val cleaningWindow4: String?,
-    val cleaningWindow5: String?,
-    val cleaningWindow6: String?,
-    val cleaningWindow7: String?,
-    val cleaningWindow8: String?,
-    val nextSurveyDate: String?,
-    val paymentTerms: String?,
-    val remarks: String?,
-    val assignedEmployeeId: String?,
-    val useVariableTiming: Boolean,
-    val cleaningTimeSlot1: String,
-    val cleaningTimeSlot2: String,
-    val cleaningTimeSlot3: String,
-    val cleaningTimeSlot4: String,
-    val scheduleMonth: String
 )
 
 data class CustomerSummary(
@@ -136,15 +113,28 @@ data class GenerationHistory(
     val power: Double? = null // For realtime period
 )
 
-data class UpdateCredentialsRequest(
-    val inverterBrand: String?,
-    val inverterLoginId: String?,
-    val inverterPassword: String?,
-    val inverterApiKey: String?,
-    val inverterDeviceSn: String?,
+data class UpdateCustomerRequest(
+    val fullName: String?,
+    val email: String?,
+    val phoneNumber: String?,
     val city: String?,
     val address: String?,
-    val projectStage: Int?
+    val systemSizeKw: Float?,
+    val installationDate: String?,
+    val amcStatus: String?,
+    val amcExpiryDate: String?,
+    val contractStartDate: String?,
+    val contractEndDate: String?,
+    val cleaningsPerMonth: Int?,
+    val status: String?,
+    val commissionAmount: Double?,
+    val inverterLoginId: String?,
+    val inverterPassword: String?,
+    val portalPassword: String?,
+    val projectStage: Int?,
+    val inverterBrand: String? = null,
+    val inverterApiKey: String? = null,
+    val inverterDeviceSn: String? = null
 )
 
 data class ServiceRequest(

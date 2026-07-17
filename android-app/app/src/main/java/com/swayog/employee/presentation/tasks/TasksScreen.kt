@@ -673,7 +673,7 @@ fun TaskDetailDialog(
                         )
 
                         // Before & After Photos section header
-                        val requiresPhotos = task.jobType?.let { it.lowercase() in listOf("cleaning", "maintenance", "visit", "service") } == true
+                        val requiresPhotos = task.jobType?.let { it.lowercase() in listOf("cleaning", "maintenance", "visit", "service", "amc visit") } == true
 
                         if (requiresPhotos) {
                             Text(

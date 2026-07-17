@@ -4,6 +4,8 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,16 +43,21 @@ fun SubAdminCalendarScreen(
     val actionState by viewModel.actionState.collectAsState()
     val employees by viewModel.employees.collectAsState()
 
-    var selectedFilter by remember { mutableIntStateOf(0) }
+    var selectedFilters by remember { mutableStateOf(setOf("Complaints", "AMC Visits", "Tasks", "Holidays")) }
     var isCreateDialogOpen by remember { mutableStateOf(false) }
     var selectedEventForUpdate by remember { mutableStateOf<CalendarEvent?>(null) }
     var selectedEventForDetails by remember { mutableStateOf<CalendarEvent?>(null) }
 
-    val filteredEvents = remember(events, selectedFilter) {
-        when (selectedFilter) {
-            1 -> events.filter { it.type.contains("AMC", ignoreCase = true) }
-            2 -> events.filter { it.type.contains("Complaint", ignoreCase = true) }
-            else -> events
+    val filteredEvents = remember(events, selectedFilters) {
+        events.filter { event ->
+            val type = event.type.lowercase()
+            when {
+                type.contains("complaint") -> selectedFilters.contains("Complaints")
+                type.contains("amc") -> selectedFilters.contains("AMC Visits")
+                type.contains("task") -> selectedFilters.contains("Tasks")
+                type.contains("holiday") || type.contains("festival") -> selectedFilters.contains("Holidays")
+                else -> true
+            }
         }
     }
 
@@ -98,10 +105,36 @@ fun SubAdminCalendarScreen(
                 .padding(paddingValues)
         ) {
             // Filter Bar
-            TabRow(selectedTabIndex = selectedFilter) {
-                Tab(selected = selectedFilter == 0, onClick = { selectedFilter = 0 }, text = { Text("All visits") })
-                Tab(selected = selectedFilter == 1, onClick = { selectedFilter = 1 }, text = { Text("AMC Cleanings") })
-                Tab(selected = selectedFilter == 2, onClick = { selectedFilter = 2 }, text = { Text("Complaints") })
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val filters = listOf(
+                    "Complaints" to events.count { it.type.contains("complaint", ignoreCase = true) },
+                    "AMC Visits" to events.count { it.type.contains("amc", ignoreCase = true) },
+                    "Tasks" to events.count { it.type.contains("task", ignoreCase = true) },
+                    "Holidays" to events.count { it.type.contains("holiday", ignoreCase = true) || it.type.contains("festival", ignoreCase = true) }
+                )
+                
+                filters.forEach { (name, count) ->
+                    FilterChip(
+                        selected = selectedFilters.contains(name),
+                        onClick = {
+                            selectedFilters = if (selectedFilters.contains(name)) {
+                                selectedFilters - name
+                            } else {
+                                selectedFilters + name
+                            }
+                        },
+                        label = { Text(name) },
+                        trailingIcon = {
+                            Badge { Text(count.toString()) }
+                        }
+                    )
+                }
             }
 
             // Events List
@@ -201,15 +234,29 @@ fun SubAdminCalendarScreen(
         }
 
         selectedEventForDetails?.let { event ->
-            CalendarEventDetailsDialog(
-                event = event,
-                employees = employees,
-                onDismiss = { selectedEventForDetails = null },
-                onRescheduleClick = {
-                    selectedEventForDetails = null
-                    selectedEventForUpdate = event
-                }
-            )
+            if (event.type.contains("AMC", ignoreCase = true)) {
+                AmcVisitDetailsModal(
+                    event = event,
+                    employees = employees,
+                    onDismiss = { selectedEventForDetails = null },
+                    onLogCompletion = { visitId, notes, beforeImage, afterImage ->
+                        viewModel.markAmcVisitDone(visitId, notes, beforeImage?.toString(), afterImage?.toString()) {
+                            selectedEventForDetails = null
+                        }
+                    },
+                    isLoading = actionState is CalendarActionState.Loading
+                )
+            } else {
+                CalendarEventDetailsDialog(
+                    event = event,
+                    employees = employees,
+                    onDismiss = { selectedEventForDetails = null },
+                    onRescheduleClick = {
+                        selectedEventForDetails = null
+                        selectedEventForUpdate = event
+                    }
+                )
+            }
         }
     }
 }

@@ -2,7 +2,7 @@ package com.swayog.employee.data.model
 
 import com.google.gson.annotations.SerializedName
 
-data class Invoice(
+data class  Invoice(
     val id: String,
     val invoiceNumber: String? = null,
     val customerId: Int,

@@ -23,11 +23,11 @@ data class Task(
 ) {
     // Helper to check if this task is actually an AMC visit
     val isAmcVisit: Boolean
-        get() = id.startsWith("amc_")
+        get() = id.startsWith("TASK-amc_")
 
     // Extract the actual visit ID if this is an AMC visit
     val amcVisitId: String?
-        get() = if (isAmcVisit) id.removePrefix("amc_") else null
+        get() = if (isAmcVisit) id.removePrefix("TASK-amc_") else null
 }
 
 data class CreateTaskRequest(
@@ -54,7 +54,9 @@ data class AssignTaskRequest(
 )
 
 data class CompleteTaskRequest(
+    @SerializedName("completionMessage")
     val message: String,
+    @SerializedName("completionDocumentUrl")
     val documentUrl: String? = null,
     val beforeImageUrl: String? = null,
     val afterImageUrl: String? = null,

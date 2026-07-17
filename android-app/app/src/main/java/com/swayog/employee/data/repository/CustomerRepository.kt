@@ -84,8 +84,9 @@ class CustomerRepository @Inject constructor(
 
                     inverterApiKey = entity.inverterApiKey,
 
-                    inverterDeviceSn = entity.inverterDeviceSn
-
+                    inverterDeviceSn = entity.inverterDeviceSn,
+                    commissionAmount = entity.commissionAmount,
+                    portalPassword = entity.portalPassword
                 )
 
             }
@@ -148,8 +149,9 @@ class CustomerRepository @Inject constructor(
 
                     inverterApiKey = entity.inverterApiKey,
 
-                    inverterDeviceSn = entity.inverterDeviceSn
-
+                    inverterDeviceSn = entity.inverterDeviceSn,
+                    commissionAmount = entity.commissionAmount,
+                    portalPassword = entity.portalPassword
                 )
 
             }
@@ -217,9 +219,9 @@ class CustomerRepository @Inject constructor(
                         inverterPassword = customer.inverterPassword,
 
                         inverterApiKey = customer.inverterApiKey,
-
-                        inverterDeviceSn = customer.inverterDeviceSn
-
+                        inverterDeviceSn = customer.inverterDeviceSn,
+                        commissionAmount = customer.commissionAmount,
+                        portalPassword = customer.portalPassword
                     )
 
                 }
@@ -243,6 +245,32 @@ class CustomerRepository @Inject constructor(
     }
 
     
+
+    suspend fun getInvoices(customerId: Int): Result<List<Invoice>> {
+        return try {
+            val response = apiService.getInvoices(customerId)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to fetch invoices"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createInvoice(request: CreateInvoiceRequest): Result<Invoice> {
+        return try {
+            val response = apiService.createInvoice(request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to create invoice"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     suspend fun getCustomerSummary(customerId: Int): Result<CustomerSummary> {
 
@@ -314,43 +342,12 @@ class CustomerRepository @Inject constructor(
         }
     }
 
-    suspend fun updateAmcSettings(
-        customerId: Int,
-        monthlyRate: Int?,
-        cleaningsPerMonth: Int?,
-        clientType: String,
-        consumerNumber: String
-    ): Result<Unit> {
-        return try {
-            val request = com.swayog.employee.data.model.AmcSettingsRequest(
-                monthlyRate = monthlyRate,
-                cleaningsPerMonth = cleaningsPerMonth,
-                clientType = clientType,
-                consumerNumber = consumerNumber
-            )
-            val response = apiService.updateAmcSettings(customerId, request)
-            if (response.isSuccessful) {
-                Result.success(Unit)
-            } else {
-                Result.failure(Exception("Failed to update AMC settings"))
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
 
     suspend fun updateApartmentAmcSettings(
         apartmentId: Int,
-        monthlyRate: Int?,
-        cleaningsPerMonth: Int?,
-        clientType: String
+        request: com.swayog.employee.data.model.ApartmentAmcSettingsRequest
     ): Result<Unit> {
         return try {
-            val request = com.swayog.employee.data.model.ApartmentAmcSettingsRequest(
-                monthlyRate = monthlyRate,
-                cleaningsPerMonth = cleaningsPerMonth,
-                clientType = clientType
-            )
             val response = apiService.updateApartmentAmcSettings(apartmentId, request)
             if (response.isSuccessful) {
                 Result.success(Unit)
@@ -377,17 +374,13 @@ class CustomerRepository @Inject constructor(
 
     
 
-    suspend fun updateCustomerCredentials(
+    suspend fun updateCustomer(
         customerId: Int,
-        request: UpdateCredentialsRequest
+        request: UpdateCustomerRequest
     ): Result<Customer> {
-
         return try {
-
-            val response = apiService.updateCustomerCredentials(customerId, request)
-
+            val response = apiService.updateCustomer(customerId, request)
             if (response.isSuccessful && response.body()?.data != null) {
-
                 val customer = response.body()!!.data!!
 
                 val entity = CustomerEntity(
@@ -435,9 +428,9 @@ class CustomerRepository @Inject constructor(
                     inverterPassword = customer.inverterPassword,
 
                     inverterApiKey = customer.inverterApiKey,
-
-                    inverterDeviceSn = customer.inverterDeviceSn
-
+                    inverterDeviceSn = customer.inverterDeviceSn,
+                    commissionAmount = customer.commissionAmount,
+                    portalPassword = customer.portalPassword
                 )
 
                 customerDao.updateCustomer(entity)
@@ -539,7 +532,9 @@ class CustomerRepository @Inject constructor(
                     inverterLoginId = customer.inverterLoginId,
                     inverterPassword = customer.inverterPassword,
                     inverterApiKey = customer.inverterApiKey,
-                    inverterDeviceSn = customer.inverterDeviceSn
+                    inverterDeviceSn = customer.inverterDeviceSn,
+                    commissionAmount = customer.commissionAmount,
+                    portalPassword = customer.portalPassword
                 )
                 customerDao.insertCustomer(entity)
                 
@@ -663,6 +658,24 @@ class CustomerRepository @Inject constructor(
                 Result.success(response.body()!!.data!!)
             } else {
                 Result.failure(Exception("Failed to update AMC visit: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun markAmcVisitDone(visitId: String, visitNotes: String?, beforeImageUrl: String?, afterImageUrl: String?): Result<AmcVisit> {
+        return try {
+            val body = mapOf(
+                "visitNotes" to visitNotes,
+                "beforeImageUrl" to beforeImageUrl,
+                "afterImageUrl" to afterImageUrl
+            )
+            val response = apiService.markAmcVisitDone(visitId, body)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to mark AMC visit done: ${response.message()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

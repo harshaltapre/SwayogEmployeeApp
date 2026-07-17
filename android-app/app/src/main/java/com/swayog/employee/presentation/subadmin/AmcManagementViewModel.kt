@@ -25,6 +25,9 @@ class AmcManagementViewModel @Inject constructor(
     private val _employees = MutableStateFlow<List<Employee>>(emptyList())
     val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
     
+    private val _amcVisits = MutableStateFlow<List<com.swayog.employee.data.model.AmcVisit>>(emptyList())
+    val amcVisits: StateFlow<List<com.swayog.employee.data.model.AmcVisit>> = _amcVisits.asStateFlow()
+    
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
     
@@ -64,19 +67,13 @@ class AmcManagementViewModel @Inject constructor(
     
     fun updateAmcSettings(
         customerId: Int,
-        settings: AmcSettings,
+        settings: com.swayog.employee.data.model.UpdateAmcSettingsRequest,
         onComplete: (Result<Unit>) -> Unit
     ) {
         viewModelScope.launch {
             try {
-                val result = customerRepository.updateAmcSettings(
-                    customerId = customerId,
-                    monthlyRate = settings.monthlyRate,
-                    cleaningsPerMonth = settings.cleaningsPerMonth,
-                    clientType = settings.clientType,
-                    consumerNumber = settings.consumerNumber
-                )
-                onComplete(result)
+                val result = customerRepository.updateAmcSettings(customerId, settings)
+                onComplete(result.map { })
                 if (result.isSuccess) {
                     loadData() // Refresh data after update
                 }
@@ -88,20 +85,66 @@ class AmcManagementViewModel @Inject constructor(
     
     fun updateApartmentAmcSettings(
         apartmentId: Int,
-        settings: ApartmentAmcSettings,
+        settings: com.swayog.employee.data.model.ApartmentAmcSettingsRequest,
         onComplete: (Result<Unit>) -> Unit
     ) {
         viewModelScope.launch {
             try {
-                val result = customerRepository.updateApartmentAmcSettings(
-                    apartmentId = apartmentId,
-                    monthlyRate = settings.monthlyRate,
-                    cleaningsPerMonth = settings.cleaningsPerMonth,
-                    clientType = settings.clientType
-                )
+                val result = customerRepository.updateApartmentAmcSettings(apartmentId, settings)
                 onComplete(result)
                 if (result.isSuccess) {
                     loadData() // Refresh data after update
+                }
+            } catch (e: Exception) {
+                onComplete(Result.failure(e))
+            }
+        }
+    }
+    
+    fun loadAmcVisits(customerId: Int? = null) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val visitsResult = if (customerId != null) {
+                    customerRepository.getSubAdminAmcVisits(customerId)
+                } else {
+                    customerRepository.getAmcVisits()
+                }
+                
+                if (visitsResult.isSuccess) {
+                    _amcVisits.value = visitsResult.getOrNull() ?: emptyList()
+                } else {
+                    _errorMessage.value = "Failed to load AMC visits: ${visitsResult.exceptionOrNull()?.message}"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Error loading AMC visits: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+    
+    fun updateAmcVisit(visitId: String, request: com.swayog.employee.data.model.UpdateAmcVisitRequest, onComplete: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val result = customerRepository.updateAmcVisit(visitId, request)
+                onComplete(result.map { })
+                if (result.isSuccess) {
+                    loadAmcVisits()
+                }
+            } catch (e: Exception) {
+                onComplete(Result.failure(e))
+            }
+        }
+    }
+    
+    fun markAmcVisitDone(visitId: String, visitNotes: String?, beforeImageUrl: String?, afterImageUrl: String?, onComplete: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val result = customerRepository.markAmcVisitDone(visitId, visitNotes, beforeImageUrl, afterImageUrl)
+                onComplete(result.map { })
+                if (result.isSuccess) {
+                    loadAmcVisits()
                 }
             } catch (e: Exception) {
                 onComplete(Result.failure(e))

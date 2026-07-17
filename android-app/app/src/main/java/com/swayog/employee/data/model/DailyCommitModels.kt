@@ -17,12 +17,10 @@ data class DailyCommit(
 )
 
 data class DailyCommitRequest(
-    val employeeId: String,
     val commitDate: String,
     val taskWorkedOn: String,
     val workSummary: String,
     val hoursSpent: Double,
     val issuesBlockers: String?,
-    val tomorrowPlan: String?,
-    val attachmentUrl: String?
+    val tomorrowPlan: String?
 )

@@ -81,10 +81,10 @@ interface ApiService {
         @Query("year") year: Int
     ): Response<MonthlyAttendanceResponse>
     
-    @GET("employee/daily-commits")
+    @GET("daily-commits/mine")
     suspend fun getDailyCommits(): Response<ApiResponse<List<DailyCommit>>>
     
-    @POST("employee/daily-commits")
+    @POST("daily-commits")
     suspend fun createDailyCommit(
         @Body request: DailyCommitRequest
     ): Response<ApiResponse<DailyCommit>>
@@ -104,13 +104,7 @@ interface ApiService {
     @GET("subadmin/amc/customers")
     suspend fun getAmcCustomers(): Response<ApiResponse<List<Customer>>>
     
-    @PUT("subadmin/amc/customers/{customerId}/settings")
-    suspend fun updateAmcSettings(
-        @Path("customerId") customerId: Int,
-        @Body request: AmcSettingsRequest
-    ): Response<ApiResponse<Unit>>
-    
-    @PUT("subadmin/amc/apartments/{apartmentId}/settings")
+    @PATCH("subadmin/apartments/{apartmentId}/amc-settings")
     suspend fun updateApartmentAmcSettings(
         @Path("apartmentId") apartmentId: Int,
         @Body request: ApartmentAmcSettingsRequest
@@ -132,11 +126,21 @@ interface ApiService {
         @Query("period") period: String
     ): Response<ApiResponse<InverterGenerationHistoryResponse>>
     
-    @PATCH("subadmin/customers/{customerId}")
-    suspend fun updateCustomerCredentials(
+    @PATCH("customers/{customerId}")
+    suspend fun updateCustomer(
         @Path("customerId") customerId: Int,
-        @Body request: UpdateCredentialsRequest
+        @Body request: UpdateCustomerRequest
     ): Response<ApiResponse<Customer>>
+    
+    @GET("invoices")
+    suspend fun getInvoices(
+        @Query("customerId") customerId: Int
+    ): Response<ApiResponse<List<Invoice>>>
+
+    @POST("invoices")
+    suspend fun createInvoice(
+        @Body request: CreateInvoiceRequest
+    ): Response<ApiResponse<Invoice>>
     
     @PATCH("subadmin/customers/{customerId}/amc-settings")
     suspend fun updateAmcSettings(
@@ -216,6 +220,12 @@ interface ApiService {
         @Body request: UpdateAmcVisitRequest
     ): Response<ApiResponse<AmcVisit>>
     
+    @POST("subadmin/amc-visits/{visitId}/complete")
+    suspend fun markAmcVisitDone(
+        @Path("visitId") visitId: String,
+        @Body request: Map<String, String?>
+    ): Response<ApiResponse<AmcVisit>>
+    
     // Inventory endpoints
     @GET("inventory")
     suspend fun getInventory(): Response<ApiResponse<List<InventoryItem>>>
@@ -245,9 +255,4 @@ interface ApiService {
     suspend fun getInvoices(
         @Query("invoiceType") invoiceType: String? = null
     ): Response<ApiResponse<List<Invoice>>>
-
-    @POST("invoices")
-    suspend fun createInvoice(
-        @Body request: CreateInvoiceRequest
-    ): Response<ApiResponse<Invoice>>
 }

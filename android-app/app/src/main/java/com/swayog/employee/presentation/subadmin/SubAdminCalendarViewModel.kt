@@ -93,7 +93,8 @@ class SubAdminCalendarViewModel @Inject constructor(
                                 time = it.scheduledTime,
                                 address = it.address ?: "No Address Listed",
                                 rawId = it.id.toString(),
-                                assignedEmployeeId = null
+                                assignedEmployeeId = null,
+                            status = "PENDING"
                             )
                         )
                     }
@@ -111,7 +112,8 @@ class SubAdminCalendarViewModel @Inject constructor(
                                 time = it.timeSlot,
                                 address = it.customer?.let { c -> "${c.fullName} (${c.city ?: "No City"})" } ?: "Customer ID: ${it.customerId}",
                                 rawId = it.id,
-                                assignedEmployeeId = it.assignedEmployeeId
+                                assignedEmployeeId = it.assignedEmployeeId,
+                            status = it.status ?: "PENDING"
                             )
                         )
                     }
@@ -130,7 +132,8 @@ class SubAdminCalendarViewModel @Inject constructor(
                                 time = if (scheduledTime.contains("T")) scheduledTime.substringAfter("T").substringBefore(".") else null,
                                 address = it.address ?: "No Location Specified",
                                 rawId = it.id,
-                                assignedEmployeeId = it.employeeUserId
+                                assignedEmployeeId = it.employeeUserId,
+                            status = it.status ?: "PENDING"
                             )
                         )
                     }
@@ -170,7 +173,8 @@ class SubAdminCalendarViewModel @Inject constructor(
                             time = null,
                             address = "India",
                             rawId = name,
-                            assignedEmployeeId = null
+                            assignedEmployeeId = null,
+                            status = "PENDING"
                         )
                     )
                 }
@@ -213,6 +217,20 @@ class SubAdminCalendarViewModel @Inject constructor(
     fun resetActionState() {
         _actionState.value = CalendarActionState.Idle
     }
+
+    fun markAmcVisitDone(visitId: String, visitNotes: String?, beforeImageUrl: String?, afterImageUrl: String?, onComplete: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val result = customerRepository.markAmcVisitDone(visitId, visitNotes, beforeImageUrl, afterImageUrl)
+                onComplete(result.map { })
+                if (result.isSuccess) {
+                    loadEvents()
+                }
+            } catch (e: Exception) {
+                onComplete(Result.failure(e))
+            }
+        }
+    }
 }
 
 data class CalendarEvent(
@@ -224,7 +242,8 @@ data class CalendarEvent(
     val time: String?,
     val address: String,
     val rawId: String,
-    val assignedEmployeeId: String?
+    val assignedEmployeeId: String?,
+    val status: String?
 )
 
 sealed class SubAdminCalendarState {

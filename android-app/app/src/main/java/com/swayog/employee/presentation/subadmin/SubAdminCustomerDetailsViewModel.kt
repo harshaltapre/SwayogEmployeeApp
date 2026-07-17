@@ -38,8 +38,14 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     private val _amcVisitsState = MutableStateFlow<CustomerDetailsState<List<AmcVisit>>>(CustomerDetailsState.Loading)
     val amcVisitsState: StateFlow<CustomerDetailsState<List<AmcVisit>>> = _amcVisitsState.asStateFlow()
 
-    private val _credentialsUpdateState = MutableStateFlow<CredentialsUpdateState>(CredentialsUpdateState.Idle)
-    val credentialsUpdateState: StateFlow<CredentialsUpdateState> = _credentialsUpdateState.asStateFlow()
+    private val _customerUpdateState = MutableStateFlow<CustomerUpdateState>(CustomerUpdateState.Idle)
+    val customerUpdateState: StateFlow<CustomerUpdateState> = _customerUpdateState.asStateFlow()
+
+    private val _invoicesState = MutableStateFlow<CustomerDetailsState<List<Invoice>>>(CustomerDetailsState.Loading)
+    val invoicesState: StateFlow<CustomerDetailsState<List<Invoice>>> = _invoicesState.asStateFlow()
+
+    private val _createInvoiceState = MutableStateFlow<CreateInvoiceState>(CreateInvoiceState.Idle)
+    val createInvoiceState: StateFlow<CreateInvoiceState> = _createInvoiceState.asStateFlow()
 
     private val _amcSettingsUpdateState = MutableStateFlow<AmcSettingsUpdateState>(AmcSettingsUpdateState.Idle)
     val amcSettingsUpdateState: StateFlow<AmcSettingsUpdateState> = _amcSettingsUpdateState.asStateFlow()
@@ -115,6 +121,21 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
         }
 
         loadHistory("monthly")
+        loadInvoices()
+    }
+    
+    private fun loadInvoices() {
+        viewModelScope.launch {
+            if (customerId == null) return@launch
+            _invoicesState.value = CustomerDetailsState.Loading
+            customerRepository.getInvoices(customerId)
+                .onSuccess {
+                    _invoicesState.value = CustomerDetailsState.Success(it)
+                }
+                .onFailure {
+                    _invoicesState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch invoices")
+                }
+        }
     }
 
     fun loadHistory(period: String) {
@@ -135,47 +156,46 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
         }
     }
 
-    fun updateCredentials(
-        inverterBrand: String?,
-        inverterLoginId: String?,
-        inverterPassword: String?,
-        inverterApiKey: String?,
-        inverterDeviceSn: String?,
-        city: String?,
-        address: String?,
-        projectStage: Int?
-    ) {
+    fun updateCustomer(request: UpdateCustomerRequest) {
         viewModelScope.launch {
             if (customerId == null) {
-                _credentialsUpdateState.value = CredentialsUpdateState.Error("Invalid Customer ID")
+                _customerUpdateState.value = CustomerUpdateState.Error("Invalid Customer ID")
                 return@launch
             }
-            _credentialsUpdateState.value = CredentialsUpdateState.Loading
-            val request = UpdateCredentialsRequest(
-                inverterBrand = inverterBrand,
-                inverterLoginId = inverterLoginId,
-                inverterPassword = inverterPassword,
-                inverterApiKey = inverterApiKey,
-                inverterDeviceSn = inverterDeviceSn,
-                city = city,
-                address = address,
-                projectStage = projectStage
-            )
-            customerRepository.updateCustomerCredentials(customerId, request)
+            _customerUpdateState.value = CustomerUpdateState.Loading
+            customerRepository.updateCustomer(customerId, request)
                 .onSuccess {
-                    _credentialsUpdateState.value = CredentialsUpdateState.Success(it)
+                    _customerUpdateState.value = CustomerUpdateState.Success(it)
                     loadData()
                 }
                 .onFailure {
-                    _credentialsUpdateState.value = CredentialsUpdateState.Error(it.message ?: "Failed to update credentials")
+                    _customerUpdateState.value = CustomerUpdateState.Error(it.message ?: "Failed to update customer")
                 }
         }
     }
 
     fun resetUpdateState() {
-        _credentialsUpdateState.value = CredentialsUpdateState.Idle
+        _customerUpdateState.value = CustomerUpdateState.Idle
     }
     
+    fun createInvoice(request: CreateInvoiceRequest) {
+        viewModelScope.launch {
+            _createInvoiceState.value = CreateInvoiceState.Loading
+            customerRepository.createInvoice(request)
+                .onSuccess {
+                    _createInvoiceState.value = CreateInvoiceState.Success(it)
+                    loadInvoices() // Refresh invoices list
+                }
+                .onFailure {
+                    _createInvoiceState.value = CreateInvoiceState.Error(it.message ?: "Failed to create invoice")
+                }
+        }
+    }
+
+    fun resetCreateInvoiceState() {
+        _createInvoiceState.value = CreateInvoiceState.Idle
+    }
+
     fun updateAmcSettings(request: UpdateAmcSettingsRequest) {
         viewModelScope.launch {
             if (customerId == null) {
@@ -235,11 +255,18 @@ sealed class CustomerDetailsState<out T> {
     data class Error(val message: String) : CustomerDetailsState<Nothing>()
 }
 
-sealed class CredentialsUpdateState {
-    object Idle : CredentialsUpdateState()
-    object Loading : CredentialsUpdateState()
-    data class Success(val customer: Customer) : CredentialsUpdateState()
-    data class Error(val message: String) : CredentialsUpdateState()
+sealed class CustomerUpdateState {
+    object Idle : CustomerUpdateState()
+    object Loading : CustomerUpdateState()
+    data class Success(val customer: Customer) : CustomerUpdateState()
+    data class Error(val message: String) : CustomerUpdateState()
+}
+
+sealed class CreateInvoiceState {
+    object Idle : CreateInvoiceState()
+    object Loading : CreateInvoiceState()
+    data class Success(val invoice: Invoice) : CreateInvoiceState()
+    data class Error(val message: String) : CreateInvoiceState()
 }
 
 sealed class AmcSettingsUpdateState {

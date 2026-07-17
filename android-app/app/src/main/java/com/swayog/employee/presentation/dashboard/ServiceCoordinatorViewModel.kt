@@ -240,7 +240,7 @@ class ServiceCoordinatorViewModel @Inject constructor(
         viewModelScope.launch {
             _isUpdatingCredentials.value = true
             _updateError.value = null
-            val request = UpdateCredentialsRequest(
+            val request = UpdateCustomerRequest(
                 inverterBrand = brand,
                 inverterLoginId = loginId,
                 inverterPassword = passwordVal,
@@ -248,9 +248,22 @@ class ServiceCoordinatorViewModel @Inject constructor(
                 inverterDeviceSn = deviceSn,
                 city = city,
                 address = address,
-                projectStage = projectStage
+                projectStage = projectStage,
+                fullName = null,
+                email = null,
+                phoneNumber = null,
+                systemSizeKw = null,
+                installationDate = null,
+                amcStatus = null,
+                amcExpiryDate = null,
+                contractStartDate = null,
+                contractEndDate = null,
+                cleaningsPerMonth = null,
+                status = "Active", // fallback
+                commissionAmount = null,
+                portalPassword = null
             )
-            customerRepository.updateCustomerCredentials(customerId, request)
+            customerRepository.updateCustomer(customerId, request)
                 .onSuccess {
                     _isUpdatingCredentials.value = false
                     // Re-sync local state

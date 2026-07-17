@@ -24,7 +24,7 @@ android {
         }
 
         // BuildConfig fields for API configuration
-        buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "http://10.0.2.2:4000/api/v1/"}\"")
+        buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "https://swayog-dashboard.vercel.app/api/v1/"}\"")
         buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "wss://swayog-dashboard.vercel.app"}\"")
         buildConfigField("String", "MAPS_API_KEY", "\"${project.findProperty("MAPS_API_KEY") ?: ""}\"")
     }
@@ -38,12 +38,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "http://10.0.2.2:4000/api/v1/"}\"")
+            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "https://swayog-dashboard.vercel.app/api/v1/"}\"")
             buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "wss://swayog-dashboard.vercel.app"}\"")
         }
         debug {
             isDebuggable = true
-            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "http://10.0.2.2:4000/api/v1/"}\"")
+            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "https://swayog-dashboard.vercel.app/api/v1/"}\"")
             buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "wss://swayog-dashboard.vercel.app"}\"")
         }
     }

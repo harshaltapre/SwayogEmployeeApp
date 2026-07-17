@@ -39,9 +39,12 @@ fun SubAdminCustomerDetailsScreen(
     val historyState by viewModel.historyState.collectAsState()
     val amcVisitsState by viewModel.amcVisitsState.collectAsState()
     val employees by viewModel.employees.collectAsState()
-    val updateState by viewModel.credentialsUpdateState.collectAsState()
+    val updateState by viewModel.customerUpdateState.collectAsState()
     val scheduleState by viewModel.scheduleActionState.collectAsState()
     val amcSettingsUpdateState by viewModel.amcSettingsUpdateState.collectAsState()
+    val invoicesState by viewModel.invoicesState.collectAsState()
+    val createInvoiceState by viewModel.createInvoiceState.collectAsState()
+
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var isEditOpen by remember { mutableStateOf(false) }
@@ -52,14 +55,28 @@ fun SubAdminCustomerDetailsScreen(
 
     LaunchedEffect(updateState) {
         when (updateState) {
-            is CredentialsUpdateState.Success -> {
-                Toast.makeText(context, "Credentials updated successfully!", Toast.LENGTH_SHORT).show()
+            is CustomerUpdateState.Success -> {
+                Toast.makeText(context, "Customer details updated successfully!", Toast.LENGTH_SHORT).show()
                 isEditOpen = false
                 viewModel.resetUpdateState()
             }
-            is CredentialsUpdateState.Error -> {
-                Toast.makeText(context, (updateState as CredentialsUpdateState.Error).message, Toast.LENGTH_LONG).show()
+            is CustomerUpdateState.Error -> {
+                Toast.makeText(context, (updateState as CustomerUpdateState.Error).message, Toast.LENGTH_LONG).show()
                 viewModel.resetUpdateState()
+            }
+            else -> {}
+        }
+    }
+
+    LaunchedEffect(createInvoiceState) {
+        when (createInvoiceState) {
+            is CreateInvoiceState.Success -> {
+                Toast.makeText(context, "Invoice added successfully!", Toast.LENGTH_SHORT).show()
+                viewModel.resetCreateInvoiceState()
+            }
+            is CreateInvoiceState.Error -> {
+                Toast.makeText(context, (createInvoiceState as CreateInvoiceState.Error).message, Toast.LENGTH_LONG).show()
+                viewModel.resetCreateInvoiceState()
             }
             else -> {}
         }
@@ -160,6 +177,11 @@ fun SubAdminCustomerDetailsScreen(
                             onClick = { selectedTab = 2 },
                             text = { Text("AMC") }
                         )
+                        Tab(
+                            selected = selectedTab == 3,
+                            onClick = { selectedTab = 3 },
+                            text = { Text("Invoices") }
+                        )
                     }
 
                     // Content Area
@@ -185,27 +207,46 @@ fun SubAdminCustomerDetailsScreen(
                                 onScheduleClick = { isScheduleDialogOpen = true },
                                 onSettingsClick = { isAmcSettingsOpen = true }
                             )
+                            3 -> InvoicesTabContent(
+                                invoicesState = invoicesState,
+                                onAddInvoiceClick = { isEditOpen = false /* reset edit? no need, just open dialog */ }
+                            )
                         }
                     }
                 }
 
                 if (isEditOpen) {
-                    EditCredentialsDialog(
+                    EditCustomerDialog(
                         customer = customer,
                         onDismiss = { isEditOpen = false },
-                        onSubmit = { brand, user, pass, api, sn, city, addr, stage ->
-                            viewModel.updateCredentials(
-                                inverterBrand = brand,
-                                inverterLoginId = user,
-                                inverterPassword = pass,
-                                inverterApiKey = api,
-                                inverterDeviceSn = sn,
-                                city = city,
-                                address = addr,
-                                projectStage = stage
-                            )
+                        onSubmit = { request ->
+                            viewModel.updateCustomer(request)
                         },
-                        isLoading = updateState is CredentialsUpdateState.Loading
+                        isLoading = updateState is CustomerUpdateState.Loading
+                    )
+                }
+
+                var isAddInvoiceOpen by remember { mutableStateOf(false) }
+                if (selectedTab == 3) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+                        FloatingActionButton(
+                            onClick = { isAddInvoiceOpen = true },
+                            modifier = Modifier.padding(16.dp),
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Invoice")
+                        }
+                    }
+                }
+
+                if (isAddInvoiceOpen) {
+                    AddInvoiceDialog(
+                        customerId = customer.id,
+                        onDismiss = { isAddInvoiceOpen = false },
+                        onSave = { request ->
+                            viewModel.createInvoice(request)
+                            isAddInvoiceOpen = false
+                        }
                     )
                 }
 
@@ -355,6 +396,10 @@ fun OverviewTabContent(
             DetailRow(icon = Icons.Default.QrCode, label = "Device SN", value = customer.inverterDeviceSn ?: "Not Linked")
             DetailRow(icon = Icons.Default.VpnKey, label = "API Key", value = customer.inverterApiKey ?: "Not Configured")
             DetailRow(icon = Icons.Default.AccountCircle, label = "Login ID", value = customer.inverterLoginId ?: "Not Configured")
+            DetailRow(icon = Icons.Default.Lock, label = "Portal Password", value = customer.portalPassword ?: "Not Configured")
+            if (customer.commissionAmount != null) {
+                DetailRow(icon = Icons.Default.MonetizationOn, label = "Commission", value = "₹${customer.commissionAmount}")
+            }
         }
     }
 }
@@ -778,118 +823,74 @@ fun TelemetryBox(label: String, value: String, modifier: Modifier = Modifier) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditCredentialsDialog(
-    customer: Customer,
-    onDismiss: () -> Unit,
-    onSubmit: (String?, String?, String?, String?, String?, String?, String?, Int?) -> Unit,
-    isLoading: Boolean
+fun InvoicesTabContent(
+    invoicesState: CustomerDetailsState<List<Invoice>>,
+    onAddInvoiceClick: () -> Unit
 ) {
-    var brand by remember { mutableStateOf(customer.inverterBrand ?: "") }
-    var sn by remember { mutableStateOf(customer.inverterDeviceSn ?: "") }
-    var apiKey by remember { mutableStateOf(customer.inverterApiKey ?: "") }
-    var loginId by remember { mutableStateOf(customer.inverterLoginId ?: "") }
-    var password by remember { mutableStateOf(customer.inverterPassword ?: "") }
-    var city by remember { mutableStateOf(customer.city ?: "") }
-    var address by remember { mutableStateOf(customer.address ?: "") }
-    var stage by remember { mutableIntStateOf(customer.projectStage ?: 0) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Edit Credentials",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-
-                var expanded by remember { mutableStateOf(false) }
-                val brands = listOf("Waaree", "KSolar", "UTL", "Microtek", "Luminous", "Growatt", "Other")
-                
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = !expanded }
-                ) {
-                    OutlinedTextField(
-                        value = brand,
-                        onValueChange = { brand = it },
-                        label = { Text("Inverter Brand") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        when (invoicesState) {
+            is CustomerDetailsState.Loading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            is CustomerDetailsState.Error -> {
+                Text(text = "Failed to load invoices: ${invoicesState.message}", color = MaterialTheme.colorScheme.error)
+            }
+            is CustomerDetailsState.Success -> {
+                val invoices = invoicesState.data
+                if (invoices.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No invoices found.", color = Color.Gray)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 80.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        brands.forEach { selectionOption ->
-                            DropdownMenuItem(
-                                text = { Text(selectionOption) },
-                                onClick = {
-                                    brand = selectionOption
-                                    expanded = false
-                                }
-                            )
+                        items(invoices) { invoice ->
+                            InvoiceItemCard(invoice = invoice)
                         }
                     }
                 }
-                OutlinedTextField(value = sn, onValueChange = { sn = it }, label = { Text("Device SN") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("API Key") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = loginId, onValueChange = { loginId = it }, label = { Text("Login ID") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = city, onValueChange = { city = it }, label = { Text("City") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())
-                
-                Column {
-                    Text(text = "Project Stage: $stage", style = MaterialTheme.typography.labelMedium)
-                    Slider(
-                        value = stage.toFloat(),
-                        onValueChange = { stage = it.toInt() },
-                        valueRange = 0f..4f,
-                        steps = 3
+            }
+        }
+    }
+}
+
+@Composable
+fun InvoiceItemCard(invoice: Invoice) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(text = invoice.description ?: "Invoice", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Surface(
+                    color = if (invoice.status.lowercase() == "paid") Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFF59E0B).copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = invoice.status.uppercase(),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = if (invoice.status.lowercase() == "paid") Color(0xFF10B981) else Color(0xFFD97706),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
                     )
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onDismiss, enabled = !isLoading) {
-                        Text("Cancel")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            onSubmit(
-                                brand.ifBlank { null },
-                                loginId.ifBlank { null },
-                                password.ifBlank { null },
-                                apiKey.ifBlank { null },
-                                sn.ifBlank { null },
-                                city,
-                                address,
-                                stage
-                            )
-                        },
-                        enabled = !isLoading
-                    ) {
-                        if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
-                        else Text("Save Changes")
-                    }
-                }
+            }
+            Text(text = "Amount: ₹${invoice.amount}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+            Text(text = "Date: ${invoice.date}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            if (invoice.paymentMethod != null) {
+                Text(text = "Payment Method: ${invoice.paymentMethod}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
         }
     }

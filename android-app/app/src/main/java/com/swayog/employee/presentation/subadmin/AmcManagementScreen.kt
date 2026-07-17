@@ -254,6 +254,7 @@ fun AmcManagementScreen(
     if (isAmcSettingsOpen && selectedCustomer != null) {
         AmcSettingsDialog(
             customer = selectedCustomer!!,
+            employees = employees,
             onDismiss = {
                 isAmcSettingsOpen = false
                 selectedCustomer = null
@@ -276,7 +277,8 @@ fun AmcManagementScreen(
     // Apartment AMC Settings Dialog
     if (isApartmentSettingsOpen && selectedApartment != null) {
         ApartmentAmcSettingsDialog(
-            apartment = selectedApartment!!,
+            apartmentName = selectedApartment!!.name,
+            employees = employees,
             onDismiss = {
                 isApartmentSettingsOpen = false
                 selectedApartment = null
@@ -572,206 +574,6 @@ fun AmcCustomerCard(
 }
 
 @Composable
-fun AmcVisitScheduleScreen(
-    customerId: Int?,
-    customerName: String?,
-    onClearCustomer: () -> Unit
-) {
-    // Placeholder for visit schedule implementation
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                Icons.Default.CalendarMonth,
-                contentDescription = "Schedule",
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-            )
-            Text(
-                text = "AMC Visit Schedule",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-            )
-            Text(
-                text = "Visit tracking and scheduling will be implemented here",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-            )
-        }
-    }
-}
-
-@Composable
-fun AmcSettingsDialog(
-    customer: Customer,
-    onDismiss: () -> Unit,
-    onSave: (AmcSettings) -> Unit
-) {
-    var monthlyRate by remember { mutableStateOf(customer.monthlyCleaningRate?.toString() ?: "") }
-    var cleaningsPerMonth by remember { mutableStateOf(customer.cleaningsPerMonth?.toString() ?: "") }
-    var clientType by remember { mutableStateOf(customer.clientType ?: "post_paid") }
-    var consumerNumber by remember { mutableStateOf(customer.consumerNumber ?: "") }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("AMC Settings") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = customer.fullName ?: "Customer",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                SwayogTextField(
-                    value = monthlyRate,
-                    onValueChange = { monthlyRate = it },
-                    label = "Monthly Rate (₹)",
-                    placeholder = "Enter monthly rate"
-                )
-                
-                SwayogTextField(
-                    value = cleaningsPerMonth,
-                    onValueChange = { cleaningsPerMonth = it },
-                    label = "Cleanings Per Month",
-                    placeholder = "Enter number of cleanings"
-                )
-                
-                SwayogTextField(
-                    value = consumerNumber,
-                    onValueChange = { consumerNumber = it },
-                    label = "Consumer Number",
-                    placeholder = "Enter consumer number"
-                )
-                
-                Text(
-                    text = "Client Type",
-                    style = MaterialTheme.typography.labelMedium
-                )
-                val clientTypes = listOf("pre_paid", "post_paid", "free_service", "corporate", "on_call")
-                clientTypes.forEach { type ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        RadioButton(
-                            selected = clientType == type,
-                            onClick = { clientType = type }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(type.replace("_", " ").capitalize())
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                onSave(
-                    AmcSettings(
-                        monthlyRate = monthlyRate.toIntOrNull(),
-                        cleaningsPerMonth = cleaningsPerMonth.toIntOrNull(),
-                        clientType = clientType,
-                        consumerNumber = consumerNumber
-                    )
-                )
-            }) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
-@Composable
-fun ApartmentAmcSettingsDialog(
-    apartment: ApartmentGroup,
-    onDismiss: () -> Unit,
-    onSave: (ApartmentAmcSettings) -> Unit
-) {
-    var monthlyRate by remember { mutableStateOf("") }
-    var cleaningsPerMonth by remember { mutableStateOf("") }
-    var clientType by remember { mutableStateOf("post_paid") }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Apartment AMC Settings") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = apartment.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                SwayogTextField(
-                    value = monthlyRate,
-                    onValueChange = { monthlyRate = it },
-                    label = "Monthly Rate (₹)",
-                    placeholder = "Enter monthly rate for all customers"
-                )
-                
-                SwayogTextField(
-                    value = cleaningsPerMonth,
-                    onValueChange = { cleaningsPerMonth = it },
-                    label = "Cleanings Per Month",
-                    placeholder = "Enter number of cleanings"
-                )
-                
-                Text(
-                    text = "Client Type",
-                    style = MaterialTheme.typography.labelMedium
-                )
-                val clientTypes = listOf("pre_paid", "post_paid", "free_service", "corporate", "on_call")
-                clientTypes.forEach { type ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        RadioButton(
-                            selected = clientType == type,
-                            onClick = { clientType = type }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(type.replace("_", " ").capitalize())
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                onSave(
-                    ApartmentAmcSettings(
-                        monthlyRate = monthlyRate.toIntOrNull(),
-                        cleaningsPerMonth = cleaningsPerMonth.toIntOrNull(),
-                        clientType = clientType
-                    )
-                )
-            }) {
-                Text("Apply to All")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
-@Composable
 fun ExcelImportDialog(
     onDismiss: () -> Unit,
     onImport: (List<Map<String, String>>) -> Unit
@@ -807,19 +609,6 @@ data class ApartmentGroup(
     val address: String,
     val city: String,
     val customers: MutableList<Customer>? = null
-)
-
-data class AmcSettings(
-    val monthlyRate: Int?,
-    val cleaningsPerMonth: Int?,
-    val clientType: String,
-    val consumerNumber: String
-)
-
-data class ApartmentAmcSettings(
-    val monthlyRate: Int?,
-    val cleaningsPerMonth: Int?,
-    val clientType: String
 )
 
 fun String.capitalize(): String {

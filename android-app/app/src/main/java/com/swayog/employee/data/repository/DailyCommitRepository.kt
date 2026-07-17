@@ -79,14 +79,12 @@ class DailyCommitRepository @Inject constructor(
         return try {
             val response = apiService.createDailyCommit(
                 DailyCommitRequest(
-                    employeeId = employeeId,
                     commitDate = commitDate,
                     taskWorkedOn = taskWorkedOn,
                     workSummary = workSummary,
                     hoursSpent = hoursSpent,
                     issuesBlockers = issuesBlockers,
-                    tomorrowPlan = tomorrowPlan,
-                    attachmentUrl = attachmentUrl
+                    tomorrowPlan = tomorrowPlan
                 )
             )
             if (response.isSuccessful && response.body()?.data != null) {
