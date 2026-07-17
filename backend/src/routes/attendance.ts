@@ -58,9 +58,11 @@ router.post("/rules", adminAuth, asyncHandler(async (req, res) => {
 // POST /profile-photo        → saves/updates the current user's photo
 router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
   const userId = req.auth!.userId;
-  const all = getAllPhotos();
-  const photo = all[userId] || null;
-  res.json({ photo });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { profileImageUrl: true },
+  });
+  res.json({ photo: user?.profileImageUrl || null });
 }));
 
 router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
@@ -75,7 +77,10 @@ router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, 
     res.status(413).json({ error: "Image too large. Please upload a photo under 2 MB." });
     return;
   }
-  savePhoto(userId, photo);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { profileImageUrl: photo },
+  });
   res.json({ success: true });
 }));
 
@@ -571,6 +576,43 @@ router.patch(
     });
 
     res.json({ success: true, checkIn: updated });
+  }),
+);
+
+router.get(
+  "/download-data",
+  authenticateAccessToken,
+  asyncHandler(async (req, res) => {
+    const userId = req.auth!.userId;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        employeeProfile: true,
+        AttendanceRecord: {
+          orderBy: { date: "desc" },
+        },
+        checkIns: {
+          orderBy: { createdAt: "desc" },
+        },
+        assignedTasks: {
+          orderBy: { createdAt: "desc" },
+        },
+        workSubmissions: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const { passwordHash, portalPassword, ...safeUser } = user;
+
+    res.setHeader("Content-Disposition", `attachment; filename="swayog_data_${user.loginId}.json"`);
+    res.setHeader("Content-Type", "application/json");
+    res.send(JSON.stringify(safeUser, null, 2));
   }),
 );
 

@@ -15,7 +15,7 @@ async function main() {
   for (const email of failedEmails) {
     const user = await remote.user.findUnique({
       where: { email },
-      include: { employeeProfile: true }
+      include: { employeeProfile: true, faceEnrollment: true }
     });
     
     if (!user) { console.log(`User ${email} not found`); continue; }
@@ -32,6 +32,7 @@ async function main() {
         designationTitle: user.designationTitle,
         reportingManagerId: user.reportingManagerId,
         isActive: user.isActive,
+        profileImageUrl: user.profileImageUrl,
       },
       create: {
         id: user.id,
@@ -44,6 +45,7 @@ async function main() {
         designationTitle: user.designationTitle,
         reportingManagerId: user.reportingManagerId,
         isActive: user.isActive,
+        profileImageUrl: user.profileImageUrl,
       }
     });
 
@@ -54,6 +56,31 @@ async function main() {
         create: { id: user.employeeProfile.id, userId: user.id, jobRole: user.employeeProfile.jobRole, zone: user.employeeProfile.zone, isActive: user.employeeProfile.isActive }
       });
     }
+
+    if (user.faceEnrollment) {
+      await local.faceEnrollment.upsert({
+        where: { employeeId: user.id },
+        update: {
+          descriptor1: user.faceEnrollment.descriptor1,
+          descriptor2: user.faceEnrollment.descriptor2,
+          descriptor3: user.faceEnrollment.descriptor3,
+          modelVersion: user.faceEnrollment.modelVersion,
+          enrolledAt: user.faceEnrollment.enrolledAt,
+          updatedAt: user.faceEnrollment.updatedAt,
+        },
+        create: {
+          id: user.faceEnrollment.id,
+          employeeId: user.id,
+          descriptor1: user.faceEnrollment.descriptor1,
+          descriptor2: user.faceEnrollment.descriptor2,
+          descriptor3: user.faceEnrollment.descriptor3,
+          modelVersion: user.faceEnrollment.modelVersion,
+          enrolledAt: user.faceEnrollment.enrolledAt,
+          updatedAt: user.faceEnrollment.updatedAt,
+        }
+      });
+    }
+
     console.log(`  ✓ Synced: ${user.fullName} (${user.email}) [${user.employeeProfile?.jobRole || user.role}]`);
   }
 

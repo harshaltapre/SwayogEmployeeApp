@@ -2,13 +2,14 @@ import type { Request, Response } from "express";
 
 import type { AuthContext } from "../../middleware/auth.js";
 import { ApiError } from "../../middleware/error.js";
-import type { LoginInput, RefreshInput, RegisterInput } from "./auth.schemas.js";
+import type { LoginInput, RefreshInput, RegisterInput, ChangePasswordInput } from "./auth.schemas.js";
 import {
   getCurrentUser,
   login,
   logout,
   refreshSession,
   registerCustomer,
+  changePassword,
 } from "./auth.service.js";
 
 export async function registerHandler(req: Request<unknown, unknown, RegisterInput>, res: Response): Promise<void> {
@@ -39,4 +40,14 @@ export async function meHandler(req: Request, res: Response): Promise<void> {
 
   const user = await getCurrentUser(auth.userId);
   res.status(200).json({ data: user });
+}
+
+export async function changePasswordHandler(req: Request<unknown, unknown, ChangePasswordInput>, res: Response): Promise<void> {
+  const auth = req.auth as AuthContext | undefined;
+  if (!auth?.userId) {
+    throw new ApiError(401, "Authentication required");
+  }
+  const { currentPassword, newPassword } = req.body;
+  await changePassword(auth.userId, { currentPassword, newPassword });
+  res.status(200).json({ data: { success: true } });
 }

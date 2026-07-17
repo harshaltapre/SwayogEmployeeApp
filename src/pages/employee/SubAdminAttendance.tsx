@@ -29,8 +29,18 @@ import {
   Scan,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCheckIn, useAttendanceRules, useFaceEnrollmentStatus, useMonthlyAttendance } from "@/hooks/useAttendance";
+import { useCheckIn, useCheckOut, useAttendanceRules, useFaceEnrollmentStatus, useMonthlyAttendance, useTodayAttendance } from "@/hooks/useAttendance";
 import { useFaceApi } from "@/hooks/useFaceApi";
+import { resolveConfiguredApiBaseUrl } from "@/lib/resolve-api-base-url";
+
+export function resolveStaticUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("data:")) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  
+  const base = resolveConfiguredApiBaseUrl() || "";
+  return `${base.replace(/\/$/, "")}/${url.replace(/^\//, "")}`;
+}
 
 
 // ───── Types ─────────────────────────────────────────────────────────────────
@@ -112,11 +122,66 @@ function calcHours(checkIn: string, checkOut: string, breaks: Break[] = []): num
   return parseFloat((totalMinutes / 60).toFixed(1));
 }
 
+// ───── Seed mock historical data ──────────────────────────────────────────────
+function generateMockAttendance(): AttendanceRecord[] {
+  return [];
+}
+
+function mapDbRecordToFrontend(dbRecord: any, checkIns: any[]): AttendanceRecord {
+  const d = new Date(dbRecord.date);
+  const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  // Find the matching check-in
+  const dayStart = new Date(dbRecord.date);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dbRecord.date);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const matchedCheckIn = checkIns?.find((c: any) => {
+    const cDate = new Date(c.createdAt);
+    return cDate >= dayStart && cDate <= dayEnd;
+  });
+
+  let checkInStr: string | null = null;
+  if (dbRecord.checkInTime) {
+    const ci = new Date(dbRecord.checkInTime);
+    checkInStr = `${pad(ci.getHours())}:${pad(ci.getMinutes())}`;
+  }
+
+  let checkOutStr: string | null = null;
+  if (dbRecord.checkOutTime) {
+    const co = new Date(dbRecord.checkOutTime);
+    checkOutStr = `${pad(co.getHours())}:${pad(co.getMinutes())}`;
+  }
+
+  const dbStatus = String(dbRecord.status).toUpperCase();
+  let statusStr: AttendanceStatus = "present";
+  if (dbStatus === "LATE") statusStr = "late";
+  else if (dbStatus === "ABSENT") statusStr = "absent";
+  else if (dbStatus === "LEAVE") statusStr = "leave";
+  else if (dbStatus === "HALF_DAY") statusStr = "half-day";
+
+  const workHours = dbRecord.totalMinutes ? parseFloat((dbRecord.totalMinutes / 60).toFixed(1)) : 0;
+
+  return {
+    date: dateStr,
+    checkIn: checkInStr,
+    checkOut: checkOutStr,
+    status: statusStr,
+    workHours,
+    breaks: [],
+    checkInSelfie: matchedCheckIn?.selfieUrl ?? null,
+    checkInLocation: matchedCheckIn?.latitude && matchedCheckIn?.longitude
+      ? `Lat ${matchedCheckIn.latitude.toFixed(5)}, Lng ${matchedCheckIn.longitude.toFixed(5)}`
+      : null,
+  };
+}
+
 // ───── Status config ──────────────────────────────────────────────────────────
 const statusConfig: Record<AttendanceStatus, { label: string; color: string; dot: string }> = {
   present: { label: "Present", color: "bg-emerald-100 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
   late: { label: "Late", color: "bg-amber-100 text-amber-700 border-amber-200", dot: "bg-amber-500" },
-  absent: { label: "Absent", color: "bg-rose-100 text-rose-700 border-rose-200", dot: "bg-rose-500" },
+  absent: { label: "Absent", color: "bg-red-100 text-red-700 border-red-200", dot: "bg-red-500" },
   leave: { label: "Leave", color: "bg-blue-100 text-blue-700 border-blue-200", dot: "bg-blue-500" },
   "half-day": { label: "Half Day", color: "bg-purple-100 text-purple-700 border-purple-200", dot: "bg-purple-500" },
 };
@@ -158,18 +223,38 @@ export default function SubAdminAttendance() {
   const today = todayStr();
 
   const checkInMutation = useCheckIn();
+  const checkOutMutation = useCheckOut();
   const { data: rules } = useAttendanceRules();
   const { data: enrollmentData } = useFaceEnrollmentStatus(user?.id ? String(user.id) : undefined);
   const { detectSingleFace, matchDescriptors, ensureLoaded, isLoaded } = useFaceApi();
 
+  const currentMonthNum = currentDate.getMonth() + 1;
+  const currentYearNum = currentDate.getFullYear();
+  const { data: monthlyData } = useMonthlyAttendance(currentMonthNum, currentYearNum);
 
-  // Load attendance when component mounts or user changes
+  // Sync attendance from DB monthly data and merge local breaks
   useEffect(() => {
-    if (user?.id) {
-      const loaded = loadAttendance(String(user.id));
-      setRecords(loaded);
+    if (monthlyData?.records && user?.id) {
+      const dbRecords = monthlyData.records.map((r: any) => {
+        const mapped = mapDbRecordToFrontend(r, monthlyData.checkIns);
+        // Merge today's breaks from localStorage
+        if (mapped.date === today) {
+          const stored = localStorage.getItem(`swayog_breaks_${user.id}_${today}`);
+          if (stored) {
+            try {
+              mapped.breaks = JSON.parse(stored);
+              // Recalculate workHours with breaks if checkOut is set
+              if (mapped.checkIn && mapped.checkOut) {
+                mapped.workHours = calcHours(mapped.checkIn, mapped.checkOut, mapped.breaks);
+              }
+            } catch {}
+          }
+        }
+        return mapped;
+      });
+      setRecords(dbRecords);
     }
-  }, [user?.id]);
+  }, [monthlyData, user?.id, today]);
 
   useEffect(() => {
     return () => {
@@ -218,31 +303,7 @@ export default function SubAdminAttendance() {
   const canTakeShortBreak = shortBreaksUsed < 2;
   const canTakeLunchBreak = !lunchBreakUsed;
 
-  // ── Check In ────────────────────────────────────────────────────────────────
-  const handleCheckIn = (proof?: { selfie?: string; location?: string }) => {
-    const time = nowTime();
-    const [h, m] = time.split(":").map(Number);
-    let isLate = false;
-    if (rules?.shiftStart) {
-      const [sh, sm] = rules.shiftStart.split(":").map(Number);
-      isLate = h > sh || (h === sh && m > sm);
-    } else {
-      isLate = h > 9 || (h === 9 && m > 15);
-    }
-    const newRecord: AttendanceRecord = {
-      date: today,
-      checkIn: time,
-      checkOut: null,
-      status: isLate ? "late" : "present",
-      workHours: 0,
-      breaks: [],
-      checkInSelfie: proof?.selfie ?? null,
-      checkInLocation: proof?.location ?? null,
-    };
-    const updated = records.filter((r) => r.date !== today).concat(newRecord);
-    setRecords(updated);
-    saveAttendance(String(user.id), updated);
-  };
+
 
 
 
@@ -512,19 +573,6 @@ export default function SubAdminAttendance() {
           matchDistance,
           livenessVerified: livenessOk,
         });
-        const newRecord: AttendanceRecord = {
-          date: today,
-          checkIn: time,
-          checkOut: null,
-          status: isLate ? "late" : "present",
-          workHours: 0,
-          breaks: [],
-          checkInSelfie: selfieDataUrl,
-          checkInLocation: location,
-        };
-        const updated = records.filter((r) => r.date !== today).concat(newRecord);
-        setRecords(updated);
-        saveAttendance(String(user.id), updated);
       } catch (err: any) {
         const message = err?.response?.data?.error || err?.message || "Unable to complete check-in.";
         throw new Error(message);
@@ -543,18 +591,14 @@ export default function SubAdminAttendance() {
 
 
   // ── Check Out ───────────────────────────────────────────────────────────────
-  const handleCheckOut = () => {
-    const time = nowTime();
-    const updated = records.map((r) => {
-      if (r.date === today && r.checkIn) {
-        const wh = calcHours(r.checkIn, time, r.breaks);
-        return { ...r, checkOut: time, workHours: wh, status: wh < 4 ? ("half-day" as AttendanceStatus) : r.status };
-      }
-      return r;
-    });
-    setRecords(updated);
-    saveAttendance(String(user.id), updated);
-    setOnBreak(false);
+  const handleCheckOut = async () => {
+    try {
+      await checkOutMutation.mutateAsync();
+      setOnBreak(false);
+    } catch (err: any) {
+      const message = err?.response?.data?.error || err?.message || "Unable to complete check-out.";
+      alert(message);
+    }
   };
 
   // ── Start Break ──────────────────────────────────────────────────────────────
@@ -562,25 +606,23 @@ export default function SubAdminAttendance() {
     if (!todayRecord) return;
     
     const startTime = nowTime();
-    const updated = records.map((r) => {
-      if (r.date === today) {
-        return {
-          ...r,
-          breaks: [
-            ...r.breaks,
-            {
-              type,
-              startTime,
-              duration,
-            },
-          ],
-        };
-      }
-      return r;
-    });
-    
-    setRecords(updated);
-    saveAttendance(String(user.id), updated);
+    const updatedBreaks = [
+      ...todayRecord.breaks,
+      {
+        type,
+        startTime,
+        duration,
+      },
+    ];
+
+    // Save breaks to localStorage
+    if (user?.id) {
+      localStorage.setItem(`swayog_breaks_${user.id}_${today}`, JSON.stringify(updatedBreaks));
+    }
+
+    // Update state
+    setRecords(prev => prev.map(r => r.date === today ? { ...r, breaks: updatedBreaks } : r));
+
     setOnBreak(true);
     setBreakTimeRemaining(duration * 60); // Convert to seconds
     setBreakDuration(0);
@@ -590,59 +632,40 @@ export default function SubAdminAttendance() {
   // ── End Break ────────────────────────────────────────────────────────────────
   const handleEndBreak = () => {
     const endTime = nowTime();
-    const updated = records.map((r) => {
-      if (r.date === today && r.breaks.length > 0) {
-        const updatedBreaks = [...r.breaks];
-        const lastBreakIndex = updatedBreaks.length - 1;
-        // Update the last (current) break with end time
-        updatedBreaks[lastBreakIndex] = {
-          ...updatedBreaks[lastBreakIndex],
-          endTime,
-        };
-        
-        // Recalculate work hours if checked out
-        let updatedRecord = { ...r, breaks: updatedBreaks };
+    if (!todayRecord || todayRecord.breaks.length === 0) return;
+
+    const updatedBreaks = [...todayRecord.breaks];
+    const lastIndex = updatedBreaks.length - 1;
+    updatedBreaks[lastIndex] = {
+      ...updatedBreaks[lastIndex],
+      endTime,
+    };
+
+    // Save to localStorage
+    if (user?.id) {
+      localStorage.setItem(`swayog_breaks_${user.id}_${today}`, JSON.stringify(updatedBreaks));
+    }
+
+    // Update state
+    setRecords(prev => prev.map(r => {
+      if (r.date === today) {
+        const updatedRecord = { ...r, breaks: updatedBreaks };
         if (r.checkOut) {
           updatedRecord.workHours = calcHours(r.checkIn!, r.checkOut, updatedBreaks);
         }
         return updatedRecord;
       }
       return r;
-    });
-    
-    setRecords(updated);
-    saveAttendance(String(user.id), updated);
+    }));
+
     setOnBreak(false);
     setBreakTimeRemaining(0);
   };
 
   // ── Stats ───────────────────────────────────────────────────────────────────
-  // Calculate working days up to today (or end of month if target month is in the past)
-  // Company works 6 days/week (Mon–Sat); only Sunday is a day off
-  const getWorkingDaysCount = (y: number, m: number) => {
-    let count = 0;
-    const today = new Date();
-    const endLimit = new Date(y, m, 0);
-    const current = new Date(y, m - 1, 1);
-    
-    while (current <= endLimit && current <= today) {
-      const day = current.getDay();
-      if (day !== 0) { // skip Sun only (0=Sun, 6=Sat is a working day)
-        count++;
-      }
-      current.setDate(current.getDate() + 1);
-    }
-    return count;
-  };
-
-  const workingDays = getWorkingDaysCount(currentDate.getFullYear(), currentDate.getMonth() + 1);
   const thisMonthRecords = records.filter((r) => r.date.startsWith(`${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}`));
-  
   const presentCount = thisMonthRecords.filter((r) => r.status === "present" || r.status === "late" || r.status === "half-day").length;
-  const fullPresent = thisMonthRecords.filter((r) => r.status === "present" || r.status === "late").length;
-  const halfDays = thisMonthRecords.filter((r) => r.status === "half-day").length;
-  
-  const absentCount = Math.max(0, workingDays - fullPresent - halfDays);
+  const absentCount = thisMonthRecords.filter((r) => r.status === "absent").length;
   const lateCount = thisMonthRecords.filter((r) => r.status === "late").length;
   const totalHours = thisMonthRecords.reduce((acc, r) => acc + r.workHours, 0);
 
@@ -717,7 +740,7 @@ export default function SubAdminAttendance() {
                         <div className="mt-2 flex flex-col items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
                           {todayChecked.checkInSelfie && (
                             <img
-                              src={todayChecked.checkInSelfie}
+                              src={resolveStaticUrl(todayChecked.checkInSelfie)}
                               alt="Attendance selfie"
                               className="h-24 w-24 rounded-xl object-cover border border-slate-600"
                             />
@@ -1169,6 +1192,8 @@ export default function SubAdminAttendance() {
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Check-Out</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Breaks</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Hours</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Selfie</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Location</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
                   </tr>
                 </thead>
@@ -1207,6 +1232,36 @@ export default function SubAdminAttendance() {
                         </td>
                         <td className="px-4 py-3 text-slate-600">{r.workHours > 0 ? `${r.workHours}h` : "—"}</td>
                         <td className="px-4 py-3">
+                          {r.checkInSelfie ? (
+                            <a
+                              href={resolveStaticUrl(r.checkInSelfie)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="relative group block h-8 w-8 overflow-hidden rounded border border-slate-200 hover:border-indigo-500 transition-colors"
+                            >
+                              <img
+                                src={resolveStaticUrl(r.checkInSelfie)}
+                                alt="Check-in Selfie"
+                                className="h-full w-full object-cover group-hover:scale-110 transition-transform"
+                              />
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-600">
+                          {r.checkInLocation ? (
+                            <div className="flex items-center gap-1">
+                              <MapPin className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                              <span className="truncate max-w-[100px]" title={r.checkInLocation}>
+                                {r.checkInLocation}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
                           <Badge className={cn("border text-xs", cfg.color)}>{cfg.label}</Badge>
                         </td>
                       </tr>
@@ -1214,7 +1269,7 @@ export default function SubAdminAttendance() {
                   })}
                   {recentRecords.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="text-center py-8 text-slate-400 text-sm">No attendance records found.</td>
+                      <td colSpan={8} className="text-center py-8 text-slate-400 text-sm">No attendance records found.</td>
                     </tr>
                   )}
                 </tbody>

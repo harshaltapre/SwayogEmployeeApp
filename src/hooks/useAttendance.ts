@@ -35,7 +35,10 @@ export const useCheckIn = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data?: any) => apiClient.post("/attendance/check-in", data).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["admin"] });
+    },
   });
 };
 
@@ -46,6 +49,7 @@ export const useCheckOut = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["attendance"] });
       qc.invalidateQueries({ queryKey: ["performance"] });
+      qc.invalidateQueries({ queryKey: ["admin"] });
     },
   });
 };
@@ -74,7 +78,7 @@ export const useSubmitWork = () => {
 export const useTeamPerformance = (month: number, year: number) => useQuery({
   queryKey: ["admin", "team-performance", month, year],
   queryFn: () => apiClient.get(`/attendance/admin/team-performance?month=${month}&year=${year}`).then((r) => r.data.snapshots),
-  refetchInterval: 60_000,
+  refetchInterval: 10_000,
 });
 
 export const useEmployeePerformance = (employeeId: string, month: number, year: number) => useQuery({
@@ -114,6 +118,7 @@ export const useEmployeeMonthlyAttendance = (employeeId: string, month: number, 
   queryKey: ["admin", "employee-attendance", employeeId, month, year],
   queryFn: () => apiClient.get(`/attendance/admin/employee/${employeeId}/monthly?month=${month}&year=${year}`).then((r) => r.data),
   enabled: !!employeeId,
+  refetchInterval: 10_000,
 });
 
 export const useAttendanceRules = () => useQuery({

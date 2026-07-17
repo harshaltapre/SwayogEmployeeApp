@@ -19,6 +19,8 @@ import {
 import { cn } from '@/lib/utils';
 import { useToast } from "@/hooks/use-toast";
 import { useProfilePhoto } from "@/hooks/useProfilePhoto";
+import { FaceEnroll } from "@/components/face/FaceEnroll";
+import { apiClient } from '@/lib/api-utils';
 
 type SettingsSection = 'profile' | 'general' | 'appearance' | 'privacy' | 'about';
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -35,6 +37,61 @@ export default function SubAdminSettings() {
     const saved = localStorage.getItem('quickTourEnabled');
     return saved === null ? true : saved === 'true';
   });
+
+  // Change Password States
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  // Privacy Policy Modal State
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast({ title: "Error", description: "New passwords do not match", variant: "destructive" });
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast({ title: "Error", description: "Password must be at least 8 characters", variant: "destructive" });
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await apiClient.post("/auth/change-password", { currentPassword, newPassword });
+      toast({ title: "Success", description: "Password changed successfully" });
+      setShowPasswordModal(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err?.response?.data?.error || "Failed to change password",
+        variant: "destructive"
+      });
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const handleDownloadData = async () => {
+    try {
+      const response = await apiClient.get("/attendance/download-data", { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `swayog_data_${user?.loginId || 'user'}.json`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      toast({ title: "Success", description: "Your data download has started." });
+    } catch (error) {
+      toast({ title: "Download Failed", description: "Unable to retrieve personal data", variant: "destructive" });
+    }
+  };
 
   // Profile photo — synced with server so it works across mobile + PC
   const { photo: profilePhotoPreview, uploading: photoUploading, uploadPhoto } = useProfilePhoto(user?.id);
@@ -444,26 +501,25 @@ export default function SubAdminSettings() {
 
             <SettingCard title="Data & Security" description="Manage your data and account security">
               <div className="space-y-3">
-                <button className="w-full flex items-center justify-between p-3 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left">
+                <button
+                  onClick={handleDownloadData}
+                  className="w-full flex items-center justify-between p-3 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
+                >
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Download Your Data</p>
                     <p className="text-xs text-slate-600 dark:text-slate-400">Get a copy of your personal data</p>
                   </div>
                   <span className="text-blue-600">→</span>
                 </button>
-                <button className="w-full flex items-center justify-between p-3 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left">
+                <button
+                  onClick={() => setShowPasswordModal(true)}
+                  className="w-full flex items-center justify-between p-3 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
+                >
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Change Password</p>
                     <p className="text-xs text-slate-600 dark:text-slate-400">Update your account password</p>
                   </div>
                   <span className="text-blue-600">→</span>
-                </button>
-                <button className="w-full flex items-center justify-between p-3 border border-red-200 dark:border-red-900 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left">
-                  <div>
-                    <p className="text-sm font-medium text-red-600 dark:text-red-400">Delete Account</p>
-                    <p className="text-xs text-red-600 dark:text-red-400">Permanently delete your account</p>
-                  </div>
-                  <span className="text-red-600">→</span>
                 </button>
               </div>
             </SettingCard>
@@ -472,7 +528,10 @@ export default function SubAdminSettings() {
               <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
                 We take your privacy seriously. Your data is encrypted and stored securely.
               </p>
-              <button className="text-blue-600 dark:text-blue-400 hover:underline text-sm font-medium">
+              <button
+                onClick={() => setShowPolicyModal(true)}
+                className="text-blue-600 dark:text-blue-400 hover:underline text-sm font-medium"
+              >
                 Read Full Privacy Policy →
               </button>
             </SettingCard>
@@ -617,6 +676,130 @@ export default function SubAdminSettings() {
           {renderSection()}
         </div>
       </div>
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 overflow-hidden transform scale-100 transition-transform">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Change Password</h3>
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Current Password</label>
+                <input
+                  type="password"
+                  required
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  placeholder="••••••••"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  placeholder="•••••••• (min 8 chars)"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Confirm New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  placeholder="••••••••"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={changingPassword}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-md transition-colors disabled:opacity-50"
+                >
+                  {changingPassword ? "Updating..." : "Update Password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Privacy Policy Modal */}
+      {showPolicyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 overflow-hidden flex flex-col max-h-[85vh]">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Swayog Energy Privacy Policy</h3>
+            
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 text-sm text-slate-600 dark:text-slate-400">
+              <p className="font-medium text-slate-900 dark:text-white">Last Updated: July 2026</p>
+              
+              <p>
+                At Swayog Energy, we are committed to protecting the privacy and security of our employee data. This Privacy Policy details how we handle information collected through the Swayog Energy Platform, including the web dashboard and capacitor mobile wrapper applications.
+              </p>
+
+              <h4 className="font-semibold text-slate-900 dark:text-white">1. Information We Collect</h4>
+              <ul className="list-disc pl-5 space-y-2">
+                <li>
+                  <strong className="text-slate-800 dark:text-slate-200">Face Recognition Descriptors:</strong> When you enroll your face for biometric check-in, the system extracts a 128-dimensional mathematical descriptor representing your face shape. We do not store your raw facial images; only these mathematical arrays are stored to verify your identity during check-ins.
+                </li>
+                <li>
+                  <strong className="text-slate-800 dark:text-slate-200">Geolocation Data:</strong> If geofencing is enabled by administrators, the application accesses your current GPS coordinates (latitude and longitude) to verify that check-ins and check-outs occur within the designated office radius (typically 150 meters). Location is only queried at the moment you press the check-in or check-out buttons.
+                </li>
+                <li>
+                  <strong className="text-slate-800 dark:text-slate-200">Selfie Images:</strong> Photos uploaded during check-in are securely saved to the server to assist administrators in manual attendance audits.
+                </li>
+                <li>
+                  <strong className="text-slate-800 dark:text-slate-200">Workflow & Task Records:</strong> We collect information about your assigned tasks, work submissions (progress updates, before/after task images, hours spent), and daily commit reports.
+                </li>
+                <li>
+                  <strong className="text-slate-800 dark:text-slate-200">Employment Metadata:</strong> General details including full name, login ID, employee code, role, designation title, and manager relationship.
+                </li>
+              </ul>
+
+              <h4 className="font-semibold text-slate-900 dark:text-white">2. How We Use Your Information</h4>
+              <ul className="list-disc pl-5 space-y-2">
+                <li>To authenticate your session and manage dashboard access control.</li>
+                <li>To verify work logs, geolocation, and face biometrics to automate attendance (late status, present days, hours worked).</li>
+                <li>To calculate performance snapshots and monthly analytics metrics.</li>
+                <li>To send important notifications regarding task assignments and company announcements.</li>
+              </ul>
+
+              <h4 className="font-semibold text-slate-900 dark:text-white">3. Data Retention and Security</h4>
+              <p>
+                All biometrics data (descriptors) and session details are transmitted over secure HTTPS connections and stored securely in an encrypted relational database. Geolocation audit records are kept alongside check-in timestamps. Your data is retained as long as your employment profile remains active.
+              </p>
+
+              <h4 className="font-semibold text-slate-900 dark:text-white">4. Your Rights and Controls</h4>
+              <p>
+                You have the right to request a complete export of your personal information (via the "Download Your Data" option) at any time. For security reasons, account deletion must be initiated by contacting your Super Admin or Human Resources.
+              </p>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-800 mt-4">
+              <button
+                type="button"
+                onClick={() => setShowPolicyModal(false)}
+                className="px-6 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-md transition-colors"
+              >
+                Close Policy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SubAdminLayout>
   );
 }

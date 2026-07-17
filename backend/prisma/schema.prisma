@@ -303,8 +303,6 @@ model ServiceRequest {
 
   @@index([customerId])
   @@index([status])
-  @@index([createdAt])
-  @@index([status, createdAt])
 }
 
 model AmcContract {

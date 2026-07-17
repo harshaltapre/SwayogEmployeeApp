@@ -14,7 +14,6 @@ import { decryptToken } from "../../lib/encryption.js";
 import { fetchWaareeData, fetchWaareeHistory } from "../../lib/waaree.js";
 import { getWaareeLiveTelemetry, getWaareeGraphData } from "../../lib/waareeService.js";
 import { fetchGenericRestData, fetchGenericRestHistory } from "../../lib/genericRest.js";
-import { createAdminNotification } from "../../services/notificationService.js";
 
 function parseBrandAndType(brandStr: string): string {
   const brandLower = (brandStr || "").toLowerCase();
@@ -65,9 +64,9 @@ export async function getAllServiceRequests(req: Request, res: Response): Promis
     throw new ApiError(401, "Authentication required");
   }
 
-  const { status, limit = "1000", offset = "0", customerId } = req.query;
+  const { status, limit = "100", offset = "0", customerId } = req.query;
 
-  const take = Math.min(parseInt(limit as string) || 1000, 1000);
+  const take = Math.min(parseInt(limit as string) || 100, 200);
   const skip = parseInt(offset as string) || 0;
 
   const where: any = {};
@@ -184,7 +183,7 @@ export async function updateServiceRequest(req: Request, res: Response): Promise
       
       // If the employee changed or it's a new scheduling, we proceed
       // In a real production app, we would link Task to ServiceRequest via a foreign key
-      const task = await prisma.task.create({
+      await prisma.task.create({
         data: {
           employeeUserId: assignedEmployeeId,
           assignedById: auth.userId,
@@ -198,12 +197,6 @@ export async function updateServiceRequest(req: Request, res: Response): Promise
           scheduledTime: new Date(`${scheduledDate || updated.scheduledDate || new Date().toISOString().split('T')[0]}T${scheduledTime || updated.scheduledTime || "10:00"}:00`),
           status: "ASSIGNED",
         }
-      });
-
-      await createAdminNotification({
-        type: "TASK_ASSIGNED",
-        message: `New task assigned: ${task.description} at ${task.customerName}`,
-        employeeId: assignedEmployeeId
       });
     } catch (err) {
       console.error("Failed to auto-create task", err);

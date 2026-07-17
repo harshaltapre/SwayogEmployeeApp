@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { SettingsPageShell } from "@/components/settings/SettingsPageShell";
 import { useLocation } from "wouter";
+import { useProfilePhoto } from "@/hooks/useProfilePhoto";
 
 type Section = "profile" | "security" | "notifications" | "platform" | "danger";
 
@@ -86,7 +87,7 @@ export default function SettingsTab() {
   const [phone, setPhone] = useState("+91 98200 00001");
   const [designation, setDesignation] = useState("Super Administrator");
   const [officeLocation, setOfficeLocation] = useState("Mumbai, Maharashtra");
-  const [profilePhoto, setProfilePhoto] = useState(() => localStorage.getItem(`profilePhoto_${user?.id}`) || "");
+  const { photo: profilePhoto, uploading: photoUploading, uploadPhoto } = useProfilePhoto(user?.id);
 
   // Security
   const [twoFA, setTwoFA] = useState(true);
@@ -118,25 +119,15 @@ export default function SettingsTab() {
     toast({ title: "Settings Saved", description: "Your changes have been saved successfully." });
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        toast({ title: "Upload Failed", description: "File size exceeds 2MB limit", variant: "destructive" });
-        return;
-      }
-      if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
-        toast({ title: "Upload Failed", description: "Only JPG, PNG, WEBP, and GIF formats are supported", variant: "destructive" });
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const photoData = event.target?.result as string;
-        setProfilePhoto(photoData);
-        localStorage.setItem(`profilePhoto_${user?.id}`, photoData);
+      const result = await uploadPhoto(file);
+      if (result.success) {
         toast({ title: "Success", description: "Profile photo uploaded successfully" });
-      };
-      reader.readAsDataURL(file);
+      } else {
+        toast({ title: "Upload Failed", description: result.error || "Unable to upload profile photo", variant: "destructive" });
+      }
     }
   };
 

@@ -214,6 +214,10 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
     console.error("Failed to notify admins:", err);
   }
 
+  await recalculateMonthlyPerformance(employeeId).catch((err) => {
+    console.error("Failed to recalculate performance on check-in:", err);
+  });
+
   return { attendance, checkInRecord };
 }
 
@@ -275,6 +279,11 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
 }
 
 
+/**
+ * Counts working days between start and end (inclusive), up to today.
+ * Company policy: 6-day work week (Monday–Saturday). Only Sunday is a holiday.
+ * Sunday = 0 in JS Date.getDay(), so we skip only day === 0.
+ */
 function getWorkingDays(start: Date, end: Date) {
   let count = 0;
   const current = new Date(start);
@@ -282,7 +291,8 @@ function getWorkingDays(start: Date, end: Date) {
 
   while (current <= end && current <= today) {
     const day = current.getDay();
-    if (day !== 0 && day !== 6) {
+    // Skip only Sunday (0). Saturday (6) is a working day.
+    if (day !== 0) {
       count += 1;
     }
     current.setDate(current.getDate() + 1);
