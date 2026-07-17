@@ -200,6 +200,9 @@ function serializeTask(task: any) {
       }))
     : [];
 
+  const beforeImageObj = taskImages.find((img: any) => img.type === "before" || img.type === "Before");
+  const afterImageObj = taskImages.find((img: any) => img.type === "after" || img.type === "After");
+
   return {
     id: task.id,
     jobType: task.jobType,
@@ -218,6 +221,14 @@ function serializeTask(task: any) {
     completedAt: task.completedAt?.toISOString() ?? null,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
+    assignedEmployees,
+    taskImages,
+    beforeImageUrl: beforeImageObj?.url ?? null,
+    beforeLatitude: beforeImageObj?.latitude ?? null,
+    beforeLongitude: beforeImageObj?.longitude ?? null,
+    afterImageUrl: afterImageObj?.url ?? null,
+    afterLatitude: afterImageObj?.latitude ?? null,
+    afterLongitude: afterImageObj?.longitude ?? null,
   };
 }
 
@@ -265,6 +276,7 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
     // Fetch regular tasks
     const tasks: any = await prisma.task.findMany({
       where,
+      include: getTaskInclude(),
       orderBy: [{ scheduledTime: "asc" }, { createdAt: "desc" }],
       take: query.limit,
     });
@@ -561,12 +573,26 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         throw new ApiError(403, "You cannot complete visits assigned to other employees");
       }
 
+      let completedByName = "Employee";
+      const emp = await prisma.user.findUnique({
+        where: { id: auth.userId },
+        select: { fullName: true }
+      });
+      if (emp?.fullName) {
+        completedByName = emp.fullName;
+      }
+
       const updated = await prisma.amcVisit.update({
         where: { id: visitId },
         data: {
           status: AmcVisitStatus.COMPLETED,
-          notes: input.message,
+          notes: input.message || null,
+          visitNotes: input.message || null,
           completedAt: new Date(),
+          completedByEmployeeId: auth.userId,
+          completedByName: completedByName,
+          beforeImageUrl: input.beforeImageUrl || null,
+          afterImageUrl: input.afterImageUrl || null,
         },
       });
 
@@ -645,7 +671,11 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       },
     });
 
-    return serializeTask(updated);
+    const fullTask = await prisma.task.findUnique({
+      where: { id },
+      include: getTaskInclude(),
+    });
+    return serializeTask(fullTask || updated);
   } catch (error) {
     if (error instanceof ApiError && error.statusCode !== 500) throw error;
     console.warn("DB offline: Return mocked completeTask success", error);

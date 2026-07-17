@@ -72,9 +72,10 @@ export default function ServiceRequestsPanel() {
   const apiBase = getEffectiveApiBaseUrl();
 
   const fetchRequests = async () => {
-    if (!token || !apiBase) return;
+    if (!token) return;
     setIsLoading(true);
     try {
+      if (!apiBase) throw new Error("API base not configured");
       const url = apiBase.includes("/api/v")
         ? `${apiBase}/subadmin/service-requests`
         : `${apiBase}/api/v1/subadmin/service-requests`;
@@ -87,10 +88,43 @@ export default function ServiceRequestsPanel() {
       setRequests(data);
       setFilteredRequests(data);
     } catch (error) {
-      console.error("Failed to fetch service requests", error);
+      console.error("Failed to fetch service requests, using local storage fallback", error);
+      try {
+        const raw = localStorage.getItem("swayog_dynamic_complaints");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const mapped: ServiceRequest[] = parsed.map((c: any) => ({
+              id: Number(c.id) || Date.now(),
+              customerId: Number(c.customerId ?? c.customer_id ?? 1),
+              customer_id: Number(c.customer_id ?? c.customerId ?? 1),
+              customerName: c.customerName ?? "Local Customer",
+              customerEmail: c.customerEmail ?? "customer@example.com",
+              customerPhone: c.customerPhone ?? "",
+              customerCity: c.customerCity ?? "",
+              customerCode: c.customerCode ?? "CUST-LOCAL",
+              title: c.title ?? c.type ?? "Complaint",
+              description: c.description ?? "",
+              status: c.status ?? "pending",
+              scheduledDate: c.scheduledDate ?? c.scheduled_date ?? null,
+              scheduled_date: c.scheduled_date ?? c.scheduledDate ?? null,
+              scheduledTime: c.scheduledTime ?? null,
+              address: c.address ?? "",
+              latitude: c.latitude ?? null,
+              longitude: c.longitude ?? null,
+              createdAt: c.createdAt ?? new Date().toISOString(),
+            }));
+            setRequests(mapped);
+            setFilteredRequests(mapped);
+            return;
+          }
+        }
+      } catch (localErr) {
+        console.error("Failed to parse local service requests", localErr);
+      }
       toast({
         title: "Error",
-        description: "Failed to load service requests from server.",
+        description: "Failed to load service requests from server. Local fallback used if available.",
         variant: "destructive",
       });
     } finally {

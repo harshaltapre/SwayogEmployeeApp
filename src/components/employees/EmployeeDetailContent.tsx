@@ -21,8 +21,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Phone, Mail, MapPin, Briefcase, Star, Calendar, ArrowLeft, User, Trash2, RefreshCw, GitBranch, Network, ShieldAlert, Download, Copy, Award, CheckSquare, XSquare, Check, X, ExternalLink, FileText, Camera, CheckCircle2, CalendarCheck, ClipboardList } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-const JOB_TYPES = ["Cleaning", "Maintenance", "Visit", "Service", "Installation", "Complaint", "Survey"];
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -519,22 +517,7 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                   <Form {...assignForm}>
                     <form onSubmit={assignForm.handleSubmit(onAssignTask)} className="space-y-3">
                       <FormField control={assignForm.control} name="jobType" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Task Type</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select task type" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {JOB_TYPES.map(type => (
-                                <SelectItem key={type} value={type}>{type}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
+                        <FormItem><FormLabel>Task Type</FormLabel><FormControl><Input {...field} placeholder="Installation / Service / Complaint" /></FormControl><FormMessage /></FormItem>
                       )} />
                       <FormField control={assignForm.control} name="description" render={({ field }) => (
                         <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea {...field} placeholder="Task details" /></FormControl><FormMessage /></FormItem>
@@ -1536,22 +1519,7 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
           <Form {...assignForm}>
             <form onSubmit={assignForm.handleSubmit(onAssignTask)} className="space-y-3">
               <FormField control={assignForm.control} name="jobType" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Task Type</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select task type" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {JOB_TYPES.map(type => (
-                        <SelectItem key={type} value={type}>{type}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
+                <FormItem><FormLabel>Task Type</FormLabel><FormControl><Input {...field} placeholder="Installation / Service / Complaint" /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={assignForm.control} name="description" render={({ field }) => (
                 <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea {...field} placeholder="Task details" /></FormControl><FormMessage /></FormItem>

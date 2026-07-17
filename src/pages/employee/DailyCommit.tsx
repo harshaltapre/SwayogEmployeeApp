@@ -62,11 +62,6 @@ export default function DailyCommitPage() {
   }, [existing, loadingExisting, commitDate]);
 
   const handleSubmit = async () => {
-    if (alreadySubmitted) {
-      toast({ title: "Already submitted", description: "You have already submitted for this date." });
-      return;
-    }
-
     const cleanTask = taskWorkedOn.trim();
     const cleanSummary = workSummary.trim();
     const parsedHours = Number(hoursSpent);
@@ -117,7 +112,7 @@ export default function DailyCommitPage() {
       if (fileRef.current) fileRef.current.value = "";
 
       toast({
-        title: "Daily commit submitted",
+        title: alreadySubmitted ? "Daily commit updated" : "Daily commit submitted",
         description: "Admins and your reporting chain can now view this report.",
       });
     } catch (err: unknown) {
@@ -200,6 +195,13 @@ export default function DailyCommitPage() {
             <CardTitle className="text-lg">Submit Daily Commit</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {alreadySubmitted && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm flex items-center gap-2 mb-4">
+                <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0" />
+                <span>Daily commit for this date has already been submitted and saved. You can edit the fields below and click &quot;Update Daily Commit&quot; to update it.</span>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="commitDate">Date</Label>
               <Input
@@ -208,7 +210,6 @@ export default function DailyCommitPage() {
                 value={commitDate}
                 max={todayIso()}
                 onChange={(e) => setCommitDate(e.target.value)}
-                disabled={alreadySubmitted}
               />
             </div>
 
@@ -218,7 +219,7 @@ export default function DailyCommitPage() {
                 id="taskWorkedOn"
                 value={taskWorkedOn}
                 onChange={(e) => setTaskWorkedOn(e.target.value)}
-                disabled={alreadySubmitted}
+                placeholder="e.g. Completed AMC visit at Abhyankar site / Panel cleaning"
               />
             </div>
 
@@ -229,7 +230,7 @@ export default function DailyCommitPage() {
                 rows={4}
                 value={workSummary}
                 onChange={(e) => setWorkSummary(e.target.value)}
-                disabled={alreadySubmitted}
+                placeholder="Describe details of work done, achievements, or milestones (minimum 10 characters)"
               />
             </div>
 
@@ -243,7 +244,7 @@ export default function DailyCommitPage() {
                 step={0.25}
                 value={hoursSpent}
                 onChange={(e) => setHoursSpent(e.target.value)}
-                disabled={alreadySubmitted}
+                placeholder="e.g. 8"
               />
             </div>
 
@@ -254,7 +255,7 @@ export default function DailyCommitPage() {
                 rows={2}
                 value={issuesBlockers}
                 onChange={(e) => setIssuesBlockers(e.target.value)}
-                disabled={alreadySubmitted}
+                placeholder="Mention any issues, blockers, or help needed (optional)"
               />
             </div>
 
@@ -265,28 +266,26 @@ export default function DailyCommitPage() {
                 rows={2}
                 value={tomorrowPlan}
                 onChange={(e) => setTomorrowPlan(e.target.value)}
-                disabled={alreadySubmitted}
+                placeholder="What tasks or priorities do you plan to work on tomorrow? (optional)"
               />
             </div>
 
-            {!alreadySubmitted && (
-              <div className="space-y-2">
-                <Label htmlFor="attachment">Attachment (optional)</Label>
-                <Input
-                  id="attachment"
-                  ref={fileRef}
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
-                  onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
-                />
-                {attachment && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Paperclip className="h-3 w-3" />
-                    {attachment.name}
-                  </p>
-                )}
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="attachment">Attachment (optional)</Label>
+              <Input
+                id="attachment"
+                ref={fileRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+                onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+              />
+              {attachment && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Paperclip className="h-3 w-3" />
+                  {attachment.name}
+                </p>
+              )}
+            </div>
 
             {existing?.attachmentUrl && (
               <p className="text-sm">
@@ -301,16 +300,18 @@ export default function DailyCommitPage() {
               </p>
             )}
 
-            {!alreadySubmitted && (
-              <Button
-                className="w-full"
-                onClick={handleSubmit}
-                disabled={submitMutation.isPending || attachMutation.isPending}
-              >
-                <Send className="h-4 w-4 mr-2" />
-                {submitMutation.isPending ? "Submitting..." : "Submit Daily Commit"}
-              </Button>
-            )}
+            <Button
+              className="w-full"
+              onClick={handleSubmit}
+              disabled={submitMutation.isPending || attachMutation.isPending}
+            >
+              <Send className="h-4 w-4 mr-2" />
+              {submitMutation.isPending
+                ? "Submitting..."
+                : alreadySubmitted
+                ? "Update Daily Commit"
+                : "Submit Daily Commit"}
+            </Button>
           </CardContent>
         </Card>
 

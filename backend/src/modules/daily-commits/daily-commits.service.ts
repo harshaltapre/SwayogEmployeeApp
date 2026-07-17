@@ -107,8 +107,20 @@ async function getRecursiveReporteeIds(userId: string): Promise<string[]> {
   return [...ids, ...subReportIds.flat()];
 }
 
+function normalizeJobRole(jobRole?: string | null): string {
+  return String(jobRole ?? "").toLowerCase().replace(/[_\s-]+/g, "");
+}
+
+function isServiceCoordinator(auth: AuthContext): boolean {
+  return auth.role === UserRole.SUB_ADMIN || normalizeJobRole(auth.jobRole) === "servicecoordinator";
+}
+
 async function getVisibleEmployeeIds(auth: AuthContext): Promise<string[] | "all"> {
-  if (auth.role === UserRole.SUPER_ADMIN || auth.role === UserRole.ADMIN) {
+  if (
+    auth.role === UserRole.SUPER_ADMIN ||
+    auth.role === UserRole.ADMIN ||
+    isServiceCoordinator(auth)
+  ) {
     return "all";
   }
 
@@ -144,7 +156,22 @@ export async function submitDailyCommit(auth: AuthContext, input: SubmitDailyCom
   });
 
   if (existing) {
-    throw new ApiError(409, "A daily commit for this date already exists");
+    const updated = await prisma.dailyCommit.update({
+      where: { id: existing.id },
+      data: {
+        taskWorkedOn: input.taskWorkedOn,
+        workSummary: input.workSummary,
+        hoursSpent: input.hoursSpent,
+        issuesBlockers: input.issuesBlockers ?? null,
+        tomorrowPlan: input.tomorrowPlan ?? null,
+      },
+      include: {
+        employee: {
+          select: { id: true, fullName: true, employeeCode: true, loginId: true },
+        },
+      },
+    });
+    return serializeDailyCommit(updated);
   }
 
   const commit = await prisma.dailyCommit.create({

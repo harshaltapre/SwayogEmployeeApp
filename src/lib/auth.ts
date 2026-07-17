@@ -116,7 +116,7 @@ interface User {
   departmentId?: string | null;
   reportingManagerId?: string | null;
   employeeCode?: string | null;
-  profileImageUrl?: string | null;
+  loginId?: string | null;
 }
 
 interface AuthState {

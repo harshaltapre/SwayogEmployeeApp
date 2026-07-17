@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, MapPin, Phone, History, CalendarDays, Filter, Calendar, Edit2, X, Clock, HelpCircle, AlertTriangle, Building2 } from "lucide-react";
-import { useListAmcVisits, useMarkVisitDone, useUpdateAmcVisit, useListEmployees } from "@/lib/api-client";
+import { CheckCircle2, MapPin, Phone, History, CalendarDays, Filter, Calendar, Edit2, X, Clock, HelpCircle, AlertTriangle, Building2, Eye } from "lucide-react";
+import { useListAmcVisits, useMarkVisitDone, useUpdateAmcVisit, useListEmployees, buildAssetUrlFromPath } from "@/lib/api-client";
 import { format, isSameDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -35,6 +35,7 @@ export function AmcVisitTracker({
   const [newDate, setNewDate] = useState<string>("");
   const [newTime, setNewTime] = useState<string>("");
   const [showExcessConfirm, setShowExcessConfirm] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
   const { data: visits = [], isLoading } = useListAmcVisits({ customerId });
@@ -121,8 +122,10 @@ export function AmcVisitTracker({
     }
   };
 
-  // Filter both pending & completed cleanings
+  // Filter only pending cleanings for the schedule table
   const filteredVisits = visits.filter(v => {
+    if (String(v.status).toUpperCase() === "COMPLETED") return false; // Completed visits are shown in logs, not the schedule
+    
     const date = new Date(v.scheduledDate);
     
     if (filterDate) {
@@ -137,15 +140,15 @@ export function AmcVisitTracker({
   }).sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
 
   // Statistics calculation
-  const totalCleanings = visits.length;
-  const doneCount = visits.filter(v => v.status === "completed").length;
-  const pendingCount = visits.filter(v => v.status === "pending").length;
+  const totalCleanings = visits.filter(v => String(v.status).toUpperCase() !== "COMPLETED").length;
+  const doneCount = visits.filter(v => String(v.status).toUpperCase() === "COMPLETED").length;
+  const pendingCount = visits.filter(v => String(v.status).toUpperCase() === "PENDING").length;
   const overdueCount = visits.filter(v => 
-    v.status === "pending" && new Date(v.scheduledDate) < new Date()
+    String(v.status).toUpperCase() === "PENDING" && new Date(v.scheduledDate) < new Date()
   ).length;
 
   const isOverdue = (visit: any) => {
-    return visit.status === "pending" && new Date(visit.scheduledDate) < new Date();
+    return String(visit.status).toUpperCase() === "PENDING" && new Date(visit.scheduledDate) < new Date();
   };
 
   const months = [
@@ -340,12 +343,12 @@ export function AmcVisitTracker({
                             <Badge 
                               variant="outline" 
                               className={
-                                visit.status === "completed" 
+                                String(visit.status).toUpperCase() === "COMPLETED" 
                                   ? "bg-green-50 text-green-700 border-green-200" 
                                   : "bg-amber-50 text-amber-700 border-amber-200"
                               }
                             >
-                              {visit.status === "completed" ? "Done" : "Pending"}
+                              {String(visit.status).toUpperCase() === "COMPLETED" ? "Done" : "Pending"}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-xs font-semibold text-slate-700">
@@ -362,7 +365,7 @@ export function AmcVisitTracker({
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            {visit.status === "pending" ? (
+                            {String(visit.status).toUpperCase() === "PENDING" ? (
                               <div className="flex items-center justify-end gap-1.5">
                                 <Button 
                                   variant="ghost" 
@@ -416,7 +419,7 @@ export function AmcVisitTracker({
                 <div className="space-y-6">
                   {months.map((m, monthIndex) => {
                     const monthlyLogs = visits.filter(v => 
-                      v.status === "completed" &&
+                      String(v.status).toUpperCase() === "COMPLETED" &&
                       new Date(v.completedAt || v.scheduledDate).getMonth() === monthIndex &&
                       new Date(v.completedAt || v.scheduledDate).getFullYear() === currentYear
                     );
@@ -431,20 +434,77 @@ export function AmcVisitTracker({
                             {monthlyLogs.length} Done
                           </span>
                         </div>
-                        <div className="space-y-1.5 pl-3 border-l-2 border-slate-100">
+                        <div className="space-y-3 pl-3 border-l-2 border-slate-100">
                           {monthlyLogs.map(v => (
-                            <div key={v.id} className="text-xs flex justify-between items-center text-slate-600 py-1 border-b border-slate-50 last:border-0">
-                              <span className="truncate max-w-[150px] font-medium">{v.customer?.fullName}</span>
-                              <span className="font-mono text-[10px] bg-slate-50 px-1.5 py-0.5 rounded text-slate-400">
-                                {format(new Date(v.completedAt || v.scheduledDate), "dd/MM")}
-                              </span>
+                            <div key={v.id} className="text-xs flex flex-col gap-2 text-slate-600 py-3 border-b border-slate-100 last:border-0 bg-slate-50/50 p-2.5 rounded-lg">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="font-bold text-slate-900 text-[13px]">{v.customer?.fullName}</div>
+                                  <div className="text-[10px] text-slate-400 mt-0.5">Visit #{v.cleaningNumber || "—"}</div>
+                                </div>
+                                <span className="font-mono text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold">
+                                  {format(new Date(v.completedAt || v.scheduledDate), "dd/MM")}
+                                </span>
+                              </div>
+                              
+                              <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                                <span className="font-bold text-slate-700">Done By:</span>
+                                <span>{v.completedByName || getEmployeeName(v.assignedEmployeeId || "") || "Technician"}</span>
+                              </div>
+
+                              {(v.notes || v.visitNotes) && (
+                                <div className="text-[10px] text-slate-600 italic bg-white border border-slate-100 rounded p-1.5 leading-relaxed">
+                                  "{v.notes || v.visitNotes}"
+                                </div>
+                              )}
+
+                              {(v.beforeImageUrl || v.afterImageUrl) && (
+                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                  {v.beforeImageUrl && (
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase">Before</span>
+                                      <div className="relative group/img aspect-video rounded overflow-hidden border border-slate-200 bg-white block shadow-xs">
+                                        <img 
+                                          src={buildAssetUrlFromPath(v.beforeImageUrl) || ""} 
+                                          alt="Before" 
+                                          className="w-full h-full object-cover" 
+                                        />
+                                        <div 
+                                          onClick={() => setPreviewImageUrl(buildAssetUrlFromPath(v.beforeImageUrl))}
+                                          className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer"
+                                        >
+                                          <Eye className="w-5 h-5" />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {v.afterImageUrl && (
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase">After</span>
+                                      <div className="relative group/img aspect-video rounded overflow-hidden border border-slate-200 bg-white block shadow-xs">
+                                        <img 
+                                          src={buildAssetUrlFromPath(v.afterImageUrl) || ""} 
+                                          alt="After" 
+                                          className="w-full h-full object-cover" 
+                                        />
+                                        <div 
+                                          onClick={() => setPreviewImageUrl(buildAssetUrlFromPath(v.afterImageUrl))}
+                                          className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer"
+                                        >
+                                          <Eye className="w-5 h-5" />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
                       </div>
                     );
                   })}
-                  {visits.filter(v => v.status === "completed").length === 0 && (
+                  {visits.filter(v => String(v.status).toUpperCase() === "COMPLETED").length === 0 && (
                     <div className="text-center py-10">
                       <p className="text-sm text-slate-400 italic">No logs recorded for {currentYear}</p>
                     </div>
@@ -603,6 +663,28 @@ export function AmcVisitTracker({
               Continue
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Preview Lightbox Dialog */}
+      <Dialog open={!!previewImageUrl} onOpenChange={(open) => !open && setPreviewImageUrl(null)}>
+        <DialogContent className="max-w-3xl p-0 overflow-hidden bg-black/90 border-none flex flex-col items-center justify-center min-h-[300px]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Image Preview</DialogTitle>
+          </DialogHeader>
+          <button 
+            onClick={() => setPreviewImageUrl(null)}
+            className="absolute top-3 right-3 p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white z-50 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {previewImageUrl && (
+            <img 
+              src={previewImageUrl} 
+              alt="Preview" 
+              className="max-w-full max-h-[80vh] object-contain rounded-md" 
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

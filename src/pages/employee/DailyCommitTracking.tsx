@@ -19,6 +19,7 @@ import { useListEmployees } from "@/lib/api-client";
 import {
   useDownloadMonthlyCommitsCsv,
   useTeamDailyCommits,
+  useMyDailyCommits,
   type TeamCommitsParams,
 } from "@/hooks/useDailyCommits";
 import { useToast } from "@/hooks/use-toast";
@@ -32,8 +33,8 @@ export default function DailyCommitTrackingPage() {
   const now = new Date();
   const [period, setPeriod] = useState<Period>("today");
   const [employeeId, setEmployeeId] = useState<string>("all");
-  const [view, setView] = useState<"submitted" | "pending">("pending");
   const downloadCsv = useDownloadMonthlyCommitsCsv();
+  const { data: myCommits = [], isLoading: loadingMyCommits } = useMyDailyCommits();
 
   const canViewTeam =
     user?.role === "super_admin" ||
@@ -70,13 +71,9 @@ export default function DailyCommitTrackingPage() {
   }, [employees, managerUserId]);
 
   const filterEmployeeId =
-    user?.role === "super_admin" || user?.role === "admin"
-      ? employeeId !== "all"
-        ? employeeId
-        : undefined
-      : employeeId !== "all"
-        ? employeeId
-        : undefined;
+    employeeId !== "all" && employeeId !== "mine"
+      ? employeeId
+      : undefined;
 
   const { data, isLoading, isError, error } = useTeamDailyCommits(
     {
@@ -85,8 +82,40 @@ export default function DailyCommitTrackingPage() {
       month: period === "monthly" ? now.getMonth() + 1 : undefined,
       year: period === "monthly" ? now.getFullYear() : undefined,
     },
-    !!canViewTeam,
+    !!canViewTeam && employeeId !== "mine",
   );
+
+  const commits = data?.commits ?? [];
+  const pending = data?.pending ?? [];
+
+  const filteredMyCommits = useMemo(() => {
+    return (myCommits ?? []).filter(c => {
+      const date = new Date(c.commitDate);
+      const todayDate = new Date();
+      
+      if (period === "today") {
+        return format(date, "yyyy-MM-dd") === format(todayDate, "yyyy-MM-dd");
+      }
+      
+      if (period === "weekly") {
+        const diffTime = Math.abs(todayDate.getTime() - date.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays <= 7;
+      }
+      
+      if (period === "monthly") {
+        return date.getMonth() === todayDate.getMonth() && date.getFullYear() === todayDate.getFullYear();
+      }
+      
+      return true;
+    }).map(c => ({
+      ...c,
+      employeeName: user?.name || "Admin",
+    }));
+  }, [myCommits, period, user]);
+
+  const displayedCommits = employeeId === "mine" ? filteredMyCommits : commits;
+  const isCurrentlyLoading = employeeId === "mine" ? loadingMyCommits : isLoading;
 
   const employeeOptions = useMemo(() => {
     if (user?.role === "super_admin" || user?.role === "admin") {
@@ -96,9 +125,6 @@ export default function DailyCommitTrackingPage() {
     }
     return recursiveReportees;
   }, [user?.role, employees, recursiveReportees]);
-
-  const commits = data?.commits ?? [];
-  const pending = data?.pending ?? [];
 
   if (!user) return null;
 
@@ -146,6 +172,7 @@ export default function DailyCommitTrackingPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All employees</SelectItem>
+                <SelectItem value="mine">My commits (Admin)</SelectItem>
                 {employeeOptions.map((emp) => (
                   <SelectItem key={emp.userId ?? emp.id} value={emp.userId ?? String(emp.id)}>
                     {emp.name}
@@ -153,21 +180,6 @@ export default function DailyCommitTrackingPage() {
                 ))}
               </SelectContent>
             </Select>
-
-            <Button
-              variant={view === "submitted" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("submitted")}
-            >
-              Submitted ({commits.length})
-            </Button>
-            <Button
-              variant={view === "pending" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("pending")}
-            >
-              Pending ({pending.length})
-            </Button>
 
             <Button
               variant="outline"
@@ -205,59 +217,21 @@ export default function DailyCommitTrackingPage() {
           </Card>
         )}
 
-        {isLoading ? (
+        {isCurrentlyLoading ? (
           <p className="text-center text-muted-foreground py-12">Loading commits...</p>
-        ) : view === "pending" ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Pending Reports</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {pending.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No pending commits for the selected period.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-muted-foreground">
-                        <th className="pb-2 pr-4">Employee</th>
-                        <th className="pb-2 pr-4">Date</th>
-                        <th className="pb-2">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pending.map((row) => (
-                        <tr key={`${row.employeeId}-${row.commitDate}`} className="border-b last:border-0">
-                          <td className="py-3 pr-4 font-medium">{row.employeeName}</td>
-                          <td className="py-3 pr-4">{row.commitDate}</td>
-                          <td className="py-3">
-                            <Badge variant="outline" className="text-amber-700 border-amber-300">
-                              Pending
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
         ) : (
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Submitted Commits</CardTitle>
             </CardHeader>
             <CardContent>
-              {commits.length === 0 ? (
+              {displayedCommits.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
                   No submissions for the selected filters.
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {commits.map((commit) => (
+                  {displayedCommits.map((commit) => (
                     <div
                       key={commit.id}
                       className={cn(

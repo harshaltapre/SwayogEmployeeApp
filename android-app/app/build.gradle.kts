@@ -1,9 +1,24 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
     id("com.google.gms.google-services")
+}
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { 
+            this.load(it) 
+        }
+    }
+}
+
+fun getLocalProperty(key: String, defaultValue: String): String {
+    return localProperties.getProperty(key) ?: (project.findProperty(key) as? String) ?: defaultValue
 }
 
 android {
@@ -24,9 +39,9 @@ android {
         }
 
         // BuildConfig fields for API configuration
-        buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "https://swayog-dashboard.vercel.app/api/v1/"}\"")
-        buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "wss://swayog-dashboard.vercel.app"}\"")
-        buildConfigField("String", "MAPS_API_KEY", "\"${project.findProperty("MAPS_API_KEY") ?: ""}\"")
+        buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard.vercel.app/api/v1/")}\"")
+        buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
+        buildConfigField("String", "MAPS_API_KEY", "\"${getLocalProperty("MAPS_API_KEY", "")}\"")
     }
 
     buildTypes {
@@ -38,13 +53,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "https://swayog-dashboard.vercel.app/api/v1/"}\"")
-            buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "wss://swayog-dashboard.vercel.app"}\"")
+            buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard.vercel.app/api/v1/")}\"")
+            buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
         }
         debug {
             isDebuggable = true
-            buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("API_BASE_URL") ?: "https://swayog-dashboard.vercel.app/api/v1/"}\"")
-            buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("WS_BASE_URL") ?: "wss://swayog-dashboard.vercel.app"}\"")
+            buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "http://10.0.2.2:4000/api/v1/")}\"")
+            buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
         }
     }
     

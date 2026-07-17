@@ -221,6 +221,9 @@ export async function getTaskDetails(req: Request, res: Response): Promise<void>
           email: true,
         },
       },
+      taskImages: {
+        orderBy: { uploadedAt: "asc" },
+      },
     },
   });
 
@@ -228,7 +231,20 @@ export async function getTaskDetails(req: Request, res: Response): Promise<void>
     throw new ApiError(404, "Task not found");
   }
 
-  res.status(200).json({ data: task });
+  const beforeImage = task.taskImages.find(img => img.type === "before" || img.type === "Before");
+  const afterImage = task.taskImages.find(img => img.type === "after" || img.type === "After");
+
+  const responseData = {
+    ...task,
+    beforeImageUrl: beforeImage?.url ?? null,
+    beforeLatitude: beforeImage?.latitude ?? null,
+    beforeLongitude: beforeImage?.longitude ?? null,
+    afterImageUrl: afterImage?.url ?? null,
+    afterLatitude: afterImage?.latitude ?? null,
+    afterLongitude: afterImage?.longitude ?? null,
+  };
+
+  res.status(200).json({ data: responseData });
 }
 
 /**
