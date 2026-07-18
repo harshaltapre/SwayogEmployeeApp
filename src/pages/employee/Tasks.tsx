@@ -131,7 +131,6 @@ function TaskDetailDrawer({
   const [notes, setNotes] = useState<string[]>(taskNotes[task.id] ?? []);
   const [completionMessage, setCompletionMessage] = useState("");
   const [documentUrl, setDocumentUrl] = useState("");
-  const requiresPhotos = ["Cleaning", "Maintenance", "Visit", "Service"].includes(task.jobType);
 
   const [beforeImage, setBeforeImage] = useState<string | null>(task.beforeImageUrl ?? null);
   const [afterImage, setAfterImage] = useState<string | null>(task.afterImageUrl ?? null);
@@ -345,7 +344,7 @@ function TaskDetailDrawer({
 
 
           {/* Before & After Photo Inputs */}
-          {task.status !== "completed" && requiresPhotos && (
+          {task.status !== "completed" && (
             <div className="px-6 pb-5 space-y-3">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Camera className="h-4 w-4" /> Before & After Photos (GPS Proof)
@@ -512,7 +511,7 @@ function TaskDetailDrawer({
               id={`btn-complete-task-${task.id}`}
               className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2"
               onClick={() => {
-                if (requiresPhotos && (!beforeImage || !afterImage)) {
+                if (!beforeImage || !afterImage) {
                   toast({
                     title: "Photos Required",
                     description: "Please upload both Before and After work photos with GPS stamp before completing.",
@@ -633,7 +632,7 @@ export default function EmployeeTasks() {
   );
 
   const todayTasks = enriched.filter((t) =>
-    t.status !== "completed" && t.scheduledTime.slice(0, 10) === today
+    t.status !== "completed" && t.scheduledTime.slice(0, 10) <= today
   );
   const upcomingTasks = enriched.filter((t) =>
     t.status !== "completed" && t.scheduledTime.slice(0, 10) > today

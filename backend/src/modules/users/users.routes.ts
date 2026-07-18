@@ -11,7 +11,6 @@ import {
   listInternalUsersHandler,
   transferInternalUserTeamHandler,
   updateInternalUserHandler,
-  uploadProfilePhotoHandler,
 } from "./users.controller.js";
 import {
   createInternalUserSchema,
@@ -22,13 +21,6 @@ import {
 } from "./users.schemas.js";
 
 export const userRoutes = Router();
-
-userRoutes.put(
-  "/internal/profile-photo",
-  authenticateAccessToken,
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUB_ADMIN, UserRole.EMPLOYEE, UserRole.TEAM_LEAD, UserRole.DEPARTMENT_HEAD),
-  asyncHandler(uploadProfilePhotoHandler),
-);
 
 userRoutes.get(
   "/internal",
