@@ -54,9 +54,7 @@ data class AssignTaskRequest(
 )
 
 data class CompleteTaskRequest(
-    @SerializedName("completionMessage")
     val message: String,
-    @SerializedName("completionDocumentUrl")
     val documentUrl: String? = null,
     val beforeImageUrl: String? = null,
     val afterImageUrl: String? = null,

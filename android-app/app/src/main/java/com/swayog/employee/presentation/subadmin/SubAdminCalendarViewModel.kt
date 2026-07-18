@@ -113,7 +113,10 @@ class SubAdminCalendarViewModel @Inject constructor(
                                 address = it.customer?.let { c -> "${c.fullName} (${c.city ?: "No City"})" } ?: "Customer ID: ${it.customerId}",
                                 rawId = it.id,
                                 assignedEmployeeId = it.assignedEmployeeId,
-                            status = it.status ?: "PENDING"
+                                status = it.status ?: "PENDING",
+                                beforeImageUrl = it.beforeImageUrl,
+                                afterImageUrl = it.afterImageUrl,
+                                visitNotes = it.visitNotes
                             )
                         )
                     }
@@ -243,7 +246,10 @@ data class CalendarEvent(
     val address: String,
     val rawId: String,
     val assignedEmployeeId: String?,
-    val status: String?
+    val status: String?,
+    val beforeImageUrl: String? = null,
+    val afterImageUrl: String? = null,
+    val visitNotes: String? = null
 )
 
 sealed class SubAdminCalendarState {

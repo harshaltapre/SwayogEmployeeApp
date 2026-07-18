@@ -150,7 +150,9 @@ fun AttendanceScreen(
             onVerificationSuccess = { bitmap, matchConfidence ->
                 showCamera = false
                 // Apply Watermark
-                val watermarkedBitmap = WatermarkHelper.addWatermark(bitmap, currentLatitude, currentLongitude)
+                val format = java.text.SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a", java.util.Locale.getDefault())
+                val timestamp = format.format(java.util.Date())
+                val watermarkedBitmap = WatermarkHelper.addWatermark(bitmap, currentLatitude, currentLongitude, "Attendance Check-in", "Self", "N/A", timestamp)
                 
                 // Convert to Base64
                 val outputStream = ByteArrayOutputStream()

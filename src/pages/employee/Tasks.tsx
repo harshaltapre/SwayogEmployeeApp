@@ -342,36 +342,7 @@ function TaskDetailDrawer({
             </div>
           </div>
 
-          {/* Notes */}
-          <div className="px-6 pb-5">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-              <ClipboardList className="h-3.5 w-3.5" /> Field Notes
-            </h3>
-            <div className="space-y-2 mb-3">
-              {notes.length === 0 && (
-                <p className="text-slate-400 text-sm italic text-center py-3">No notes yet.</p>
-              )}
-              {notes.map((note, i) => (
-                <div key={i} className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                  <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-700">{note}</span>
-                </div>
-              ))}
-            </div>
-            {/* Add note */}
-            <div className="flex gap-2">
-              <input
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addNote()}
-                placeholder="Add a note…"
-                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent bg-white"
-              />
-              <Button size="sm" variant="outline" onClick={addNote} disabled={!newNote.trim()}>
-                <MessageSquare className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
+
 
           {/* Before & After Photo Inputs */}
           {task.status !== "completed" && requiresPhotos && (
@@ -550,7 +521,7 @@ function TaskDetailDrawer({
                   return;
                 }
                 onMarkComplete(task.id, {
-                  message: completionMessage.trim() || "Task completed successfully.",
+                  message: completionMessage.trim().length >= 3 ? completionMessage.trim() : "Task completed successfully.",
                   documentUrl: documentUrl.trim() || undefined,
                   beforeImageUrl: beforeImage,
                   afterImageUrl: afterImage,

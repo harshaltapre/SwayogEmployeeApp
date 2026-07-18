@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.Settings
 import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.android.gms.location.LocationServices
@@ -451,7 +453,7 @@ fun TaskDetailDialog(
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
 
     // Helper to get current GPS, watermark the bitmap, and convert to base64
-    fun processPhoto(bitmap: Bitmap, type: String) {
+    fun processPhoto(bitmap: Bitmap, type: String, addressOverride: String? = null) {
         coroutineScope.launch {
             isProcessing = true
             try {
@@ -469,8 +471,15 @@ fun TaskDetailDialog(
                     }
                 } catch (_: Exception) { /* GPS unavailable, proceed without */ }
 
+                val address = addressOverride ?: task.address ?: "Unknown Location"
+                val customerName = task.customerName ?: "Unknown Customer"
+                val taskId = task.id
+                
+                val format = java.text.SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a", java.util.Locale.getDefault())
+                val timestamp = format.format(java.util.Date())
+
                 // Watermark the bitmap
-                val watermarked = WatermarkHelper.addWatermark(bitmap, lat, lng)
+                val watermarked = WatermarkHelper.addWatermark(bitmap, lat, lng, address, customerName, taskId, timestamp)
 
                 // Convert to base64 data URL
                 val outputStream = ByteArrayOutputStream()
@@ -507,30 +516,142 @@ fun TaskDetailDialog(
         pendingPhotoType = null
     }
 
+    // Gallery launcher (returns a Uri)
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null && pendingPhotoType != null) {
+            try {
+                val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+                    android.graphics.ImageDecoder.decodeBitmap(source)
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                }
+                // Convert hardware bitmap to software if needed
+                val softwareBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+                processPhoto(softwareBitmap, pendingPhotoType!!)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to load image from gallery", Toast.LENGTH_SHORT).show()
+            }
+        }
+        pendingPhotoType = null
+    }
+
+    var isCustomCameraOpen by remember { mutableStateOf(false) }
+    var showImageSourceDialog by remember { mutableStateOf(false) }
+    var showPermissionRationale by remember { mutableStateOf(false) }
+
     // Permission launcher for camera + location
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
-        if (cameraGranted && pendingPhotoType != null) {
-            cameraLauncher.launch(null)
-        } else if (!cameraGranted) {
-            Toast.makeText(context, "Camera permission is required to capture photos", Toast.LENGTH_SHORT).show()
+        val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        
+        if (cameraGranted && locationGranted && pendingPhotoType != null) {
+            isCustomCameraOpen = true
+        } else {
+            showPermissionRationale = true
             pendingPhotoType = null
         }
     }
 
-    fun launchCamera(type: String) {
-        pendingPhotoType = type
+    if (showPermissionRationale) {
+        AlertDialog(
+            onDismissRequest = { showPermissionRationale = false },
+            title = { Text("Permissions Required") },
+            text = { Text("Camera and Location permissions are required to capture geotagged proof-of-work photos. Please grant them in Settings.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPermissionRationale = false
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    }
+                    context.startActivity(intent)
+                }) {
+                    Text("Open Settings")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPermissionRationale = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    fun openCustomCamera() {
+        showImageSourceDialog = false
         val cameraGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        if (cameraGranted) {
-            cameraLauncher.launch(null)
+        val locationGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (cameraGranted && locationGranted) {
+            isCustomCameraOpen = true
         } else {
             permissionLauncher.launch(arrayOf(
                 Manifest.permission.CAMERA,
                 Manifest.permission.ACCESS_FINE_LOCATION
             ))
         }
+    }
+
+    if (isCustomCameraOpen) {
+        Dialog(
+            onDismissRequest = {
+                isCustomCameraOpen = false
+                pendingPhotoType = null
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            CustomCameraScreen(
+                customerName = task.customerName ?: "Unknown",
+                taskId = task.id,
+                taskAddress = task.address ?: "Unknown",
+                onPhotoCaptured = { bitmap, address ->
+                    if (pendingPhotoType != null) {
+                        processPhoto(bitmap, pendingPhotoType!!, address)
+                    }
+                    isCustomCameraOpen = false
+                    pendingPhotoType = null
+                },
+                onClosed = {
+                    isCustomCameraOpen = false
+                    pendingPhotoType = null
+                }
+            )
+        }
+    }
+
+    fun launchPhotoPicker(type: String) {
+        pendingPhotoType = type
+        showImageSourceDialog = true
+    }
+
+    if (showImageSourceDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showImageSourceDialog = false
+                pendingPhotoType = null
+            },
+            title = { Text("Select Image Source") },
+            text = { Text("Choose where to upload the photo from.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    openCustomCamera()
+                }) {
+                    Text("Camera")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showImageSourceDialog = false
+                    galleryLauncher.launch("image/*")
+                }) {
+                    Text("Gallery")
+                }
+            }
+        )
     }
 
     val jobTypeEmoji = when (task.jobType?.lowercase()) {
@@ -638,7 +759,6 @@ fun TaskDetailDialog(
                 }
 
                 if (task.status == "completed") {
-                    Divider()
                     Text("Completion Status", fontWeight = FontWeight.Bold)
                     Text("Remarks: ${task.completionMessage ?: "None"}")
                     task.completionDocumentUrl?.let { url ->
@@ -648,14 +768,12 @@ fun TaskDetailDialog(
                         })
                     }
                 } else {
-                    Divider()
-
                     if (task.status == "assigned") {
                         SwayogButton(
                             text = "Start Task (In Progress)",
                             onClick = onStartTask
                         )
-                    } else if (task.status == "in_progress") {
+                    } else if (task.status == "in_progress" || task.status == "pending") {
                         Text("Complete Task Form", fontWeight = FontWeight.Bold)
 
                         SwayogTextField(
@@ -673,7 +791,7 @@ fun TaskDetailDialog(
                         )
 
                         // Before & After Photos section header
-                        val requiresPhotos = task.jobType?.let { it.lowercase() in listOf("cleaning", "maintenance", "visit", "service", "amc visit") } == true
+                        val requiresPhotos = task.jobType?.let { it.lowercase() in listOf("cleaning", "maintenance", "visit", "service", "amc visit", "amc") } == true
 
                         if (requiresPhotos) {
                             Text(
@@ -716,7 +834,7 @@ fun TaskDetailDialog(
                                     }
                                 } else {
                                     OutlinedButton(
-                                        onClick = { launchCamera("before") },
+                                        onClick = { launchPhotoPicker("before") },
                                         modifier = Modifier.fillMaxWidth().height(120.dp),
                                         enabled = !isProcessing,
                                         shape = RoundedCornerShape(8.dp)
@@ -726,7 +844,7 @@ fun TaskDetailDialog(
                                                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
                                             } else {
                                                 Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(28.dp))
-                                                Text("Take Photo", style = MaterialTheme.typography.labelSmall)
+                                                Text("Upload Photo", style = MaterialTheme.typography.labelSmall)
                                             }
                                         }
                                     }
@@ -765,7 +883,7 @@ fun TaskDetailDialog(
                                     }
                                 } else {
                                     OutlinedButton(
-                                        onClick = { launchCamera("after") },
+                                        onClick = { launchPhotoPicker("after") },
                                         modifier = Modifier.fillMaxWidth().height(120.dp),
                                         enabled = beforeImageUrl != null && !isProcessing,
                                         shape = RoundedCornerShape(8.dp)
@@ -775,7 +893,7 @@ fun TaskDetailDialog(
                                                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
                                             } else {
                                                 Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(28.dp))
-                                                Text("Take Photo", style = MaterialTheme.typography.labelSmall)
+                                                Text("Upload Photo", style = MaterialTheme.typography.labelSmall)
                                             }
                                         }
                                     }
@@ -786,17 +904,18 @@ fun TaskDetailDialog(
 
                         SwayogButton(
                             text = if (isProcessing) "Processing..." else "Mark Task Completed",
-                            enabled = (!requiresPhotos || (beforeImageUrl != null && afterImageUrl != null)) && completionMessage.trim().isNotBlank() && !isProcessing,
+                            enabled = (!requiresPhotos || (beforeImageUrl != null && afterImageUrl != null)) && completionMessage.trim().length >= 3 && !isProcessing,
                             onClick = {
-                                if (completionMessage.trim().isBlank()) {
-                                    Toast.makeText(context, "Completion description is required", Toast.LENGTH_SHORT).show()
+                                if (completionMessage.trim().length < 3) {
+                                    Toast.makeText(context, "Completion description must be at least 3 characters", Toast.LENGTH_SHORT).show()
                                 } else if (requiresPhotos && beforeImageUrl == null) {
                                     Toast.makeText(context, "Before Image is required", Toast.LENGTH_SHORT).show()
                                 } else if (requiresPhotos && afterImageUrl == null) {
                                     Toast.makeText(context, "After Image is required", Toast.LENGTH_SHORT).show()
                                 } else {
+                                    val finalMessage = completionMessage
                                     onCompleteTask(
-                                        completionMessage,
+                                        finalMessage,
                                         docUrl.trim().ifEmpty { null },
                                         beforeImageUrl,
                                         afterImageUrl,

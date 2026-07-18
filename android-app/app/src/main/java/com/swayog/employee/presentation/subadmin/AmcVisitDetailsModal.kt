@@ -153,6 +153,55 @@ fun AmcVisitDetailsModal(
                         }
                     }
                 } else {
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text(
+                        text = "Completion Details",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (!event.visitNotes.isNullOrEmpty()) {
+                        AmcVisitDetailRow("Notes", event.visitNotes)
+                    }
+
+                    if (event.beforeImageUrl != null || event.afterImageUrl != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (event.beforeImageUrl != null) {
+                                Card(
+                                    modifier = Modifier.weight(1f).height(100.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    AsyncImage(
+                                        model = event.beforeImageUrl,
+                                        contentDescription = "Before Photo",
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                            
+                            if (event.afterImageUrl != null) {
+                                Card(
+                                    modifier = Modifier.weight(1f).height(100.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    AsyncImage(
+                                        model = event.afterImageUrl,
+                                        contentDescription = "After Photo",
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
