@@ -9,12 +9,16 @@ import com.swayog.employee.data.local.entity.TaskEntity
 import com.swayog.employee.data.local.entity.OutboxQueueEntity
 import com.swayog.employee.data.model.*
 import com.swayog.employee.core.util.ErrorUtils
+import com.swayog.employee.core.util.OfflinePendingException
+import com.swayog.employee.core.util.LocalFileHelper
+import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.data.sync.SyncWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import org.json.JSONObject
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,6 +49,12 @@ class TaskRepository @Inject constructor(
                     assignedById = entity.assignedById,
                     completionMessage = entity.completionMessage,
                     completionDocumentUrl = entity.completionDocumentUrl,
+                    beforeImageUrl = entity.beforeImageUrl,
+                    afterImageUrl = entity.afterImageUrl,
+                    beforeLatitude = entity.beforeLatitude,
+                    beforeLongitude = entity.beforeLongitude,
+                    afterLatitude = entity.afterLatitude,
+                    afterLongitude = entity.afterLongitude,
                     completedAt = entity.completedAt,
                     createdAt = entity.createdAt,
                     updatedAt = entity.updatedAt
@@ -71,6 +81,12 @@ class TaskRepository @Inject constructor(
                     assignedById = entity.assignedById,
                     completionMessage = entity.completionMessage,
                     completionDocumentUrl = entity.completionDocumentUrl,
+                    beforeImageUrl = entity.beforeImageUrl,
+                    afterImageUrl = entity.afterImageUrl,
+                    beforeLatitude = entity.beforeLatitude,
+                    beforeLongitude = entity.beforeLongitude,
+                    afterLatitude = entity.afterLatitude,
+                    afterLongitude = entity.afterLongitude,
                     completedAt = entity.completedAt,
                     createdAt = entity.createdAt,
                     updatedAt = entity.updatedAt
@@ -78,6 +94,8 @@ class TaskRepository @Inject constructor(
             }
         }
     }
+
+    val pendingSyncCount: Flow<Int> = outboxQueueDao.getPendingCountFlow()
 
     fun getAllTasksFlow(): Flow<List<Task>> {
         return taskDao.getAllTasks().map { entities ->
@@ -97,6 +115,12 @@ class TaskRepository @Inject constructor(
                     assignedById = entity.assignedById,
                     completionMessage = entity.completionMessage,
                     completionDocumentUrl = entity.completionDocumentUrl,
+                    beforeImageUrl = entity.beforeImageUrl,
+                    afterImageUrl = entity.afterImageUrl,
+                    beforeLatitude = entity.beforeLatitude,
+                    beforeLongitude = entity.beforeLongitude,
+                    afterLatitude = entity.afterLatitude,
+                    afterLongitude = entity.afterLongitude,
                     completedAt = entity.completedAt,
                     createdAt = entity.createdAt,
                     updatedAt = entity.updatedAt
@@ -127,6 +151,12 @@ class TaskRepository @Inject constructor(
                             assignedById = task.assignedById,
                             completionMessage = task.completionMessage,
                             completionDocumentUrl = task.completionDocumentUrl,
+                            beforeImageUrl = task.beforeImageUrl,
+                            afterImageUrl = task.afterImageUrl,
+                            beforeLatitude = task.beforeLatitude,
+                            beforeLongitude = task.beforeLongitude,
+                            afterLatitude = task.afterLatitude,
+                            afterLongitude = task.afterLongitude,
                             completedAt = task.completedAt,
                             createdAt = task.createdAt,
                             updatedAt = task.updatedAt,
@@ -169,6 +199,12 @@ class TaskRepository @Inject constructor(
                             assignedById = task.assignedById,
                             completionMessage = task.completionMessage,
                             completionDocumentUrl = task.completionDocumentUrl,
+                            beforeImageUrl = task.beforeImageUrl,
+                            afterImageUrl = task.afterImageUrl,
+                            beforeLatitude = task.beforeLatitude,
+                            beforeLongitude = task.beforeLongitude,
+                            afterLatitude = task.afterLatitude,
+                            afterLongitude = task.afterLongitude,
                             completedAt = task.completedAt,
                             createdAt = task.createdAt,
                             updatedAt = task.updatedAt,
@@ -254,50 +290,124 @@ class TaskRepository @Inject constructor(
         afterLatitude: Double? = null,
         afterLongitude: Double? = null
     ): Result<Task> {
-        return try {
-            val response = apiService.completeTask(
-                taskId,
-                CompleteTaskRequest(
-                    message = completionMessage, 
-                    documentUrl = completionDocumentUrl,
+        val isOnline = NetworkUtils.isNetworkAvailable(context)
+        
+        return if (isOnline) {
+            try {
+                val response = apiService.completeTask(
+                    taskId,
+                    CompleteTaskRequest(
+                        message = completionMessage, 
+                        documentUrl = completionDocumentUrl,
+                        beforeImageUrl = beforeImageUrl,
+                        afterImageUrl = afterImageUrl,
+                        beforeLatitude = beforeLatitude,
+                        beforeLongitude = beforeLongitude,
+                        afterLatitude = afterLatitude,
+                        afterLongitude = afterLongitude
+                    )
+                )
+                if (response.isSuccessful && response.body()?.data != null) {
+                    val task = response.body()!!.data!!
+                    val entity = TaskEntity(
+                        id = task.id,
+                        jobType = task.jobType,
+                        description = task.description,
+                        customerName = task.customerName,
+                        customerPhone = task.customerPhone,
+                        address = task.address,
+                        latitude = task.latitude,
+                        longitude = task.longitude,
+                        status = task.status,
+                        scheduledTime = task.scheduledTime,
+                        employeeUserId = task.employeeUserId,
+                        assignedById = task.assignedById,
+                        completionMessage = task.completionMessage,
+                        completionDocumentUrl = task.completionDocumentUrl,
+                        beforeImageUrl = task.beforeImageUrl,
+                        afterImageUrl = task.afterImageUrl,
+                        beforeLatitude = task.beforeLatitude,
+                        beforeLongitude = task.beforeLongitude,
+                        afterLatitude = task.afterLatitude,
+                        afterLongitude = task.afterLongitude,
+                        completedAt = task.completedAt,
+                        createdAt = task.createdAt,
+                        updatedAt = task.updatedAt,
+                        isSynced = true
+                    )
+                    taskDao.updateTask(entity)
+                    Result.success(task)
+                } else {
+                    // API call failed - save to outbox queue for offline sync
+                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude)
+                    Result.failure(OfflinePendingException())
+                }
+            } catch (e: Exception) {
+                // Network error - save to outbox queue for offline sync
+                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude)
+                Result.failure(OfflinePendingException())
+            }
+        } else {
+            // Offline - save to outbox queue
+            saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude)
+            
+            // Update local entity with completion data
+            val localTask = taskDao.getTaskById(taskId)
+            if (localTask != null) {
+                taskDao.updateTask(localTask.copy(
+                    status = "COMPLETED",
+                    completionMessage = completionMessage,
+                    completionDocumentUrl = completionDocumentUrl,
                     beforeImageUrl = beforeImageUrl,
                     afterImageUrl = afterImageUrl,
                     beforeLatitude = beforeLatitude,
                     beforeLongitude = beforeLongitude,
                     afterLatitude = afterLatitude,
-                    afterLongitude = afterLongitude
-                )
-            )
-            if (response.isSuccessful && response.body()?.data != null) {
-                val task = response.body()!!.data!!
-                val entity = TaskEntity(
-                    id = task.id,
-                    jobType = task.jobType,
-                    description = task.description,
-                    customerName = task.customerName,
-                    customerPhone = task.customerPhone,
-                    address = task.address,
-                    latitude = task.latitude,
-                    longitude = task.longitude,
-                    status = task.status,
-                    scheduledTime = task.scheduledTime,
-                    employeeUserId = task.employeeUserId,
-                    assignedById = task.assignedById,
-                    completionMessage = task.completionMessage,
-                    completionDocumentUrl = task.completionDocumentUrl,
-                    completedAt = task.completedAt,
-                    createdAt = task.createdAt,
-                    updatedAt = task.updatedAt,
-                    isSynced = true
-                )
-                taskDao.updateTask(entity)
-                Result.success(task)
-            } else {
-                Result.failure(Exception("Failed to complete task"))
+                    afterLongitude = afterLongitude,
+                    completedAt = java.time.LocalDateTime.now().toString(),
+                    isSynced = false
+                ))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
+            
+            Result.failure(OfflinePendingException())
         }
+    }
+    
+    private suspend fun saveTaskCompletionToOutbox(
+        taskId: String,
+        completionMessage: String,
+        completionDocumentUrl: String?,
+        beforeImageUrl: String?,
+        afterImageUrl: String?,
+        beforeLatitude: Double?,
+        beforeLongitude: Double?,
+        afterLatitude: Double?,
+        afterLongitude: Double?
+    ) {
+        val beforeImageFilePath = beforeImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_before") }
+        val afterImageFilePath = afterImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_after") }
+
+        val payload = JSONObject().apply {
+            put("taskId", taskId)
+            put("message", completionMessage)
+            put("documentUrl", completionDocumentUrl)
+            put("beforeImageFilePath", beforeImageFilePath)
+            put("afterImageFilePath", afterImageFilePath)
+            put("beforeLatitude", beforeLatitude)
+            put("beforeLongitude", beforeLongitude)
+            put("afterLatitude", afterLatitude)
+            put("afterLongitude", afterLongitude)
+        }.toString()
+        
+        val outboxItem = OutboxQueueEntity(
+            id = UUID.randomUUID().toString(),
+            endpoint = "tasks/$taskId/complete",
+            method = "POST",
+            payload = payload,
+            createdAt = System.currentTimeMillis().toString()
+        )
+        outboxQueueDao.insertItem(outboxItem)
+        scheduleSync()
     }
 
     suspend fun submitWork(title: String, description: String, hoursSpent: Double, taskId: String?): Result<Unit> {

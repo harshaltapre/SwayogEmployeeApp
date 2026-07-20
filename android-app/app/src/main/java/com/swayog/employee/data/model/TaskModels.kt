@@ -17,6 +17,12 @@ data class Task(
     val assignedById: String? = null,
     val completionMessage: String? = null,
     val completionDocumentUrl: String? = null,
+    val beforeImageUrl: String? = null,
+    val afterImageUrl: String? = null,
+    val beforeLatitude: Double? = null,
+    val beforeLongitude: Double? = null,
+    val afterLatitude: Double? = null,
+    val afterLongitude: Double? = null,
     val completedAt: String? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null

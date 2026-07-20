@@ -9,6 +9,12 @@ interface OutboxQueueDao {
     @Query("SELECT * FROM outbox_queue WHERE isSynced = 0 ORDER BY createdAt ASC")
     suspend fun getPendingItems(): List<OutboxQueueEntity>
     
+    @Query("SELECT COUNT(*) FROM outbox_queue WHERE isSynced = 0")
+    suspend fun getPendingCount(): Int
+    
+    @Query("SELECT COUNT(*) FROM outbox_queue WHERE isSynced = 0")
+    fun getPendingCountFlow(): kotlinx.coroutines.flow.Flow<Int>
+    
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertItem(item: OutboxQueueEntity)
     

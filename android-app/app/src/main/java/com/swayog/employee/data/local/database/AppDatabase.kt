@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import com.swayog.employee.data.local.dao.*
 import com.swayog.employee.data.local.entity.*
 
+// IMPORTANT: Any change to an @Entity class requires incrementing the version number below
 @Database(
     entities = [
         UserEntity::class,
@@ -16,7 +17,7 @@ import com.swayog.employee.data.local.entity.*
         CustomerEntity::class,
         OutboxQueueEntity::class
     ],
-    version = 8,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

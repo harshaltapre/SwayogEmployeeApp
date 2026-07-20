@@ -48,6 +48,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.presentation.common.utils.WatermarkHelper
 
 @Composable
@@ -61,9 +62,12 @@ fun AttendanceScreen(
     val todayAttendance by viewModel.todayAttendance.collectAsState()
     val monthlyRecords by viewModel.monthlyRecords.collectAsState()
     val state by viewModel.attendanceState.collectAsState()
-    val performance by viewModel.performance.collectAsState()
     val faceDescriptors by viewModel.faceDescriptors.collectAsState()
-
+    val performance by viewModel.performance.collectAsState()
+    val currentTask by viewModel.currentTask.collectAsState()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
+    
+    // UI State
     var showCamera by remember { mutableStateOf(false) }
     var showEnrollmentBlocker by remember { mutableStateOf(false) }
     var currentLatitude by remember { mutableStateOf<Double?>(null) }
@@ -164,7 +168,12 @@ fun AttendanceScreen(
                     if (result.isSuccess) {
                         Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, "Check-in failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                        val exception = result.exceptionOrNull()
+                        if (exception is OfflinePendingException) {
+                            Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "Check-in failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             },
@@ -209,11 +218,13 @@ fun AttendanceScreen(
             )
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            PendingSyncBanner(pendingCount = pendingSyncCount)
+            
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()

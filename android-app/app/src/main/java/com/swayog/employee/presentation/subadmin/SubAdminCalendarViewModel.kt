@@ -116,7 +116,9 @@ class SubAdminCalendarViewModel @Inject constructor(
                                 status = it.status ?: "PENDING",
                                 beforeImageUrl = it.beforeImageUrl,
                                 afterImageUrl = it.afterImageUrl,
-                                visitNotes = it.visitNotes
+                                visitNotes = it.visitNotes,
+                                completedByEmployeeId = it.completedByEmployeeId,
+                                completedAt = it.completedAt
                             )
                         )
                     }
@@ -249,7 +251,9 @@ data class CalendarEvent(
     val status: String?,
     val beforeImageUrl: String? = null,
     val afterImageUrl: String? = null,
-    val visitNotes: String? = null
+    val visitNotes: String? = null,
+    val completedByEmployeeId: String? = null,
+    val completedAt: String? = null
 )
 
 sealed class SubAdminCalendarState {

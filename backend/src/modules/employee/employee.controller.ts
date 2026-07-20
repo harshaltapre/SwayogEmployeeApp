@@ -4,6 +4,32 @@ import { TaskStatus, AmcVisitStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { ApiError } from "../../middleware/error.js";
 import type { AuthContext } from "../../middleware/auth.js";
+import fs from "fs";
+import path from "path";
+
+function saveBase64Image(base64Str: string | undefined, prefix: string): string | undefined {
+  if (!base64Str || !base64Str.startsWith("data:image")) return base64Str; // Return as-is if it's already a URL or empty
+  try {
+    const matches = base64Str.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) return base64Str;
+
+    const buffer = Buffer.from(matches[2], "base64");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const filename = `${prefix}-${uniqueSuffix}.jpg`;
+    const dir = path.join(process.cwd(), "uploads", "task-images");
+    
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    const filepath = path.join(dir, filename);
+    fs.writeFileSync(filepath, buffer);
+    return `/uploads/task-images/${filename}`;
+  } catch (error) {
+    console.error("Failed to save base64 image", error);
+    return undefined;
+  }
+}
 
 /**
  * Get employee dashboard with task summary
@@ -111,6 +137,10 @@ export async function getMyTasks(req: Request, res: Response): Promise<void> {
     status: v.status === AmcVisitStatus.COMPLETED ? TaskStatus.COMPLETED : TaskStatus.ASSIGNED,
     scheduledTime: v.scheduledDate,
     createdAt: v.createdAt,
+    completionMessage: v.visitNotes,
+    completionDocumentUrl: v.afterImageUrl || v.beforeImageUrl,
+    beforeImageUrl: v.beforeImageUrl,
+    afterImageUrl: v.afterImageUrl,
   }));
 
   const combined = [...tasks, ...mappedAmc].sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
@@ -165,6 +195,8 @@ export async function getTaskDetails(req: Request, res: Response): Promise<void>
         createdAt: visit.createdAt,
         completionMessage: visit.visitNotes,
         completionDocumentUrl: visit.afterImageUrl || visit.beforeImageUrl,
+        beforeImageUrl: visit.beforeImageUrl,
+        afterImageUrl: visit.afterImageUrl,
       }
     });
     return;
@@ -305,18 +337,40 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
     if (!visit) throw new ApiError(404, "Visit not found");
     if (visit.assignedEmployeeId !== auth.userId) throw new ApiError(403, "Forbidden");
 
+    const savedBeforeUrl = saveBase64Image(beforeImageUrl, "amc-before") || beforeImageUrl || completionDocumentUrl;
+    const savedAfterUrl = saveBase64Image(afterImageUrl, "amc-after") || afterImageUrl || completionDocumentUrl;
+
     const completedVisit = await prisma.amcVisit.update({
       where: { id: visitId },
+      include: { customer: true },
       data: {
         status: AmcVisitStatus.COMPLETED,
         completedAt: new Date(),
         completedByEmployeeId: auth.userId,
         visitNotes: completionMessage,
-        beforeImageUrl: beforeImageUrl || completionDocumentUrl,
-        afterImageUrl: afterImageUrl || completionDocumentUrl,
+        beforeImageUrl: savedBeforeUrl,
+        afterImageUrl: savedAfterUrl,
       }
     });
-    res.status(200).json({ data: completedVisit, message: "AMC Visit marked as completed" });
+    
+    res.status(200).json({ 
+      data: {
+        id: taskId,
+        jobType: "AMC Visit",
+        description: "AMC Cleaning Visit #" + (completedVisit.cleaningNumber || 1),
+        customerName: completedVisit.customer?.fullName || completedVisit.customer?.companyName || "Unknown",
+        customerPhone: completedVisit.customer?.phoneNumber || "",
+        address: completedVisit.customer?.address || [completedVisit.customer?.city, completedVisit.customer?.state].filter(Boolean).join(", "),
+        status: TaskStatus.COMPLETED,
+        scheduledTime: completedVisit.scheduledDate,
+        createdAt: completedVisit.createdAt,
+        completionMessage: completedVisit.visitNotes,
+        completionDocumentUrl: completedVisit.afterImageUrl || completedVisit.beforeImageUrl,
+        beforeImageUrl: completedVisit.beforeImageUrl,
+        afterImageUrl: completedVisit.afterImageUrl,
+      },
+      message: "AMC Visit marked as completed" 
+    });
     return;
   }
 
@@ -332,15 +386,41 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
     throw new ApiError(403, "You do not have permission to complete this task");
   }
 
+  const savedBeforeUrl = saveBase64Image(beforeImageUrl, "task-before") || beforeImageUrl;
+  const savedAfterUrl = saveBase64Image(afterImageUrl, "task-after") || afterImageUrl;
+
   const completedTask = await prisma.task.update({
     where: { id: parseInt(taskId) },
     data: {
       status: TaskStatus.COMPLETED,
       completionMessage,
-      completionDocumentUrl: afterImageUrl || completionDocumentUrl,
+      completionDocumentUrl: savedAfterUrl || completionDocumentUrl,
       completedAt: new Date(),
     },
   });
+
+  // Create TaskImage records for the saved images
+  if (savedBeforeUrl) {
+    await prisma.imageRecord.create({
+      data: {
+        taskId: parseInt(taskId),
+        uploadedBy: auth.userId,
+        type: "before",
+        url: savedBeforeUrl,
+      }
+    });
+  }
+
+  if (savedAfterUrl) {
+    await prisma.imageRecord.create({
+      data: {
+        taskId: parseInt(taskId),
+        uploadedBy: auth.userId,
+        type: "after",
+        url: savedAfterUrl,
+      }
+    });
+  }
 
   await prisma.auditLog.create({
     data: {

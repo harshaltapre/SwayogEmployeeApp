@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.AttendanceRecord
 import com.swayog.employee.data.model.PerformanceSnapshot
+import com.swayog.employee.data.model.Task
 import com.swayog.employee.data.repository.AttendanceRepository
+import com.swayog.employee.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +22,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AttendanceViewModel @Inject constructor(
     private val attendanceRepository: AttendanceRepository,
+    private val taskRepository: TaskRepository,
     private val dataStoreManager: DataStoreManager
 ) : ViewModel() {
 
@@ -37,9 +40,15 @@ class AttendanceViewModel @Inject constructor(
 
     private val _performance = MutableStateFlow<PerformanceSnapshot?>(null)
     val performance: StateFlow<PerformanceSnapshot?> = _performance.asStateFlow()
+    
+    val pendingSyncCount: StateFlow<Int> = attendanceRepository.pendingSyncCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     private val _monthlyRecords = MutableStateFlow<List<AttendanceRecord>>(emptyList())
     val monthlyRecords: StateFlow<List<AttendanceRecord>> = _monthlyRecords.asStateFlow()
+
+    private val _currentTask = MutableStateFlow<Task?>(null)
+    val currentTask: StateFlow<Task?> = _currentTask.asStateFlow()
 
     val faceDescriptors: StateFlow<List<List<Float>>> = dataStoreManager.faceDescriptors.stateIn(
         scope = viewModelScope,
@@ -53,6 +62,14 @@ class AttendanceViewModel @Inject constructor(
             dataStoreManager.userId.filterNotNull().collect { id ->
                 attendanceRepository.getAttendanceByEmployeeId(id).collect { records ->
                     _monthlyRecords.value = records
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            dataStoreManager.userId.filterNotNull().collect { id ->
+                taskRepository.getActiveTasksByEmployeeId(id).collect { tasks ->
+                    _currentTask.value = tasks.firstOrNull()
                 }
             }
         }

@@ -3,6 +3,8 @@ package com.swayog.employee.core.util
 import retrofit2.HttpException
 import retrofit2.Response
 
+class OfflinePendingException(message: String = "Saved locally. Will sync automatically when online.") : Exception(message)
+
 object ErrorUtils {
     /**
      * Formats an exception into a guaranteed non-empty string,

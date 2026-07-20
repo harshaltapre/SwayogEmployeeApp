@@ -1,0 +1,1 @@
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); (async () => { console.log(await prisma.amcVisit.findFirst({ where: { status: 'COMPLETED' }, include: { customer: true } })); prisma.(); })();

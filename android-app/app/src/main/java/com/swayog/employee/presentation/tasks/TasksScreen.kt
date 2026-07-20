@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import coil.compose.AsyncImage
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,6 +43,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.swayog.employee.data.model.Task
 import com.swayog.employee.presentation.common.components.*
+import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.presentation.common.utils.WatermarkHelper
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.launch
@@ -55,6 +57,7 @@ fun TasksScreen(
     val context = LocalContext.current
     val tasksState by viewModel.tasksState.collectAsState()
     val tasksList by viewModel.tasks.collectAsState()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedTask by remember { mutableStateOf<Task?>(null) }
@@ -100,13 +103,17 @@ fun TasksScreen(
             )
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Search Bar
+            PendingSyncBanner(pendingCount = pendingSyncCount)
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+            ) {   // Search Bar
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -241,7 +248,7 @@ fun TasksScreen(
                     task = task,
                     onDismiss = { selectedTask = null },
                     onStartTask = {
-                        viewModel.updateTaskStatus(task.id, "in_progress") { result ->
+                        viewModel.updateTaskStatus(task.id, "IN_PROGRESS") { result ->
                             if (result.isSuccess) {
                                 selectedTask = result.getOrNull()
                             } else {
@@ -265,7 +272,15 @@ fun TasksScreen(
                                 selectedTask = null
                                 viewModel.refresh()
                             } else {
-                                Toast.makeText(context, "Failed to complete task", Toast.LENGTH_SHORT).show()
+                                val exception = result.exceptionOrNull()
+                                if (exception is OfflinePendingException) {
+                                    selectedTask = null
+                                    viewModel.refresh()
+                                    Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                                } else {
+                                    val errorMsg = exception?.message ?: "Unknown error"
+                                    Toast.makeText(context, "Failed: $errorMsg", Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
                     }
@@ -478,12 +493,21 @@ fun TaskDetailDialog(
                 val format = java.text.SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a", java.util.Locale.getDefault())
                 val timestamp = format.format(java.util.Date())
 
-                // Watermark the bitmap
-                val watermarked = WatermarkHelper.addWatermark(bitmap, lat, lng, address, customerName, taskId, timestamp)
+                // Scale bitmap down to reduce memory usage and avoid 413 Payload Too Large on the backend
+                val maxDim = 1024f
+                val scale = minOf(maxDim / bitmap.width, maxDim / bitmap.height)
+                val scaledBitmap = if (scale < 1f) {
+                    Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
+                } else {
+                    bitmap
+                }
+
+                // Watermark the scaled bitmap
+                val watermarked = WatermarkHelper.addWatermark(scaledBitmap, lat, lng, address, customerName, taskId, timestamp)
 
                 // Convert to base64 data URL
                 val outputStream = ByteArrayOutputStream()
-                watermarked.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+                watermarked.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
                 val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 
                 if (type == "before") {
@@ -758,7 +782,7 @@ fun TaskDetailDialog(
                     Text("Navigate to Location")
                 }
 
-                if (task.status == "completed") {
+                if (task.status?.equals("completed", ignoreCase = true) == true) {
                     Text("Completion Status", fontWeight = FontWeight.Bold)
                     Text("Remarks: ${task.completionMessage ?: "None"}")
                     task.completionDocumentUrl?.let { url ->
@@ -767,20 +791,26 @@ fun TaskDetailDialog(
                             context.startActivity(browserIntent)
                         })
                     }
+                    
+                    BeforeAfterImageSection(
+                        beforeImageUrl = task.beforeImageUrl,
+                        afterImageUrl = task.afterImageUrl
+                    )
                 } else {
-                    if (task.status == "assigned") {
+                    if (task.status?.equals("assigned", ignoreCase = true) == true) {
                         SwayogButton(
                             text = "Start Task (In Progress)",
                             onClick = onStartTask
                         )
-                    } else if (task.status == "in_progress" || task.status == "pending") {
+                    } else if (task.status?.equals("in_progress", ignoreCase = true) == true || task.status?.equals("pending", ignoreCase = true) == true) {
                         Text("Complete Task Form", fontWeight = FontWeight.Bold)
 
                         SwayogTextField(
                             value = completionMessage,
                             onValueChange = { completionMessage = it },
                             label = "Completion Message",
-                            placeholder = "Describe what was accomplished..."
+                            placeholder = "Describe what was accomplished...",
+                            singleLine = false
                         )
 
                         SwayogTextField(

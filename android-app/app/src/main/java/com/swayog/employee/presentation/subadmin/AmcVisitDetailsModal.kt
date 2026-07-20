@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.swayog.employee.data.model.Employee
+import com.swayog.employee.presentation.common.components.BeforeAfterImageSection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,43 +164,18 @@ fun AmcVisitDetailsModal(
                         AmcVisitDetailRow("Notes", event.visitNotes)
                     }
 
-                    if (event.beforeImageUrl != null || event.afterImageUrl != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (event.beforeImageUrl != null) {
-                                Card(
-                                    modifier = Modifier.weight(1f).height(100.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                                ) {
-                                    AsyncImage(
-                                        model = event.beforeImageUrl,
-                                        contentDescription = "Before Photo",
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
-                            } else {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                            
-                            if (event.afterImageUrl != null) {
-                                Card(
-                                    modifier = Modifier.weight(1f).height(100.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                                ) {
-                                    AsyncImage(
-                                        model = event.afterImageUrl,
-                                        contentDescription = "After Photo",
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
-                            } else {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
+                    if (event.completedByEmployeeId != null) {
+                        val completedByEmployee = employees.find { it.id.toString() == event.completedByEmployeeId }
+                        AmcVisitDetailRow("Completed By", completedByEmployee?.fullName ?: "Unknown")
                     }
+                    if (event.completedAt != null) {
+                        AmcVisitDetailRow("Completed At", event.completedAt)
+                    }
+
+                    BeforeAfterImageSection(
+                        beforeImageUrl = event.beforeImageUrl,
+                        afterImageUrl = event.afterImageUrl
+                    )
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(

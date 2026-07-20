@@ -22,6 +22,9 @@ class TasksViewModel @Inject constructor(
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
     val tasks: StateFlow<List<Task>> = _tasks.asStateFlow()
 
+    val pendingSyncCount: StateFlow<Int> = taskRepository.pendingSyncCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     val userId: StateFlow<String?> = dataStoreManager.userId.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),

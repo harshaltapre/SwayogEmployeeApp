@@ -34,6 +34,7 @@ fun DailyCommitScreen(
     val context = LocalContext.current
     val state by viewModel.dailyCommitState.collectAsState()
     val commitsHistory by viewModel.commitsHistory.collectAsState()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
     
     val todayDateStr = remember {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -87,11 +88,13 @@ fun DailyCommitScreen(
             )
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            PendingSyncBanner(pendingCount = pendingSyncCount)
+            
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()

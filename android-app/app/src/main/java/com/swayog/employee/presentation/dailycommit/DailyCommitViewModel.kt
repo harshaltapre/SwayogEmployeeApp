@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
+import com.swayog.employee.core.util.OfflinePendingException
 
 @HiltViewModel
 class DailyCommitViewModel @Inject constructor(
@@ -23,6 +24,9 @@ class DailyCommitViewModel @Inject constructor(
     
     private val _commitsHistory = MutableStateFlow<List<DailyCommit>>(emptyList())
     val commitsHistory: StateFlow<List<DailyCommit>> = _commitsHistory.asStateFlow()
+    
+    val pendingSyncCount: StateFlow<Int> = dailyCommitRepository.pendingSyncCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     
     private val _employeeId = MutableStateFlow<String?>(null)
     
@@ -79,7 +83,12 @@ class DailyCommitViewModel @Inject constructor(
                 _dailyCommitState.value = DailyCommitState.Success("Daily commit submitted successfully!")
                 loadCommitsHistory(empId)
             }.onFailure { error ->
-                _dailyCommitState.value = DailyCommitState.Error(error.message ?: "Failed to submit daily commit")
+                if (error is OfflinePendingException) {
+                    _dailyCommitState.value = DailyCommitState.Success(error.message ?: "Saved locally. Will sync automatically when online.")
+                    loadCommitsHistory(empId)
+                } else {
+                    _dailyCommitState.value = DailyCommitState.Error(error.message ?: "Failed to submit daily commit")
+                }
             }
         }
     }
