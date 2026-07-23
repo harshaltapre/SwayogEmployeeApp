@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, MapPin, Phone, History, CalendarDays, Filter, Calendar, Edit2, X, Clock, HelpCircle, AlertTriangle, Building2, Eye } from "lucide-react";
+import { CheckCircle2, MapPin, Phone, History, CalendarDays, Filter, Calendar, Edit2, X, Clock, HelpCircle, AlertTriangle, Building2, Eye, Camera } from "lucide-react";
 import { useListAmcVisits, useMarkVisitDone, useUpdateAmcVisit, useListEmployees, buildAssetUrlFromPath } from "@/lib/api-client";
 import { format, isSameDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +31,7 @@ export function AmcVisitTracker({
   const [showLogs, setShowLogs] = useState<boolean>(false);
   const [editingVisit, setEditingVisit] = useState<any | null>(null);
   const [completingVisit, setCompletingVisit] = useState<any | null>(null);
+  const [viewingPhotosVisit, setViewingPhotosVisit] = useState<any | null>(null);
   const [visitNotes, setVisitNotes] = useState<string>("");
   const [newDate, setNewDate] = useState<string>("");
   const [newTime, setNewTime] = useState<string>("");
@@ -393,7 +394,20 @@ export function AmcVisitTracker({
                                 </Button>
                               </div>
                             ) : (
-                              <span className="text-xs text-slate-400 italic">Logged</span>
+                              <div className="flex items-center justify-end gap-1.5">
+                                {(visit.beforeImageUrl || visit.afterImageUrl) ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-[11px] gap-1 text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 font-semibold"
+                                    onClick={() => setViewingPhotosVisit(visit)}
+                                  >
+                                    <Camera className="h-3 w-3 text-indigo-600" /> View Photos
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs text-slate-400 italic">Logged</span>
+                                )}
+                              </div>
                             )}
                           </TableCell>
                         </TableRow>
@@ -662,6 +676,99 @@ export function AmcVisitTracker({
             >
               Continue
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Photos Detail Dialog */}
+      <Dialog open={!!viewingPhotosVisit} onOpenChange={(open) => !open && setViewingPhotosVisit(null)}>
+        <DialogContent className="sm:max-w-[550px] p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <Camera className="h-5 w-5 text-indigo-600" />
+              Before & After Work Proof Photos
+            </DialogTitle>
+            <DialogDescription>
+              Cleaning Visit #{viewingPhotosVisit?.cleaningNumber || "—"} for{" "}
+              <span className="font-semibold text-slate-700">{viewingPhotosVisit?.customer?.fullName}</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg text-xs">
+              <div>
+                <span className="text-slate-500">Completed By: </span>
+                <span className="font-bold text-slate-800">
+                  {viewingPhotosVisit?.completedByName || getEmployeeName(viewingPhotosVisit?.assignedEmployeeId || "") || "Technician"}
+                </span>
+              </div>
+              {viewingPhotosVisit?.completedAt && (
+                <div className="text-right text-slate-500 font-mono">
+                  {format(new Date(viewingPhotosVisit.completedAt), "dd MMM yyyy, hh:mm a")}
+                </div>
+              )}
+            </div>
+
+            {(viewingPhotosVisit?.notes || viewingPhotosVisit?.visitNotes) && (
+              <div className="text-xs text-slate-600 bg-amber-50/60 border border-amber-100 p-3 rounded-lg">
+                <span className="font-bold text-amber-800 block mb-1">Completion Notes:</span>
+                "{viewingPhotosVisit.notes || viewingPhotosVisit.visitNotes}"
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Before Photo */}
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Before Work</span>
+                {viewingPhotosVisit?.beforeImageUrl ? (
+                  <div 
+                    className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-100 cursor-pointer group shadow-sm"
+                    onClick={() => setPreviewImageUrl(buildAssetUrlFromPath(viewingPhotosVisit.beforeImageUrl))}
+                  >
+                    <img 
+                      src={buildAssetUrlFromPath(viewingPhotosVisit.beforeImageUrl) || ""} 
+                      alt="Before Work" 
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity font-semibold text-xs gap-1">
+                      <Eye className="h-4 w-4" /> Click to Zoom
+                    </div>
+                  </div>
+                ) : (
+                  <div className="aspect-video rounded-xl border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-xs text-slate-400">
+                    No Before Photo
+                  </div>
+                )}
+              </div>
+
+              {/* After Photo */}
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">After Work</span>
+                {viewingPhotosVisit?.afterImageUrl ? (
+                  <div 
+                    className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-100 cursor-pointer group shadow-sm"
+                    onClick={() => setPreviewImageUrl(buildAssetUrlFromPath(viewingPhotosVisit.afterImageUrl))}
+                  >
+                    <img 
+                      src={buildAssetUrlFromPath(viewingPhotosVisit.afterImageUrl) || ""} 
+                      alt="After Work" 
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity font-semibold text-xs gap-1">
+                      <Eye className="h-4 w-4" /> Click to Zoom
+                    </div>
+                  </div>
+                ) : (
+                  <div className="aspect-video rounded-xl border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-xs text-slate-400">
+                    No After Photo
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewingPhotosVisit(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
