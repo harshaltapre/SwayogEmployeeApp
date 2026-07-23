@@ -125,8 +125,8 @@ fun SubAdminMapScreen(
     val groupedPins = remember(activePins) {
         activePins.groupBy { pin ->
             when (pin) {
-                is MapPinType.Amc -> LatLng(pin.customer.latitude!!, pin.customer.longitude!!)
-                is MapPinType.Complaint -> LatLng(pin.request.latitude!!, pin.request.longitude!!)
+                is MapPinType.Amc -> LatLng(pin.customer.latitude ?: defaultLatLng.latitude, pin.customer.longitude ?: defaultLatLng.longitude)
+                is MapPinType.Complaint -> LatLng(pin.request.latitude ?: defaultLatLng.latitude, pin.request.longitude ?: defaultLatLng.longitude)
             }
         }
     }
@@ -134,8 +134,8 @@ fun SubAdminMapScreen(
     val cameraPositionState = rememberCameraPositionState {
         val firstPin = activePins.firstOrNull()
         val center = when (firstPin) {
-            is MapPinType.Amc -> LatLng(firstPin.customer.latitude!!, firstPin.customer.longitude!!)
-            is MapPinType.Complaint -> LatLng(firstPin.request.latitude!!, firstPin.request.longitude!!)
+            is MapPinType.Amc -> LatLng(firstPin.customer.latitude ?: defaultLatLng.latitude, firstPin.customer.longitude ?: defaultLatLng.longitude)
+            is MapPinType.Complaint -> LatLng(firstPin.request.latitude ?: defaultLatLng.latitude, firstPin.request.longitude ?: defaultLatLng.longitude)
             null -> defaultLatLng
         }
         position = CameraPosition.fromLatLngZoom(center, 8f)
