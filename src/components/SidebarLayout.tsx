@@ -109,7 +109,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           { name: "Dashboard", href: "/inventory/dashboard", icon: LayoutDashboard },
           { name: "Inventory", href: "/inventory/inventory", icon: Package },
           { name: "Customers", href: "/inventory/customers", icon: Users },
-          { name: "Settings", href: "/inventory/settings", icon: Settings },
+          { name: "Attendance", href: "/employee/attendance", icon: Calendar },
+          { name: "Settings", href: "/employee/settings", icon: Settings },
         ];
       }
 

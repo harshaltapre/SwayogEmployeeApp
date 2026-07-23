@@ -22,7 +22,7 @@ import { useProfilePhoto } from "@/hooks/useProfilePhoto";
 import { FaceEnroll } from "@/components/face/FaceEnroll";
 import { apiClient } from '@/lib/api-utils';
 
-type SettingsSection = 'profile' | 'general' | 'appearance' | 'privacy' | 'about';
+type SettingsSection = 'profile' | 'general' | 'appearance' | 'privacy' | 'about' | 'face';
 type ThemeMode = 'light' | 'dark' | 'system';
 
 export default function SubAdminSettings() {
@@ -230,6 +230,7 @@ export default function SubAdminSettings() {
 
   const sections = [
     { id: 'profile' as const, label: 'Profile', icon: User },
+    { id: 'face' as const, label: 'Face ID', icon: Shield },
     { id: 'general' as const, label: 'General', icon: SettingsIcon },
     { id: 'appearance' as const, label: 'Appearance', icon: Palette },
     { id: 'privacy' as const, label: 'Privacy', icon: Shield },
@@ -289,6 +290,25 @@ export default function SubAdminSettings() {
 
   const renderSection = () => {
     switch (activeSection) {
+      case 'face':
+        return (
+          <div className="space-y-6">
+            <div className={sectionCardClassName}>
+              <div className="border-b border-border px-6 py-4 bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-950/40 dark:to-violet-950/40">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  Face ID & Biometric Enrollment
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Enroll your face for secure biometric check-in. Your face data is stored as a mathematical descriptor — no photos are stored permanently.
+                </p>
+              </div>
+              <div className="p-6">
+                <FaceEnroll />
+              </div>
+            </div>
+          </div>
+        );
       case 'profile':
         return (
           <div className="space-y-6">

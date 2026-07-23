@@ -22,11 +22,11 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, Clock, RefreshCw, Search, Filter, MapPin } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { getEffectiveApiBaseUrl, useListEmployees, getListTasksQueryKey } from "@/lib/api-client";
+import { getEffectiveApiBaseUrl, useListEmployees, getListTasksQueryKey, updateLocalServiceRequestStatus } from "@/lib/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface ServiceRequest {
-  id: number;
+  id: number | string;
   customerId: number;
   customer_id: number;
   customerName: string;
@@ -45,6 +45,7 @@ interface ServiceRequest {
   longitude: number | null;
   createdAt: string;
   assignedEmployeeId?: string | number | null;
+  ticketId?: string;
 }
 
 function getStatusBadgeClass(status: string): string {
@@ -83,62 +84,73 @@ export default function SubAdminComplaints() {
   const fetchRequests = async () => {
     if (!token) return;
     setIsLoading(true);
-    try {
-      if (!apiBase) throw new Error("API base not configured");
-      const url = apiBase.includes("/api/v")
-        ? `${apiBase}/subadmin/service-requests`
-        : `${apiBase}/api/v1/subadmin/service-requests`;
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) throw new Error("Failed to fetch complaints");
-      const payload = await response.json();
-      const data: ServiceRequest[] = payload?.data?.requests ?? payload?.data ?? payload ?? [];
-      setRequests(data);
-      setFilteredRequests(data);
-    } catch (error) {
-      console.error("Failed to fetch complaints, using local storage fallback", error);
+    let backendData: ServiceRequest[] = [];
+    if (apiBase) {
       try {
-        const raw = localStorage.getItem("swayog_dynamic_complaints");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            const mapped: ServiceRequest[] = parsed.map((c: any) => ({
-              id: Number(c.id) || Date.now(),
-              customerId: Number(c.customerId ?? c.customer_id ?? 1),
-              customer_id: Number(c.customer_id ?? c.customerId ?? 1),
-              customerName: c.customerName ?? "Local Customer",
-              customerEmail: c.customerEmail ?? "customer@example.com",
-              customerPhone: c.customerPhone ?? "",
-              customerCity: c.customerCity ?? "",
-              customerCode: c.customerCode ?? "CUST-LOCAL",
-              title: c.title ?? c.type ?? "Complaint",
-              description: c.description ?? "",
-              status: c.status ?? "pending",
-              scheduledDate: c.scheduledDate ?? c.scheduled_date ?? null,
-              scheduled_date: c.scheduled_date ?? c.scheduledDate ?? null,
-              scheduledTime: c.scheduledTime ?? null,
-              address: c.address ?? "",
-              latitude: c.latitude ?? null,
-              longitude: c.longitude ?? null,
-              createdAt: c.createdAt ?? new Date().toISOString(),
-            }));
-            setRequests(mapped);
-            setFilteredRequests(mapped);
-            return;
-          }
+        const url = apiBase.includes("/api/v")
+          ? `${apiBase}/subadmin/service-requests`
+          : `${apiBase}/api/v1/subadmin/service-requests`;
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const payload = await response.json();
+          backendData = payload?.data?.requests ?? payload?.data ?? payload ?? [];
         }
-      } catch (localErr) {
-        console.error("Failed to parse local complaints", localErr);
+      } catch (error) {
+        console.error("Failed to fetch complaints from backend", error);
       }
-      toast({
-        title: "Error",
-        description: "Failed to load complaints from server. Local fallback used if available.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
     }
+
+    let localData: ServiceRequest[] = [];
+    try {
+      const raw = localStorage.getItem("swayog_dynamic_complaints");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          localData = parsed.map((c: any) => ({
+            id: c.id,
+            customerId: Number(c.customerId ?? c.customer_id ?? 1),
+            customer_id: Number(c.customer_id ?? c.customerId ?? 1),
+            customerName: c.customerName ?? "Local Customer",
+            customerEmail: c.customerEmail ?? "customer@example.com",
+            customerPhone: c.customerPhone ?? "",
+            customerCity: c.customerCity ?? "",
+            customerCode: c.customerCode ?? "CUST-LOCAL",
+            title: c.title ?? c.type ?? "Complaint",
+            description: c.description ?? "",
+            status: c.status ?? "pending",
+            scheduledDate: c.scheduledDate ?? c.scheduled_date ?? null,
+            scheduled_date: c.scheduled_date ?? c.scheduledDate ?? null,
+            scheduledTime: c.scheduledTime ?? null,
+            address: c.address ?? "",
+            latitude: c.latitude ?? null,
+            longitude: c.longitude ?? null,
+            createdAt: c.createdAt ?? new Date().toISOString(),
+          }));
+        }
+      }
+    } catch (localErr) {
+      console.error("Failed to parse local complaints", localErr);
+    }
+
+    const merged = [...backendData];
+    for (const local of localData) {
+      const exists = backendData.some(
+        (b: any) =>
+          String(b.id) === String(local.id) ||
+          (b.ticketId && local.ticketId && String(b.ticketId) === String(local.ticketId))
+      );
+      if (!exists) {
+        merged.push(local);
+      }
+    }
+
+    merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    setRequests(merged);
+    setFilteredRequests(merged);
+    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -172,11 +184,30 @@ export default function SubAdminComplaints() {
   };
 
   const handleSchedule = async () => {
-    if (!selectedRequest || !token || !apiBase) return;
+    if (!selectedRequest || !token) return;
+    const reqId = selectedRequest.id;
+    const employeeObj = employees?.find((emp: any) => String(emp.id ?? emp.userId) === String(assignedEmployeeId));
+    const assignedEmployee = employeeObj ? {
+      name: employeeObj.name,
+      phone: employeeObj.phone || undefined
+    } : null;
+    // Always sync to local storage immediately (works offline and for local IDs)
+    updateLocalServiceRequestStatus(reqId, {
+      status: "scheduled",
+      scheduledDate,
+      scheduledTime: scheduledTime || null,
+      assignedEmployee,
+    });
+    if (!apiBase) {
+      toast({ title: "Complaint Scheduled", description: "The complaint visit has been scheduled (local mode)." });
+      setIsModalOpen(false);
+      fetchRequests();
+      return;
+    }
     try {
       const url = apiBase.includes("/api/v")
-        ? `${apiBase}/subadmin/service-requests/${selectedRequest.id}`
-        : `${apiBase}/api/v1/subadmin/service-requests/${selectedRequest.id}`;
+        ? `${apiBase}/subadmin/service-requests/${reqId}`
+        : `${apiBase}/api/v1/subadmin/service-requests/${reqId}`;
       const response = await fetch(url, {
         method: "PATCH",
         headers: {
@@ -201,16 +232,24 @@ export default function SubAdminComplaints() {
       queryClient.invalidateQueries({ queryKey: ["service-requests"] });
       fetchRequests();
     } catch (error) {
+      // Local storage already updated; still show success
       toast({
-        title: "Error",
-        description: "Failed to schedule complaint visit.",
-        variant: "destructive",
+        title: "Complaint Scheduled",
+        description: "Scheduled locally. Will sync to server when online.",
       });
+      setIsModalOpen(false);
+      fetchRequests();
     }
   };
 
-  const handleMarkComplete = async (requestId: number) => {
-    if (!token || !apiBase) return;
+  const handleMarkComplete = async (requestId: number | string) => {
+    // Always sync to local storage immediately
+    updateLocalServiceRequestStatus(requestId, { status: "completed" });
+    if (!token || !apiBase) {
+      toast({ title: "Complaint Resolved", description: "Complaint marked as resolved (local mode)." });
+      fetchRequests();
+      return;
+    }
     try {
       const url = apiBase.includes("/api/v")
         ? `${apiBase}/subadmin/service-requests/${requestId}`

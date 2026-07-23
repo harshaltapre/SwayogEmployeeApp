@@ -7,36 +7,6 @@ import { getMockTasks, saveMockTask } from "../../lib/mockTasksDb.js";
 import { recalculateMonthlyPerformance } from "../../services/attendanceService.js";
 import type { CompleteTaskInput, CreateTaskInput, CreateBulkTaskInput, ListTasksQueryInput } from "./tasks.schemas.js";
 import { createAdminNotification, createCustomerNotification } from "../../services/notificationService.js";
-import fs from "fs";
-import path from "path";
-
-/**
- * Decode a base64 data-URL string, write it to /uploads/task-images/, and return the public URL.
- * If the input is not a base64 data-URL (e.g. already a server path), returns the input unchanged.
- */
-function saveBase64Image(base64Str: string | undefined | null, prefix: string): string | undefined {
-  if (!base64Str || !base64Str.startsWith("data:image")) return base64Str || undefined;
-  try {
-    const matches = base64Str.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-    if (!matches || matches.length !== 3) return base64Str;
-
-    const buffer = Buffer.from(matches[2], "base64");
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const filename = `${prefix}-${uniqueSuffix}.jpg`;
-    const dir = path.join(process.cwd(), "uploads", "task-images");
-
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    const filepath = path.join(dir, filename);
-    fs.writeFileSync(filepath, buffer);
-    return `/uploads/task-images/${filename}`;
-  } catch (error) {
-    console.error("Failed to save base64 image:", error);
-    return undefined;
-  }
-}
 
 async function getRecursiveReporteeIds(userId: string): Promise<string[]> {
   const reports = await prisma.user.findMany({
@@ -621,8 +591,8 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
           completedAt: new Date(),
           completedByEmployeeId: auth.userId,
           completedByName: completedByName,
-          beforeImageUrl: saveBase64Image(input.beforeImageUrl, "amc-before") || input.beforeImageUrl || null,
-          afterImageUrl: saveBase64Image(input.afterImageUrl, "amc-after") || input.afterImageUrl || null,
+          beforeImageUrl: input.beforeImageUrl || null,
+          afterImageUrl: input.afterImageUrl || null,
         },
       });
 
@@ -635,45 +605,35 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
 
     // Handle regular tasks
     const id = parseInt(taskId, 10);
-    const task: any = await prisma.task.findUnique({ 
-      where: { id },
-      include: { taskAssignments: true }
-    }) as any;
+    const task: any = await prisma.task.findUnique({ where: { id } }) as any;
     if (!task) {
       throw new ApiError(404, "Task not found");
     }
 
     const imageRecords: any[] = [];
-    const savedBeforeUrl = saveBase64Image(input.beforeImageUrl, "task-before");
-    const savedAfterUrl = saveBase64Image(input.afterImageUrl, "task-after");
-    if (savedBeforeUrl || input.beforeImageUrl) {
+    if (input.beforeImageUrl) {
       imageRecords.push({
         taskId: id,
         employeeUserId: auth.userId,
         type: "before",
-        url: savedBeforeUrl || input.beforeImageUrl,
+        url: input.beforeImageUrl,
         latitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : null,
         longitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : null,
       });
     }
-    if (savedAfterUrl || input.afterImageUrl) {
+    if (input.afterImageUrl) {
       imageRecords.push({
         taskId: id,
         employeeUserId: auth.userId,
         type: "after",
-        url: savedAfterUrl || input.afterImageUrl,
+        url: input.afterImageUrl,
         latitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : null,
         longitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : null,
       });
     }
 
-    if (auth.role === UserRole.EMPLOYEE) {
-      const isAssigned = task.employeeUserId === auth.userId || 
-        (task.taskAssignments && task.taskAssignments.some((a: any) => a.employeeUserId === auth.userId));
-        
-      if (!isAssigned) {
-        throw new ApiError(403, "You cannot complete tasks assigned to other employees");
-      }
+    if (auth.role === UserRole.EMPLOYEE && task.employeeUserId !== auth.userId) {
+      throw new ApiError(403, "You cannot complete tasks assigned to other employees");
     }
 
     const updated: any = await prisma.task.update({

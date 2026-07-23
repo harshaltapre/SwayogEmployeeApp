@@ -500,10 +500,20 @@ export type CustomerServiceRequestRecord = {
   id: string;
   ticketId: string;
   type: string;
+  title?: string;
   description: string;
-  status: "new" | "in_progress" | "resolved";
+  status: "new" | "in_progress" | "resolved" | "pending" | "scheduled" | "completed";
   date: string;
   createdAt: string;
+  scheduledDate?: string | null;
+  scheduledTime?: string | null;
+  address?: string;
+  assignedEmployee?: {
+    name: string;
+    phone?: string;
+  } | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type CreateCustomerServiceRequestInput = {
@@ -616,6 +626,39 @@ export function getStoredDynamicComplaints(): any[] {
 
 export function setStoredDynamicComplaints(rows: any[]): void {
   localStorage.setItem(DYNAMIC_COMPLAINTS_STORAGE_KEY, JSON.stringify(rows));
+}
+
+/**
+ * Update a service request in both local storage keys (coordinator complaints + customer requests).
+ * Called whenever the coordinator schedules or completes a request, so the customer's "Your Requests"
+ * section shows the up-to-date status, scheduledDate and scheduledTime immediately.
+ */
+export function updateLocalServiceRequestStatus(
+  requestId: string | number,
+  updates: { 
+    status?: string; 
+    scheduledDate?: string | null; 
+    scheduledTime?: string | null;
+    assignedEmployee?: { name: string; phone?: string } | null;
+  }
+): void {
+  try {
+    // Update swayog_dynamic_complaints
+    const complaints = getStoredDynamicComplaints();
+    const updatedComplaints = complaints.map((c: any) =>
+      String(c.id) === String(requestId) ? { ...c, ...updates, scheduled_date: updates.scheduledDate ?? c.scheduled_date } : c
+    );
+    setStoredDynamicComplaints(updatedComplaints);
+
+    // Update swayog_customer_service_requests
+    const customerReqs = getStoredCustomerServiceRequests();
+    const updatedCustomerReqs = customerReqs.map((r: any) =>
+      String(r.id) === String(requestId) ? { ...r, ...updates, scheduled_date: updates.scheduledDate ?? r.scheduled_date } : r
+    );
+    setStoredCustomerServiceRequests(updatedCustomerReqs);
+  } catch (e) {
+    console.warn("Failed to update local service request status", e);
+  }
 }
 
 
@@ -1662,18 +1705,32 @@ export function useListCustomerServiceRequests(opts?: any) {
     queryKey: getListCustomerServiceRequestsQueryKey(),
     queryFn: async () => {
       const apiBaseUrl = getApiBaseUrl();
+      let backendRequests: any[] = [];
       if (apiBaseUrl) {
         try {
           const response = await requestApi<{ requests: any[] }>("/customer/requests");
-          return response?.requests ?? [];
+          backendRequests = response?.requests ?? [];
         } catch (error) {
-          console.warn("Failed to fetch service requests from backend, using local storage fallback", error);
-          const rows = getStoredCustomerServiceRequests();
-          return delay(rows, 80);
+          console.warn("Failed to fetch service requests from backend, using local storage merge", error);
         }
       }
-      const rows = getStoredCustomerServiceRequests();
-      return delay(rows, 80);
+      const localRequests = getStoredCustomerServiceRequests();
+      const merged = [...backendRequests];
+      for (const local of localRequests) {
+        const exists = backendRequests.some(
+          (b: any) =>
+            String(b.id) === String(local.id) ||
+            (b.ticketId && local.ticketId && String(b.ticketId) === String(local.ticketId))
+        );
+        if (!exists) {
+          merged.push(local);
+        }
+      }
+      merged.sort(
+        (a, b) =>
+          new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime()
+      );
+      return delay(merged, 80);
     },
     ...opts?.query,
   });
@@ -1740,10 +1797,31 @@ export function useCreateCustomerServiceRequest(opts?: any) {
       }
 
       try {
-        return await requestApi<any>("/customer/requests", {
+        const response = await requestApi<any>("/customer/requests", {
           method: "POST",
           body: JSON.stringify(data),
         });
+
+        if (response && response.id) {
+          try {
+            const serverId = String(response.id);
+            const localRequests = getStoredCustomerServiceRequests();
+            const updatedRequests = localRequests.map((r: any) =>
+              String(r.id) === String(newLocalId) ? { ...r, id: serverId } : r
+            );
+            setStoredCustomerServiceRequests(updatedRequests);
+
+            const localComplaints = getStoredDynamicComplaints();
+            const updatedComplaints = localComplaints.map((c: any) =>
+              String(c.id) === String(newLocalId) ? { ...c, id: serverId } : c
+            );
+            setStoredDynamicComplaints(updatedComplaints);
+          } catch (e) {
+            console.warn("Failed to update local storage request ID to match server ID", e);
+          }
+        }
+
+        return response;
       } catch (error) {
         console.warn("Failed to submit service request to backend, returning local success", error);
         return { data: newLocalRecord, success: true, message: "Service request submitted locally" };

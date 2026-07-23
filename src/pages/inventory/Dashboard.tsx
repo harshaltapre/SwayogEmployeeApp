@@ -82,9 +82,9 @@ export default function InventoryExecutiveDashboard() {
                 Open Inventory Management
               </button>
             </Link>
-            <Link href="/inventory/settings">
+            <Link href="/employee/settings">
               <button className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50 sm:w-auto">
-                Open Inventory Settings
+                Open Settings
               </button>
             </Link>
           </div>

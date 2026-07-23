@@ -779,28 +779,6 @@ export const EmployeeCalendar = ({
                     {selectedEvent.raw?.scheduledTime ? format(new Date(selectedEvent.raw.scheduledTime), "dd MMM yyyy, hh:mm a") : "N/A"}
                   </span>
                 </div>
-                {selectedEvent.raw?.status === "completed" && (
-                  <div className="flex flex-col border-t border-slate-200/50 pt-2 mt-1">
-                    <span className="text-[10px] font-bold text-emerald-600 uppercase block mb-1">Completion Details</span>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-slate-500">Completed By</span>
-                      <span className="font-semibold text-slate-800">
-                        {selectedEvent.raw?.assignedEmployees?.find((e: any) => e.status === "completed")?.name || selectedEvent.raw?.assignedEmployees?.[0]?.name || "Employee"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-500">Completed At</span>
-                      <span className="font-semibold text-slate-800">
-                        {selectedEvent.raw?.completedAt ? format(new Date(selectedEvent.raw.completedAt), "dd MMM yyyy, hh:mm a") : "N/A"}
-                      </span>
-                    </div>
-                    {selectedEvent.raw?.completionMessage && (
-                       <div className="mt-1.5 text-xs text-slate-700 leading-relaxed bg-white border p-2 rounded-lg italic">
-                         Remarks: {selectedEvent.raw.completionMessage}
-                       </div>
-                    )}
-                  </div>
-                )}
                 {selectedEvent.raw?.taskRate !== undefined && selectedEvent.raw?.taskRate !== null && (
                   <div className="flex justify-between mt-1 border-t border-slate-200/50 pt-2 text-indigo-700 font-bold text-sm">
                     <span>Task Rate / Cost</span>

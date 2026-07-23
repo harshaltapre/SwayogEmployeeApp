@@ -142,13 +142,13 @@ export function AmcVisitTracker({
   // Statistics calculation
   const totalCleanings = visits.filter(v => String(v.status).toUpperCase() !== "COMPLETED").length;
   const doneCount = visits.filter(v => String(v.status).toUpperCase() === "COMPLETED").length;
-  const pendingCount = visits.filter(v => String(v.status).toUpperCase() === "PENDING").length;
+  const pendingCount = visits.filter(v => String(v.status).toUpperCase() !== "COMPLETED").length;
   const overdueCount = visits.filter(v => 
-    String(v.status).toUpperCase() === "PENDING" && new Date(v.scheduledDate) < new Date()
+    String(v.status).toUpperCase() !== "COMPLETED" && new Date(v.scheduledDate) < new Date()
   ).length;
 
   const isOverdue = (visit: any) => {
-    return String(visit.status).toUpperCase() === "PENDING" && new Date(visit.scheduledDate) < new Date();
+    return String(visit.status).toUpperCase() !== "COMPLETED" && new Date(visit.scheduledDate) < new Date();
   };
 
   const months = [
