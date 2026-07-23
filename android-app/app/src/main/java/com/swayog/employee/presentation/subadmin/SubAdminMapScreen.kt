@@ -122,14 +122,6 @@ fun SubAdminMapScreen(
 
     // Camera initial position centering on first pin or defaults to Pune
     val defaultLatLng = LatLng(18.5204, 73.8567)
-    val groupedPins = remember(activePins) {
-        activePins.groupBy { pin ->
-            when (pin) {
-                is MapPinType.Amc -> LatLng(pin.customer.latitude ?: defaultLatLng.latitude, pin.customer.longitude ?: defaultLatLng.longitude)
-                is MapPinType.Complaint -> LatLng(pin.request.latitude ?: defaultLatLng.latitude, pin.request.longitude ?: defaultLatLng.longitude)
-            }
-        }
-    }
     
     val cameraPositionState = rememberCameraPositionState {
         val firstPin = activePins.firstOrNull()
