@@ -521,6 +521,7 @@ fun TaskDetailDialog(
                     afterLat = lat
                     afterLng = lng
                 }
+                android.util.Log.d("TaskSubmissionChain", "LOG 1 - Image Captured: type=$type, base64Length=${base64String.length}, lat=$lat, lng=$lng")
                 Toast.makeText(context, "${type.replaceFirstChar { it.uppercase() }} photo captured with GPS stamp ✓", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to process photo: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -803,25 +804,8 @@ fun TaskDetailDialog(
                             onClick = onStartTask
                         )
                     } else if (task.status?.equals("in_progress", ignoreCase = true) == true || task.status?.equals("pending", ignoreCase = true) == true) {
-                        Text("Complete Task Form", fontWeight = FontWeight.Bold)
-
-                        SwayogTextField(
-                            value = completionMessage,
-                            onValueChange = { completionMessage = it },
-                            label = "Completion Message",
-                            placeholder = "Describe what was accomplished...",
-                            singleLine = false
-                        )
-
-                        SwayogTextField(
-                            value = docUrl,
-                            onValueChange = { docUrl = it },
-                            label = "Document Link (Optional)",
-                            placeholder = "URL of report blueprint, or proof"
-                        )
-
                         // Before & After Photos section header
-                        val requiresPhotos = task.jobType?.let { it.lowercase() in listOf("cleaning", "maintenance", "visit", "service", "amc visit", "amc") } == true
+                        val requiresPhotos = true
 
                         if (requiresPhotos) {
                             Text(
@@ -856,6 +840,10 @@ fun TaskDetailDialog(
                                                 beforeImageUrl = null
                                                 beforeLat = null
                                                 beforeLng = null
+                                                afterBitmap = null
+                                                afterImageUrl = null
+                                                afterLat = null
+                                                afterLng = null
                                             },
                                             modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
                                         ) {
@@ -932,6 +920,25 @@ fun TaskDetailDialog(
                         }
                         }
 
+                        if (!requiresPhotos || afterImageUrl != null) {
+                            Text("Complete Task Form", fontWeight = FontWeight.Bold)
+
+                            SwayogTextField(
+                                value = completionMessage,
+                                onValueChange = { completionMessage = it },
+                                label = "Completion Message",
+                                placeholder = "Describe what was accomplished...",
+                                singleLine = false
+                            )
+
+                            SwayogTextField(
+                                value = docUrl,
+                                onValueChange = { docUrl = it },
+                                label = "Document Link (Optional)",
+                                placeholder = "URL of report blueprint, or proof"
+                            )
+                        }
+
                         SwayogButton(
                             text = if (isProcessing) "Processing..." else "Mark Task Completed",
                             enabled = (!requiresPhotos || (beforeImageUrl != null && afterImageUrl != null)) && completionMessage.trim().length >= 3 && !isProcessing,
@@ -944,6 +951,7 @@ fun TaskDetailDialog(
                                     Toast.makeText(context, "After Image is required", Toast.LENGTH_SHORT).show()
                                 } else {
                                     val finalMessage = completionMessage
+                                    android.util.Log.d("TaskSubmissionChain", "LOG 2 - Pre-Submit Payload Check: taskId=${task.id}, beforeImageUrlPresent=${beforeImageUrl != null} (len=${beforeImageUrl?.length}), afterImageUrlPresent=${afterImageUrl != null} (len=${afterImageUrl?.length}), message=$finalMessage")
                                     onCompleteTask(
                                         finalMessage,
                                         docUrl.trim().ifEmpty { null },

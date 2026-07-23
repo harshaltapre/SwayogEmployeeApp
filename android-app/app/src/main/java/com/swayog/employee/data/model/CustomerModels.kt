@@ -153,8 +153,8 @@ data class ServiceRequest(
     val status: String,
     val scheduledDate: String?,
     val scheduledTime: String?,
-    val createdAt: String,
-    val updatedAt: String
+    val createdAt: String? = null,
+    val updatedAt: String? = null
 )
 
 data class UpdateServiceRequestRequest(

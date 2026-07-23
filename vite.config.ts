@@ -22,10 +22,12 @@ export default defineConfig({
     chunkSizeWarningLimit: 5000,
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('xlsx')) return 'vendor-xlsx';
-          }
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-recharts': ['recharts'],
+          'vendor-framer': ['framer-motion'],
+          'vendor-lucide': ['lucide-react'],
+          'vendor-xlsx': ['xlsx'],
         }
       }
     }

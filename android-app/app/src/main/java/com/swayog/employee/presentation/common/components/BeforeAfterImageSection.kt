@@ -1,4 +1,4 @@
-﻿package com.swayog.employee.presentation.common.components
+package com.swayog.employee.presentation.common.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -67,7 +67,10 @@ fun BeforeAfterImageSection(
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         AsyncImage(
-                            model = beforeImageUrl,
+                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                .data(beforeImageUrl)
+                                .crossfade(true)
+                                .build(),
                             contentDescription = "Before Photo",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -100,7 +103,10 @@ fun BeforeAfterImageSection(
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         AsyncImage(
-                            model = afterImageUrl,
+                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                .data(afterImageUrl)
+                                .crossfade(true)
+                                .build(),
                             contentDescription = "After Photo",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop

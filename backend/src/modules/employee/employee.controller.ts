@@ -229,7 +229,7 @@ export async function updateTaskStatus(req: Request, res: Response): Promise<voi
 export async function markTaskCompleted(req: Request, res: Response): Promise<void> {
   const auth = req.auth as AuthContext | undefined;
   const { taskId } = req.params;
-  const { completionMessage, completionDocumentUrl } = req.body;
+  const { completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl } = req.body;
 
   if (!auth?.userId) {
     throw new ApiError(401, "Authentication required");
@@ -253,7 +253,9 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
     data: {
       status: TaskStatus.COMPLETED,
       completionMessage,
-      completionDocumentUrl,
+      completionDocumentUrl: completionDocumentUrl || null,
+      beforeImageUrl: beforeImageUrl || null,
+      afterImageUrl: afterImageUrl || null,
       completedAt: new Date(),
     },
   });
@@ -268,6 +270,8 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
       metadata: {
         completionMessage,
         hasDocumentation: !!completionDocumentUrl,
+        hasBeforeImage: !!beforeImageUrl,
+        hasAfterImage: !!afterImageUrl,
       },
     },
   }).catch(() => {

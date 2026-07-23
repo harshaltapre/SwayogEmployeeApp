@@ -1,4 +1,4 @@
-﻿package com.swayog.employee.presentation.common.components
+package com.swayog.employee.presentation.common.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,7 +37,10 @@ fun FullScreenImageDialog(
             contentAlignment = Alignment.Center
         ) {
             AsyncImage(
-                model = imageUrl,
+                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    .data(imageUrl)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = "Full Screen Image",
                 modifier = Modifier
                     .fillMaxSize()

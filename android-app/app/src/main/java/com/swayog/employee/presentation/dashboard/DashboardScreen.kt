@@ -64,14 +64,8 @@ fun DashboardScreen(
 
     var workDescription by remember { mutableStateOf("") }
 
-    // Live clock state
-    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            delay(1000L)
-        }
-    }
+    // Snapshot time (removes continuous 1-second recomposition lag)
+    val currentTime = remember { System.currentTimeMillis() }
 
     val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.getDefault()) }
     val dateFormat = remember { SimpleDateFormat("EEEE, dd MMMM yyyy", Locale.getDefault()) }

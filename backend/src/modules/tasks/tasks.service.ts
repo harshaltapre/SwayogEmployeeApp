@@ -333,8 +333,10 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
       scheduledTime: visit.scheduledDate.toISOString(),
       employeeUserId: visit.assignedEmployeeId,
       assignedById: "system",
-      completionMessage: visit.notes ?? null,
+      completionMessage: visit.notes ?? visit.visitNotes ?? null,
       completionDocumentUrl: null,
+      beforeImageUrl: visit.beforeImageUrl ?? null,
+      afterImageUrl: visit.afterImageUrl ?? null,
       completedAt: visit.completedAt?.toISOString() ?? null,
       createdAt: visit.createdAt.toISOString(),
       updatedAt: visit.updatedAt.toISOString(),
@@ -598,7 +600,17 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
 
       return {
         id: taskId,
+        jobType: "AMC",
+        description: "AMC Cleaning/Maintenance Visit",
+        customerName: visit.customer?.fullName ?? null,
+        customerPhone: visit.customer?.phoneNumber ?? null,
+        address: visit.customer?.address ?? null,
         status: "completed",
+        scheduledTime: visit.scheduledDate.toISOString(),
+        employeeUserId: visit.assignedEmployeeId,
+        completionMessage: updated.notes ?? updated.visitNotes ?? null,
+        beforeImageUrl: updated.beforeImageUrl ?? null,
+        afterImageUrl: updated.afterImageUrl ?? null,
         completedAt: updated.completedAt?.toISOString(),
       };
     }
@@ -636,6 +648,9 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       throw new ApiError(403, "You cannot complete tasks assigned to other employees");
     }
 
+    const beforeUrlToSave = savedBeforeUrl || input.beforeImageUrl || null;
+    const afterUrlToSave = savedAfterUrl || input.afterImageUrl || null;
+
     const updated: any = await prisma.task.update({
       where: { id },
       data: {
@@ -643,6 +658,8 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         completionMessage: input.message,
         completionDocumentUrl: input.documentUrl ?? null,
         completedAt: new Date(),
+        beforeImageUrl: beforeUrlToSave,
+        afterImageUrl: afterUrlToSave,
       },
     });
 

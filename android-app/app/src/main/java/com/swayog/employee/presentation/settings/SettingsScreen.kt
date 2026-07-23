@@ -222,7 +222,10 @@ fun SettingsScreen(
                         ) {
                             if (!profilePhotoUrl.isNullOrEmpty()) {
                                 AsyncImage(
-                                    model = profilePhotoUrl,
+                                    model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                        .data(profilePhotoUrl)
+                                        .crossfade(true)
+                                        .build(),
                                     contentDescription = "Profile Photo",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
