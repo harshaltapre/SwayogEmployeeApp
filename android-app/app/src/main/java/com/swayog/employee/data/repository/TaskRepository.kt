@@ -409,19 +409,19 @@ class TaskRepository @Inject constructor(
         
         return if (isOnline) {
             try {
-                val response = apiService.completeTask(
-                    taskId,
-                    CompleteTaskRequest(
-                        message = completionMessage, 
-                        documentUrl = completionDocumentUrl,
-                        beforeImageUrl = beforeImageUrl,
-                        afterImageUrl = afterImageUrl,
-                        beforeLatitude = beforeLatitude,
-                        beforeLongitude = beforeLongitude,
-                        afterLatitude = afterLatitude,
-                        afterLongitude = afterLongitude
-                    )
+                val req = CompleteTaskRequest(
+                    message = completionMessage, 
+                    documentUrl = completionDocumentUrl,
+                    beforeImageUrl = beforeImageUrl,
+                    afterImageUrl = afterImageUrl,
+                    beforeLatitude = beforeLatitude,
+                    beforeLongitude = beforeLongitude,
+                    afterLatitude = afterLatitude,
+                    afterLongitude = afterLongitude
                 )
+                android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: Endpoint=PATCH tasks/$taskId/complete, RequestBody={beforeImgLen=${req.beforeImageUrl?.length}, afterImgLen=${req.afterImageUrl?.length}, message=${req.message}}")
+                val response = apiService.completeTask(taskId, req)
+                android.util.Log.d("TaskSubmissionChain", "LOG 4 - API Call Returned: statusCode=${response.code()}, isSuccessful=${response.isSuccessful}, responseBodyDataBeforeImg=${response.body()?.data?.beforeImageUrl}, responseBodyDataAfterImg=${response.body()?.data?.afterImageUrl}")
                 if (response.isSuccessful && response.body()?.data != null) {
                     val task = response.body()!!.data!!
                     val entity = TaskEntity(
@@ -470,7 +470,7 @@ class TaskRepository @Inject constructor(
             val localTask = taskDao.getTaskById(taskId)
             if (localTask != null) {
                 taskDao.updateTask(localTask.copy(
-                    status = "COMPLETED",
+                    status = "completed",
                     completionMessage = completionMessage,
                     completionDocumentUrl = completionDocumentUrl,
                     beforeImageUrl = beforeImageUrl,

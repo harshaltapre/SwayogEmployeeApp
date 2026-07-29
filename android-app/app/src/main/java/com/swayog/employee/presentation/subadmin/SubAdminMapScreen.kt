@@ -83,43 +83,51 @@ fun SubAdminMapScreen(
             "surat" to LatLng(21.1702, 72.8311)
         )
         val list = mutableListOf<MapPinType>()
+        var hasError = false
         if (selectedFilter == 0 || selectedFilter == 1) {
             customers.forEach { cust ->
-                val lat = cust.latitude ?: cityCoords[cust.city?.lowercase()?.trim()]?.latitude
-                val lng = cust.longitude ?: cityCoords[cust.city?.lowercase()?.trim()]?.longitude
-                if (lat != null && lng != null) {
-                    list.add(MapPinType.Amc(cust.copy(latitude = lat, longitude = lng)))
+                try {
+                    val lat = cust.latitude ?: cityCoords[cust.city?.lowercase()?.trim()]?.latitude
+                    val lng = cust.longitude ?: cityCoords[cust.city?.lowercase()?.trim()]?.longitude
+                    if (lat != null && lng != null) {
+                        list.add(MapPinType.Amc(cust.copy(latitude = lat, longitude = lng)))
+                    }
+                } catch (e: Exception) {
+                    hasError = true
+                    e.printStackTrace()
                 }
             }
         }
         if (selectedFilter == 0 || selectedFilter == 2) {
             complaints.forEach { req ->
-                val lat = req.latitude ?: cityCoords[req.customerCity?.lowercase()?.trim()]?.latitude
-                val lng = req.longitude ?: cityCoords[req.customerCity?.lowercase()?.trim()]?.longitude
-                if (lat != null && lng != null) {
-                    list.add(MapPinType.Complaint(req.copy(latitude = lat, longitude = lng)))
+                try {
+                    val lat = req.latitude ?: cityCoords[req.customerCity?.lowercase()?.trim()]?.latitude
+                    val lng = req.longitude ?: cityCoords[req.customerCity?.lowercase()?.trim()]?.longitude
+                    if (lat != null && lng != null) {
+                        list.add(MapPinType.Complaint(req.copy(latitude = lat, longitude = lng)))
+                    }
+                } catch (e: Exception) {
+                    hasError = true
+                    e.printStackTrace()
                 }
             }
+        }
+        if (hasError) {
+            // Note: In Compose, side-effects during remember should ideally be avoided,
+            // but this prevents a silent failure for the user.
+            android.util.Log.e("SubAdminMapScreen", "Failed to parse one or more map pins due to malformed data")
         }
         list
     }
 
     // Camera initial position centering on first pin or defaults to Pune
     val defaultLatLng = LatLng(18.5204, 73.8567)
-    val groupedPins = remember(activePins) {
-        activePins.groupBy { pin ->
-            when (pin) {
-                is MapPinType.Amc -> LatLng(pin.customer.latitude!!, pin.customer.longitude!!)
-                is MapPinType.Complaint -> LatLng(pin.request.latitude!!, pin.request.longitude!!)
-            }
-        }
-    }
     
     val cameraPositionState = rememberCameraPositionState {
         val firstPin = activePins.firstOrNull()
         val center = when (firstPin) {
-            is MapPinType.Amc -> LatLng(firstPin.customer.latitude!!, firstPin.customer.longitude!!)
-            is MapPinType.Complaint -> LatLng(firstPin.request.latitude!!, firstPin.request.longitude!!)
+            is MapPinType.Amc -> LatLng(firstPin.customer.latitude ?: defaultLatLng.latitude, firstPin.customer.longitude ?: defaultLatLng.longitude)
+            is MapPinType.Complaint -> LatLng(firstPin.request.latitude ?: defaultLatLng.latitude, firstPin.request.longitude ?: defaultLatLng.longitude)
             null -> defaultLatLng
         }
         position = CameraPosition.fromLatLngZoom(center, 8f)

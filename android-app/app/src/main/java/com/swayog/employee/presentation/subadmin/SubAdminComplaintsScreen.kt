@@ -223,7 +223,7 @@ fun ComplaintItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Created: " + complaint.createdAt.substringBefore("T"),
+                    text = "Created: " + (complaint.createdAt?.substringBefore("T") ?: "N/A"),
                     style = MaterialTheme.typography.bodySmall,
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)

@@ -105,14 +105,6 @@ fun AmcVisitDetailsModal(
                         fontWeight = FontWeight.Bold
                     )
 
-                    OutlinedTextField(
-                        value = notes,
-                        onValueChange = { notes = it },
-                        label = { Text("Completion Notes") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3
-                    )
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -123,11 +115,27 @@ fun AmcVisitDetailsModal(
                             onClick = { beforeImageLauncher.launch("image/*") },
                             modifier = Modifier.weight(1f)
                         )
-                        ImagePickerCard(
-                            title = "After Photo",
-                            uri = afterImageUri,
-                            onClick = { afterImageLauncher.launch("image/*") },
-                            modifier = Modifier.weight(1f)
+                        
+                        if (beforeImageUri != null) {
+                            ImagePickerCard(
+                                title = "After Photo",
+                                uri = afterImageUri,
+                                onClick = { afterImageLauncher.launch("image/*") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+
+                    if (afterImageUri != null) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = notes,
+                            onValueChange = { notes = it },
+                            label = { Text("Completion Notes") },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 3
                         )
                     }
 
@@ -144,7 +152,7 @@ fun AmcVisitDetailsModal(
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = { onLogCompletion(event.rawId, notes, beforeImageUri, afterImageUri) },
-                            enabled = !isLoading
+                            enabled = !isLoading && beforeImageUri != null && afterImageUri != null && notes.trim().length >= 3
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
@@ -216,7 +224,10 @@ private fun ImagePickerCard(
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             if (uri != null) {
                 AsyncImage(
-                    model = uri,
+                    model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                        .data(uri)
+                        .crossfade(true)
+                        .build(),
                     contentDescription = title,
                     modifier = Modifier.fillMaxSize()
                 )

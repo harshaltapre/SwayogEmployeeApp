@@ -2,6 +2,11 @@ package com.swayog.employee.core.util
 
 import retrofit2.HttpException
 import retrofit2.Response
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 
 class OfflinePendingException(message: String = "Saved locally. Will sync automatically when online.") : Exception(message)
 
@@ -12,6 +17,21 @@ object ErrorUtils {
      * Extracts HTTP bodies for HttpException.
      */
     fun formatException(e: Throwable): String {
+        val msg = e.message ?: ""
+        if (e is UnknownHostException ||
+            e is ConnectException ||
+            e is SocketTimeoutException ||
+            e is NoRouteToHostException ||
+            e is SSLException ||
+            msg.contains("Unable to resolve host", ignoreCase = true) ||
+            msg.contains("Failed to connect", ignoreCase = true) ||
+            msg.contains("Connection refused", ignoreCase = true) ||
+            msg.contains("Network is unreachable", ignoreCase = true) ||
+            msg.contains("No address associated with hostname", ignoreCase = true)
+        ) {
+            return "Unable to connect to server. Please check your internet connection and try again."
+        }
+
         if (e is HttpException) {
             val code = e.code()
             val defaultMessage = e.message()
@@ -24,11 +44,10 @@ object ErrorUtils {
             return "HttpException $code $defaultMessage: $snippet"
         }
         
-        val message = e.message
-        return if (message.isNullOrBlank()) {
-            "Error: ${e.javaClass.simpleName} (${e.toString()})"
+        return if (msg.isBlank()) {
+            "An unexpected error occurred (${e.javaClass.simpleName})"
         } else {
-            "Error: ${e.javaClass.simpleName} - $message"
+            msg
         }
     }
 

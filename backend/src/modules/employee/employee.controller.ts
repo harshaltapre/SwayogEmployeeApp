@@ -425,11 +425,30 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
     data: {
       status: TaskStatus.COMPLETED,
       completionMessage,
-      completionDocumentUrl,
+      completionDocumentUrl: completionDocumentUrl || null,
+      beforeImageUrl: beforeImageUrl || null,
+      afterImageUrl: afterImageUrl || null,
       completedAt: new Date(),
     },
   });
 
+  // Audit log
+  await prisma.auditLog.create({
+    data: {
+      actorId: auth.userId,
+      action: "TASK_COMPLETED",
+      entity: "Task",
+      entityId: taskId,
+      metadata: {
+        completionMessage,
+        hasDocumentation: !!completionDocumentUrl,
+        hasBeforeImage: !!beforeImageUrl,
+        hasAfterImage: !!afterImageUrl,
+      },
+    },
+  }).catch(() => {
+    // Silently fail
+  });
   res.status(200).json({
     data: completedTask,
     message: "Task marked as completed",

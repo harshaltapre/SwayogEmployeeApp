@@ -139,14 +139,11 @@ fun SubAdminCustomerDetailsScreen(
                 }
             }
             is CustomerDetailsState.Error -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = state.message, color = MaterialTheme.colorScheme.error)
-                }
+                ErrorScreen(
+                    message = state.message,
+                    onRetry = { viewModel.loadData() },
+                    modifier = Modifier.padding(paddingValues)
+                )
             }
             is CustomerDetailsState.Success -> {
                 val customerSummary = state.data
@@ -209,7 +206,8 @@ fun SubAdminCustomerDetailsScreen(
                             )
                             3 -> InvoicesTabContent(
                                 invoicesState = invoicesState,
-                                onAddInvoiceClick = { isEditOpen = false /* reset edit? no need, just open dialog */ }
+                                onAddInvoiceClick = { isEditOpen = false },
+                                onRetry = { viewModel.loadData() }
                             )
                         }
                     }
@@ -826,7 +824,8 @@ fun TelemetryBox(label: String, value: String, modifier: Modifier = Modifier) {
 @Composable
 fun InvoicesTabContent(
     invoicesState: CustomerDetailsState<List<Invoice>>,
-    onAddInvoiceClick: () -> Unit
+    onAddInvoiceClick: () -> Unit,
+    onRetry: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -841,7 +840,10 @@ fun InvoicesTabContent(
                 }
             }
             is CustomerDetailsState.Error -> {
-                Text(text = "Failed to load invoices: ${invoicesState.message}", color = MaterialTheme.colorScheme.error)
+                ErrorScreen(
+                    message = invoicesState.message,
+                    onRetry = onRetry
+                )
             }
             is CustomerDetailsState.Success -> {
                 val invoices = invoicesState.data

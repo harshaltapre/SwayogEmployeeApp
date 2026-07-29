@@ -241,45 +241,65 @@ fun EmployeeDetailContent(
         ) {
             // Employee Profile Card
             SwayogCard {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(64.dp)
+                            .size(80.dp)
                             .background(Color(0xFF0F172A), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = employee.fullName.first().toString(),
+                            text = employee.fullName.firstOrNull()?.toString() ?: "?",
                             color = Color.White,
-                            fontSize = 28.sp,
+                            fontSize = 32.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = employee.fullName,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = employee.role,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.Gray
-                        )
-                        Row(
-                            modifier = Modifier.padding(top = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Text(employee.phoneNumber ?: "N/A", fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = employee.fullName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = employee.role.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    androidx.compose.material3.Divider(color = Color.LightGray.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Gray)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Text(employee.email, fontSize = 12.sp)
+                            Text(employee.phoneNumber ?: "N/A", fontSize = 14.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Gray)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = employee.email, 
+                                fontSize = 14.sp,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Gray)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Zone: ${employee.zone}", fontSize = 14.sp)
                         }
                     }
                 }
@@ -290,9 +310,19 @@ fun EmployeeDetailContent(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                StatCard(title = "Active Tasks", value = tasks.size.toString(), icon = Icons.Default.Assignment)
-                StatCard(title = "Rating", value = String.format("%.1f", employee.rating ?: 0.0), icon = Icons.Default.Star, iconColor = Color(0xFF16A34A))
-                StatCard(title = "Zone", value = employee.zone, icon = Icons.Default.LocationOn)
+                StatCard(
+                    modifier = Modifier.weight(1f),
+                    title = "Active Tasks", 
+                    value = tasks.size.toString(), 
+                    icon = Icons.Default.Assignment
+                )
+                StatCard(
+                    modifier = Modifier.weight(1f),
+                    title = "Rating", 
+                    value = String.format("%.1f", employee.rating ?: 0.0), 
+                    icon = Icons.Default.Star, 
+                    iconColor = Color(0xFF16A34A)
+                )
             }
 
             // Tabs
@@ -540,8 +570,15 @@ fun AssignedTasksTab(tasks: List<Task>, employees: List<Employee>) {
 }
 
 @Composable
-fun StatCard(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, iconColor: Color? = null) {
+fun StatCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconColor: Color? = null
+) {
     Card(
+        modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         shape = RoundedCornerShape(12.dp)
     ) {
