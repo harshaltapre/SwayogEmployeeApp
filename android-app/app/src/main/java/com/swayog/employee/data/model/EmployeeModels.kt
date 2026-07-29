@@ -35,3 +35,28 @@ data class PartnerProfile(
     val serviceZone: String?,
     val businessName: String?
 )
+
+data class CreateEmployeeRequest(
+    val loginId: String,
+    val fullName: String,
+    val email: String,
+    val phoneNumber: String?,
+    val role: String,
+    val departmentId: String?,
+    val reportingManagerId: String?,
+    val jobRole: String?,
+    val zone: String?,
+    val isActive: Boolean = true
+)
+
+data class UpdateEmployeeRequest(
+    val fullName: String?,
+    val email: String?,
+    val phoneNumber: String?,
+    val role: String?,
+    val departmentId: String?,
+    val reportingManagerId: String?,
+    val jobRole: String?,
+    val zone: String?,
+    val isActive: Boolean?
+)

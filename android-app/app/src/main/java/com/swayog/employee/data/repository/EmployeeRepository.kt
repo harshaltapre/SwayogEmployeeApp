@@ -3,8 +3,10 @@ package com.swayog.employee.data.repository
 import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.local.dao.UserDao
 import com.swayog.employee.data.local.entity.UserEntity
+import com.swayog.employee.data.model.CreateEmployeeRequest
 import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.EmployeeProfile
+import com.swayog.employee.data.model.UpdateEmployeeRequest
 import com.swayog.employee.core.util.ErrorUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -97,5 +99,100 @@ class EmployeeRepository @Inject constructor(
     
     suspend fun getAllEmployees(): Result<List<Employee>> {
         return getInternalUsers(null)
+    }
+
+    suspend fun createEmployee(request: CreateEmployeeRequest): Result<Employee> {
+        return try {
+            val response = apiService.createEmployee(request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                val employee = response.body()!!.data!!
+                val entity = UserEntity(
+                    id = employee.id,
+                    loginId = employee.loginId,
+                    employeeCode = null,
+                    email = employee.email,
+                    phoneNumber = employee.phoneNumber,
+                    fullName = employee.fullName,
+                    role = employee.role,
+                    designationTitle = null,
+                    departmentId = employee.department?.id,
+                    reportingManagerId = employee.reportingManagerId,
+                    isActive = employee.isActive,
+                    createdAt = employee.createdAt,
+                    jobRole = employee.employeeProfile?.jobRole,
+                    zone = employee.zone,
+                    monthlySalaryInr = employee.employeeProfile?.monthlySalaryInr,
+                    profilePhotoUrl = null,
+                    rating = employee.rating
+                )
+                userDao.insertUser(entity)
+                Result.success(employee)
+            } else {
+                Result.failure(Exception("Failed to create employee: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to create employee: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    suspend fun updateEmployee(employeeId: String, request: UpdateEmployeeRequest): Result<Employee> {
+        return try {
+            val response = apiService.updateEmployee(employeeId, request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                val employee = response.body()!!.data!!
+                val entity = UserEntity(
+                    id = employee.id,
+                    loginId = employee.loginId,
+                    employeeCode = null,
+                    email = employee.email,
+                    phoneNumber = employee.phoneNumber,
+                    fullName = employee.fullName,
+                    role = employee.role,
+                    designationTitle = null,
+                    departmentId = employee.department?.id,
+                    reportingManagerId = employee.reportingManagerId,
+                    isActive = employee.isActive,
+                    createdAt = employee.createdAt,
+                    jobRole = employee.employeeProfile?.jobRole,
+                    zone = employee.zone,
+                    monthlySalaryInr = employee.employeeProfile?.monthlySalaryInr,
+                    profilePhotoUrl = null,
+                    rating = employee.rating
+                )
+                userDao.updateUser(entity)
+                Result.success(employee)
+            } else {
+                Result.failure(Exception("Failed to update employee: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to update employee: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    suspend fun deleteEmployee(employeeId: String): Result<Unit> {
+        return try {
+            val response = apiService.deleteEmployee(employeeId)
+            if (response.isSuccessful) {
+                userDao.deleteUserById(employeeId)
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to delete employee: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to delete employee: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    suspend fun importEmployeesFromExcel(data: List<Map<String, String>>): Result<Unit> {
+        return try {
+            val response = apiService.importEmployeesFromExcel(data)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to import employees: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to import employees: ${ErrorUtils.formatException(e)}"))
+        }
     }
 }

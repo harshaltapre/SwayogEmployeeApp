@@ -66,16 +66,8 @@ object ImageUtils {
                 ImageRequest.Builder(context)
                     .data(model)
                     .crossfade(true)
-                    .diskCachePolicy(CachePolicy.DISABLED)
-                    .memoryCachePolicy(CachePolicy.DISABLED)
-                    .listener(
-                        onSuccess = { _, _ ->
-                            android.util.Log.d("PROFILE_RENDER", "Image rendering SUCCESS for model: ${model::class.java.simpleName}")
-                        },
-                        onError = { _, result ->
-                            android.util.Log.e("PROFILE_RENDER", "Image rendering ERROR: ${result.throwable.message}", result.throwable)
-                        }
-                    )
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
                     .build()
             }
         }

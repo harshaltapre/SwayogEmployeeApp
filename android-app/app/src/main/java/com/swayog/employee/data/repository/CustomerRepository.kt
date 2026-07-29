@@ -682,5 +682,32 @@ class CustomerRepository @Inject constructor(
         }
     }
 
+    suspend fun deleteCustomer(customerId: Int): Result<Unit> {
+        return try {
+            val response = apiService.deleteCustomer(customerId)
+            if (response.isSuccessful) {
+                customerDao.deleteCustomerById(customerId)
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to delete customer: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun exportCustomersToExcel(): Result<String> {
+        return try {
+            val response = apiService.exportCustomersToExcel()
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to export customers: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
 }
 

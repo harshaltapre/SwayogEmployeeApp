@@ -22,7 +22,7 @@ class SwayogFirebaseMessagingService : FirebaseMessagingService() {
         }
         
         // Handle data messages
-        remoteMessage.data.isNotEmpty().let {
+        if (remoteMessage.data.isNotEmpty()) {
             val title = remoteMessage.data["title"]
             val message = remoteMessage.data["message"]
             val type = remoteMessage.data["type"]
@@ -74,13 +74,14 @@ class SwayogFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
+        val notificationBuilder = NotificationCompat.Builder(this, channelId).apply {
+            setSmallIcon(R.drawable.ic_launcher_foreground)
+            setContentTitle(title)
+            setContentText(message)
+            setPriority(NotificationCompat.PRIORITY_HIGH)
+            setAutoCancel(true)
+            setContentIntent(pendingIntent)
+        }
         
         val notificationManager = NotificationManagerCompat.from(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

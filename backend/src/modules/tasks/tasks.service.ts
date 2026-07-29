@@ -202,10 +202,17 @@ function serializeTask(task: any) {
 
   const beforeImageObj = taskImages.find((img: any) => img.type === "before" || img.type === "Before");
   const afterImageObj = taskImages.find((img: any) => img.type === "after" || img.type === "After");
+  const sitePhotoObjs = taskImages.filter((img: any) => img.type === "site" || img.type === "sitePhoto" || img.type === "SITE_VISIT");
+  const sitePhotos = sitePhotoObjs.map((img: any) => img.url);
+
+  const isSiteVisit = task.taskType === "SITE_VISIT" || task.jobType === "Site Visit" || String(task.jobType ?? "").toLowerCase().includes("site") || String(task.jobType ?? "").toLowerCase().includes("visit");
+  const isAmc = task.taskType === "AMC_VISIT" || String(task.jobType ?? "").toLowerCase().includes("amc");
+  const derivedTaskType = task.taskType || (isSiteVisit ? "SITE_VISIT" : isAmc ? "AMC_VISIT" : "REGULAR");
 
   return {
     id: task.id,
     jobType: task.jobType,
+    taskType: derivedTaskType,
     description: task.description,
     customerName: task.customerName,
     customerPhone: task.customerPhone,
@@ -223,6 +230,8 @@ function serializeTask(task: any) {
     updatedAt: task.updatedAt.toISOString(),
     assignedEmployees,
     taskImages,
+    sitePhotos,
+    images: sitePhotos.length > 0 ? sitePhotos : undefined,
     beforeImageUrl: beforeImageObj?.url ?? null,
     beforeLatitude: beforeImageObj?.latitude ?? null,
     beforeLongitude: beforeImageObj?.longitude ?? null,
@@ -333,6 +342,7 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
     const serializedAmc = amcVisits.map(visit => ({
       id: `amc_${visit.id}`,
       jobType: "AMC",
+      taskType: "AMC_VISIT",
       description: "AMC Cleaning/Maintenance Visit",
       customerName: visit.customer.fullName,
       customerPhone: visit.customer.phoneNumber,
@@ -343,8 +353,10 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
       scheduledTime: visit.scheduledDate.toISOString(),
       employeeUserId: visit.assignedEmployeeId,
       assignedById: "system",
-      completionMessage: visit.notes ?? null,
+      completionMessage: visit.notes ?? visit.visitNotes ?? null,
       completionDocumentUrl: null,
+      beforeImageUrl: visit.beforeImageUrl ?? null,
+      afterImageUrl: visit.afterImageUrl ?? null,
       completedAt: visit.completedAt?.toISOString() ?? null,
       createdAt: visit.createdAt.toISOString(),
       updatedAt: visit.updatedAt.toISOString(),
@@ -634,6 +646,9 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         id: taskId,
         status: "completed",
         completedAt: updated.completedAt?.toISOString(),
+        beforeImageUrl: updated.beforeImageUrl ?? null,
+        afterImageUrl: updated.afterImageUrl ?? null,
+        completionMessage: updated.visitNotes ?? updated.notes ?? null,
       };
     }
 
@@ -664,6 +679,21 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         latitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : null,
         longitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : null,
       });
+    }
+    const sitePhotosInput = input.sitePhotos || (input as any).images;
+    if (Array.isArray(sitePhotosInput)) {
+      for (const photoUrl of sitePhotosInput) {
+        if (photoUrl) {
+          imageRecords.push({
+            taskId: id,
+            employeeUserId: auth.userId,
+            type: "sitePhoto",
+            url: photoUrl,
+            latitude: null,
+            longitude: null,
+          });
+        }
+      }
     }
 
     if (auth.role === UserRole.EMPLOYEE && task.employeeUserId !== auth.userId) {

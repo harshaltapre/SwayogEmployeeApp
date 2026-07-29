@@ -386,29 +386,24 @@ export async function login(input: LoginInput) {
 
     console.log("[AUTH] Login successful for user:", user.id);
 
-    await prisma.auditLog.create({
+    // Non-blocking asynchronous audit log and notification
+    prisma.auditLog.create({
       data: {
         actorId: user.id,
         action: "AUTH_LOGIN",
         entity: "User",
         entityId: user.id,
-        metadata: {
-          role: user.role,
-        },
+        metadata: { role: user.role },
       },
-    }).catch((err) => {
-      console.error("[AUTH] Failed to create audit log:", err);
-    });
+    }).catch((err) => console.error("[AUTH] Audit log error:", err));
 
-    await createAdminNotification({
+    createAdminNotification({
       type: "USER_LOGIN",
       message: `${user.fullName || user.email || user.loginId} (${user.role}) logged in`,
       employeeId: user.id,
-    }).catch((err) => {
-      console.error("[AUTH] Failed to create notification:", err);
-    });
+    }).catch((err) => console.error("[AUTH] Notification error:", err));
 
-    await resetLockoutState(user);
+    resetLockoutState(user).catch(() => {});
 
     return issueSession(user);
   } catch (error) {

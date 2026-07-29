@@ -29,3 +29,25 @@ data class DispatchRequest(
     val quantity: Int,
     val notes: String?
 )
+
+data class CreateInventoryRequest(
+    val sku: String,
+    val name: String,
+    val category: String,
+    val inStock: Int,
+    val minThreshold: Int,
+    val supplier: String?,
+    val pricePerUnit: Float,
+    val entryDate: String?
+)
+
+data class UpdateInventoryRequest(
+    val sku: String?,
+    val name: String?,
+    val category: String?,
+    val inStock: Int?,
+    val minThreshold: Int?,
+    val supplier: String?,
+    val pricePerUnit: Float?,
+    val entryDate: String?
+)

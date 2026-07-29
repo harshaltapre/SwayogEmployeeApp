@@ -75,6 +75,10 @@ class TasksViewModel @Inject constructor(
         beforeLongitude: Double? = null,
         afterLatitude: Double? = null,
         afterLongitude: Double? = null,
+        taskType: String? = null,
+        images: List<String>? = null,
+        beforeImages: List<String>? = null,
+        afterImages: List<String>? = null,
         onResult: (Result<Task>) -> Unit
     ) {
         viewModelScope.launch {
@@ -87,8 +91,66 @@ class TasksViewModel @Inject constructor(
                 beforeLatitude = beforeLatitude,
                 beforeLongitude = beforeLongitude,
                 afterLatitude = afterLatitude,
-                afterLongitude = afterLongitude
+                afterLongitude = afterLongitude,
+                taskType = taskType,
+                images = images,
+                beforeImages = beforeImages,
+                afterImages = afterImages
             )
+            onResult(res)
+        }
+    }
+
+    fun createTask(
+        jobType: String,
+        description: String,
+        customerName: String,
+        customerPhone: String,
+        address: String,
+        latitude: Double?,
+        longitude: Double?,
+        scheduledTime: String,
+        employeeUserId: String,
+        onResult: (Result<Task>) -> Unit
+    ) {
+        viewModelScope.launch {
+            _tasksState.value = TasksState.Loading
+            val res = taskRepository.createTask(
+                jobType = jobType,
+                description = description,
+                customerName = customerName,
+                customerPhone = customerPhone,
+                address = address,
+                latitude = latitude,
+                longitude = longitude,
+                scheduledTime = scheduledTime,
+                employeeUserId = employeeUserId
+            )
+            if (res.isSuccess) {
+                refresh()
+            }
+            _tasksState.value = if (res.isSuccess) TasksState.Success else TasksState.Error(res.exceptionOrNull()?.message ?: "Failed to create task")
+            onResult(res)
+        }
+    }
+
+    fun rateTask(
+        taskId: String,
+        rating: Int,
+        feedback: String?,
+        fixCharges: Double?,
+        onResult: (Result<Task>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val res = taskRepository.rateTask(
+                taskId = taskId,
+                rating = rating,
+                feedback = feedback,
+                fixCharges = fixCharges
+            )
+            if (res.isSuccess) {
+                refresh()
+            }
             onResult(res)
         }
     }

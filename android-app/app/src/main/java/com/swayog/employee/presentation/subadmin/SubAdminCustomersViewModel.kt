@@ -74,6 +74,31 @@ class SubAdminCustomersViewModel @Inject constructor(
                 }
         }
     }
+
+    fun deleteCustomer(customerId: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            customerRepository.deleteCustomer(customerId)
+                .onSuccess {
+                    onSuccess()
+                    refresh()
+                }
+                .onFailure { error ->
+                    onError(error.message ?: "Failed to delete customer")
+                }
+        }
+    }
+
+    fun exportCustomers(onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            customerRepository.exportCustomersToExcel()
+                .onSuccess { url ->
+                    onSuccess(url)
+                }
+                .onFailure { error ->
+                    onError(error.message ?: "Failed to export customers")
+                }
+        }
+    }
 }
 
 sealed class SubAdminCustomersState {

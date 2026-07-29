@@ -13,7 +13,7 @@ import android.text.TextPaint
 object WatermarkHelper {
 
     fun addWatermark(
-        bitmap: Bitmap,
+        originalBitmap: Bitmap,
         latitude: Double?,
         longitude: Double?,
         address: String,
@@ -21,7 +21,29 @@ object WatermarkHelper {
         taskId: String,
         timestamp: String
     ): Bitmap {
-        val result = bitmap.copy(bitmap.config, true)
+        // Optimize memory footprint: Scale down high-res camera bitmap to max 1280px dimension
+        val maxDimension = 1280
+        val (scaledWidth, scaledHeight) = if (originalBitmap.width > maxDimension || originalBitmap.height > maxDimension) {
+            if (originalBitmap.width >= originalBitmap.height) {
+                maxDimension to (maxDimension * originalBitmap.height / originalBitmap.width)
+            } else {
+                (maxDimension * originalBitmap.width / originalBitmap.height) to maxDimension
+            }
+        } else {
+            originalBitmap.width to originalBitmap.height
+        }
+
+        val bitmapToWatermark = if (scaledWidth != originalBitmap.width || scaledHeight != originalBitmap.height) {
+            Bitmap.createScaledBitmap(originalBitmap, scaledWidth, scaledHeight, true)
+        } else {
+            originalBitmap
+        }
+
+        val result = bitmapToWatermark.copy(Bitmap.Config.ARGB_8888, true)
+        if (bitmapToWatermark != originalBitmap) {
+            bitmapToWatermark.recycle()
+        }
+
         val canvas = Canvas(result)
 
         val padding = result.width * 0.03f

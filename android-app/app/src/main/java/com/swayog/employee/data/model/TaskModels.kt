@@ -25,15 +25,36 @@ data class Task(
     val afterLongitude: Double? = null,
     val completedAt: String? = null,
     val createdAt: String? = null,
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+    val invoice: Invoice? = null,
+    val taskType: String? = null, // "SITE_VISIT", "AMC_VISIT", "REGULAR"
+    val images: List<String>? = null, // Multiple images for site visits
+    val sitePhotos: List<String>? = null, // Site visit photo gallery
+    val assignedEmployeeName: String? = null, // Employee name for customer notifications
+    val assignedEmployeePhone: String? = null // Employee phone for customer notifications
 ) {
     // Helper to check if this task is actually an AMC visit
     val isAmcVisit: Boolean
-        get() = id.startsWith("TASK-amc_")
+        get() = taskType == "AMC_VISIT" || jobType?.lowercase()?.contains("amc") == true || id.startsWith("amc_") || id.startsWith("TASK-amc_")
+
+    // Helper to check if this is a site visit
+    val isSiteVisit: Boolean
+        get() = taskType == "SITE_VISIT" || jobType == "Site Visit" || jobType?.lowercase()?.contains("site") == true || jobType?.lowercase()?.contains("visit") == true
+
+    // Helper to check if this is a regular task
+    val isRegularTask: Boolean
+        get() = !isSiteVisit && !isAmcVisit
+
+    // Get required image count based on task type
+    val requiredImageCount: Int
+        get() = when {
+            isSiteVisit -> 4 // Minimum 4 photos for site visits
+            else -> 2 // 1 before + 1 after for regular/AMC tasks
+        }
 
     // Extract the actual visit ID if this is an AMC visit
     val amcVisitId: String?
-        get() = if (isAmcVisit) id.removePrefix("TASK-amc_") else null
+        get() = if (isAmcVisit) id.removePrefix("TASK-amc_").removePrefix("amc_") else null
 }
 
 data class CreateTaskRequest(
@@ -67,7 +88,12 @@ data class CompleteTaskRequest(
     val beforeLatitude: Double? = null,
     val beforeLongitude: Double? = null,
     val afterLatitude: Double? = null,
-    val afterLongitude: Double? = null
+    val afterLongitude: Double? = null,
+    val taskType: String? = null, // "SITE_VISIT", "AMC_VISIT", "REGULAR"
+    val images: List<String>? = null, // Multiple images for site visits
+    val sitePhotos: List<String>? = null, // Site visit photo gallery
+    val beforeImages: List<String>? = null, // Multiple before images for AMC visits
+    val afterImages: List<String>? = null // Multiple after images for AMC visits
 )
 
 data class TaskAssignee(
@@ -126,4 +152,10 @@ data class DesignSubmissionRequest(
 data class DesignSubmissionResponse(
     val designId: Int,
     val message: String
+)
+
+data class RateTaskRequest(
+    val rating: Int,
+    val feedback: String? = null,
+    val fixCharges: Double? = null
 )

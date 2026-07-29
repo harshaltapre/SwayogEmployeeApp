@@ -1,5 +1,7 @@
 package com.swayog.employee.presentation.subadmin
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,6 +41,10 @@ fun SubAdminCustomersScreen(
     val cities by viewModel.cities.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedCity by viewModel.selectedCity.collectAsState()
+    
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var customerToDelete by remember { mutableStateOf<Customer?>(null) }
+    var isExporting by remember { mutableStateOf(false) }
 
     LaunchedEffect(customersState) {
         if (customersState is SubAdminCustomersState.Error) {
@@ -54,6 +60,27 @@ fun SubAdminCustomersScreen(
                 showBackButton = true,
                 onBackClick = onNavigateBack,
                 actions = {
+                    IconButton(onClick = { 
+                        isExporting = true
+                        viewModel.exportCustomers(
+                            onSuccess = { url ->
+                                isExporting = false
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                context.startActivity(intent)
+                                Toast.makeText(context, "Export successful!", Toast.LENGTH_SHORT).show()
+                            },
+                            onError = { error ->
+                                isExporting = false
+                                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    }) {
+                        if (isExporting) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        } else {
+                            Icon(Icons.Default.Download, contentDescription = "Export to Excel")
+                        }
+                    }
                     IconButton(onClick = { viewModel.refresh() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
@@ -135,7 +162,11 @@ fun SubAdminCustomersScreen(
                         items(filteredCustomers, key = { it.id }) { customer ->
                             CustomerListItem(
                                 customer = customer,
-                                onClick = { onNavigateToDetails(customer.id) }
+                                onClick = { onNavigateToDetails(customer.id) },
+                                onDeleteClick = {
+                                    customerToDelete = customer
+                                    showDeleteDialog = true
+                                }
                             )
                         }
                     }
@@ -143,12 +174,58 @@ fun SubAdminCustomersScreen(
             }
         }
     }
+
+    // Delete Confirmation Dialog
+    if (showDeleteDialog && customerToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { 
+                showDeleteDialog = false
+                customerToDelete = null
+            },
+            title = { Text("Delete Customer") },
+            text = { 
+                Text("Are you sure you want to delete ${customerToDelete!!.fullName}? This action cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteCustomer(
+                            customerId = customerToDelete!!.id,
+                            onSuccess = {
+                                showDeleteDialog = false
+                                customerToDelete = null
+                                Toast.makeText(context, "Customer deleted successfully", Toast.LENGTH_SHORT).show()
+                            },
+                            onError = { error ->
+                                showDeleteDialog = false
+                                customerToDelete = null
+                                Toast.makeText(context, "Failed to delete customer: $error", Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { 
+                        showDeleteDialog = false
+                        customerToDelete = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
 fun CustomerListItem(
     customer: Customer,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
     val amcStatusUpper = customer.amcStatus.uppercase()
     val (statusColor, statusBg) = when (amcStatusUpper) {
@@ -174,20 +251,37 @@ fun CustomerListItem(
                     text = customer.fullName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
                 )
                 
-                Surface(
-                    color = statusBg,
-                    shape = RoundedCornerShape(8.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = customer.amcStatus.replaceFirstChar { it.uppercase() },
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = statusColor
-                    )
+                    Surface(
+                        color = statusBg,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = customer.amcStatus.replaceFirstChar { it.uppercase() },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = statusColor
+                        )
+                    }
+                    
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete Customer",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 

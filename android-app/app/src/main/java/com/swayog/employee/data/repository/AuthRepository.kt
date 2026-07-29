@@ -30,43 +30,41 @@ class AuthRepository @Inject constructor(
             val response = apiService.login(LoginRequest(identifier = email, password = password, role = role))
             if (response.isSuccessful && response.body()?.data != null) {
                 val authResponse = response.body()!!.data!!
-                
-                // Save tokens
-                dataStoreManager.saveAuthToken(authResponse.token)
-                dataStoreManager.saveRefreshToken(authResponse.refreshToken)
-                
-                // Save user info
                 val user = authResponse.user
-                dataStoreManager.saveUserInfo(
-                    userId = user.id,
-                    email = user.email,
-                    name = user.fullName,
-                    role = user.role,
-                    jobRole = user.employeeProfile?.jobRole,
-                    profilePhotoUrl = user.profileImageUrl
-                )
-                
-                // Save user to local database
-                val userEntity = UserEntity(
-                    id = user.id,
-                    loginId = user.loginId ?: "",
-                    employeeCode = user.employeeCode,
-                    email = user.email,
-                    phoneNumber = user.phoneNumber,
-                    fullName = user.fullName,
-                    role = user.role,
-                    designationTitle = user.designationTitle,
-                    departmentId = user.departmentId,
-                    reportingManagerId = user.reportingManagerId,
-                    isActive = user.isActive,
-                    createdAt = user.createdAt ?: "",
-                    jobRole = user.employeeProfile?.jobRole,
-                    zone = user.employeeProfile?.zone,
-                    monthlySalaryInr = user.employeeProfile?.monthlySalaryInr,
-                    profilePhotoUrl = user.profileImageUrl
-                )
-                userDao.insertUser(userEntity)
-                
+
+                withContext(Dispatchers.IO) {
+                    dataStoreManager.saveAuthToken(authResponse.token)
+                    dataStoreManager.saveRefreshToken(authResponse.refreshToken)
+                    dataStoreManager.saveUserInfo(
+                        userId = user.id,
+                        email = user.email,
+                        name = user.fullName,
+                        role = user.role,
+                        jobRole = user.employeeProfile?.jobRole,
+                        profilePhotoUrl = user.profileImageUrl
+                    )
+
+                    val userEntity = UserEntity(
+                        id = user.id,
+                        loginId = user.loginId ?: "",
+                        employeeCode = user.employeeCode,
+                        email = user.email,
+                        phoneNumber = user.phoneNumber,
+                        fullName = user.fullName,
+                        role = user.role,
+                        designationTitle = user.designationTitle,
+                        departmentId = user.departmentId,
+                        reportingManagerId = user.reportingManagerId,
+                        isActive = user.isActive,
+                        createdAt = user.createdAt ?: "",
+                        jobRole = user.employeeProfile?.jobRole,
+                        zone = user.employeeProfile?.zone,
+                        monthlySalaryInr = user.employeeProfile?.monthlySalaryInr,
+                        profilePhotoUrl = user.profileImageUrl
+                    )
+                    userDao.insertUser(userEntity)
+                }
+
                 Result.success(authResponse)
             } else {
                 val errorMsg = response.body()?.message ?: parseErrorMessage(response)

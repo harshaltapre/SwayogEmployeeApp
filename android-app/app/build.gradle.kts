@@ -92,8 +92,8 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // Use the dedicated release keystore (NOT the debug keystore).
-            signingConfig = signingConfigs.getByName("release")
+            val storeFilePath = getLocalProperty("RELEASE_STORE_FILE", System.getenv("RELEASE_STORE_FILE") ?: "")
+            signingConfig = if (storeFilePath.isNotBlank()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -223,6 +223,9 @@ dependencies {
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation("com.google.firebase:firebase-messaging")
+    
+    // Charts
+    implementation("com.github.PhilJay:MPAndroidChart:3.1.0")
     
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")

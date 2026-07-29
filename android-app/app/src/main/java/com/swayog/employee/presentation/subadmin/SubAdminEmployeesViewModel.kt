@@ -2,8 +2,10 @@ package com.swayog.employee.presentation.subadmin
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.swayog.employee.data.model.CreateEmployeeRequest
 import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.Task
+import com.swayog.employee.data.model.UpdateEmployeeRequest
 import com.swayog.employee.data.repository.EmployeeRepository
 import com.swayog.employee.data.repository.TaskRepository
 import com.swayog.employee.core.util.ErrorUtils
@@ -99,6 +101,75 @@ class SubAdminEmployeesViewModel @Inject constructor(
                     error = error
                 )
             }
+        }
+    }
+
+    fun createEmployee(
+        request: CreateEmployeeRequest,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            employeeRepository.createEmployee(request)
+                .onSuccess {
+                    onSuccess()
+                    loadData()
+                }
+                .onFailure { error ->
+                    onError(error.message ?: "Failed to create employee")
+                }
+        }
+    }
+
+    fun updateEmployee(
+        employeeId: String,
+        request: UpdateEmployeeRequest,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            employeeRepository.updateEmployee(employeeId, request)
+                .onSuccess {
+                    onSuccess()
+                    loadData()
+                }
+                .onFailure { error ->
+                    onError(error.message ?: "Failed to update employee")
+                }
+        }
+    }
+
+    fun deleteEmployee(
+        employeeId: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            employeeRepository.deleteEmployee(employeeId)
+                .onSuccess {
+                    onSuccess()
+                    loadData()
+                }
+                .onFailure { error ->
+                    onError(error.message ?: "Failed to delete employee")
+                }
+        }
+    }
+
+    fun importEmployeesFromExcel(
+        data: List<Map<String, String>>,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            employeeRepository.importEmployeesFromExcel(data)
+                .onSuccess {
+                    onSuccess()
+                    loadData()
+                }
+                .onFailure { error ->
+                    onError(error.message ?: "Failed to import employees")
+                }
         }
     }
 }

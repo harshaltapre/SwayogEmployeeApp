@@ -13,6 +13,7 @@ import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.core.util.LocalFileHelper
 import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.data.sync.SyncWorker
+import com.google.gson.Gson
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -30,68 +31,17 @@ class TaskRepository @Inject constructor(
     private val outboxQueueDao: OutboxQueueDao,
     private val apiService: ApiService
 ) {
+    private val gson = Gson()
     
     fun getTasksByEmployeeId(employeeUserId: String): Flow<List<Task>> {
         return taskDao.getTasksByEmployeeId(employeeUserId).map { entities ->
-            entities.map { entity ->
-                Task(
-                    id = entity.id,
-                    jobType = entity.jobType,
-                    description = entity.description,
-                    customerName = entity.customerName,
-                    customerPhone = entity.customerPhone,
-                    address = entity.address,
-                    latitude = entity.latitude,
-                    longitude = entity.longitude,
-                    status = entity.status,
-                    scheduledTime = entity.scheduledTime,
-                    employeeUserId = entity.employeeUserId,
-                    assignedById = entity.assignedById,
-                    completionMessage = entity.completionMessage,
-                    completionDocumentUrl = entity.completionDocumentUrl,
-                    beforeImageUrl = entity.beforeImageUrl,
-                    afterImageUrl = entity.afterImageUrl,
-                    beforeLatitude = entity.beforeLatitude,
-                    beforeLongitude = entity.beforeLongitude,
-                    afterLatitude = entity.afterLatitude,
-                    afterLongitude = entity.afterLongitude,
-                    completedAt = entity.completedAt,
-                    createdAt = entity.createdAt,
-                    updatedAt = entity.updatedAt
-                )
-            }
+            entities.map { it.toTask() }
         }
     }
     
     fun getActiveTasksByEmployeeId(employeeUserId: String): Flow<List<Task>> {
         return taskDao.getActiveTasksByEmployeeId(employeeUserId).map { entities ->
-            entities.map { entity ->
-                Task(
-                    id = entity.id,
-                    jobType = entity.jobType,
-                    description = entity.description,
-                    customerName = entity.customerName,
-                    customerPhone = entity.customerPhone,
-                    address = entity.address,
-                    latitude = entity.latitude,
-                    longitude = entity.longitude,
-                    status = entity.status,
-                    scheduledTime = entity.scheduledTime,
-                    employeeUserId = entity.employeeUserId,
-                    assignedById = entity.assignedById,
-                    completionMessage = entity.completionMessage,
-                    completionDocumentUrl = entity.completionDocumentUrl,
-                    beforeImageUrl = entity.beforeImageUrl,
-                    afterImageUrl = entity.afterImageUrl,
-                    beforeLatitude = entity.beforeLatitude,
-                    beforeLongitude = entity.beforeLongitude,
-                    afterLatitude = entity.afterLatitude,
-                    afterLongitude = entity.afterLongitude,
-                    completedAt = entity.completedAt,
-                    createdAt = entity.createdAt,
-                    updatedAt = entity.updatedAt
-                )
-            }
+            entities.map { it.toTask() }
         }
     }
 
@@ -99,33 +49,7 @@ class TaskRepository @Inject constructor(
 
     fun getAllTasksFlow(): Flow<List<Task>> {
         return taskDao.getAllTasks().map { entities ->
-            entities.map { entity ->
-                Task(
-                    id = entity.id,
-                    jobType = entity.jobType,
-                    description = entity.description,
-                    customerName = entity.customerName,
-                    customerPhone = entity.customerPhone,
-                    address = entity.address,
-                    latitude = entity.latitude,
-                    longitude = entity.longitude,
-                    status = entity.status,
-                    scheduledTime = entity.scheduledTime,
-                    employeeUserId = entity.employeeUserId,
-                    assignedById = entity.assignedById,
-                    completionMessage = entity.completionMessage,
-                    completionDocumentUrl = entity.completionDocumentUrl,
-                    beforeImageUrl = entity.beforeImageUrl,
-                    afterImageUrl = entity.afterImageUrl,
-                    beforeLatitude = entity.beforeLatitude,
-                    beforeLongitude = entity.beforeLongitude,
-                    afterLatitude = entity.afterLatitude,
-                    afterLongitude = entity.afterLongitude,
-                    completedAt = entity.completedAt,
-                    createdAt = entity.createdAt,
-                    updatedAt = entity.updatedAt
-                )
-            }
+            entities.map { it.toTask() }
         }
     }
     
@@ -160,7 +84,13 @@ class TaskRepository @Inject constructor(
                             completedAt = task.completedAt,
                             createdAt = task.createdAt,
                             updatedAt = task.updatedAt,
-                            isSynced = true
+                            isSynced = true,
+                            invoiceJson = task.invoice?.let { gson.toJson(it) },
+                            taskType = task.taskType,
+                            imagesJson = task.images?.let { gson.toJson(it) },
+                            sitePhotosJson = (task.sitePhotos ?: task.images)?.let { gson.toJson(it) },
+                            assignedEmployeeName = task.assignedEmployeeName,
+                            assignedEmployeePhone = task.assignedEmployeePhone
                         )
                     }
                     taskDao.insertTasks(entities)
@@ -218,7 +148,13 @@ class TaskRepository @Inject constructor(
                             completedAt = task.completedAt,
                             createdAt = task.createdAt,
                             updatedAt = task.updatedAt,
-                            isSynced = true
+                            isSynced = true,
+                            invoiceJson = task.invoice?.let { gson.toJson(it) },
+                            taskType = task.taskType,
+                            imagesJson = task.images?.let { gson.toJson(it) },
+                            sitePhotosJson = (task.sitePhotos ?: task.images)?.let { gson.toJson(it) },
+                            assignedEmployeeName = task.assignedEmployeeName,
+                            assignedEmployeePhone = task.assignedEmployeePhone
                         )
                     }
                     taskDao.insertTasks(entities)
@@ -336,6 +272,119 @@ class TaskRepository @Inject constructor(
         }
     }
     
+    suspend fun createTask(
+        jobType: String,
+        description: String,
+        customerName: String,
+        customerPhone: String,
+        address: String,
+        latitude: Double?,
+        longitude: Double?,
+        scheduledTime: String,
+        employeeUserId: String
+    ): Result<Task> {
+        return try {
+            val request = CreateTaskRequest(
+                jobType = jobType,
+                description = description,
+                customerName = customerName,
+                customerPhone = customerPhone,
+                address = address,
+                latitude = latitude,
+                longitude = longitude,
+                scheduledTime = scheduledTime,
+                employeeUserId = employeeUserId
+            )
+            val response = apiService.createTask(request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                val task = response.body()!!.data!!
+                val entity = TaskEntity(
+                    id = task.id,
+                    jobType = task.jobType,
+                    description = task.description,
+                    customerName = task.customerName,
+                    customerPhone = task.customerPhone,
+                    address = task.address,
+                    latitude = task.latitude,
+                    longitude = task.longitude,
+                    status = task.status,
+                    scheduledTime = task.scheduledTime,
+                    employeeUserId = task.employeeUserId,
+                    assignedById = task.assignedById,
+                    completionMessage = task.completionMessage,
+                    completionDocumentUrl = task.completionDocumentUrl,
+                    beforeImageUrl = task.beforeImageUrl,
+                    afterImageUrl = task.afterImageUrl,
+                    beforeLatitude = task.beforeLatitude,
+                    beforeLongitude = task.beforeLongitude,
+                    afterLatitude = task.afterLatitude,
+                    afterLongitude = task.afterLongitude,
+                    completedAt = task.completedAt,
+                    createdAt = task.createdAt,
+                    updatedAt = task.updatedAt,
+                    isSynced = true
+                )
+                taskDao.insertTask(entity)
+                Result.success(task)
+            } else {
+                Result.failure(Exception("Failed to create task: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to create task: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    suspend fun rateTask(
+        taskId: String,
+        rating: Int,
+        feedback: String?,
+        fixCharges: Double?
+    ): Result<Task> {
+        return try {
+            val request = RateTaskRequest(
+                rating = rating,
+                feedback = feedback,
+                fixCharges = fixCharges
+            )
+            val response = apiService.rateTask(taskId, request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                val task = response.body()!!.data!!
+                val entity = TaskEntity(
+                    id = task.id,
+                    jobType = task.jobType,
+                    description = task.description,
+                    customerName = task.customerName,
+                    customerPhone = task.customerPhone,
+                    address = task.address,
+                    latitude = task.latitude,
+                    longitude = task.longitude,
+                    status = task.status,
+                    scheduledTime = task.scheduledTime,
+                    employeeUserId = task.employeeUserId,
+                    assignedById = task.assignedById,
+                    completionMessage = task.completionMessage,
+                    completionDocumentUrl = task.completionDocumentUrl,
+                    beforeImageUrl = task.beforeImageUrl,
+                    afterImageUrl = task.afterImageUrl,
+                    beforeLatitude = task.beforeLatitude,
+                    beforeLongitude = task.beforeLongitude,
+                    afterLatitude = task.afterLatitude,
+                    afterLongitude = task.afterLongitude,
+                    completedAt = task.completedAt,
+                    createdAt = task.createdAt,
+                    updatedAt = task.updatedAt,
+                    isSynced = true
+                )
+                taskDao.updateTask(entity)
+                Result.success(task)
+            } else {
+                Result.failure(Exception("Failed to rate task: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to rate task: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
     suspend fun completeTask(
         taskId: String,
         completionMessage: String,
@@ -345,7 +394,11 @@ class TaskRepository @Inject constructor(
         beforeLatitude: Double? = null,
         beforeLongitude: Double? = null,
         afterLatitude: Double? = null,
-        afterLongitude: Double? = null
+        afterLongitude: Double? = null,
+        taskType: String? = null,
+        images: List<String>? = null,
+        beforeImages: List<String>? = null,
+        afterImages: List<String>? = null
     ): Result<Task> {
         if (taskId.startsWith("amc_")) {
             val visitId = taskId.replace("amc_", "")
@@ -417,7 +470,11 @@ class TaskRepository @Inject constructor(
                     beforeLatitude = beforeLatitude,
                     beforeLongitude = beforeLongitude,
                     afterLatitude = afterLatitude,
-                    afterLongitude = afterLongitude
+                    afterLongitude = afterLongitude,
+                    taskType = taskType,
+                    images = images,
+                    beforeImages = beforeImages,
+                    afterImages = afterImages
                 )
                 android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: Endpoint=PATCH tasks/$taskId/complete, RequestBody={beforeImgLen=${req.beforeImageUrl?.length}, afterImgLen=${req.afterImageUrl?.length}, message=${req.message}}")
                 val response = apiService.completeTask(taskId, req)
@@ -448,7 +505,15 @@ class TaskRepository @Inject constructor(
                         completedAt = task.completedAt,
                         createdAt = task.createdAt,
                         updatedAt = task.updatedAt,
-                        isSynced = true
+                        isSynced = true,
+                        invoiceJson = task.invoice?.let { gson.toJson(it) },
+                        taskType = task.taskType,
+                        imagesJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
+                        sitePhotosJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
+                        beforeImagesJson = beforeImages?.let { gson.toJson(it) },
+                        afterImagesJson = afterImages?.let { gson.toJson(it) },
+                        assignedEmployeeName = task.assignedEmployeeName,
+                        assignedEmployeePhone = task.assignedEmployeePhone
                     )
                     taskDao.updateTask(entity)
                     Result.success(task)

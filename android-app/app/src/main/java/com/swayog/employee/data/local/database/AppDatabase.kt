@@ -17,7 +17,7 @@ import com.swayog.employee.data.local.entity.*
         CustomerEntity::class,
         OutboxQueueEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

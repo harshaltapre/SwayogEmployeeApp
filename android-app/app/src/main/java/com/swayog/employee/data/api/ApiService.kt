@@ -115,6 +115,30 @@ interface ApiService {
     @GET("subadmin/amc/customers")
     suspend fun getAmcCustomers(): Response<ApiResponse<List<Customer>>>
     
+    @GET("subadmin/employees")
+    suspend fun getEmployees(): Response<ApiResponse<List<Employee>>>
+    
+    @POST("subadmin/employees")
+    suspend fun createEmployee(
+        @Body request: CreateEmployeeRequest
+    ): Response<ApiResponse<Employee>>
+    
+    @PATCH("subadmin/employees/{employeeId}")
+    suspend fun updateEmployee(
+        @Path("employeeId") employeeId: String,
+        @Body request: UpdateEmployeeRequest
+    ): Response<ApiResponse<Employee>>
+    
+    @DELETE("subadmin/employees/{employeeId}")
+    suspend fun deleteEmployee(
+        @Path("employeeId") employeeId: String
+    ): Response<ApiResponse<Unit>>
+    
+    @POST("subadmin/employees/bulk-import")
+    suspend fun importEmployeesFromExcel(
+        @Body data: List<Map<String, String>>
+    ): Response<ApiResponse<Unit>>
+    
     @PATCH("subadmin/apartments/{apartmentId}/amc-settings")
     suspend fun updateApartmentAmcSettings(
         @Path("apartmentId") apartmentId: Int,
@@ -142,6 +166,14 @@ interface ApiService {
         @Path("customerId") customerId: Int,
         @Body request: UpdateCustomerRequest
     ): Response<ApiResponse<Customer>>
+    
+    @DELETE("customers/{customerId}")
+    suspend fun deleteCustomer(
+        @Path("customerId") customerId: Int
+    ): Response<ApiResponse<Unit>>
+    
+    @GET("subadmin/customers/export")
+    suspend fun exportCustomersToExcel(): Response<ApiResponse<String>>
     
     @GET("invoices")
     suspend fun getInvoices(
@@ -214,6 +246,12 @@ interface ApiService {
         @Body request: CompleteTaskRequest
     ): Response<ApiResponse<Task>>
     
+    @POST("tasks/{taskId}/rate")
+    suspend fun rateTask(
+        @Path("taskId") taskId: String,
+        @Body request: RateTaskRequest
+    ): Response<ApiResponse<Task>>
+    
     // AMC endpoints
     @GET("amc/visits")
     suspend fun getAmcVisits(
@@ -249,6 +287,25 @@ interface ApiService {
         @Body request: DispatchRequest
     ): Response<ApiResponse<DispatchRecord>>
     
+    @GET("inventory")
+    suspend fun getInventoryItems(): Response<ApiResponse<List<InventoryItem>>>
+    
+    @POST("inventory")
+    suspend fun createInventoryItem(
+        @Body request: CreateInventoryRequest
+    ): Response<ApiResponse<InventoryItem>>
+    
+    @PATCH("inventory/{id}")
+    suspend fun updateInventoryItem(
+        @Path("id") id: String,
+        @Body request: UpdateInventoryRequest
+    ): Response<ApiResponse<InventoryItem>>
+    
+    @DELETE("inventory/{id}")
+    suspend fun deleteInventoryItem(
+        @Path("id") id: String
+    ): Response<ApiResponse<Unit>>
+    
     @POST("employee/submissions")
     suspend fun submitWork(
         @Body request: WorkSubmissionRequest
@@ -269,6 +326,22 @@ interface ApiService {
     suspend fun getInvoices(
         @Query("invoiceType") invoiceType: String? = null
     ): Response<ApiResponse<List<Invoice>>>
+
+    // Notifications endpoints
+    @GET("employee/notifications")
+    suspend fun getNotifications(): Response<ApiResponse<List<Notification>>>
+
+    @GET("employee/notifications/unread-count")
+    suspend fun getUnreadCount(): Response<ApiResponse<Map<String, Int>>>
+
+    @POST("employee/notifications/{notificationId}/read")
+    suspend fun markNotificationAsRead(
+        @Path("notificationId") notificationId: String
+    ): Response<ApiResponse<Unit>>
+
+    // Admin Dashboard endpoints
+    @GET("admin/dashboard")
+    suspend fun getAdminDashboard(): Response<ApiResponse<DashboardStats>>
 
     // User Settings endpoints
     @GET("users/me/settings")
