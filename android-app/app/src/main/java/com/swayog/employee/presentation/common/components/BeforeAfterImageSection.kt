@@ -25,6 +25,8 @@ fun BeforeAfterImageSection(
     beforeImageUrl: String?,
     afterImageUrl: String?,
     sitePhotos: List<String>? = null,
+    taskType: String? = null,
+    isSiteVisit: Boolean = false,
     serverUrl: String? = null
 ) {
     val context = LocalContext.current
@@ -33,7 +35,7 @@ fun BeforeAfterImageSection(
         sitePhotos?.filter { it.isNotBlank() } ?: emptyList()
     }
 
-    if (resolvedSitePhotos.isNotEmpty()) {
+    if (isSiteVisit || taskType == "SITE_VISIT") {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "📸 Site Visit Photos (${resolvedSitePhotos.size})",
@@ -43,30 +45,48 @@ fun BeforeAfterImageSection(
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 320.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(resolvedSitePhotos) { photoUrl ->
-                val model = ImageUtils.resolveImageModel(context, photoUrl, serverUrl)
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(130.dp)
-                        .clickable { fullScreenImage = model },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    AsyncImage(
-                        model = ImageUtils.rememberImageRequest(context, photoUrl, serverUrl),
-                        contentDescription = "Site Photo",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+        if (resolvedSitePhotos.isEmpty()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Text(
+                        text = "No site visit photos uploaded",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 320.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(resolvedSitePhotos) { photoUrl ->
+                    val model = ImageUtils.resolveImageModel(context, photoUrl, serverUrl)
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp)
+                            .clickable { fullScreenImage = model },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        AsyncImage(
+                            model = ImageUtils.rememberImageRequest(context, photoUrl, serverUrl),
+                            contentDescription = "Site Photo",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
                 }
             }
         }

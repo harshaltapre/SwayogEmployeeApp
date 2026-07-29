@@ -99,78 +99,56 @@ class DashboardViewModel @Inject constructor(
     
     fun loadDashboardData(userIdValue: String) {
         viewModelScope.launch {
-            _dashboardState.value = DashboardState.Loading
-            var hasError = false
-            var errorMessage = ""
+            // Set dashboard state to Success immediately to display cached Room DB data
+            // without blocking on network/API responses.
+            _dashboardState.value = DashboardState.Success
 
+            // Perform background network synchronization off the main thread.
             withContext(Dispatchers.IO) {
-                val tasksDeferred = async { taskRepository.refreshTasks(userIdValue) }
-                val attendanceDeferred = async { attendanceRepository.getTodayAttendance() }
-                
-                val now = Calendar.getInstance()
-                val perfDeferred = async { 
-                    attendanceRepository.getPerformance(
-                        now.get(Calendar.MONTH) + 1,
-                        now.get(Calendar.YEAR)
-                    )
-                }
-
-                val taskRes = tasksDeferred.await()
-                val attendanceRes = attendanceDeferred.await()
-                val perfRes = perfDeferred.await()
-
-                val isAuthExpired = com.swayog.employee.core.util.ErrorUtils.isUnauthorized(taskRes.exceptionOrNull()) ||
-                        com.swayog.employee.core.util.ErrorUtils.isUnauthorized(attendanceRes.exceptionOrNull()) ||
-                        com.swayog.employee.core.util.ErrorUtils.isUnauthorized(perfRes.exceptionOrNull())
-
-                if (isAuthExpired) {
-                    errorMessage = "Session expired. Redirecting..."
-                    hasError = true
-                    viewModelScope.launch {
-                        dataStoreManager.clearAll()
+                try {
+                    val tasksDeferred = async { taskRepository.refreshTasks(userIdValue) }
+                    val attendanceDeferred = async { attendanceRepository.getTodayAttendance() }
+                    
+                    val now = Calendar.getInstance()
+                    val perfDeferred = async { 
+                        attendanceRepository.getPerformance(
+                            now.get(Calendar.MONTH) + 1,
+                            now.get(Calendar.YEAR)
+                        )
                     }
-                }
 
-                taskRes.onSuccess { taskList ->
-                    if (taskList.isNotEmpty()) {
-                        _tasks.value = taskList
-                    }
-                }.onFailure { error ->
-                    if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
-                        if (_tasks.value.isEmpty()) {
-                            hasError = true
-                            errorMessage += "Tasks: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                    val taskRes = tasksDeferred.await()
+                    val attendanceRes = attendanceDeferred.await()
+                    val perfRes = perfDeferred.await()
+
+                    val isAuthExpired = com.swayog.employee.core.util.ErrorUtils.isUnauthorized(taskRes.exceptionOrNull()) ||
+                            com.swayog.employee.core.util.ErrorUtils.isUnauthorized(attendanceRes.exceptionOrNull()) ||
+                            com.swayog.employee.core.util.ErrorUtils.isUnauthorized(perfRes.exceptionOrNull())
+
+                    if (isAuthExpired) {
+                        viewModelScope.launch {
+                            dataStoreManager.clearAll()
                         }
                     }
-                }
 
-                attendanceRes.onSuccess { attendance ->
-                    // Always overwrite, including null (= not checked in today).
-                    // This prevents a stale checked-in state from persisting across days.
-                    _todayAttendance.value = attendance
-                }.onFailure { error ->
-                    if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
-                        if (_todayAttendance.value == null) {
-                            hasError = true
-                            errorMessage += "Attendance: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                    taskRes.onSuccess { taskList ->
+                        if (taskList.isNotEmpty()) {
+                            _tasks.value = taskList
                         }
                     }
-                }
 
-                perfRes.onSuccess { perf ->
-                    _performance.value = perf
-                }.onFailure { error ->
-                    if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error) && _performance.value == null && _tasks.value.isEmpty() && _todayAttendance.value == null) {
-                        hasError = true
-                        errorMessage += "Performance: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                    attendanceRes.onSuccess { attendance ->
+                        // Always overwrite, including null (= not checked in today).
+                        // This prevents a stale checked-in state from persisting across days.
+                        _todayAttendance.value = attendance
                     }
-                }
-            }
 
-            if (hasError && _tasks.value.isEmpty() && _todayAttendance.value == null) {
-                _dashboardState.value = DashboardState.Error(errorMessage.trim())
-            } else {
-                _dashboardState.value = DashboardState.Success
+                    perfRes.onSuccess { perf ->
+                        _performance.value = perf
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("DashboardViewModel", "Dashboard background refresh failed", e)
+                }
             }
         }
     }

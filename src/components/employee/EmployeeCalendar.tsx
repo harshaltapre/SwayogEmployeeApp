@@ -787,7 +787,23 @@ export const EmployeeCalendar = ({
                 )}
                 
                 {/* Images section */}
-                {(selectedEvent.raw?.beforeImageUrl || selectedEvent.raw?.afterImageUrl) && (
+                {selectedEvent.raw?.sitePhotos && selectedEvent.raw.sitePhotos.length > 0 ? (
+                  <div className="border-t border-slate-200/50 pt-2.5 mt-1 space-y-2">
+                    <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Site Visit Photos ({selectedEvent.raw.sitePhotos.length})</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {selectedEvent.raw.sitePhotos.map((photo: string, i: number) => (
+                        <div key={i} className="bg-white border rounded-lg p-1.5 flex flex-col items-center">
+                          <img 
+                            src={photo} 
+                            alt={`Site Photo ${i + 1}`} 
+                            className="w-full h-20 object-cover rounded cursor-pointer hover:opacity-90 border border-slate-100"
+                            onClick={() => setPreviewImageUrl(photo)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (selectedEvent.raw?.beforeImageUrl || selectedEvent.raw?.afterImageUrl) && (
                   <div className="border-t border-slate-200/50 pt-2.5 mt-1 space-y-2">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Before & After Proofs</span>
                     <div className="grid grid-cols-2 gap-2">

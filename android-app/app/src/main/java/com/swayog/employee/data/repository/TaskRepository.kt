@@ -473,6 +473,7 @@ class TaskRepository @Inject constructor(
                     afterLongitude = afterLongitude,
                     taskType = taskType,
                     images = images,
+                    sitePhotos = images,
                     beforeImages = beforeImages,
                     afterImages = afterImages
                 )
