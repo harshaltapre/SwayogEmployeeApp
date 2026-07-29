@@ -46,6 +46,7 @@ export const completeTaskSchema = z.object({
   beforeLongitude: z.number().optional().nullable(),
   afterLatitude: z.number().optional().nullable(),
   afterLongitude: z.number().optional().nullable(),
+  sitePhotos: z.array(z.string()).optional().nullable(),
 });
 
 export const rateTaskSchema = z.object({

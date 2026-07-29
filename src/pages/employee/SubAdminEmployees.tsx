@@ -1,20 +1,26 @@
-import { Users, IndianRupee, CheckCircle, Star, MapPin, Download, Plus, LayoutGrid, List, ChevronRight, ClipboardList, Calendar, Clock, Phone, User as UserIcon } from "lucide-react";
+import { Users, IndianRupee, CheckCircle, Star, MapPin, Download, Plus, LayoutGrid, List, ChevronRight, ClipboardList, Calendar, Clock, Phone, User as UserIcon, Compass, Camera, Eye } from "lucide-react";
 import { useListEmployees, useListTasks } from "@/lib/api-client";
 import { useEffect, useState } from "react";
 import { EmployeeDetailContent } from "@/components/employees/EmployeeDetailContent";
 import { SubAdminLayout } from "@/components/subadmin/SubAdminLayout";
+import { AssignSiteVisitModal } from "@/components/subadmin/AssignSiteVisitModal";
 import { roleLabel } from "../superadmin/UsersTab";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { format } from "date-fns";
 
 export default function SubAdminEmployees() {
   const { data: rawEmployees, isLoading: employeesLoading, refetch: refetchEmployees } = useListEmployees();
-  const { data: tasks, isLoading: tasksLoading } = useListTasks();
+  const { data: tasks, isLoading: tasksLoading, refetch: refetchTasks } = useListTasks();
   const [viewMode, setViewMode] = useState<"grid" | "table">("table");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [viewSiteVisitTask, setViewSiteVisitTask] = useState<any | null>(null);
+  const [outerTab, setOuterTab] = useState("directory");
+  const [innerTab, setInnerTab] = useState("all");
 
   const employees = rawEmployees?.filter(e => 
     [
@@ -48,16 +54,22 @@ export default function SubAdminEmployees() {
   return (
     <SubAdminLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Employee Section</h1>
             <p className="text-muted-foreground mt-1">
               Manage staff and track assigned tasks.
             </p>
           </div>
+          <Button 
+            onClick={() => setAssignModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-2 shadow-sm shrink-0 h-10 px-4"
+          >
+            <Compass className="h-4 w-4" /> Assign Site Visit
+          </Button>
         </div>
 
-        <Tabs defaultValue="directory" className="w-full">
+        <Tabs value={outerTab} onValueChange={setOuterTab} className="w-full">
           <TabsList className="grid w-full max-w-md grid-cols-2 mb-8 bg-slate-100 p-1">
             <TabsTrigger value="directory" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
               <Users size={16} className="mr-2" /> Staff Directory
@@ -222,33 +234,36 @@ export default function SubAdminEmployees() {
           </TabsContent>
 
           <TabsContent value="tasks" className="space-y-4">
-            <Tabs defaultValue="all" className="w-full">
+            <Tabs value={innerTab} onValueChange={setInnerTab} className="w-full">
               <div className="flex items-center justify-between mb-4">
                 <TabsList className="bg-slate-100 p-1 h-9">
                   <TabsTrigger value="all" className="text-xs h-7">All Tasks</TabsTrigger>
+                  <TabsTrigger value="site-visits" className="text-xs h-7 font-bold text-emerald-700 bg-emerald-50/50">📍 Site Visits</TabsTrigger>
                   <TabsTrigger value="today" className="text-xs h-7">Today</TabsTrigger>
                   <TabsTrigger value="upcoming" className="text-xs h-7">Upcoming</TabsTrigger>
                   <TabsTrigger value="completed" className="text-xs h-7">Completed</TabsTrigger>
                 </TabsList>
-                
-                <Badge variant="outline" className="bg-primary/5 text-primary border-primary/10 font-bold px-3 py-1">
-                  {tasks?.length || 0} Total Assignments
-                </Badge>
               </div>
 
               {[
-                { value: "all", data: tasks ?? [] },
-                { value: "today", data: tasks?.filter(t => (t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd")) || t.scheduledTime < format(new Date(), "yyyy-MM-dd")) && t.status !== "completed") ?? [] },
-                { value: "upcoming", data: tasks?.filter(t => t.scheduledTime > format(new Date(), "yyyy-MM-dd") && t.status !== "completed" && !t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd"))) ?? [] },
-                { value: "completed", data: tasks?.filter(t => t.status === "completed") ?? [] }
-              ].map(({ value, data: filteredTasks }) => (
+                { value: "all", label: "Total Assignments", data: tasks ?? [] },
+                { value: "site-visits", label: "Site Visit Tasks", data: tasks?.filter(t => t.jobType === "Site Visit" || t.jobType?.toLowerCase().includes("site") || t.jobType?.toLowerCase().includes("visit")) ?? [] },
+                { value: "today", label: "Today Tasks", data: tasks?.filter(t => (t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd")) || t.scheduledTime < format(new Date(), "yyyy-MM-dd")) && t.status !== "completed") ?? [] },
+                { value: "upcoming", label: "Upcoming Tasks", data: tasks?.filter(t => t.scheduledTime > format(new Date(), "yyyy-MM-dd") && t.status !== "completed" && !t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd"))) ?? [] },
+                { value: "completed", label: "Completed Tasks", data: tasks?.filter(t => t.status === "completed") ?? [] }
+              ].map(({ value, label, data: filteredTasks }) => (
                 <TabsContent key={value} value={value} className="mt-0">
+                  <div className="flex items-center justify-end mb-4 -mt-12">
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200 font-bold px-3 py-1">
+                      {filteredTasks.length} {label}
+                    </Badge>
+                  </div>
                   <Card className="overflow-hidden border-none shadow-sm ring-1 ring-slate-200">
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200">
-                            {["Task Info", "Assigned To", "Status", "Scheduled At", "Customer", "Actions"].map(h => (
+                            {["Task / Site Info", "Assigned Staff", "Status", "Scheduled Time", "Customer / Site Contact", "Actions"].map(h => (
                               <th key={h} className="text-left px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">{h}</th>
                             ))}
                           </tr>
@@ -260,22 +275,37 @@ export default function SubAdminEmployees() {
                             <tr><td colSpan={6} className="px-6 py-20 text-center text-muted-foreground bg-slate-50/30">
                               <div className="flex flex-col items-center gap-2">
                                 <ClipboardList className="h-10 w-10 text-slate-200" />
-                                <p className="font-medium text-slate-400">No {value === "all" ? "" : value} tasks found.</p>
+                                <p className="font-medium text-slate-400">No {value === "all" ? "" : value === "site-visits" ? "site visit" : value} tasks found.</p>
                               </div>
                             </td></tr>
                           ) : (
                             filteredTasks.map(task => {
-                              const assignedEmp = rawEmployees?.find(emp => emp.userId === task.employeeUserId || String(emp.id) === task.employeeUserId);
+                              const assignedEmp = rawEmployees?.find(emp => 
+                                emp.userId === task.employeeUserId || 
+                                String(emp.id) === String(task.employeeUserId) || 
+                                emp.loginId === task.employeeUserId ||
+                                emp.email === task.employeeUserId
+                              );
+                              const isSiteVisit = task.jobType === "Site Visit" || task.jobType?.toLowerCase().includes("site") || task.jobType?.toLowerCase().includes("visit");
                               return (
                                 <tr key={task.id} className="hover:bg-slate-50/50 transition-colors group">
                                   <td className="px-6 py-4">
-                                    <div className="font-bold text-slate-900 group-hover:text-primary transition-colors">{task.jobType}</div>
-                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">#{task.id}</div>
+                                    <div className="flex items-center gap-1.5">
+                                      <Badge className={`text-[10px] font-bold px-2 py-0.5 border ${
+                                        isSiteVisit 
+                                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                                          : 'bg-slate-100 text-slate-800 border-slate-300'
+                                      }`}>
+                                        {isSiteVisit ? "📍 Site Visit" : task.jobType}
+                                      </Badge>
+                                      <span className="text-[10px] text-slate-400 font-mono">#{task.id}</span>
+                                    </div>
+                                    <p className="text-xs font-semibold text-slate-800 mt-1 line-clamp-2">{task.description}</p>
                                   </td>
                                   <td className="px-6 py-4">
                                     {assignedEmp ? (
                                       <div className="flex items-center gap-2">
-                                        <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-600 border border-slate-200">
+                                        <div className="h-7 w-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-bold border border-emerald-200">
                                           {assignedEmp.name.charAt(0)}
                                         </div>
                                         <div>
@@ -308,21 +338,39 @@ export default function SubAdminEmployees() {
                                   </td>
                                   <td className="px-6 py-4">
                                     <div className="text-sm font-bold text-slate-900">{task.customerName}</div>
-                                    <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
-                                      <MapPin size={11} /> {task.address.split(',')[0]}
+                                    {task.customerPhone && task.customerPhone !== "0000000000" && (
+                                      <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                        <Phone size={10} /> {task.customerPhone}
+                                      </div>
+                                    )}
+                                    <div className="text-[11px] text-slate-600 font-medium flex items-center gap-1 mt-0.5 max-w-xs">
+                                      <MapPin size={11} className="text-red-500 shrink-0" /> <span className="truncate">{task.address}</span>
                                     </div>
                                   </td>
                                   <td className="px-6 py-4 text-right">
-                                     <Button 
-                                      variant="ghost" 
-                                      size="sm" 
-                                      className="h-8 text-[10px] font-black uppercase tracking-tight text-primary hover:bg-primary/5"
-                                      onClick={() => {
-                                        if (assignedEmp) setSelectedEmployeeId(assignedEmp.id);
-                                      }}
-                                    >
-                                      Profile
-                                    </Button>
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {isSiteVisit && (
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-8 text-[10px] font-bold text-emerald-800 bg-emerald-50 border-emerald-300 hover:bg-emerald-100 gap-1 shadow-2xs"
+                                          onClick={() => setViewSiteVisitTask(task)}
+                                        >
+                                          <Camera size={12} className="text-emerald-700" />
+                                          Site Photos ({(task.sitePhotos?.length ?? 0)})
+                                        </Button>
+                                      )}
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="h-8 text-[10px] font-black uppercase tracking-tight text-primary hover:bg-primary/5"
+                                        onClick={() => {
+                                          if (assignedEmp) setSelectedEmployeeId(assignedEmp.id);
+                                        }}
+                                      >
+                                        Profile
+                                      </Button>
+                                    </div>
                                   </td>
                                 </tr>
                               );
@@ -338,6 +386,131 @@ export default function SubAdminEmployees() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <AssignSiteVisitModal
+        isOpen={assignModalOpen}
+        onClose={() => setAssignModalOpen(false)}
+        employees={rawEmployees || []}
+        onSuccess={() => {
+          refetchEmployees();
+          refetchTasks();
+          // Auto-navigate to Site Visits tab to show the newly created task
+          setOuterTab("tasks");
+          setInnerTab("site-visits");
+        }}
+      />
+
+      {/* Service Coordinator Site Visit Task Details & Photos Gallery Modal */}
+      <Dialog open={!!viewSiteVisitTask} onOpenChange={(open) => !open && setViewSiteVisitTask(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          {viewSiteVisitTask && (() => {
+            const assignedEmp = rawEmployees?.find(emp => 
+              emp.userId === viewSiteVisitTask.employeeUserId || 
+              String(emp.id) === String(viewSiteVisitTask.employeeUserId) || 
+              emp.loginId === viewSiteVisitTask.employeeUserId ||
+              emp.email === viewSiteVisitTask.employeeUserId
+            );
+            const photos: string[] = Array.isArray(viewSiteVisitTask.sitePhotos) ? viewSiteVisitTask.sitePhotos : [];
+
+            return (
+              <div className="space-y-6">
+                <DialogHeader className="border-b pb-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-xs">
+                      📍 Site Visit Task #{viewSiteVisitTask.id}
+                    </Badge>
+                    <Badge className="capitalize bg-slate-100 text-slate-800 border-slate-200 text-xs">
+                      {viewSiteVisitTask.status.replace("_", " ")}
+                    </Badge>
+                  </div>
+                  <DialogTitle className="text-xl font-bold text-slate-900">
+                    {viewSiteVisitTask.description}
+                  </DialogTitle>
+                </DialogHeader>
+
+                {/* Details grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned Staff</span>
+                    <div className="font-bold text-slate-900 text-base mt-0.5">{assignedEmp?.name || "Unassigned"}</div>
+                    <div className="text-xs text-slate-500">{assignedEmp?.role || "Employee"}</div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scheduled Date & Time</span>
+                    <div className="font-bold text-slate-900 mt-0.5 flex items-center gap-1.5">
+                      <Calendar className="h-4 w-4 text-slate-400" />
+                      {format(new Date(viewSiteVisitTask.scheduledTime), "PPP 'at' p")}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Customer Contact</span>
+                    <div className="font-bold text-slate-900 mt-0.5">{viewSiteVisitTask.customerName}</div>
+                    <div className="text-xs text-slate-500 flex items-center gap-1">
+                      <Phone className="h-3 w-3" /> {viewSiteVisitTask.customerPhone}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Site Location</span>
+                    <div className="font-medium text-slate-700 mt-0.5 flex items-start gap-1">
+                      <MapPin className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                      <span>{viewSiteVisitTask.address}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4-5 Site Visit Photos Gallery */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <Camera className="h-4 w-4 text-emerald-600" />
+                      Site Visit Photos ({photos.length} Photos)
+                    </h3>
+                    <Badge variant="outline" className={photos.length >= 4 ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold" : "bg-amber-50 text-amber-800 border-amber-300"}>
+                      📸 {photos.length} / 5 Photos Uploaded
+                    </Badge>
+                  </div>
+
+                  {photos.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {photos.map((photoUrl, idx) => (
+                        <div key={idx} className="group relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-900 aspect-video">
+                          <img
+                            src={photoUrl}
+                            alt={`Site Photo ${idx + 1}`}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 p-2 flex flex-col justify-between">
+                            <span className="self-end bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                              Photo #{idx + 1}
+                            </span>
+                            <a
+                              href={photoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 py-1 px-2 rounded flex items-center justify-center gap-1 shadow transition-colors"
+                            >
+                              <Eye className="h-3 w-3" /> View Full Image
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400">
+                      <Camera className="h-8 w-8 mx-auto mb-2 opacity-40 text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-500">No site photos uploaded yet for this site visit task.</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">The employee can upload 4-5 site photos from the Employee App/Section.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </SubAdminLayout>
   );
 }

@@ -483,6 +483,9 @@ export type TaskRecord = {
   completionDocumentUrl?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  assignedById?: string;
+  assignedEmployees?: any[];
+  taskAssignments?: any[];
   completedAt?: string | null;
   taskRate?: number | null;
   beforeImageUrl?: string | null;
@@ -491,6 +494,7 @@ export type TaskRecord = {
   beforeLongitude?: number | null;
   afterLatitude?: number | null;
   afterLongitude?: number | null;
+  sitePhotos?: string[] | null;
   customerRating?: number | null;
   customerFeedback?: string | null;
   fixCharges?: number | null;
@@ -558,6 +562,7 @@ export type CompleteTaskInput = {
   beforeLongitude?: number | null;
   afterLatitude?: number | null;
   afterLongitude?: number | null;
+  sitePhotos?: string[];
 };
 
 export type RateTaskInput = {
@@ -2558,28 +2563,98 @@ export function useListInvoices(customerId?: string | number, opts?: any) {
   });
 }
 
+const TASKS_STORAGE_KEY = "swayog_tasks_registry";
+
+function getStoredMockTasks(): any[] {
+  try {
+    const stored = localStorage.getItem(TASKS_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error("Error reading mock tasks from localStorage:", e);
+  }
+  return Array.isArray(mockTasks) ? [...mockTasks] : [];
+}
+
+function saveStoredMockTasks(tasks: any[]) {
+  try {
+    localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
+  } catch (e) {
+    console.error("Error saving mock tasks to localStorage:", e);
+  }
+}
+
+function mergeStoredTasks(existingTasks: any[], incomingTasks: any[] | any | null | undefined): any[] {
+  const rows = Array.isArray(existingTasks) ? [...existingTasks] : [];
+  const normalizedIncoming = Array.isArray(incomingTasks) ? incomingTasks : incomingTasks ? [incomingTasks] : [];
+
+  normalizedIncoming.forEach((task: any) => {
+    if (!task || task === null) return;
+    const taskIdKey = String(task.id ?? "");
+    const existingIndex = rows.findIndex((row: any) => String(row.id ?? "") === taskIdKey);
+    const normalizedTask = {
+      ...task,
+      status: String(task?.status ?? "assigned").toLowerCase(),
+      scheduledTime: task?.scheduledTime ?? new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      rows[existingIndex] = { ...rows[existingIndex], ...normalizedTask };
+    } else {
+      rows.unshift(normalizedTask);
+    }
+  });
+
+  return rows;
+}
+
 export function useListTasks(params?: { employeeUserId?: string | number; status?: string }, opts?: any) {
   return useQuery<TaskRecord[]>({
     queryKey: getListTasksQueryKey(params),
     queryFn: async () => {
       const apiBaseUrl = getApiBaseUrl();
+      const storedRows = [...getStoredMockTasks()] as TaskRecord[];
+
+      const applyFilters = (rows: TaskRecord[]) => {
+        let filtered = rows;
+        if (params?.employeeUserId !== undefined) {
+          const target = String(params.employeeUserId);
+          filtered = filtered.filter((task: any) =>
+            String(task.employeeUserId ?? task.employeeId ?? "") === target ||
+            String(task.assignedById ?? "") === target ||
+            (Array.isArray(task.assignedEmployees) && task.assignedEmployees.some((ae: any) => String(ae.userId ?? ae.id) === target)) ||
+            (Array.isArray(task.taskAssignments) && task.taskAssignments.some((ta: any) => String(ta.employeeUserId ?? ta.userId) === target))
+          );
+        }
+        if (params?.status) {
+          filtered = filtered.filter((task) => String(task.status).toLowerCase() === String(params.status).toLowerCase());
+        }
+        return filtered;
+      };
+
       if (apiBaseUrl) {
         const query = new URLSearchParams();
         if (params?.employeeUserId !== undefined) query.set("employeeUserId", String(params.employeeUserId));
         if (params?.status) query.set("status", String(params.status).toUpperCase());
         query.set("limit", "300");
         const serialized = query.toString();
-        return requestApi<TaskRecord[]>(`/tasks${serialized.length > 0 ? `?${serialized}` : ""}`);
+
+        try {
+          const response = await requestApi<TaskRecord[]>(`/tasks${serialized.length > 0 ? `?${serialized}` : ""}`);
+          const nextRows = Array.isArray(response) ? response : [];
+          const mergedRows = mergeStoredTasks(storedRows, nextRows);
+          saveStoredMockTasks(mergedRows);
+          return applyFilters(mergedRows);
+        } catch (error) {
+          console.warn("Falling back to cached tasks after task fetch failure:", error);
+          return applyFilters(storedRows);
+        }
       }
 
-      let rows = [...mockTasks] as TaskRecord[];
-      if (params?.employeeUserId !== undefined) {
-        rows = rows.filter((task) => String(task.employeeUserId ?? task.employeeId ?? "") === String(params.employeeUserId));
-      }
-      if (params?.status) {
-        rows = rows.filter((task) => String(task.status).toLowerCase() === String(params.status).toLowerCase());
-      }
-      return delay(rows, 120);
+      let rows = [...storedRows] as TaskRecord[];
+      return delay(applyFilters(rows), 120);
     },
     ...opts?.query,
   });
@@ -2594,13 +2669,17 @@ export function useCreateTaskAssignment(opts?: any) {
     mutationFn: async ({ data }: { data: CreateTaskAssignmentInput }) => {
       const apiBaseUrl = getApiBaseUrl();
       if (apiBaseUrl) {
-        return requestApi<TaskRecord>("/tasks", {
+        const createdTask = await requestApi<TaskRecord>("/tasks", {
           method: "POST",
           body: JSON.stringify(data),
         });
+        const storedRows = mergeStoredTasks(getStoredMockTasks(), createdTask as any);
+        saveStoredMockTasks(storedRows);
+        return createdTask;
       }
 
-      const nextId = mockTasks.reduce((max, current) => Math.max(max, Number(current.id) || 0), 0) + 1;
+      const existingTasks = getStoredMockTasks();
+      const nextId = existingTasks.reduce((max, current) => Math.max(max, Number(current.id) || 0), 0) + 1;
       // Support mock creation for either single assignee or multiple assignees.
       const createdItems: TaskRecord[] = [];
       const assignees = data.employeeUserIds && data.employeeUserIds.length > 0
@@ -2622,7 +2701,9 @@ export function useCreateTaskAssignment(opts?: any) {
           completionMessage: null,
           completionDocumentUrl: null,
         };
+        existingTasks.unshift(created);
         (mockTasks as TaskRecord[]).unshift(created);
+        saveStoredMockTasks(existingTasks);
         return delay(created, 120);
       }
 
@@ -2641,13 +2722,20 @@ export function useCreateTaskAssignment(opts?: any) {
           completionMessage: null,
           completionDocumentUrl: null,
         };
+        existingTasks.unshift(created);
         (mockTasks as TaskRecord[]).unshift(created);
         createdItems.push(created);
       }
+      saveStoredMockTasks(existingTasks);
       // If only one created, return single item to keep previous contract. Otherwise return array.
       return delay(createdItems.length === 1 ? createdItems[0] : (createdItems as any), 120);
     },
     onSuccess: (data, variables, context) => {
+      const createdItems = Array.isArray(data) ? data : [data];
+      queryClient.setQueriesData({ queryKey: ["tasks"] }, (prev: any) => {
+        const baseRows = Array.isArray(prev) ? prev : [];
+        return mergeStoredTasks(baseRows, createdItems);
+      });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       onSuccess?.(data, variables, context);
     },
@@ -2729,6 +2817,9 @@ export function useCompleteTask(opts?: any) {
       task.beforeLongitude = data.beforeLongitude ?? null;
       task.afterLatitude = data.afterLatitude ?? null;
       task.afterLongitude = data.afterLongitude ?? null;
+      if (data.sitePhotos) {
+        task.sitePhotos = data.sitePhotos;
+      }
       return delay(task, 120);
     },
     onSuccess: (data, variables, context) => {

@@ -20,6 +20,7 @@ import {
   LogOut,
   ClipboardList,
   CalendarCheck,
+  Leaf,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
@@ -87,6 +88,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         { name: "Partners", href: "/admin/partners", icon: Users },
         { name: "Complaints", href: "/admin/complaints", icon: Wrench },
         { name: "Inventory", href: "/admin/inventory", icon: Package },
+        { name: "Isphere Green", href: "/admin/isphere-green", icon: Leaf },
         { name: "Financials", href: "/admin/financials", icon: IndianRupee },
         { name: "Daily Commits", href: "/admin/daily-commits", icon: ClipboardList },
         { name: "Attendance Tracking", href: user.role === "super_admin" ? "/super-admin/attendance" : "/admin/attendance", icon: CalendarCheck },

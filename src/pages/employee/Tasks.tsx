@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { SidebarLayout } from "@/components/SidebarLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { useCompleteTask, useListTasks, getListTasksQueryKey, useListEmployees } from "@/lib/api-client";
@@ -10,7 +10,7 @@ import { format } from "date-fns";
 import {
   MapPin, Phone, User, Clock, CheckCircle, X,
   Calendar, Briefcase, ClipboardList, MessageSquare,
-  Navigation, AlertCircle, ArrowLeft, Loader2, FileText, Camera,
+  Navigation, AlertCircle, ArrowLeft, Loader2, FileText, Camera, Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,9 +32,11 @@ const statusColor: Record<string, string> = {
 const jobTypeIcon: Record<string, string> = {
   Installation: "🔧",
   Service: "🛠️",
+  AMC: "📋",
   "AMC Visit": "📋",
   Complaint: "⚠️",
   Survey: "📐",
+  "Site Visit": "📍",
 };
 
 // ─── Mock notes per task (keyed by task id) ────────────────────────────────────
@@ -131,8 +133,66 @@ function TaskDetailDrawer({
   const [notes, setNotes] = useState<string[]>(taskNotes[task.id] ?? []);
   const [completionMessage, setCompletionMessage] = useState("");
   const [documentUrl, setDocumentUrl] = useState("");
-  const requiresPhotos = ["Cleaning", "Maintenance", "Visit", "Service"].includes(task.jobType);
+  const isSiteVisit = task.jobType === "Site Visit" || task.jobType?.toLowerCase().includes("site") || task.jobType?.toLowerCase().includes("visit");
+  const [sitePhotos, setSitePhotos] = useState<string[]>(
+    Array.isArray(task.sitePhotos) ? task.sitePhotos : []
+  );
+  const [isProcessingSitePhoto, setIsProcessingSitePhoto] = useState(false);
+  const [photoSourceModalOpen, setPhotoSourceModalOpen] = useState(false);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
 
+  const handleSitePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    if (sitePhotos.length >= 5) {
+      toast({
+        title: "Photo Limit Reached",
+        description: "You can upload maximum 5 photos for this site visit.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsProcessingSitePhoto(true);
+    try {
+      const coords = await getCoordinates();
+      const dateStr = format(new Date(), "dd-MM-yyyy hh:mm a");
+      const label = coords
+        ? `📍 Lat: ${coords.lat.toFixed(5)}, Lng: ${coords.lng.toFixed(5)} | ${dateStr}`
+        : `📍 GPS N/A | ${dateStr}`;
+
+      const newPhotos: string[] = [];
+      const remainingSlots = 5 - sitePhotos.length;
+      for (const file of files.slice(0, remainingSlots)) {
+        const b64 = await watermarkImage(file, label);
+        newPhotos.push(b64);
+      }
+
+      setSitePhotos(prev => [...prev, ...newPhotos]);
+      toast({
+        title: "Site Photos Added 📸",
+        description: `Uploaded ${newPhotos.length} site photo(s) with GPS stamp. (${sitePhotos.length + newPhotos.length}/5)`
+      });
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Photo Upload Failed",
+        description: "Failed to watermark and save site photo.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingSitePhoto(false);
+      e.target.value = "";
+    }
+  };
+
+  const removeSitePhoto = (index: number) => {
+    setSitePhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const requiresPhotos = ["Cleaning", "Maintenance", "Visit", "Service"].includes(task.jobType);
   const [beforeImage, setBeforeImage] = useState<string | null>(task.beforeImageUrl ?? null);
   const [afterImage, setAfterImage] = useState<string | null>(task.afterImageUrl ?? null);
   const [beforeLat, setBeforeLat] = useState<number | null>(task.beforeLatitude ?? null);
@@ -344,8 +404,134 @@ function TaskDetailDrawer({
 
 
 
-          {/* Before & After Photo Inputs */}
-          {task.status !== "completed" && requiresPhotos && (
+          {/* Site Visit Photos Upload Section (4-5 Photos) */}
+          {isSiteVisit && task.status !== "completed" && (
+            <div className="px-6 pb-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Camera className="h-4 w-4 text-emerald-600" /> Site Visit Photos (4-5 Photos Compulsory)
+                </h3>
+                <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0.5", sitePhotos.length >= 4 ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300")}>
+                  📸 {sitePhotos.length} / 5 Photos
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {sitePhotos.map((img, idx) => (
+                  <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group shadow-sm bg-slate-100">
+                    <img src={img} alt={`Site Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeSitePhoto(idx)}
+                      className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-opacity opacity-90 shadow"
+                      title="Remove photo"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                    <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                      #{idx + 1}
+                    </span>
+                  </div>
+                ))}
+
+                {sitePhotos.length < 5 && (
+                  <>
+                    {/* Trigger button for Camera/Gallery modal */}
+                    <button
+                      type="button"
+                      onClick={() => setPhotoSourceModalOpen(true)}
+                      disabled={isProcessingSitePhoto}
+                      className="flex flex-col items-center justify-center aspect-square rounded-xl border-2 border-dashed border-emerald-300 cursor-pointer hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 transition-all group"
+                    >
+                      {isProcessingSitePhoto ? (
+                        <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+                      ) : (
+                        <>
+                          <Camera className="h-5 w-5 text-emerald-600 mb-1 group-hover:scale-110 transition-transform" />
+                          <span className="text-[9px] text-emerald-900 font-bold text-center px-1">Add Photo</span>
+                          <span className="text-[8px] text-emerald-600/80 font-medium">Camera / Gallery</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Hidden inputs for Camera and Gallery */}
+                    <input
+                      ref={cameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={handleSitePhotoSelect}
+                    />
+                    <input
+                      ref={galleryInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleSitePhotoSelect}
+                    />
+                  </>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 italic">
+                * Click "Add Photo" to take a photo using your <strong>Camera</strong> or pick 4-5 site photos from your <strong>Gallery</strong>. All photos are GPS stamped.
+              </p>
+            </div>
+          )}
+
+          {/* Camera or Gallery Choice Dialog */}
+          <Dialog open={photoSourceModalOpen} onOpenChange={setPhotoSourceModalOpen}>
+            <DialogContent className="max-w-xs sm:max-w-sm rounded-2xl p-5">
+              <DialogHeader className="text-center pb-2 border-b">
+                <DialogTitle className="text-base font-bold text-slate-900 flex items-center justify-center gap-2">
+                  <Camera className="h-5 w-5 text-emerald-600" /> Select Photo Source
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  How would you like to add site visit photos?
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid grid-cols-1 gap-3 pt-3">
+                <Button
+                  variant="outline"
+                  className="h-16 flex items-center justify-start gap-4 p-3 border-2 border-emerald-100 hover:border-emerald-400 hover:bg-emerald-50/60 rounded-xl transition-all group"
+                  onClick={() => {
+                    setPhotoSourceModalOpen(false);
+                    setTimeout(() => cameraInputRef.current?.click(), 100);
+                  }}
+                >
+                  <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                    <Camera className="h-5 w-5" />
+                  </div>
+                  <div className="text-left">
+                    <div className="font-bold text-slate-900 text-sm group-hover:text-emerald-900">Take Photo (Camera)</div>
+                    <div className="text-[11px] text-slate-500 font-normal">Capture site photo directly with camera</div>
+                  </div>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="h-16 flex items-center justify-start gap-4 p-3 border-2 border-slate-100 hover:border-blue-400 hover:bg-blue-50/60 rounded-xl transition-all group"
+                  onClick={() => {
+                    setPhotoSourceModalOpen(false);
+                    setTimeout(() => galleryInputRef.current?.click(), 100);
+                  }}
+                >
+                  <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    <ImageIcon className="h-5 w-5" />
+                  </div>
+                  <div className="text-left">
+                    <div className="font-bold text-slate-900 text-sm group-hover:text-blue-900">Choose from Gallery</div>
+                    <div className="text-[11px] text-slate-500 font-normal">Select 1 or more photos from device gallery</div>
+                  </div>
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Standard Before & After Photo Inputs for Non-Site Visit tasks */}
+          {!isSiteVisit && task.status !== "completed" && requiresPhotos && (
             <div className="px-6 pb-5 space-y-3">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Camera className="h-4 w-4" /> Before & After Photos (GPS Proof)
@@ -429,8 +615,33 @@ function TaskDetailDrawer({
             </div>
           )}
 
-          {/* Already completed photos display */}
-          {task.status === "completed" && (task.beforeImageUrl || task.afterImageUrl) && (
+          {/* Site Visit Photos gallery display for completed tasks or existing photos */}
+          {isSiteVisit && sitePhotos.length > 0 && (
+            <div className="px-6 pb-5 space-y-3">
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Camera className="h-4 w-4 text-emerald-600" /> Site Visit Photos ({sitePhotos.length} Uploaded)
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {sitePhotos.map((photo, i) => (
+                  <a
+                    key={i}
+                    href={photo}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 hover:opacity-95 transition-all shadow-sm group"
+                  >
+                    <img src={photo} alt={`Site Photo ${i + 1}`} className="w-full h-full object-cover" />
+                    <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm">
+                      Photo #{i + 1}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Already completed standard photos display */}
+          {!isSiteVisit && task.status === "completed" && (task.beforeImageUrl || task.afterImageUrl) && (
             <div className="px-6 pb-5 space-y-3">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Camera className="h-4 w-4" /> Location & Work Proof Photos
@@ -512,7 +723,15 @@ function TaskDetailDrawer({
               id={`btn-complete-task-${task.id}`}
               className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2"
               onClick={() => {
-                if (requiresPhotos && (!beforeImage || !afterImage)) {
+                if (isSiteVisit && sitePhotos.length < 4) {
+                  toast({
+                    title: "Site Photos Compulsory",
+                    description: "Please upload at least 4 photos of the site before completing this Site Visit task.",
+                    variant: "destructive"
+                  });
+                  return;
+                }
+                if (!isSiteVisit && requiresPhotos && (!beforeImage || !afterImage)) {
                   toast({
                     title: "Photos Required",
                     description: "Please upload both Before and After work photos with GPS stamp before completing.",
@@ -529,6 +748,7 @@ function TaskDetailDrawer({
                   beforeLongitude: beforeLng,
                   afterLatitude: afterLat,
                   afterLongitude: afterLng,
+                  sitePhotos: sitePhotos.length > 0 ? sitePhotos : undefined,
                 });
                 onClose();
               }}
@@ -628,12 +848,10 @@ export default function EmployeeTasks() {
 
   const today = format(new Date(), "yyyy-MM-dd");
 
-  const enriched = (tasks ?? []).filter((task) =>
-    !currentEmployeeId || String(task.employeeUserId ?? "") === currentEmployeeId
-  );
+  const enriched = tasks ?? [];
 
   const todayTasks = enriched.filter((t) =>
-    t.status !== "completed" && t.scheduledTime.slice(0, 10) === today
+    t.status !== "completed" && t.scheduledTime.slice(0, 10) <= today
   );
   const upcomingTasks = enriched.filter((t) =>
     t.status !== "completed" && t.scheduledTime.slice(0, 10) > today

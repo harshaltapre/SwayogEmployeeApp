@@ -6,7 +6,6 @@ import { prisma } from "../lib/prisma.js";
 import * as AttendanceService from "../services/attendanceService.js";
 import fs from "fs";
 import path from "path";
-import multer from "multer";
 
 
 
@@ -66,80 +65,24 @@ router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, r
   res.json({ photo: user?.profileImageUrl || null });
 }));
 
-const profilePhotoStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = "uploads/profile-photos";
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    cb(null, dir);
-  },
-  filename: (req: any, file, cb) => {
-    const userId = req.auth?.userId || "user";
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, `profile-${userId}-${uniqueSuffix}${path.extname(file.originalname || ".jpg")}`);
-  },
-});
-
-const uploadProfilePhotoMulter = multer({
-  storage: profilePhotoStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-});
-
-router.post(
-  "/profile-photo",
-  authenticateAccessToken,
-  (req, res, next) => {
-    // If request is multipart/form-data, use multer, otherwise proceed to body parsing
-    const contentType = req.headers["content-type"] || "";
-    if (contentType.includes("multipart/form-data")) {
-      uploadProfilePhotoMulter.single("file")(req, res, next);
-    } else {
-      next();
-    }
-  },
-  asyncHandler(async (req: any, res) => {
-    const userId = req.auth!.userId;
-    let photoUrl: string | null = null;
-
-    if (req.file) {
-      photoUrl = `/uploads/profile-photos/${req.file.filename}`;
-      console.log(`[PROFILE_PHOTO] Multipart upload received for user ${userId}: ${photoUrl}, size: ${req.file.size} bytes`);
-    } else if (req.body?.photo || req.body?.photoDataUrl) {
-      photoUrl = req.body.photo || req.body.photoDataUrl;
-      console.log(`[PROFILE_PHOTO] Base64 upload received for user ${userId}, length: ${photoUrl?.length}`);
-    }
-
-    if (!photoUrl) {
-      res.status(400).json({ error: "No image file or photo data provided." });
-      return;
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: { profileImageUrl: photoUrl },
-      select: {
-        id: true,
-        loginId: true,
-        fullName: true,
-        email: true,
-        phoneNumber: true,
-        role: true,
-        profileImageUrl: true,
-        isActive: true,
-        createdAt: true,
-      },
-    });
-
-    console.log(`[PROFILE_PHOTO] PostgreSQL update success for user ${userId}: profileImageUrl = ${updatedUser.profileImageUrl}`);
-
-    res.json({
-      success: true,
-      data: updatedUser,
-      photo: updatedUser.profileImageUrl,
-    });
-  }),
-);
+router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
+  const userId = req.auth!.userId;
+  const { photo } = req.body as { photo: string };
+  if (!photo || !photo.startsWith("data:image/")) {
+    res.status(400).json({ error: "Invalid image data. Must be a base64 data URL." });
+    return;
+  }
+  // Rough size check – base64 of a 2 MB image ≈ 2.7 MB string
+  if (photo.length > 4 * 1024 * 1024) {
+    res.status(413).json({ error: "Image too large. Please upload a photo under 2 MB." });
+    return;
+  }
+  await prisma.user.update({
+    where: { id: userId },
+    data: { profileImageUrl: photo },
+  });
+  res.json({ success: true });
+}));
 
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
@@ -578,18 +521,13 @@ router.get(
 
 /**
  * DELETE /face/enrollment/:employeeId
- * Delete an employee's face enrollment (user can delete their own or SuperAdmin/Admin can delete).
+ * SuperAdmin only: delete an employee's face enrollment, forcing re-enrollment.
  */
 router.delete(
   "/face/enrollment/:employeeId",
-  authenticateAccessToken,
+  superAdminAuth,
   asyncHandler(async (req, res) => {
     const { employeeId } = req.params;
-    const auth = req.auth;
-    if (auth?.userId !== employeeId && !["SUPER_ADMIN", "ADMIN"].includes(auth?.role || "")) {
-      res.status(403).json({ error: "Forbidden: You can only delete your own face enrollment." });
-      return;
-    }
 
     const existing = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
     if (!existing) {

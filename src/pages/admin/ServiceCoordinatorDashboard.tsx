@@ -46,6 +46,7 @@ interface TaskWithDetails {
   beforeLongitude?: number;
   afterLatitude?: number;
   afterLongitude?: number;
+  sitePhotos?: string[];
   customerRating?: number;
   customerFeedback?: string;
   fixCharges?: number;
@@ -446,54 +447,83 @@ function TaskDetailModal({ task, open, onOpenChange }: {
 
             <div className="space-y-4">
               <div>
-                <h3 className="font-semibold text-sm text-slate-500 mb-2">Work Photos</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {task.beforeImageUrl && (
-                    <div className="relative">
-                      <img 
-                        src={task.beforeImageUrl} 
-                        alt="Before work" 
-                        className="w-full h-32 object-cover rounded-lg"
-                      />
-                      <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                        Before
-                      </div>
-                      {task.beforeLatitude && task.beforeLongitude && (
+                <h3 className="font-semibold text-sm text-slate-500 mb-2">
+                  {task.sitePhotos && task.sitePhotos.length > 0
+                    ? `Site Visit Photos (${task.sitePhotos.length} Uploaded)`
+                    : "Work Photos"}
+                </h3>
+                {task.sitePhotos && task.sitePhotos.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {task.sitePhotos.map((url, index) => (
+                      <div key={index} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-video group">
+                        <img 
+                          src={url} 
+                          alt={`Site Photo ${index + 1}`} 
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+                          Photo #{index + 1}
+                        </div>
                         <a 
-                          href={`https://www.google.com/maps?q=${task.beforeLatitude},${task.beforeLongitude}`}
+                          href={url}
                           target="_blank"
                           rel="noreferrer"
-                          className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-2 py-1 rounded hover:bg-blue-600"
+                          className="absolute top-1 right-1 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded opacity-90 hover:opacity-100"
                         >
-                          📍
+                          View
                         </a>
-                      )}
-                    </div>
-                  )}
-                  {task.afterImageUrl && (
-                    <div className="relative">
-                      <img 
-                        src={task.afterImageUrl} 
-                        alt="After work" 
-                        className="w-full h-32 object-cover rounded-lg"
-                      />
-                      <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                        After
                       </div>
-                      {task.afterLatitude && task.afterLongitude && (
-                        <a 
-                          href={`https://www.google.com/maps?q=${task.afterLatitude},${task.afterLongitude}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-2 py-1 rounded hover:bg-blue-600"
-                        >
-                          📍
-                        </a>
-                      )}
-                    </div>
-                  )}
-                </div>
-                {!task.beforeImageUrl && !task.afterImageUrl && (
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {task.beforeImageUrl && (
+                      <div className="relative">
+                        <img 
+                          src={task.beforeImageUrl} 
+                          alt="Before work" 
+                          className="w-full h-32 object-cover rounded-lg"
+                        />
+                        <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                          Before
+                        </div>
+                        {task.beforeLatitude && task.beforeLongitude && (
+                          <a 
+                            href={`https://www.google.com/maps?q=${task.beforeLatitude},${task.beforeLongitude}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-2 py-1 rounded hover:bg-blue-600"
+                          >
+                            📍
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {task.afterImageUrl && (
+                      <div className="relative">
+                        <img 
+                          src={task.afterImageUrl} 
+                          alt="After work" 
+                          className="w-full h-32 object-cover rounded-lg"
+                        />
+                        <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                          After
+                        </div>
+                        {task.afterLatitude && task.afterLongitude && (
+                          <a 
+                            href={`https://www.google.com/maps?q=${task.afterLatitude},${task.afterLongitude}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="absolute top-1 right-1 bg-blue-500 text-white text-xs px-2 py-1 rounded hover:bg-blue-600"
+                          >
+                            📍
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!task.sitePhotos?.length && !task.beforeImageUrl && !task.afterImageUrl && (
                   <p className="text-sm text-slate-400 italic">No photos uploaded yet</p>
                 )}
               </div>

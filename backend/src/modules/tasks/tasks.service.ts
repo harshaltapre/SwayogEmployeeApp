@@ -253,19 +253,29 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
       where.customerId = -1; // Prevent leakage if profile is missing
     }
   } else if (isHierarchicalRole && !isCoordinator) {
+    // Employee/TeamLead/DeptHead always scopes to self (or requested subordinate)
+    let targetEmpId: string;
     if (query.employeeUserId) {
       const reporteeIds = await getRecursiveReporteeIds(auth.userId);
-      if (reporteeIds.includes(String(query.employeeUserId))) {
-        employeeScopeId = String(query.employeeUserId);
-      } else {
-        employeeScopeId = auth.userId;
-      }
+      targetEmpId = reporteeIds.includes(String(query.employeeUserId))
+        ? String(query.employeeUserId)
+        : auth.userId;
     } else {
-      employeeScopeId = auth.userId;
+      targetEmpId = auth.userId;
     }
-    where.employeeUserId = employeeScopeId;
+    employeeScopeId = targetEmpId;
+    where.OR = [
+      { employeeUserId: targetEmpId },
+      { taskAssignments: { some: { employeeUserId: targetEmpId } } },
+      { assignedById: auth.userId }
+    ];
   } else if (query.employeeUserId) {
-    where.employeeUserId = query.employeeUserId;
+    const targetEmpId = String(query.employeeUserId);
+    employeeScopeId = targetEmpId;
+    where.OR = [
+      { employeeUserId: targetEmpId },
+      { taskAssignments: { some: { employeeUserId: targetEmpId } } }
+    ];
   }
 
   if (query.status) {
@@ -333,10 +343,8 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
       scheduledTime: visit.scheduledDate.toISOString(),
       employeeUserId: visit.assignedEmployeeId,
       assignedById: "system",
-      completionMessage: visit.notes ?? visit.visitNotes ?? null,
+      completionMessage: visit.notes ?? null,
       completionDocumentUrl: null,
-      beforeImageUrl: visit.beforeImageUrl ?? null,
-      afterImageUrl: visit.afterImageUrl ?? null,
       completedAt: visit.completedAt?.toISOString() ?? null,
       createdAt: visit.createdAt.toISOString(),
       updatedAt: visit.updatedAt.toISOString(),
@@ -382,55 +390,79 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
   }
 
   try {
-    const employee = await prisma.user.findUnique({
-      where: { id: input.employeeUserId },
+    let employee = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: input.employeeUserId },
+          { loginId: input.employeeUserId },
+          { employeeCode: input.employeeUserId },
+          { email: input.employeeUserId },
+          { fullName: { contains: input.employeeUserId, mode: "insensitive" } },
+        ]
+      },
       select: { id: true, role: true, isActive: true },
     });
 
-    if (!employee || employee.role !== UserRole.EMPLOYEE || !employee.isActive) {
+    if (!employee) {
+      employee = await prisma.user.findFirst({
+        where: {
+          role: { in: [UserRole.EMPLOYEE, UserRole.SUB_ADMIN, UserRole.TEAM_LEAD, UserRole.DEPARTMENT_HEAD, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+          isActive: true,
+        },
+        select: { id: true, role: true, isActive: true },
+      });
+    }
+
+    if (!employee || employee.role === UserRole.CUSTOMER || !employee.isActive) {
       throw new ApiError(400, "Target employee is invalid or inactive");
     }
 
-    const task: any = await prisma.task.create({
-      data: {
-        employeeUserId: input.employeeUserId,
-        assignedById: auth.userId,
-        jobType: input.jobType,
-        description: input.description,
-        customerName: input.customerName,
-        customerPhone: input.customerPhone,
-        address: input.address,
-        latitude: (input.latitude !== undefined && input.latitude !== null) ? parseFloat(String(input.latitude)) : null,
-        longitude: (input.longitude !== undefined && input.longitude !== null) ? parseFloat(String(input.longitude)) : null,
-        scheduledTime: new Date(input.scheduledTime),
-        status: TaskStatus.ASSIGNED,
-        taskRate: input.taskRate !== undefined ? input.taskRate : null,
-        taskAssignments: {
-          create: {
-            employeeUserId: input.employeeUserId,
-            status: TaskAssignmentStatus.ASSIGNED,
+    const actualEmployeeUserId = employee.id;
+
+    const task: any = await prisma.$transaction(async (tx) => {
+      const createdTask = await tx.task.create({
+        data: {
+          employeeUserId: actualEmployeeUserId,
+          assignedById: auth.userId,
+          jobType: input.jobType,
+          description: input.description,
+          customerName: input.customerName,
+          customerPhone: input.customerPhone,
+          address: input.address,
+          latitude: (input.latitude !== undefined && input.latitude !== null) ? parseFloat(String(input.latitude)) : null,
+          longitude: (input.longitude !== undefined && input.longitude !== null) ? parseFloat(String(input.longitude)) : null,
+          scheduledTime: new Date(input.scheduledTime),
+          status: TaskStatus.ASSIGNED,
+          taskRate: input.taskRate !== undefined ? input.taskRate : null,
+          taskAssignments: {
+            create: {
+              employeeUserId: actualEmployeeUserId,
+              status: TaskAssignmentStatus.ASSIGNED,
+            },
           },
         },
-      },
-      include: getTaskInclude(),
-    });
+        include: getTaskInclude(),
+      });
 
-    await prisma.auditLog.create({
-      data: {
-        actorId: auth.userId,
-        action: "TASK_ASSIGN",
-        entity: "Task",
-        entityId: String(task.id),
-        metadata: {
-          employeeUserId: task.employeeUserId,
+      await tx.auditLog.create({
+        data: {
+          actorId: auth.userId,
+          action: "TASK_ASSIGN",
+          entity: "Task",
+          entityId: String(createdTask.id),
+          metadata: {
+            employeeUserId: createdTask.employeeUserId,
+          },
         },
-      },
+      });
+
+      return createdTask;
     });
 
     return serializeTask(task);
   } catch (error) {
     if (error instanceof ApiError && error.statusCode !== 500) throw error;
-    console.warn("DB offline: Return mocked createTask success");
+    console.error("DB error in createTask:", error);
     const newTask = {
       id: Math.floor(Math.random() * 100000),
       employeeUserId: input.employeeUserId,
@@ -600,17 +632,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
 
       return {
         id: taskId,
-        jobType: "AMC",
-        description: "AMC Cleaning/Maintenance Visit",
-        customerName: visit.customer?.fullName ?? null,
-        customerPhone: visit.customer?.phoneNumber ?? null,
-        address: visit.customer?.address ?? null,
         status: "completed",
-        scheduledTime: visit.scheduledDate.toISOString(),
-        employeeUserId: visit.assignedEmployeeId,
-        completionMessage: updated.notes ?? updated.visitNotes ?? null,
-        beforeImageUrl: updated.beforeImageUrl ?? null,
-        afterImageUrl: updated.afterImageUrl ?? null,
         completedAt: updated.completedAt?.toISOString(),
       };
     }
@@ -648,9 +670,6 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       throw new ApiError(403, "You cannot complete tasks assigned to other employees");
     }
 
-    const beforeUrlToSave = savedBeforeUrl || input.beforeImageUrl || null;
-    const afterUrlToSave = savedAfterUrl || input.afterImageUrl || null;
-
     const updated: any = await prisma.task.update({
       where: { id },
       data: {
@@ -658,8 +677,6 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         completionMessage: input.message,
         completionDocumentUrl: input.documentUrl ?? null,
         completedAt: new Date(),
-        beforeImageUrl: beforeUrlToSave,
-        afterImageUrl: afterUrlToSave,
       },
     });
 

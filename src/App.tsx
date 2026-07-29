@@ -22,6 +22,7 @@ import AdminInventory from "@/pages/admin/Inventory";
 import AdminFinancials from "@/pages/admin/Financials";
 import AdminSettings from "@/pages/admin/Settings";
 import AdminAttendance from "@/pages/admin/Attendance";
+import IsphereGreenPage from "@/pages/admin/isphere-green/IsphereGreenPage";
 
 import EmployeeDashboard from "@/pages/employee/Dashboard";
 import EmployeeTasks from "@/pages/employee/Tasks";
@@ -120,6 +121,7 @@ function Router() {
       <ProtectedRoute path="/admin/complaints" component={AdminComplaints} allowedRoles={['admin', 'super_admin']} />
       <ProtectedRoute path="/admin/complaints/:id" component={MockAdminComplaintDetail} allowedRoles={['admin', 'super_admin']} />
       <ProtectedRoute path="/admin/inventory" component={AdminInventory} allowedRoles={['admin', 'super_admin']} />
+      <ProtectedRoute path="/admin/isphere-green" component={IsphereGreenPage} allowedRoles={['admin', 'super_admin']} />
       <ProtectedRoute path="/admin/financials" component={AdminFinancials} allowedRoles={['admin', 'super_admin']} />
       <ProtectedRoute path="/admin/settings" component={AdminSettings} allowedRoles={['admin', 'super_admin']} />
       <ProtectedRoute path="/admin/attendance" component={AdminAttendance} allowedRoles={['admin', 'super_admin']} />

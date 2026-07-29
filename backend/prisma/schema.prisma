@@ -9,8 +9,8 @@ generator client_backend {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -45,11 +45,11 @@ model User {
   partnerProfile      PartnerProfile?
   PerformanceSnapshot PerformanceSnapshot[]
   refreshTokens       RefreshToken[]
-  createdTasks        Task[]                @relation("task_creator")
-  assignedTasks       Task[]                @relation("task_employee")
-  department          Department?           @relation(fields: [departmentId], references: [id])
-  reportingManager    User?                 @relation("user_reporting", fields: [reportingManagerId], references: [id])
-  directReports       User[]                @relation("user_reporting")
+  createdTasks        Task[]           @relation("task_creator")
+  assignedTasks       Task[]           @relation("task_employee")
+  department          Department?      @relation(fields: [departmentId], references: [id])
+  reportingManager    User?            @relation("user_reporting", fields: [reportingManagerId], references: [id])
+  directReports       User[]           @relation("user_reporting")
   taskAssignees       TaskAssignee[]
   imageRecords        ImageRecord[]
   assignedAmcVisits   AmcVisit[]            @relation("assigned_amc_employee")
@@ -91,12 +91,10 @@ model Task {
   completionMessage     String?
   completionDocumentUrl String?
   completedAt           DateTime?
-  beforeImageUrl        String?
-  afterImageUrl         String?
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
-  assignedBy            User             @relation("task_creator", fields: [assignedById], references: [id], onDelete: Cascade)
-  employee              User             @relation("task_employee", fields: [employeeUserId], references: [id], onDelete: Cascade)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  assignedBy            User       @relation("task_creator", fields: [assignedById], references: [id], onDelete: Cascade)
+  employee              User       @relation("task_employee", fields: [employeeUserId], references: [id], onDelete: Cascade)
   taskAssignees         TaskAssignee[]
   imageRecords          ImageRecord[]
   workSubmissions       WorkSubmission[]
@@ -129,7 +127,7 @@ model TaskAssignee {
 }
 
 model ImageRecord {
-  id             String    @id @default(uuid())
+  id             String   @id @default(uuid())
   taskId         Int
   uploadedBy     String
   type           String
@@ -139,7 +137,7 @@ model ImageRecord {
   latitude       Float?
   longitude      Float?
   takenAt        DateTime?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime @default(now())
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
@@ -210,8 +208,8 @@ model EmployeeProfile {
 }
 
 model Customer {
-  id                  Int                    @id @default(autoincrement())
-  customerCode        String                 @unique
+  id                  Int               @id @default(autoincrement())
+  customerCode        String            @unique
   fullName            String
   email               String
   phoneNumber         String
@@ -223,19 +221,19 @@ model Customer {
   panelBrand          String?
   inverterBrand       String?
   inverterModel       String?
-  amcStatus           CustomerAmcStatus      @default(NONE)
+  amcStatus           CustomerAmcStatus @default(NONE)
   amcExpiryDate       DateTime?
-  status              CustomerStatus         @default(ACTIVE)
+  status              CustomerStatus    @default(ACTIVE)
   partnerId           String?
-  userId              String?                @unique
-  projectStage        Int                    @default(0)
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  cleaningWindow1     String?                @default("1-10")
-  cleaningWindow2     String?                @default("11-20")
-  cleaningWindow3     String?                @default("21-30")
-  cleaningsPerMonth   Int?                   @default(1)
-  clientType          String?                @default("post_paid")
+  userId              String?           @unique
+  projectStage        Int               @default(0)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  cleaningWindow1     String?           @default("1-10")
+  cleaningWindow2     String?           @default("11-20")
+  cleaningWindow3     String?           @default("21-30")
+  cleaningsPerMonth   Int?              @default(1)
+  clientType          String?           @default("post_paid")
   consumerNumber      String?
   contractEndDate     DateTime?
   contractStartDate   DateTime?
@@ -249,34 +247,33 @@ model Customer {
   cleaningWindow8     String?
   assignedEmployeeId  String?
   commissionAmount    Float?
-  commissionStatus    CommissionStatus       @default(PENDING)
+  commissionStatus    CommissionStatus  @default(PENDING)
   commissionProofUrl  String?
   commissionPaidAt    DateTime?
   inverterLoginId     String?
   inverterPassword    String?
-  inverterApiKey      String?
-  inverterDeviceSn    String?
+  inverterApiKey       String?
+  inverterDeviceSn     String?
   portalPassword      String?
   latitude            Float?
   longitude           Float?
   AmcContract         AmcContract[]
   AmcVisit            AmcVisit[]
-  partner             PartnerProfile?        @relation(fields: [partnerId], references: [id])
-  user                User?                  @relation(fields: [userId], references: [id])
+  partner             PartnerProfile?   @relation(fields: [partnerId], references: [id])
+  user                User?             @relation(fields: [userId], references: [id])
   Invoice             Invoice[]
   serviceRequests     ServiceRequest[]
   dispatchRecords     DispatchRecord[]
   waareeGeneration    WaareeGeneration?
   inverterCache       InverterCache?
   apartmentId         Int?
-  apartment           Apartment?             @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
+  apartment           Apartment?        @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
   payments            Payment[]
   notifications       CustomerNotification[]
 
   @@index([partnerId])
   @@index([status])
   @@index([amcStatus])
-  @@index([apartmentId])
 }
 
 model Apartment {
@@ -384,23 +381,23 @@ model PartnerInstall {
 }
 
 model AmcVisit {
-  id                 String         @id @default(uuid())
-  customerId         Int
-  scheduledDate      DateTime
-  status             AmcVisitStatus @default(PENDING)
-  completedAt        DateTime?
-  notes              String?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  assignedEmployeeId String?
-  customer           Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  assignedEmployee   User?          @relation("assigned_amc_employee", fields: [assignedEmployeeId], references: [id])
+  id                    String         @id @default(uuid())
+  customerId            Int
+  scheduledDate         DateTime
+  status                AmcVisitStatus @default(PENDING)
+  completedAt           DateTime?
+  notes                 String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  assignedEmployeeId    String?
+  customer              Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedEmployee      User?          @relation("assigned_amc_employee", fields: [assignedEmployeeId], references: [id])
 
   // NEW AMC COMPLETION & SCHEDULING FIELDS
-  cleaningNumber        Int? // which cleaning # this is (1, 2, 3 or 4) in the month
-  timeSlot              String? // e.g. "09:00"
+  cleaningNumber        Int?       // which cleaning # this is (1, 2, 3 or 4) in the month
+  timeSlot              String?    // e.g. "09:00"
   completedByEmployeeId String?
-  completedByName       String? // denormalized name for quick display
+  completedByName       String?    // denormalized name for quick display
   visitNotes            String?
   beforeImageUrl        String?
   afterImageUrl         String?
@@ -455,12 +452,12 @@ model CheckIn {
   latitude         Float?
   longitude        Float?
   status           CheckInStatus @default(CHECKED_IN)
-  matchConfidence  Float? // 1 - euclidean_distance; null if no face enrollment
-  matchDistance    Float? // raw euclidean distance from face-api.js
+  matchConfidence  Float?        // 1 - euclidean_distance; null if no face enrollment
+  matchDistance    Float?        // raw euclidean distance from face-api.js
   livenessVerified Boolean       @default(false)
   manualOverride   Boolean       @default(false)
   overrideReason   String?
-  reviewedBy       String? // userId of admin who reviewed
+  reviewedBy       String?       // userId of admin who reviewed
   flagged          Boolean       @default(false)
   createdAt        DateTime      @default(now())
 
@@ -495,7 +492,7 @@ enum CheckInStatus {
 model FaceEnrollment {
   id           String   @id @default(uuid())
   employeeId   String   @unique
-  descriptor1  Json // Float32Array serialized as number[] (128 dimensions)
+  descriptor1  Json     // Float32Array serialized as number[] (128 dimensions)
   descriptor2  Json
   descriptor3  Json
   enrolledAt   DateTime @default(now())
@@ -663,18 +660,18 @@ model DispatchRecord {
 }
 
 model GrowattCustomer {
-  id            Int                 @id @default(autoincrement())
-  customerName  String              @map("customer_name")
-  apiToken      String              @map("api_token") // AES-256-GCM encrypted
-  plantId       String              @unique @map("plant_id")
-  plantName     String              @map("plant_name")
-  plantCapacity Float               @map("plant_capacity")
-  plantLocation String              @map("plant_location")
-  inverterSn    String?             @map("inverter_sn")
-  isActive      Boolean             @default(true) @map("is_active")
-  createdAt     DateTime            @default(now()) @map("created_at")
-  updatedAt     DateTime            @updatedAt @map("updated_at")
-  generations   GrowattGeneration[]
+  id             Int                 @id @default(autoincrement())
+  customerName   String              @map("customer_name")
+  apiToken       String              @map("api_token") // AES-256-GCM encrypted
+  plantId        String              @unique @map("plant_id")
+  plantName      String              @map("plant_name")
+  plantCapacity  Float               @map("plant_capacity")
+  plantLocation  String              @map("plant_location")
+  inverterSn     String?             @map("inverter_sn")
+  isActive       Boolean             @default(true) @map("is_active")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  generations    GrowattGeneration[]
 
   @@map("growatt_customers")
 }
@@ -696,16 +693,16 @@ model GrowattGeneration {
 }
 
 model WaareeGeneration {
-  id                Int      @id @default(autoincrement())
-  customerId        Int      @unique @map("customer_id")
-  todayGeneration   Float    @default(0) @map("today_generation")
-  monthlyGeneration Float    @default(0) @map("monthly_generation")
-  yearlyGeneration  Float    @default(0) @map("yearly_generation")
-  totalGeneration   Float    @default(0) @map("total_generation")
-  currentPower      Float    @default(0) @map("current_power")
-  status            String   @default("offline") // online or offline
-  lastUpdated       DateTime @default(now()) @map("last_updated")
-  customer          Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id                Int             @id @default(autoincrement())
+  customerId        Int             @unique @map("customer_id")
+  todayGeneration   Float           @default(0) @map("today_generation")
+  monthlyGeneration Float           @default(0) @map("monthly_generation")
+  yearlyGeneration  Float           @default(0) @map("yearly_generation")
+  totalGeneration   Float           @default(0) @map("total_generation")
+  currentPower      Float           @default(0) @map("current_power")
+  status            String          @default("offline") // online or offline
+  lastUpdated       DateTime        @default(now()) @map("last_updated")
+  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
   @@map("waaree_generations")
@@ -723,13 +720,13 @@ model InverterCache {
 // ---------------------------------------------------------------------------
 
 model TaskAssignment {
-  id             String               @id @default(uuid())
-  taskId         Int
+  id            String               @id @default(uuid())
+  taskId        Int
   employeeUserId String
-  assignedAt     DateTime             @default(now())
-  status         TaskAssignmentStatus @default(ASSIGNED)
-  task           Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  employee       User                 @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  assignedAt    DateTime             @default(now())
+  status        TaskAssignmentStatus @default(ASSIGNED)
+  task          Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employee      User                 @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
 
   @@unique([taskId, employeeUserId])
   @@index([taskId])
@@ -763,17 +760,17 @@ model CustomerNotification {
 // ---------------------------------------------------------------------------
 
 model TaskImage {
-  id             String   @id @default(uuid())
-  taskId         Int
+  id           String   @id @default(uuid())
+  taskId       Int
   employeeUserId String
-  type           String // before, after
-  url            String
-  latitude       Float?
-  longitude      Float?
-  watermarkText  String?
-  uploadedAt     DateTime @default(now())
-  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  employee       User     @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  type         String   // before, after
+  url          String
+  latitude     Float?
+  longitude    Float?
+  watermarkText String?
+  uploadedAt   DateTime @default(now())
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employee     User     @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
 
   @@index([taskId])
   @@index([employeeUserId])
@@ -785,21 +782,21 @@ model TaskImage {
 // ---------------------------------------------------------------------------
 
 model Payment {
-  id            String        @id @default(uuid())
-  taskId        Int
-  customerId    Int
-  amount        Float
-  paymentMethod String? // upi, bank_transfer, cash, etc.
-  paymentStatus PaymentStatus @default(PENDING)
-  transactionId String?       @unique
-  paidBy        String? // customer name or reference
-  paidAt        DateTime?
-  processedBy   String? // admin user id who processed payment
-  notes         String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  task          Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id              String        @id @default(uuid())
+  taskId          Int
+  customerId      Int
+  amount          Float
+  paymentMethod   String?       // upi, bank_transfer, cash, etc.
+  paymentStatus   PaymentStatus @default(PENDING)
+  transactionId   String?       @unique
+  paidBy          String?       // customer name or reference
+  paidAt          DateTime?
+  processedBy     String?       // admin user id who processed payment
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  task            Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([taskId])
   @@index([customerId])
@@ -863,4 +860,22 @@ model AttendanceRule {
   officeRadius       Float    @default(150.0)
   faceMatchThreshold Float    @default(0.55)
   updatedAt          DateTime @updatedAt
+}
+
+model IsphereGreenEntry {
+  id          String   @id @default(uuid())
+  category    String
+  subcategory String
+  name        String
+  place       String
+  phone       String?
+  email       String?
+  address     String?
+  details     Json?
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([subcategory])
 }
