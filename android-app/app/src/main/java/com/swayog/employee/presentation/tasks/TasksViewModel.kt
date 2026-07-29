@@ -47,6 +47,7 @@ class TasksViewModel @Inject constructor(
         viewModelScope.launch {
             val id = userId.value ?: return@launch
             _tasksState.value = TasksState.Loading
+            taskRepository.syncPendingActions()
             taskRepository.refreshTasks(id)
                 .onSuccess {
                     _tasksState.value = TasksState.Success

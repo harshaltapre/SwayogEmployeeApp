@@ -56,6 +56,26 @@ class DashboardViewModel @Inject constructor(
     
     init {
         viewModelScope.launch {
+            dataStoreManager.userId.filterNotNull().collect { id ->
+                taskRepository.getTasksByEmployeeId(id).collect { localTasks ->
+                    if (localTasks.isNotEmpty()) {
+                        _tasks.value = localTasks
+                    }
+                }
+            }
+        }
+
+        // Observe today's attendance by DATE only — no employeeId filter.
+        // This guarantees the dashboard badge updates the instant Room is written
+        // by check-in/check-out, regardless of employeeId string format differences
+        // between DataStore (user.id) and the server's attendance record (employeeId).
+        viewModelScope.launch {
+            attendanceRepository.getTodayAttendanceFlow().collect { record ->
+                _todayAttendance.value = record
+            }
+        }
+
+        viewModelScope.launch {
             combine(
                 dataStoreManager.userId,
                 dataStoreManager.authToken,
@@ -112,36 +132,42 @@ class DashboardViewModel @Inject constructor(
                 }
 
                 taskRes.onSuccess { taskList ->
-                    _tasks.value = taskList
+                    if (taskList.isNotEmpty()) {
+                        _tasks.value = taskList
+                    }
                 }.onFailure { error ->
                     if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
-                        hasError = true
-                        errorMessage += "Tasks: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                        if (_tasks.value.isEmpty()) {
+                            hasError = true
+                            errorMessage += "Tasks: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                        }
                     }
-                    _tasks.value = emptyList()
                 }
 
                 attendanceRes.onSuccess { attendance ->
+                    // Always overwrite, including null (= not checked in today).
+                    // This prevents a stale checked-in state from persisting across days.
                     _todayAttendance.value = attendance
                 }.onFailure { error ->
                     if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
-                        hasError = true
-                        errorMessage += "Attendance: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                        if (_todayAttendance.value == null) {
+                            hasError = true
+                            errorMessage += "Attendance: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
+                        }
                     }
-                    _todayAttendance.value = null
                 }
 
                 perfRes.onSuccess { perf ->
                     _performance.value = perf
                 }.onFailure { error ->
-                    if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
+                    if (!com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error) && _performance.value == null && _tasks.value.isEmpty() && _todayAttendance.value == null) {
                         hasError = true
                         errorMessage += "Performance: ${com.swayog.employee.core.util.ErrorUtils.formatException(error)}. "
                     }
                 }
             }
 
-            if (hasError) {
+            if (hasError && _tasks.value.isEmpty() && _todayAttendance.value == null) {
                 _dashboardState.value = DashboardState.Error(errorMessage.trim())
             } else {
                 _dashboardState.value = DashboardState.Success
@@ -157,6 +183,22 @@ class DashboardViewModel @Inject constructor(
             } else {
                 _dashboardState.value = DashboardState.Error("User not authenticated")
             }
+        }
+    }
+
+    /**
+     * Re-fetches today's attendance from the API and refreshes the dashboard badge.
+     * Call this when the user navigates back from the Attendance screen so the dashboard
+     * immediately reflects any check-in or check-out that just happened.
+     */
+    fun refreshTodayAttendance() {
+        viewModelScope.launch {
+            attendanceRepository.getTodayAttendance()
+                .onSuccess { attendance ->
+                    _todayAttendance.value = attendance
+                }
+            // On failure we leave _todayAttendance as-is; the Room Flow
+            // will have already updated it via the local DB write done by check-in/out.
         }
     }
     

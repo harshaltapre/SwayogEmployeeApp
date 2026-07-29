@@ -15,6 +15,7 @@ import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.data.sync.SyncWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
 import java.util.UUID
@@ -26,10 +27,14 @@ class AttendanceRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val attendanceDao: AttendanceDao,
     private val outboxQueueDao: OutboxQueueDao,
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val dataStoreManager: com.swayog.employee.data.local.preferences.DataStoreManager
 ) {
     val pendingSyncCount: Flow<Int> = outboxQueueDao.getPendingCountFlow()
     
+    private fun formatDate(dateStr: String): String {
+        return if (dateStr.length >= 10) dateStr.substring(0, 10) else dateStr
+    }
     fun getAttendanceByEmployeeId(employeeId: String): Flow<List<AttendanceRecord>> {
         return attendanceDao.getAttendanceByEmployeeId(employeeId).map { entities ->
             entities.map { entity ->
@@ -46,18 +51,66 @@ class AttendanceRepository @Inject constructor(
             }
         }
     }
-    
+
+    /**
+     * Reactive Flow for today's attendance record, queried by date only (no employeeId filter).
+     * This is the reliable source of truth for the dashboard badge — it always reflects
+     * whatever record the server wrote after check-in/check-out, regardless of employeeId format.
+     */
+    fun getTodayAttendanceFlow(): Flow<AttendanceRecord?> {
+        val todayStr = java.time.LocalDate.now().toString()
+        return attendanceDao.getTodayAttendanceFlow(todayStr).map { entity ->
+            entity?.let {
+                AttendanceRecord(
+                    id = it.id,
+                    employeeId = it.employeeId,
+                    date = it.date,
+                    checkInTime = it.checkInTime,
+                    checkOutTime = it.checkOutTime,
+                    totalMinutes = it.totalMinutes,
+                    status = it.status,
+                    notes = it.notes
+                )
+            }
+        }
+    }
+
     suspend fun getTodayAttendance(): Result<AttendanceRecord?> {
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
         return try {
             val response = apiService.getTodayAttendance()
             
             if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!.record)
+                val record = response.body()!!.record
+                if (record != null) {
+                    attendanceDao.insertAttendance(
+                        AttendanceEntity(
+                            id = record.id,
+                            employeeId = record.employeeId,
+                            date = formatDate(record.date),
+                            checkInTime = record.checkInTime,
+                            checkOutTime = record.checkOutTime,
+                            totalMinutes = record.totalMinutes,
+                            status = record.status,
+                            notes = record.notes,
+                            checkInSelfieUrl = null,
+                            checkInLocation = null,
+                            isSynced = true
+                        )
+                    )
+                }
+                Result.success(record)
             } else {
-                Result.success(null)
+                val cached = attendanceDao.getTodayAttendance(todayStr)
+                Result.success(cached?.toAttendanceRecord())
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            val cached = try { attendanceDao.getTodayAttendance(todayStr) } catch (_: Exception) { null }
+            if (cached != null) {
+                Result.success(cached.toAttendanceRecord())
+            } else {
+                Result.failure(e)
+            }
         }
     }
     
@@ -81,7 +134,7 @@ class AttendanceRepository @Inject constructor(
                     val attendanceEntity = AttendanceEntity(
                         id = checkInResponse.attendanceRecord.id,
                         employeeId = checkInResponse.attendanceRecord.employeeId,
-                        date = checkInResponse.attendanceRecord.date,
+                        date = formatDate(checkInResponse.attendanceRecord.date),
                         checkInTime = checkInResponse.attendanceRecord.checkInTime,
                         checkOutTime = checkInResponse.attendanceRecord.checkOutTime,
                         totalMinutes = checkInResponse.attendanceRecord.totalMinutes,
@@ -105,16 +158,19 @@ class AttendanceRepository @Inject constructor(
                 Result.failure(OfflinePendingException())
             }
         } else {
-            // Offline - save to outbox queue and create local attendance record
+            // Offline — save to outbox queue and create a local attendance record so the
+            // dashboard immediately reflects the check-in without waiting for a sync.
             val tempId = UUID.randomUUID().toString()
-            val employeeId = "temp" // Will be updated when synced
-            
+            // Use the real employeeId so the DashboardViewModel's Room Flow
+            // (which filters by userId) can pick up this record immediately.
+            val realEmployeeId = dataStoreManager.userId.first() ?: "temp"
+
             saveCheckInToOutbox(selfie, latitude, longitude, matchConfidence)
-            
+
             // Create local attendance record
             val attendanceEntity = AttendanceEntity(
                 id = tempId,
-                employeeId = employeeId,
+                employeeId = realEmployeeId,
                 date = java.time.LocalDate.now().toString(),
                 checkInTime = java.time.LocalDateTime.now().toString(),
                 checkOutTime = null,
@@ -126,7 +182,7 @@ class AttendanceRepository @Inject constructor(
                 isSynced = false
             )
             attendanceDao.insertAttendance(attendanceEntity)
-            
+
             Result.failure(OfflinePendingException())
         }
     }
@@ -177,11 +233,17 @@ class AttendanceRepository @Inject constructor(
         return try {
             val response = apiService.checkOut()
             if (response.isSuccessful) {
-                // Update local database with check-out time
+                // Write the local DB update immediately so the UI updates even before
+                // we re-fetch from the server.
                 val todayAttendance = attendanceDao.getTodayAttendance()
                 todayAttendance?.let {
-                    attendanceDao.updateAttendance(it.copy(checkOutTime = java.time.LocalDateTime.now().toString()))
+                    attendanceDao.updateAttendance(
+                        it.copy(checkOutTime = java.time.LocalDateTime.now().toString())
+                    )
                 }
+                // Re-fetch the authoritative record from the server (includes totalMinutes
+                // computed by the backend) and persist it so the dashboard shows accurate data.
+                getTodayAttendance()
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Check-out failed"))
@@ -259,7 +321,7 @@ class AttendanceRepository @Inject constructor(
                     AttendanceEntity(
                         id = record.id,
                         employeeId = record.employeeId,
-                        date = record.date,
+                        date = formatDate(record.date),
                         checkInTime = record.checkInTime,
                         checkOutTime = record.checkOutTime,
                         totalMinutes = record.totalMinutes,

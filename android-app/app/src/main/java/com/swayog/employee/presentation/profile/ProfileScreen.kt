@@ -58,6 +58,15 @@ fun ProfileScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            val serverUrl by viewModel.serverUrl.collectAsState()
+                            val photoUrl = currentUser?.profilePhotoUrl
+                            val imageRequest = com.swayog.employee.presentation.common.utils.ImageUtils.rememberImageRequest(
+                                context = context,
+                                photoUrl = photoUrl,
+                                serverUrl = serverUrl
+                            )
+
                             Box(
                                 modifier = Modifier
                                     .size(100.dp)
@@ -65,16 +74,25 @@ fun ProfileScreen(
                                     .background(MaterialTheme.colorScheme.primaryContainer),
                                 contentAlignment = Alignment.Center
                             ) {
-                                val initials = currentUser?.fullName?.split(" ")
-                                    ?.mapNotNull { it.firstOrNull()?.toString() }
-                                    ?.take(2)
-                                    ?.joinToString("") ?: "JD"
-                                Text(
-                                    text = initials.uppercase(),
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                if (imageRequest != null) {
+                                    coil.compose.AsyncImage(
+                                        model = imageRequest,
+                                        contentDescription = "Profile Photo",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                } else {
+                                    val initials = currentUser?.fullName?.split(" ")
+                                        ?.mapNotNull { it.firstOrNull()?.toString() }
+                                        ?.take(2)
+                                        ?.joinToString("") ?: "JD"
+                                    Text(
+                                        text = initials.uppercase(),
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(

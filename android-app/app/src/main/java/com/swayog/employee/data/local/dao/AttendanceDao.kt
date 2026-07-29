@@ -13,8 +13,12 @@ interface AttendanceDao {
     @Query("SELECT * FROM attendance WHERE employeeId = :employeeId AND date = :date")
     suspend fun getAttendanceByDate(employeeId: String, date: String): AttendanceEntity?
     
-    @Query("SELECT * FROM attendance WHERE date = :todayDate LIMIT 1")
+    @Query("SELECT * FROM attendance WHERE date LIKE :todayDate || '%' ORDER BY id DESC LIMIT 1")
     suspend fun getTodayAttendance(todayDate: String = java.time.LocalDate.now().toString()): AttendanceEntity?
+
+    /** Reactive version — emits a new value every time the today-row changes in Room. */
+    @Query("SELECT * FROM attendance WHERE date LIKE :todayDate || '%' ORDER BY id DESC LIMIT 1")
+    fun getTodayAttendanceFlow(todayDate: String = java.time.LocalDate.now().toString()): Flow<AttendanceEntity?>
     
     @Query("SELECT * FROM attendance WHERE employeeId = :employeeId AND date >= :startDate AND date <= :endDate")
     fun getAttendanceByDateRange(employeeId: String, startDate: String, endDate: String): Flow<List<AttendanceEntity>>

@@ -67,7 +67,7 @@ fun TasksScreen(
         val tabFiltered = when (selectedTab) {
             1 -> tasksList.filter { it.status != "completed" }
             2 -> tasksList.filter { it.status == "completed" }
-            else -> tasksList
+            else -> tasksList.filter { it.status != "completed" }
         }
         if (searchQuery.isBlank()) tabFiltered
         else tabFiltered.filter {
@@ -79,9 +79,9 @@ fun TasksScreen(
     }
 
     // Counts for tab badges
-    val allCount = tasksList.size
     val activeCount = tasksList.count { it.status != "completed" }
     val completedCount = tasksList.count { it.status == "completed" }
+    val allCount = activeCount
 
     LaunchedEffect(tasksState) {
         if (tasksState is TasksState.Error) {
@@ -96,7 +96,10 @@ fun TasksScreen(
                 showBackButton = true,
                 onBackClick = onNavigateBack,
                 actions = {
-                    IconButton(onClick = { viewModel.refresh() }) {
+                    IconButton(onClick = {
+                        Toast.makeText(context, "Syncing & Refreshing Tasks...", Toast.LENGTH_SHORT).show()
+                        viewModel.refresh()
+                    }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 }
@@ -108,7 +111,13 @@ fun TasksScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            PendingSyncBanner(pendingCount = pendingSyncCount)
+            PendingSyncBanner(
+                pendingCount = pendingSyncCount,
+                onClick = {
+                    Toast.makeText(context, "Syncing pending actions...", Toast.LENGTH_SHORT).show()
+                    viewModel.refresh()
+                }
+            )
             
             Column(
                 modifier = Modifier

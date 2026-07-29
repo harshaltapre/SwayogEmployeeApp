@@ -345,8 +345,8 @@ fun DashboardScreen(
                                     backgroundColor = MaterialTheme.colorScheme.secondary
                                 )
                                 SwayogStatCard(
-                                    title = "Total",
-                                    value = tasks.size.toString(),
+                                    title = "Pending Total",
+                                    value = activeTasks.size.toString(),
                                     modifier = Modifier.weight(1f),
                                     backgroundColor = MaterialTheme.colorScheme.tertiary
                                 )

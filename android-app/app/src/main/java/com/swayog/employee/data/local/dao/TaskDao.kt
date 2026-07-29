@@ -10,6 +10,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE employeeUserId = :employeeUserId ORDER BY scheduledTime DESC")
     fun getTasksByEmployeeId(employeeUserId: String): Flow<List<TaskEntity>>
     
+    @Query("SELECT * FROM tasks WHERE employeeUserId = :employeeUserId ORDER BY scheduledTime DESC")
+    suspend fun getTasksByEmployeeIdDirect(employeeUserId: String): List<TaskEntity>
+    
     @Query("SELECT * FROM tasks WHERE employeeUserId = :employeeUserId AND status != 'completed' ORDER BY scheduledTime ASC")
     fun getActiveTasksByEmployeeId(employeeUserId: String): Flow<List<TaskEntity>>
 

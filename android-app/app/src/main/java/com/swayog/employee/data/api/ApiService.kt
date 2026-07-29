@@ -30,6 +30,17 @@ interface ApiService {
         @Body request: UpdateProfilePhotoRequest
     ): Response<ApiResponse<User>>
 
+    @POST("attendance/profile-photo")
+    suspend fun uploadProfilePhotoJson(
+        @Body request: UpdateProfilePhotoRequest
+    ): Response<ApiResponse<User>>
+
+    @Multipart
+    @POST("attendance/profile-photo")
+    suspend fun uploadProfilePhotoMultipart(
+        @Part file: okhttp3.MultipartBody.Part
+    ): Response<ApiResponse<User>>
+
     @GET("health")
     suspend fun checkHealth(): Response<Unit>
     
@@ -229,8 +240,11 @@ interface ApiService {
     // Inventory endpoints
     @GET("inventory")
     suspend fun getInventory(): Response<ApiResponse<List<InventoryItem>>>
+
+    @GET("inventory/dispatches/all")
+    suspend fun getDispatches(): Response<ApiResponse<List<DispatchRecord>>>
     
-    @POST("inventory/dispatch")
+    @POST("inventory/dispatches")
     suspend fun createDispatch(
         @Body request: DispatchRequest
     ): Response<ApiResponse<DispatchRecord>>
@@ -255,4 +269,14 @@ interface ApiService {
     suspend fun getInvoices(
         @Query("invoiceType") invoiceType: String? = null
     ): Response<ApiResponse<List<Invoice>>>
+
+    // User Settings endpoints
+    @GET("users/me/settings")
+    suspend fun getUserSettings(): Response<ApiResponse<UserSettingsDto>>
+
+    @POST("users/me/settings")
+    suspend fun updateUserSettings(
+        @Body settings: UserSettingsDto
+    ): Response<ApiResponse<UserSettingsDto>>
 }
+

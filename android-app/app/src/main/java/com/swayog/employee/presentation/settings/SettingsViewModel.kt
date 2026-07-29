@@ -3,22 +3,30 @@ package com.swayog.employee.presentation.settings
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.local.preferences.DataStoreManager
+import com.swayog.employee.data.model.UserSettingsDto
+import com.swayog.employee.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import com.swayog.employee.data.repository.AuthRepository
 import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
     private val authRepository: AuthRepository,
+    private val apiService: ApiService,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
+
+    init {
+        syncWithServer()
+    }
 
     val darkMode: StateFlow<Boolean> = dataStoreManager.darkMode.stateIn(
         scope = viewModelScope,
@@ -74,7 +82,6 @@ class SettingsViewModel @Inject constructor(
         initialValue = true
     )
 
-
     val language: StateFlow<String> = dataStoreManager.language.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -110,12 +117,94 @@ class SettingsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = null
     )
+
+    val serverUrl: StateFlow<String?> = dataStoreManager.serverUrl.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
     
     private val _uploadingPhoto = kotlinx.coroutines.flow.MutableStateFlow(false)
     val uploadingPhoto: StateFlow<Boolean> = _uploadingPhoto
 
     private val _uploadError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val uploadError: StateFlow<String?> = _uploadError
+
+    fun syncWithServer() {
+        viewModelScope.launch {
+            try {
+                authRepository.getCurrentUser()
+            } catch (e: Exception) {
+                android.util.Log.e("SETTINGS_VIEWMODEL", "Error syncing user profile on init: ${e.message}")
+            }
+            syncFaceEnrollmentWithServer()
+            syncUserSettingsWithServer()
+        }
+    }
+
+    private suspend fun syncFaceEnrollmentWithServer() {
+        try {
+            val response = apiService.getFaceEnrollmentStatus()
+            if (response.isSuccessful) {
+                val status = response.body()
+                if (status != null && status.enrolled && status.enrollment != null) {
+                    val e = status.enrollment
+                    if (e.descriptor1.isNotEmpty() && e.descriptor2.isNotEmpty() && e.descriptor3.isNotEmpty()) {
+                        dataStoreManager.saveFaceEnrollment(e.descriptor1, e.descriptor2, e.descriptor3)
+                    }
+                } else if (status != null && !status.enrolled) {
+                    dataStoreManager.clearFaceEnrollment()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private suspend fun syncUserSettingsWithServer() {
+        try {
+            val response = apiService.getUserSettings()
+            if (response.isSuccessful) {
+                val settings = response.body()?.data
+                if (settings != null) {
+                    dataStoreManager.updateSettingsFromServer(settings)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun pushUserSettingsToServer(
+        darkMode: Boolean? = null,
+        biometricEnabled: Boolean? = null,
+        notificationsEnabled: Boolean? = null,
+        compactViewEnabled: Boolean? = null,
+        animationsEnabled: Boolean? = null,
+        profileVisibilityEnabled: Boolean? = null,
+        showStatusEnabled: Boolean? = null,
+        activitySharingEnabled: Boolean? = null,
+        language: String? = null
+    ) {
+        viewModelScope.launch {
+            try {
+                val dto = UserSettingsDto(
+                    darkMode = darkMode,
+                    biometricEnabled = biometricEnabled,
+                    notificationsEnabled = notificationsEnabled,
+                    compactViewEnabled = compactViewEnabled,
+                    animationsEnabled = animationsEnabled,
+                    profileVisibilityEnabled = profileVisibilityEnabled,
+                    showStatusEnabled = showStatusEnabled,
+                    activitySharingEnabled = activitySharingEnabled,
+                    language = language
+                )
+                apiService.updateUserSettings(dto)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
     fun uploadProfilePhoto(base64Image: String) {
         viewModelScope.launch {
@@ -131,6 +220,20 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun uploadProfilePhotoFile(file: java.io.File) {
+        viewModelScope.launch {
+            _uploadingPhoto.value = true
+            _uploadError.value = null
+            
+            val result = authRepository.uploadProfilePhotoFile(file)
+            if (result.isFailure) {
+                _uploadError.value = result.exceptionOrNull()?.message ?: "Failed to upload photo"
+            }
+            
+            _uploadingPhoto.value = false
+        }
+    }
+
     fun clearUploadError() {
         _uploadError.value = null
     }
@@ -138,54 +241,63 @@ class SettingsViewModel @Inject constructor(
     fun setDarkMode(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.setDarkMode(enabled)
+            pushUserSettingsToServer(darkMode = enabled)
         }
     }
 
     fun setBiometricEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.setBiometricEnabled(enabled)
+            pushUserSettingsToServer(biometricEnabled = enabled)
         }
     }
 
     fun setNotificationsEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.setNotificationsEnabled(enabled)
+            pushUserSettingsToServer(notificationsEnabled = enabled)
         }
     }
 
     fun setCompactViewEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.setCompactViewEnabled(enabled)
+            pushUserSettingsToServer(compactViewEnabled = enabled)
         }
     }
 
     fun setAnimationsEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.setAnimationsEnabled(enabled)
+            pushUserSettingsToServer(animationsEnabled = enabled)
         }
     }
 
     fun setProfileVisibilityEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.setProfileVisibilityEnabled(enabled)
+            pushUserSettingsToServer(profileVisibilityEnabled = enabled)
         }
     }
 
     fun setShowStatusEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.setShowStatusEnabled(enabled)
+            pushUserSettingsToServer(showStatusEnabled = enabled)
         }
     }
 
     fun setActivitySharingEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.setActivitySharingEnabled(enabled)
+            pushUserSettingsToServer(activitySharingEnabled = enabled)
         }
     }
 
     fun setLanguage(lang: String) {
         viewModelScope.launch {
             dataStoreManager.setLanguage(lang)
+            pushUserSettingsToServer(language = lang)
         }
     }
 
@@ -227,9 +339,26 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun saveServerUrl(url: String) {
+        viewModelScope.launch {
+            dataStoreManager.saveServerUrl(url)
+            syncWithServer()
+        }
+    }
+
     fun deleteFaceEnrollment() {
         viewModelScope.launch {
-            dataStoreManager.clearFaceEnrollment()
+            try {
+                val userId = dataStoreManager.userId.first()
+                if (!userId.isNullOrEmpty()) {
+                    apiService.deleteFaceEnrollment(userId)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                dataStoreManager.clearFaceEnrollment()
+            }
         }
     }
 }
+

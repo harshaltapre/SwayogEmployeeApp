@@ -35,8 +35,8 @@ class AttendanceViewModel @Inject constructor(
         initialValue = null
     )
 
-    private val _todayAttendance = MutableStateFlow<AttendanceRecord?>(null)
-    val todayAttendance: StateFlow<AttendanceRecord?> = _todayAttendance.asStateFlow()
+    val todayAttendance: StateFlow<AttendanceRecord?> = attendanceRepository.getTodayAttendanceFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private val _performance = MutableStateFlow<PerformanceSnapshot?>(null)
     val performance: StateFlow<PerformanceSnapshot?> = _performance.asStateFlow()
@@ -79,15 +79,8 @@ class AttendanceViewModel @Inject constructor(
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Loading
             
-            // 1. Fetch today's record
+            // 1. Fetch today's record (saves to Room DB, which automatically updates getTodayAttendanceFlow)
             attendanceRepository.getTodayAttendance()
-                .onSuccess { record ->
-                    _todayAttendance.value = record
-                }
-                .onFailure {
-                    // Fallback
-                    _todayAttendance.value = null
-                }
                 
             // 2. Fetch monthly performance details
             val calendar = Calendar.getInstance()
@@ -113,7 +106,6 @@ class AttendanceViewModel @Inject constructor(
             _attendanceState.value = AttendanceState.Loading
             attendanceRepository.checkIn(selfie, latitude, longitude, matchConfidence)
                 .onSuccess { response ->
-                    _todayAttendance.value = response.attendanceRecord
                     loadData()
                     onResult(Result.success(Unit))
                 }

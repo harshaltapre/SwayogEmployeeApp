@@ -5,7 +5,8 @@ import com.google.gson.annotations.SerializedName
 data class AmcCustomerInfo(
     val fullName: String,
     val city: String?,
-    val phoneNumber: String?
+    val phoneNumber: String?,
+    val address: String? = null
 )
 
 data class AmcVisit(

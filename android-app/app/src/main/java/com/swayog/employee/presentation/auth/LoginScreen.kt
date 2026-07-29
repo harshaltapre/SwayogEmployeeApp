@@ -339,7 +339,7 @@ fun LoginScreen(
                         value = serverUrlInput,
                         onValueChange = { serverUrlInput = it },
                         label = { Text("Server URL") },
-                        placeholder = { Text("http://192.168.1.18:4000/api/v1/") },
+                        placeholder = { Text("https://swayog-dashboard.vercel.app/api/v1/") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),

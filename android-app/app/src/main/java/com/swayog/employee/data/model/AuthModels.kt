@@ -21,7 +21,8 @@ data class ApiResponse<T>(
     val status: String? = null,
     val message: String? = null,
     val data: T?,
-    val meta: ApiResponseMeta? = null
+    val meta: ApiResponseMeta? = null,
+    val photo: String? = null
 ) {
     val isSuccess: Boolean get() = success == true || status == "success" || status == "Success" || data != null
 }
@@ -49,7 +50,8 @@ data class RefreshTokenRequest(
 )
 
 data class UpdateProfilePhotoRequest(
-    val photoDataUrl: String
+    val photoDataUrl: String? = null,
+    val photo: String? = null
 )
 
 data class AuthResponse(

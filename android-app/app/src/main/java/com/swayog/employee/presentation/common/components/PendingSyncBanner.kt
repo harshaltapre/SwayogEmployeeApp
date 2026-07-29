@@ -4,11 +4,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun PendingSyncBanner(
     pendingCount: Int,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
@@ -33,7 +35,8 @@ fun PendingSyncBanner(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFFD1603D)) // BrandOrange
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
@@ -45,10 +48,17 @@ fun PendingSyncBanner(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "$pendingCount actions saved locally. Will sync when online.",
+                text = "$pendingCount action${if (pendingCount > 1) "s" else ""} saved locally. Tap to sync now.",
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Sync Now",
+                tint = Color.White,
+                modifier = Modifier.size(14.dp)
             )
         }
     }

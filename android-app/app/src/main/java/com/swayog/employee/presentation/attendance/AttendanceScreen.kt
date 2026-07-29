@@ -223,7 +223,13 @@ fun AttendanceScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            PendingSyncBanner(pendingCount = pendingSyncCount)
+            PendingSyncBanner(
+                pendingCount = pendingSyncCount,
+                onClick = {
+                    Toast.makeText(context, "Syncing attendance records...", Toast.LENGTH_SHORT).show()
+                    viewModel.loadData()
+                }
+            )
             
             LazyColumn(
                 modifier = Modifier

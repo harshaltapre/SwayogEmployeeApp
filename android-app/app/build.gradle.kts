@@ -21,6 +21,25 @@ fun getLocalProperty(key: String, defaultValue: String): String {
     return localProperties.getProperty(key) ?: (project.findProperty(key) as? String) ?: defaultValue
 }
 
+// ---------------------------------------------------------------------------
+// RELEASE SIGNING CONFIGURATION
+// ---------------------------------------------------------------------------
+// To generate a release keystore (one-time setup), run:
+//
+//   keytool -genkey -v -keystore my-release-key.jks \
+//     -keyalg RSA -keysize 2048 -validity 10000 \
+//     -alias my-key-alias
+//
+// Then set the following in local.properties (never commit this file):
+//
+//   RELEASE_STORE_FILE=<absolute path to my-release-key.jks>
+//   RELEASE_KEY_ALIAS=my-key-alias
+//   RELEASE_STORE_PASSWORD=<your keystore password>
+//   RELEASE_KEY_PASSWORD=<your key password>
+//
+// On CI, set these as environment variables instead.
+// ---------------------------------------------------------------------------
+
 android {
     namespace = "com.swayog.employee"
     compileSdk = 34
@@ -44,11 +63,37 @@ android {
         buildConfigField("String", "MAPS_API_KEY", "\"${getLocalProperty("MAPS_API_KEY", "")}\"")
     }
 
+    signingConfigs {
+        // Debug signing — generated automatically by Android Studio. Do NOT change.
+        // getByName("debug") is available by default.
+
+        // Release signing — credentials come from local.properties or environment variables.
+        create("release") {
+            val storeFilePath = getLocalProperty("RELEASE_STORE_FILE", System.getenv("RELEASE_STORE_FILE") ?: "")
+            val keyAlias     = getLocalProperty("RELEASE_KEY_ALIAS", System.getenv("RELEASE_KEY_ALIAS") ?: "")
+            val storePass    = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "")
+            val keyPass      = getLocalProperty("RELEASE_KEY_PASSWORD", System.getenv("RELEASE_KEY_PASSWORD") ?: "")
+
+            if (storeFilePath.isNotBlank()) {
+                storeFile = file(storeFilePath)
+                this.keyAlias = keyAlias
+                storePassword = storePass
+                keyPassword = keyPass
+            } else {
+                // Fallback: warn at configure time so the developer knows signing is not set up.
+                println("⚠️  WARNING: RELEASE_STORE_FILE is not configured in local.properties.")
+                println("   Release APK will be unsigned until you configure a release keystore.")
+                println("   See the comments above the android {} block for setup instructions.")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            // Use the dedicated release keystore (NOT the debug keystore).
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -58,7 +103,7 @@ android {
         }
         debug {
             isDebuggable = true
-            buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "http://10.0.2.2:4000/api/v1/")}\"")
+            buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard.vercel.app/api/v1/")}\"")
             buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
         }
     }

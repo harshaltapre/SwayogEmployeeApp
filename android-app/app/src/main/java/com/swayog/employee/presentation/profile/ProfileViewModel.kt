@@ -10,59 +10,40 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import com.swayog.employee.data.repository.AuthRepository
+
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
-    private val userDao: UserDao
+    private val userDao: UserDao,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _currentUser = MutableStateFlow<UserEntity?>(null)
     val currentUser: StateFlow<UserEntity?> = _currentUser.asStateFlow()
 
+    val serverUrl: StateFlow<String?> = dataStoreManager.serverUrl.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
     init {
         viewModelScope.launch {
-            dataStoreManager.userId.filterNotNull().collect { id ->
-                val user = userDao.getUserById(id)
-                if (user != null) {
-                    _currentUser.value = user
-                } else {
-                    // Fallback to datastore values to prevent infinite loading
-                    val email = dataStoreManager.userEmail.firstOrNull() ?: ""
-                    val name = dataStoreManager.userName.firstOrNull() ?: "Unknown"
-                    val role = dataStoreManager.userRole.firstOrNull() ?: "EMPLOYEE"
-                    val jobRole = dataStoreManager.jobRole.firstOrNull()
-                    
-                    _currentUser.value = UserEntity(
-                        id = id,
-                        loginId = id,
-                        employeeCode = null,
-                        email = email,
-                        phoneNumber = null,
-                        fullName = name,
-                        role = role,
-                        designationTitle = role,
-                        departmentId = null,
-                        reportingManagerId = null,
-                        isActive = true,
-                        createdAt = "",
-                        jobRole = jobRole,
-                        zone = null,
-                        monthlySalaryInr = null,
-                        profilePhotoUrl = null
-                    )
+            dataStoreManager.userId.filterNotNull().collectLatest { id ->
+                userDao.observeUserById(id).collect { userEntity ->
+                    if (userEntity != null) {
+                        _currentUser.value = userEntity
+                    }
                 }
             }
         }
+        loadProfile()
     }
 
     fun loadProfile() {
         viewModelScope.launch {
-            dataStoreManager.userId.firstOrNull()?.let { id ->
-                val user = userDao.getUserById(id)
-                if (user != null) {
-                    _currentUser.value = user
-                }
-            }
+            authRepository.getCurrentUser()
         }
     }
 }

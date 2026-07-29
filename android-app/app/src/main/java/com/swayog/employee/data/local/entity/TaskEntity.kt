@@ -2,6 +2,7 @@ package com.swayog.employee.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.swayog.employee.data.model.Task
 
 @Entity(tableName = "tasks")
 data class TaskEntity(
@@ -30,4 +31,31 @@ data class TaskEntity(
     val createdAt: String? = null,
     val updatedAt: String? = null,
     val isSynced: Boolean = true
-)
+) {
+    fun toTask(): Task = Task(
+        id = id,
+        jobType = jobType,
+        description = description,
+        customerName = customerName,
+        customerPhone = customerPhone,
+        address = address,
+        latitude = latitude,
+        longitude = longitude,
+        status = status,
+        scheduledTime = scheduledTime,
+        employeeUserId = employeeUserId,
+        assignedById = assignedById,
+        completionMessage = completionMessage,
+        completionDocumentUrl = completionDocumentUrl,
+        beforeImageUrl = beforeImageUrl,
+        afterImageUrl = afterImageUrl,
+        beforeLatitude = beforeLatitude,
+        beforeLongitude = beforeLongitude,
+        afterLatitude = afterLatitude,
+        afterLongitude = afterLongitude,
+        completedAt = completedAt,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+}
+

@@ -56,17 +56,48 @@ object NetworkModule {
                         val normalized = if (url.endsWith("/")) url else "$url/"
                         normalized.toHttpUrl()
                     }
-                    val newUrl = originalRequest.url.newBuilder()
+
+                    val defaultBaseUrl = BuildConfig.API_BASE_URL.let { url ->
+                        val normalized = if (url.endsWith("/")) url else "$url/"
+                        normalized.toHttpUrl()
+                    }
+
+                    val defaultPathSegments = defaultBaseUrl.pathSegments.filter { it.isNotEmpty() }
+                    val origPathSegments = originalRequest.url.pathSegments.filter { it.isNotEmpty() }
+
+                    // Strip default base path from original request path if present
+                    val relativeSegments = if (origPathSegments.take(defaultPathSegments.size) == defaultPathSegments) {
+                        origPathSegments.drop(defaultPathSegments.size)
+                    } else {
+                        origPathSegments
+                    }
+
+                    // Build path using saved base URL path + relative segments
+                    val savedBasePathSegments = newBaseUrl.pathSegments.filter { it.isNotEmpty() }
+                    val finalSegments = if (savedBasePathSegments.isEmpty() && relativeSegments.firstOrNull() != "api") {
+                        listOf("api", "v1") + relativeSegments
+                    } else {
+                        savedBasePathSegments + relativeSegments
+                    }
+
+                    val newUrlBuilder = originalRequest.url.newBuilder()
                         .scheme(newBaseUrl.scheme)
                         .host(newBaseUrl.host)
                         .port(newBaseUrl.port)
-                        .build()
-                    
+                        .encodedPath("/")
+
+                    finalSegments.forEach { seg ->
+                        newUrlBuilder.addPathSegment(seg)
+                    }
+
+                    val newUrl = newUrlBuilder.build()
+                    Log.d("NetworkModule", "Request URL: $newUrl")
+
                     val requestBuilder = originalRequest.newBuilder()
                         .url(newUrl)
                         .header("Content-Type", "application/json")
                         .header("bypass-tunnel-reminder", "true")
-                    
+
                     val authToken = runBlocking { dataStoreManager.authToken.first() }
                     if (authToken != null) {
                         requestBuilder.header("Authorization", "Bearer $authToken")

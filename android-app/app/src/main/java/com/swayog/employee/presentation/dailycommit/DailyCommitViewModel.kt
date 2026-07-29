@@ -53,6 +53,10 @@ class DailyCommitViewModel @Inject constructor(
             dailyCommitRepository.refreshDailyCommits()
         }
     }
+
+    fun refresh() {
+        refreshCommitsHistory()
+    }
     
     fun submitDailyCommit(
         commitDate: String,

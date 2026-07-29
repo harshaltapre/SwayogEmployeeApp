@@ -93,7 +93,13 @@ fun DailyCommitScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            PendingSyncBanner(pendingCount = pendingSyncCount)
+            PendingSyncBanner(
+                pendingCount = pendingSyncCount,
+                onClick = {
+                    Toast.makeText(context, "Syncing daily commits...", Toast.LENGTH_SHORT).show()
+                    viewModel.refresh()
+                }
+            )
             
             LazyColumn(
                 modifier = Modifier

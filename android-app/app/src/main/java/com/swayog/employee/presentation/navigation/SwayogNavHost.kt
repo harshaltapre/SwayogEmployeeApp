@@ -1,9 +1,13 @@
 package com.swayog.employee.presentation.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.swayog.employee.presentation.auth.LoginScreen
 import com.swayog.employee.presentation.dashboard.DashboardScreen
 import com.swayog.employee.presentation.attendance.AttendanceScreen
@@ -49,7 +53,20 @@ fun SwayogNavHost(
         }
         
         composable(Screen.Dashboard.route) {
+            // Obtain the ViewModel here so we can call refreshTodayAttendance() every time
+            // the Dashboard destination resumes (i.e. the user pops back from Attendance etc.).
+            val dashboardViewModel: com.swayog.employee.presentation.dashboard.DashboardViewModel = hiltViewModel()
+
+            // currentBackStackEntry changes whenever this destination comes to the top.
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            LaunchedEffect(navBackStackEntry) {
+                if (navController.currentDestination?.route == Screen.Dashboard.route) {
+                    dashboardViewModel.refreshTodayAttendance()
+                }
+            }
+
             DashboardScreen(
+                viewModel = dashboardViewModel,
                 onNavigateToAttendance = {
                     navController.navigate(Screen.Attendance.route)
                 },

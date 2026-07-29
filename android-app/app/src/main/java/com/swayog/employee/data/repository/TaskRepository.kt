@@ -167,10 +167,20 @@ class TaskRepository @Inject constructor(
                 }
                 Result.success(tasks)
             } else {
-                Result.failure(Exception("Failed to refresh tasks: ${ErrorUtils.formatResponseError(response)}"))
+                val localTasks = try { taskDao.getTasksByEmployeeIdDirect(employeeUserId).map { it.toTask() } } catch (_: Exception) { emptyList() }
+                if (localTasks.isNotEmpty()) {
+                    Result.success(localTasks)
+                } else {
+                    Result.failure(Exception("Failed to refresh tasks: ${ErrorUtils.formatResponseError(response)}"))
+                }
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Failed to refresh tasks: ${ErrorUtils.formatException(e)}"))
+            val localTasks = try { taskDao.getTasksByEmployeeIdDirect(employeeUserId).map { it.toTask() } } catch (_: Exception) { emptyList() }
+            if (localTasks.isNotEmpty()) {
+                Result.success(localTasks)
+            } else {
+                Result.failure(Exception("Failed to refresh tasks: ${ErrorUtils.formatException(e)}"))
+            }
         }
     }
     
@@ -223,6 +233,53 @@ class TaskRepository @Inject constructor(
     }
     
     suspend fun updateTaskStatus(taskId: String, status: String): Result<Task> {
+        if (taskId.startsWith("amc_")) {
+            val visitId = taskId.replace("amc_", "")
+            val updateReq = UpdateAmcVisitRequest(status = if (status.lowercase() == "completed") "COMPLETED" else "PENDING")
+            return try {
+                val response = apiService.updateAmcVisit(visitId, updateReq)
+                if (response.isSuccessful && response.body()?.data != null) {
+                    val visit = response.body()!!.data!!
+                    val updatedTask = Task(
+                        id = taskId,
+                        jobType = "AMC",
+                        description = visit.visitNotes ?: "AMC Cleaning Visit",
+                        customerName = visit.customer?.fullName ?: "AMC Customer",
+                        customerPhone = visit.customer?.phoneNumber ?: "",
+                        address = visit.customer?.address ?: visit.customer?.city ?: "",
+                        status = visit.status.lowercase(),
+                        scheduledTime = visit.scheduledDate,
+                        employeeUserId = visit.assignedEmployeeId,
+                        assignedById = "system",
+                        completedAt = visit.completedAt,
+                        createdAt = visit.createdAt,
+                        updatedAt = visit.updatedAt
+                    )
+                    val entity = TaskEntity(
+                        id = taskId,
+                        jobType = "AMC",
+                        description = updatedTask.description,
+                        customerName = updatedTask.customerName,
+                        customerPhone = updatedTask.customerPhone,
+                        address = updatedTask.address,
+                        status = updatedTask.status,
+                        scheduledTime = updatedTask.scheduledTime,
+                        employeeUserId = updatedTask.employeeUserId,
+                        assignedById = updatedTask.assignedById,
+                        completedAt = updatedTask.completedAt,
+                        createdAt = updatedTask.createdAt,
+                        updatedAt = updatedTask.updatedAt,
+                        isSynced = true
+                    )
+                    taskDao.updateTask(entity)
+                    Result.success(updatedTask)
+                } else {
+                    Result.failure(Exception("Failed to update AMC visit status"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
         return try {
             val response = apiService.updateTask(
                 taskId,
@@ -290,6 +347,64 @@ class TaskRepository @Inject constructor(
         afterLatitude: Double? = null,
         afterLongitude: Double? = null
     ): Result<Task> {
+        if (taskId.startsWith("amc_")) {
+            val visitId = taskId.replace("amc_", "")
+            val body = mapOf(
+                "notes" to completionMessage,
+                "visitNotes" to completionMessage,
+                "beforeImageUrl" to beforeImageUrl,
+                "afterImageUrl" to afterImageUrl
+            )
+            return try {
+                val response = apiService.markAmcVisitDone(visitId, body)
+                if (response.isSuccessful && response.body()?.data != null) {
+                    val visit = response.body()!!.data!!
+                    val completedTask = Task(
+                        id = taskId,
+                        jobType = "AMC",
+                        description = visit.visitNotes ?: "AMC Visit",
+                        customerName = visit.customer?.fullName ?: "AMC Customer",
+                        customerPhone = visit.customer?.phoneNumber ?: "",
+                        address = visit.customer?.address ?: visit.customer?.city ?: "",
+                        status = "completed",
+                        scheduledTime = visit.scheduledDate,
+                        employeeUserId = visit.assignedEmployeeId,
+                        assignedById = "system",
+                        completionMessage = completionMessage,
+                        beforeImageUrl = beforeImageUrl,
+                        afterImageUrl = afterImageUrl,
+                        completedAt = visit.completedAt,
+                        createdAt = visit.createdAt,
+                        updatedAt = visit.updatedAt
+                    )
+                    val entity = TaskEntity(
+                        id = taskId,
+                        jobType = "AMC",
+                        description = completedTask.description,
+                        customerName = completedTask.customerName,
+                        customerPhone = completedTask.customerPhone,
+                        address = completedTask.address,
+                        status = "completed",
+                        scheduledTime = completedTask.scheduledTime,
+                        employeeUserId = completedTask.employeeUserId,
+                        assignedById = completedTask.assignedById,
+                        completionMessage = completionMessage,
+                        beforeImageUrl = beforeImageUrl,
+                        afterImageUrl = afterImageUrl,
+                        completedAt = completedTask.completedAt,
+                        createdAt = completedTask.createdAt,
+                        updatedAt = completedTask.updatedAt,
+                        isSynced = true
+                    )
+                    taskDao.updateTask(entity)
+                    Result.success(completedTask)
+                } else {
+                    Result.failure(Exception("Failed to complete AMC visit"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
         val isOnline = NetworkUtils.isNetworkAvailable(context)
         
         return if (isOnline) {
@@ -482,6 +597,104 @@ class TaskRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun syncPendingActions(): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val pendingItems = outboxQueueDao.getPendingItems()
+                if (pendingItems.isEmpty()) {
+                    android.util.Log.d("TASK_SYNC", "No pending outbox items to sync.")
+                    return@withContext Result.success(Unit)
+                }
+
+                android.util.Log.d("TASK_SYNC", "Syncing ${pendingItems.size} pending outbox items...")
+                var syncedCount = 0
+
+                for (item in pendingItems) {
+                    val success = try {
+                        when {
+                            item.endpoint.contains("complete") -> {
+                                val json = org.json.JSONObject(item.payload)
+                                val taskId = json.optString("taskId").ifEmpty {
+                                    item.endpoint.removePrefix("tasks/").removeSuffix("/complete")
+                                }
+                                if (taskId.startsWith("amc_")) {
+                                    val visitId = taskId.removePrefix("amc_")
+                                    val msg = json.optString("message", "")
+                                    val response = apiService.updateAmcVisit(visitId, UpdateAmcVisitRequest(status = "COMPLETED", notes = msg))
+                                    response.isSuccessful
+                                } else {
+                                    val request = CompleteTaskRequest(
+                                        message = json.optString("message"),
+                                        documentUrl = json.optString("documentUrl").takeIf { it.isNotEmpty() },
+                                        beforeImageUrl = json.optString("beforeImageUrl").takeIf { it.isNotEmpty() },
+                                        afterImageUrl = json.optString("afterImageUrl").takeIf { it.isNotEmpty() }
+                                    )
+                                    val response = apiService.completeTask(taskId, request)
+                                    response.isSuccessful
+                                }
+                            }
+                            item.endpoint.startsWith("tasks/") || item.endpoint.contains("status") -> {
+                                val taskId = item.endpoint.removePrefix("tasks/").removeSuffix("/status")
+                                val json = org.json.JSONObject(item.payload)
+                                val status = json.optString("status")
+                                if (taskId.startsWith("amc_")) {
+                                    val visitId = taskId.removePrefix("amc_")
+                                    val response = apiService.updateAmcVisit(visitId, UpdateAmcVisitRequest(status = if (status.lowercase() == "completed") "COMPLETED" else "PENDING"))
+                                    response.isSuccessful
+                                } else {
+                                    val response = apiService.updateTask(taskId, UpdateTaskRequest(status = status))
+                                    response.isSuccessful
+                                }
+                            }
+                            item.endpoint.contains("check-in") -> {
+                                val json = org.json.JSONObject(item.payload)
+                                val request = CheckInRequest(
+                                    selfie = json.optString("selfie").takeIf { it.isNotEmpty() },
+                                    latitude = json.optDouble("latitude").takeIf { !json.isNull("latitude") },
+                                    longitude = json.optDouble("longitude").takeIf { !json.isNull("longitude") }
+                                )
+                                val response = apiService.checkIn(request)
+                                response.isSuccessful
+                            }
+                            item.endpoint.contains("daily-commits") -> {
+                                val json = org.json.JSONObject(item.payload)
+                                val request = DailyCommitRequest(
+                                    commitDate = json.optString("commitDate"),
+                                    taskWorkedOn = json.optString("taskWorkedOn"),
+                                    workSummary = json.optString("workSummary"),
+                                    hoursSpent = json.optDouble("hoursSpent"),
+                                    issuesBlockers = json.optString("issuesBlockers").takeIf { it.isNotEmpty() },
+                                    tomorrowPlan = json.optString("tomorrowPlan").takeIf { it.isNotEmpty() }
+                                )
+                                val response = apiService.createDailyCommit(request)
+                                response.isSuccessful
+                            }
+                            else -> true
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("TASK_SYNC", "Failed to process outbox item ${item.id}: ${e.message}")
+                        false
+                    }
+
+                    if (success || item.retryCount >= 3) {
+                        outboxQueueDao.deleteItem(item)
+                        syncedCount++
+                        android.util.Log.d("TASK_SYNC", "Cleared item ${item.id} (success=$success, retryCount=${item.retryCount})")
+                    } else {
+                        outboxQueueDao.updateItem(item.copy(retryCount = item.retryCount + 1))
+                    }
+                }
+
+                scheduleSync()
+                android.util.Log.d("TASK_SYNC", "Sync completed. Cleared $syncedCount of ${pendingItems.size} items.")
+                Result.success(Unit)
+            } catch (e: Exception) {
+                android.util.Log.e("TASK_SYNC", "syncPendingActions exception: ${e.message}", e)
+                Result.failure(e)
+            }
         }
     }
 

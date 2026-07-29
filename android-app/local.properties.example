@@ -9,3 +9,16 @@ WS_BASE_URL=ws://10.0.2.2:4000
 ## Google Maps Configuration
 # Your Google Maps API key for Android
 MAPS_API_KEY=AIzaSyBGleNkZ2eFC5L6QpbZx7KnGjZonwiklwc
+
+## Release Signing Configuration
+# Required only when building a release APK / AAB for distribution.
+# Generate the keystore once with:
+#
+#   keytool -genkey -v -keystore my-release-key.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias my-key-alias
+#
+# Then fill in the values below (use forward slashes or escaped backslashes on Windows):
+RELEASE_STORE_FILE=/absolute/path/to/my-release-key.jks
+RELEASE_KEY_ALIAS=my-key-alias
+RELEASE_STORE_PASSWORD=your_keystore_password
+RELEASE_KEY_PASSWORD=your_key_password

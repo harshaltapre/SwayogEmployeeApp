@@ -58,9 +58,13 @@ fun SettingsScreen(
     val jobRole by viewModel.jobRole.collectAsState()
 
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showServerUrlDialog by remember { mutableStateOf(false) }
+    var serverUrlInputText by remember { mutableStateOf("") }
+    val currentServerUrl by viewModel.serverUrl.collectAsState()
     var cacheSize by remember { mutableStateOf(viewModel.getCacheSize()) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showPhotoPickerChoice by remember { mutableStateOf(false) }
+
     
     val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
     val uploadingPhoto by viewModel.uploadingPhoto.collectAsState()
@@ -74,11 +78,18 @@ fun SettingsScreen(
     }
 
     val processBitmapAndUpload = { bitmap: Bitmap ->
-        val scaled = Bitmap.createScaledBitmap(bitmap, 240, 240, true)
-        val outputStream = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
-        val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.DEFAULT)
-        viewModel.uploadProfilePhoto(base64String)
+        try {
+            val scaled = Bitmap.createScaledBitmap(bitmap, 480, 480, true)
+            val tempFile = java.io.File(context.cacheDir, "profile_upload_${System.currentTimeMillis()}.jpg")
+            java.io.FileOutputStream(tempFile).use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            }
+            android.util.Log.d("PROFILE_UPLOAD", "Image file saved to: ${tempFile.absolutePath}, size: ${tempFile.length()} bytes")
+            viewModel.uploadProfilePhotoFile(tempFile)
+        } catch (e: Exception) {
+            android.util.Log.e("PROFILE_UPLOAD", "Error saving bitmap for upload: ${e.message}", e)
+            Toast.makeText(context, "Error saving photo for upload: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -212,6 +223,13 @@ fun SettingsScreen(
                             ?.mapNotNull { it.firstOrNull()?.uppercaseChar() }
                             ?.joinToString("")?.take(2) ?: "U"
                         
+                        val serverUrl by viewModel.serverUrl.collectAsState()
+                        val imageRequest = com.swayog.employee.presentation.common.utils.ImageUtils.rememberImageRequest(
+                            context = context,
+                            photoUrl = profilePhotoUrl,
+                            serverUrl = serverUrl
+                        )
+
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
@@ -220,9 +238,9 @@ fun SettingsScreen(
                                 .clickable { showPhotoPickerChoice = true },
                             contentAlignment = Alignment.Center
                         ) {
-                            if (!profilePhotoUrl.isNullOrEmpty()) {
+                            if (imageRequest != null) {
                                 AsyncImage(
-                                    model = profilePhotoUrl,
+                                    model = imageRequest,
                                     contentDescription = "Profile Photo",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -595,13 +613,41 @@ fun SettingsScreen(
                             title = "Software Build ID",
                             value = "102"
                         )
-                        SettingItem(
-                            title = "Target Backend Server",
-                            value = "Swayog Node API"
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    serverUrlInputText = currentServerUrl ?: com.swayog.employee.BuildConfig.API_BASE_URL
+                                    showServerUrlDialog = true
+                                }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Target Backend Server",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                Text(
+                                    text = currentServerUrl ?: com.swayog.employee.BuildConfig.API_BASE_URL,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Edit Server URL",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
+
 
             // Logout Action Button
             item {
@@ -682,6 +728,55 @@ fun SettingsScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showLogoutConfirm = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        // Server URL Configuration Dialog
+        if (showServerUrlDialog) {
+            AlertDialog(
+                onDismissRequest = { showServerUrlDialog = false },
+                title = { Text("Backend Server URL") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Enter backend server API URL (e.g. https://swayog-dashboard.vercel.app/api/v1/):",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        OutlinedTextField(
+                            value = serverUrlInputText,
+                            onValueChange = { serverUrlInputText = it },
+                            label = { Text("Server Base URL") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        TextButton(
+                            onClick = {
+                                serverUrlInputText = com.swayog.employee.BuildConfig.API_BASE_URL
+                            }
+                        ) {
+                            Text("Reset to Default (${com.swayog.employee.BuildConfig.API_BASE_URL})")
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val url = serverUrlInputText.trim()
+                            if (url.isNotEmpty()) {
+                                viewModel.saveServerUrl(url)
+                                Toast.makeText(context, "Server URL updated and syncing...", Toast.LENGTH_SHORT).show()
+                            }
+                            showServerUrlDialog = false
+                        }
+                    ) {
+                        Text("Save & Sync")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showServerUrlDialog = false }) {
                         Text("Cancel")
                     }
                 }
