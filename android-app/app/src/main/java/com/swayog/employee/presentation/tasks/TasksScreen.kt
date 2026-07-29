@@ -1175,7 +1175,9 @@ fun TaskDetailDialog(
                     BeforeAfterImageSection(
                         beforeImageUrl = task.beforeImageUrl,
                         afterImageUrl = task.afterImageUrl,
-                        sitePhotos = task.sitePhotos ?: task.images
+                        sitePhotos = task.sitePhotos ?: task.images,
+                        taskType = task.taskType,
+                        isSiteVisit = task.isSiteVisit
                     )
                 } else {
                     if (task.status?.equals("assigned", ignoreCase = true) == true) {
