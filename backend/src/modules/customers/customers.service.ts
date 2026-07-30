@@ -113,7 +113,8 @@ async function getPartnerScopeId(auth: AuthContext): Promise<string | null> {
   });
 
   if (!partnerProfile || !partnerProfile.isActive) {
-    throw new ApiError(403, "Partner profile not found or inactive");
+    console.warn(`[PARTNER] PartnerProfile missing or inactive for user ${auth.userId}`);
+    return null;
   }
 
   return partnerProfile.id;

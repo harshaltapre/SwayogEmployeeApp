@@ -25,7 +25,7 @@ import {
   TrendingUp
 } from "lucide-react";
 import { format } from "date-fns";
-import { useListTasks, useListCustomers, useListEmployees } from "@/lib/api-client";
+import { useListTasks, useListCustomers, useListEmployees, buildAssetUrlFromPath } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -71,7 +71,7 @@ export default function ServiceCoordinatorDashboard() {
   const [selectedTask, setSelectedTask] = useState<TaskWithDetails | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   
-  const { data: tasks, isLoading: tasksLoading, refetch: refetchTasks } = useListTasks({});
+  const { data: tasks, isLoading: tasksLoading, refetch: refetchTasks } = useListTasks({}, { query: { refetchInterval: 3000 } });
   const { data: customers } = useListCustomers({ limit: 200 });
   const { data: employees } = useListEmployees({ limit: 200 });
 
@@ -454,26 +454,29 @@ function TaskDetailModal({ task, open, onOpenChange }: {
                 </h3>
                 {task.sitePhotos && task.sitePhotos.length > 0 ? (
                   <div className="grid grid-cols-2 gap-3">
-                    {task.sitePhotos.map((url, index) => (
-                      <div key={index} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-video group">
-                        <img 
-                          src={url} 
-                          alt={`Site Photo ${index + 1}`} 
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
-                          Photo #{index + 1}
+                    {task.sitePhotos.map((url, index) => {
+                      const fullUrl = buildAssetUrlFromPath(url) || url;
+                      return (
+                        <div key={index} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-video group">
+                          <img 
+                            src={fullUrl} 
+                            alt={`Site Photo ${index + 1}`} 
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+                            Photo #{index + 1}
+                          </div>
+                          <a 
+                            href={fullUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="absolute top-1 right-1 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded opacity-90 hover:opacity-100"
+                          >
+                            View
+                          </a>
                         </div>
-                        <a 
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="absolute top-1 right-1 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded opacity-90 hover:opacity-100"
-                        >
-                          View
-                        </a>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">

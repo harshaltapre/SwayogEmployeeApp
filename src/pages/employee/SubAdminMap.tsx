@@ -163,8 +163,8 @@ export default function SubAdminMap() {
       amcCustomers.forEach((c) => {
         const normCity = (c.city || "").toLowerCase().trim();
         const preset = CITY_COORDS[normCity];
-        const lat = c.latitude || preset?.lat;
-        const lng = c.longitude || preset?.lng;
+        const lat = (c as any).latitude || preset?.lat;
+        const lng = (c as any).longitude || preset?.lng;
 
         if (lat && lng) {
           list.push({

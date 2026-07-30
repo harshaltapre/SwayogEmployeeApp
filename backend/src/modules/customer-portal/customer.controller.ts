@@ -531,8 +531,6 @@ export async function getMyAmcVisits(req: Request, res: Response): Promise<void>
       cleaningNumber: visit.cleaningNumber,
       timeSlot: visit.timeSlot,
       completedByName: visit.completedByName ?? null,
-      beforeImageUrl: visit.beforeImageUrl ?? null,
-      afterImageUrl: visit.afterImageUrl ?? null,
       assignedEmployee: visit.assignedEmployee
         ? { name: visit.assignedEmployee.fullName, phone: visit.assignedEmployee.phoneNumber ?? null }
         : null,

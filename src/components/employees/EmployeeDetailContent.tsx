@@ -13,6 +13,7 @@ import {
   getGetEmployeeByIdQueryKey,
   getListTasksQueryKey,
   getEffectiveApiBaseUrl,
+  buildAssetUrlFromPath,
 } from "@/lib/api-client";
 import { useReviewWork, useEmployeeWorkSubmissions, useEmployeeMonthlyAttendance } from "@/hooks/useAttendance";
 import { useTeamDailyCommits } from "@/hooks/useDailyCommits";
@@ -905,6 +906,40 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                                         View Proof Document
                                       </a>
                                     )}
+                                  </div>
+                                )}
+
+                                {((Array.isArray(task.sitePhotos) && task.sitePhotos.length > 0) || task.beforeImageUrl || task.afterImageUrl) && (
+                                  <div className="mt-3 p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                                    <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                                      <Camera className="h-3.5 w-3.5 text-emerald-600" />
+                                      Site Visit & Work Photos ({(Array.isArray(task.sitePhotos) ? task.sitePhotos.length : 0) + (task.beforeImageUrl ? 1 : 0) + (task.afterImageUrl ? 1 : 0)} Uploaded)
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                      {Array.isArray(task.sitePhotos) && task.sitePhotos.map((photoUrl: string, pIdx: number) => {
+                                        const fullUrl = buildAssetUrlFromPath(photoUrl) || photoUrl;
+                                        return (
+                                          <a key={pIdx} href={fullUrl} target="_blank" rel="noreferrer" className="relative group aspect-video rounded-lg overflow-hidden border border-slate-200 bg-slate-900 shadow-2xs">
+                                            <img src={fullUrl} alt={`Site photo ${pIdx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                            <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1 py-0.5 rounded font-bold">
+                                              Photo #{pIdx + 1}
+                                            </span>
+                                          </a>
+                                        );
+                                      })}
+                                      {task.beforeImageUrl && (
+                                        <a href={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} target="_blank" rel="noreferrer" className="relative group aspect-video rounded-lg overflow-hidden border border-slate-200 bg-slate-900 shadow-2xs">
+                                          <img src={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} alt="Before work" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                          <span className="absolute bottom-1 left-1 bg-blue-600 text-white text-[9px] px-1 py-0.5 rounded font-bold">Before</span>
+                                        </a>
+                                      )}
+                                      {task.afterImageUrl && (
+                                        <a href={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl} target="_blank" rel="noreferrer" className="relative group aspect-video rounded-lg overflow-hidden border border-slate-200 bg-slate-900 shadow-2xs">
+                                          <img src={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl} alt="After work" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                          <span className="absolute bottom-1 left-1 bg-emerald-600 text-white text-[9px] px-1 py-0.5 rounded font-bold">After</span>
+                                        </a>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
 

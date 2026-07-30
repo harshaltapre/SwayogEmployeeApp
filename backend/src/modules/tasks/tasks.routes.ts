@@ -4,7 +4,7 @@ import { Router } from "express";
 import { asyncHandler } from "../../middleware/async-handler.js";
 import { authenticateAccessToken, authorizeRoles } from "../../middleware/auth.js";
 import { validateBody, validateParams, validateQuery } from "../../middleware/validate.js";
-import { completeTaskHandler, createTaskHandler, createBulkTasksHandler, listTasksHandler, rateTaskHandler } from "./tasks.controller.js";
+import { completeTaskHandler, createTaskHandler, createBulkTasksHandler, listTasksHandler, rateTaskHandler, deleteTaskHandler, updateTaskPhotosHandler } from "./tasks.controller.js";
 import {
   completeTaskSchema,
   createTaskSchema,
@@ -89,4 +89,31 @@ taskRoutes.patch(
   validateParams(taskIdParamsSchema),
   validateBody(rateTaskSchema),
   asyncHandler(rateTaskHandler),
+);
+
+taskRoutes.patch(
+  "/:id/photos",
+  authenticateAccessToken,
+  authorizeRoles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.EMPLOYEE,
+    UserRole.SUB_ADMIN,
+    UserRole.TEAM_LEAD,
+    UserRole.DEPARTMENT_HEAD
+  ),
+  validateParams(taskIdParamsSchema),
+  asyncHandler(updateTaskPhotosHandler),
+);
+
+taskRoutes.delete(
+  "/:id",
+  authenticateAccessToken,
+  authorizeRoles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.SUB_ADMIN
+  ),
+  validateParams(taskIdParamsSchema),
+  asyncHandler(deleteTaskHandler),
 );

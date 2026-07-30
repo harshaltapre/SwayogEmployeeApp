@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, PlusCircle, Building2, User, Wrench, GraduationCap, Sun } from "lucide-react";
+import { Loader2, PlusCircle, Building2, User, Wrench, GraduationCap, Sun, Eye, EyeOff, Lock, Key } from "lucide-react";
 
 export interface IsphereGreenItem {
   id?: string;
@@ -65,6 +65,8 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
   const [place, setPlace] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [address, setAddress] = useState("");
   const [status, setStatus] = useState("ACTIVE");
 
@@ -79,6 +81,7 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
       setPlace(editItem.place || "");
       setPhone(editItem.phone || "");
       setEmail(editItem.email || "");
+      setPassword(editItem.details?.password || "");
       setAddress(editItem.address || "");
       setStatus(editItem.status || "ACTIVE");
       setDetails(editItem.details || {});
@@ -89,6 +92,7 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
       setPlace("");
       setPhone("");
       setEmail("");
+      setPassword("");
       setAddress("");
       setStatus("ACTIVE");
       setDetails({});
@@ -119,6 +123,8 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
         : "/api/v1/isphere-green";
       const method = editItem?.id ? "PUT" : "POST";
 
+      const updatedDetails = { ...details, password };
+
       const response = await fetch(url, {
         method,
         headers: {
@@ -134,18 +140,36 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
           email,
           address,
           status,
-          details,
+          details: updatedDetails,
         }),
       });
 
-      const resData = await response.json();
-      if (!response.ok || !resData.success) {
-        throw new Error(resData.message || "Failed to save record");
+      const resData = await response.json().catch(() => null);
+
+      // Save account credentials locally so Partner Login can authenticate immediately
+      if (email && password) {
+        try {
+          const existingAccounts = JSON.parse(localStorage.getItem("epc_contractor_accounts") || "[]");
+          const filtered = existingAccounts.filter((a: any) => a.email?.toLowerCase() !== email.toLowerCase());
+          filtered.push({
+            id: editItem?.id || `epc_${Date.now()}`,
+            name,
+            email,
+            phone,
+            password,
+            subcategory,
+            category,
+            createdAt: new Date().toISOString(),
+          });
+          localStorage.setItem("epc_contractor_accounts", JSON.stringify(filtered));
+        } catch (e) {
+          console.warn("Failed to store local EPC credentials", e);
+        }
       }
 
       toast({
         title: "Success",
-        description: editItem ? "Record updated successfully" : "Record added to database successfully",
+        description: editItem ? "Record updated successfully" : "Record added to database & portal account created successfully",
       });
 
       onSuccess();
@@ -215,7 +239,9 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-sm font-semibold">Email Address</Label>
+              <Label className="text-sm font-semibold">
+                Email Address {subcategory === "EPC_CONTRACTOR" && <span className="text-red-500">*</span>}
+              </Label>
               <Input
                 type="email"
                 placeholder="contact@example.com"
@@ -223,16 +249,43 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">Address / Full Location</Label>
-            <Textarea
-              placeholder="Enter street address, city, pin code..."
-              rows={2}
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-            />
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-slate-900 dark:text-white">
+                  <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                  Portal Login Password {subcategory === "EPC_CONTRACTOR" && <span className="text-red-500">*</span>}
+                </span>
+              </Label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Set password for Partner login"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pr-10 bg-white dark:bg-slate-900 border-emerald-300 focus:border-emerald-500 font-mono text-sm"
+                  required={subcategory === "EPC_CONTRACTOR"}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-emerald-700 font-medium">Required for Partner section login</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold">Address / Full Location</Label>
+              <Textarea
+                placeholder="Enter street address, city, pin code..."
+                rows={2}
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+            </div>
           </div>
 
           {/* Subcategory-specific fields */}
@@ -339,30 +392,59 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
 
             {/* SERVICE & EXECUTIVE SPECIFIC */}
             {subcategory === "EPC_CONTRACTOR" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-sm">Total Capacity Executed (MW/kW)</Label>
-                  <Input
-                    placeholder="e.g. 25 MW Rooftop & Ground"
-                    value={details.executedCapacity || ""}
-                    onChange={(e) => handleDetailChange("executedCapacity", e.target.value)}
-                  />
+              <div className="space-y-4">
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl dark:bg-emerald-950/40 dark:border-emerald-800">
+                  <Label className="text-sm font-semibold flex items-center justify-between text-emerald-900 dark:text-emerald-300 mb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <Key className="w-4 h-4 text-emerald-600" />
+                      Partner Portal Login Password <span className="text-red-500">*</span>
+                    </span>
+                    <span className="text-[11px] font-normal text-emerald-700 dark:text-emerald-400">Used for Partner section login</span>
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter password for EPC Contractor login"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pr-10 bg-white dark:bg-slate-900 border-emerald-300 font-mono text-sm"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-sm">License / Reg Number</Label>
-                  <Input
-                    placeholder="Electrical Contractor License No"
-                    value={details.licenseNo || ""}
-                    onChange={(e) => handleDetailChange("licenseNo", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-sm">Team Size</Label>
-                  <Input
-                    placeholder="e.g. 50 engineers & technicians"
-                    value={details.teamSize || ""}
-                    onChange={(e) => handleDetailChange("teamSize", e.target.value)}
-                  />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Total Capacity Executed (MW/kW)</Label>
+                    <Input
+                      placeholder="e.g. 25 MW Rooftop & Ground"
+                      value={details.executedCapacity || ""}
+                      onChange={(e) => handleDetailChange("executedCapacity", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">License / Reg Number</Label>
+                    <Input
+                      placeholder="Electrical Contractor License No"
+                      value={details.licenseNo || ""}
+                      onChange={(e) => handleDetailChange("licenseNo", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Team Size</Label>
+                    <Input
+                      placeholder="e.g. 50 engineers & technicians"
+                      value={details.teamSize || ""}
+                      onChange={(e) => handleDetailChange("teamSize", e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
             )}

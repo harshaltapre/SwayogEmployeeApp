@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 
 import type { AuthContext } from "../../middleware/auth.js";
 import { ApiError } from "../../middleware/error.js";
-import { completeTask, createTask, createBulkTasks, listTasks, rateTask } from "./tasks.service.js";
+import { completeTask, createTask, createBulkTasks, listTasks, rateTask, deleteTask, updateTaskPhotos } from "./tasks.service.js";
 import type {
   CompleteTaskInput,
   CreateTaskInput,
@@ -49,5 +49,20 @@ export async function rateTaskHandler(req: Request, res: Response): Promise<void
   const auth = getAuth(req);
   const params = req.params as unknown as TaskIdParamsInput;
   const task = await rateTask(auth, params.id, req.body as RateTaskInput);
+  res.status(200).json({ data: task });
+}
+
+export async function deleteTaskHandler(req: Request, res: Response): Promise<void> {
+  const auth = getAuth(req);
+  const params = req.params as unknown as TaskIdParamsInput;
+  const result = await deleteTask(auth, params.id);
+  res.status(200).json(result);
+}
+
+export async function updateTaskPhotosHandler(req: Request, res: Response): Promise<void> {
+  const auth = getAuth(req);
+  const params = req.params as unknown as TaskIdParamsInput;
+  const { sitePhotos } = req.body;
+  const task = await updateTaskPhotos(auth, params.id, sitePhotos);
   res.status(200).json({ data: task });
 }

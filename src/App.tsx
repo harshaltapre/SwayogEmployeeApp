@@ -3,7 +3,7 @@ import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getRoleDashboardPath, useAuth } from "@/lib/auth";
+import { getRoleDashboardPath, isEpcPartnerJobRole, useAuth } from "@/lib/auth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import NotFound from "@/pages/not-found";
@@ -57,13 +57,10 @@ import SubAdminAttendance from "@/pages/employee/SubAdminAttendance";
 import SubAdminDailyCommit from "@/pages/employee/SubAdminDailyCommit";
 import SubAdminSettings from "@/pages/employee/SubAdminSettings";
 
-
-
 import InventoryExecutiveDashboard from "@/pages/inventory/Dashboard";
 import InventoryManagementPage from "@/pages/inventory/Inventory";
 import InventoryCustomers from "@/pages/inventory/InventoryCustomers";
 import InventorySettingsPage from "@/pages/inventory/Settings";
-
 
 const MockAdminPartnerDetail = () => <div>Partner Detail</div>;
 const MockAdminComplaintDetail = () => <div>Complaint Detail</div>;
@@ -81,7 +78,10 @@ function ProtectedRoute({ component: Component, allowedRoles, path }: { componen
           return <Redirect to="/login" />;
         }
         
-        if (!allowedRoles.includes(user.role)) {
+        const isPartnerRouteAccess = path.startsWith("/partner/") && (user.role === "partner" || isEpcPartnerJobRole(user.jobRole));
+        const isAllowed = allowedRoles.includes(user.role) || isPartnerRouteAccess;
+        
+        if (!isAllowed) {
           return <Redirect to={getRoleDashboardPath(user.role, user.jobRole)} />;
         }
         
