@@ -3,12 +3,13 @@ import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getRoleDashboardPath, isEpcPartnerJobRole, useAuth } from "@/lib/auth";
+import { getRoleDashboardPath, isEpcPartnerJobRole, isServiceExecutiveHeadJobRole, useAuth } from "@/lib/auth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/public/Home";
 import Login from "@/pages/Login";
+import ServiceExecutiveDashboard from "@/pages/service-executive/Dashboard";
 
 import SuperAdminDashboard from "@/pages/superadmin/SuperAdminDashboard";
 import AdminDashboard from "@/pages/admin/Dashboard";
@@ -38,6 +39,8 @@ import PartnerProjects from "@/pages/partner/Projects";
 import PartnerEarnings from "@/pages/partner/Earnings";
 import PartnerMessages from "@/pages/partner/Messages";
 import PartnerSettings from "@/pages/partner/Settings";
+
+import EpcContractorDashboard from "@/pages/epc-contractor/Dashboard";
 
 import CustomerDashboard from "@/pages/customer/Dashboard";
 import CustomerInstallation from "@/pages/customer/Installation";
@@ -78,8 +81,10 @@ function ProtectedRoute({ component: Component, allowedRoles, path }: { componen
           return <Redirect to="/login" />;
         }
         
-        const isPartnerRouteAccess = path.startsWith("/partner/") && (user.role === "partner" || isEpcPartnerJobRole(user.jobRole));
-        const isAllowed = allowedRoles.includes(user.role) || isPartnerRouteAccess;
+        const isPartnerRouteAccess = path.startsWith("/partner/") && (user.role === "partner" && !isEpcPartnerJobRole(user.jobRole));
+        const isEpcRouteAccess = path.startsWith("/epc-contractor/") && (isEpcPartnerJobRole(user.jobRole) || (user.role as string) === "epc_contractor");
+        const isServiceExecutiveRouteAccess = path.startsWith("/service-executive") && (isServiceExecutiveHeadJobRole(user.jobRole) || user.role === "admin" || user.role === "super_admin");
+        const isAllowed = allowedRoles.includes(user.role) || isPartnerRouteAccess || isEpcRouteAccess || isServiceExecutiveRouteAccess;
         
         if (!isAllowed) {
           return <Redirect to={getRoleDashboardPath(user.role, user.jobRole)} />;
@@ -147,6 +152,9 @@ function Router() {
       <ProtectedRoute path="/partner/earnings" component={PartnerEarnings} allowedRoles={['admin', 'super_admin', 'partner']} />
       <ProtectedRoute path="/partner/messages" component={PartnerMessages} allowedRoles={['admin', 'super_admin', 'partner']} />
       <ProtectedRoute path="/partner/settings" component={PartnerSettings} allowedRoles={['admin', 'super_admin', 'partner']} />
+
+      {/* EPC Contractor Routes */}
+      <ProtectedRoute path="/epc-contractor/dashboard" component={EpcContractorDashboard} allowedRoles={['admin', 'super_admin', 'epc_contractor', 'partner']} />
       
       {/* Customer Routes */}
       <ProtectedRoute path="/customer/dashboard" component={CustomerDashboard} allowedRoles={['admin', 'super_admin', 'customer']} />
@@ -173,6 +181,9 @@ function Router() {
       <Route path="/subadmin/service-requests">
         <Redirect to="/subadmin/complaints" />
       </Route>
+
+      {/* Service & Executive Head Routes */}
+      <ProtectedRoute path="/service-executive/dashboard" component={ServiceExecutiveDashboard} allowedRoles={['admin', 'super_admin', 'employee', 'team_lead', 'department_head']} />
 
       {/* Inventory Executive Routes */}
       <ProtectedRoute path="/inventory/dashboard" component={InventoryExecutiveDashboard} allowedRoles={['admin', 'super_admin', 'employee']} />

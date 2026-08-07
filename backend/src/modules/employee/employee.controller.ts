@@ -4,6 +4,7 @@ import { TaskStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { ApiError } from "../../middleware/error.js";
 import type { AuthContext } from "../../middleware/auth.js";
+import { processAndSaveBase64Photos, serializeTask, getTaskInclude } from "../tasks/tasks.service.js";
 
 /**
  * Get employee dashboard with task summary
@@ -22,7 +23,7 @@ export async function getEmployeeDashboard(req: Request, res: Response): Promise
     prisma.task.groupBy({
       by: ["status"],
       where: { employeeUserId: auth.userId },
-      _count: true,
+      _count: { status: true },
     }),
     prisma.task.count({
       where: {
@@ -41,13 +42,7 @@ export async function getEmployeeDashboard(req: Request, res: Response): Promise
         totalTasks,
         completedToday,
       },
-      tasksByStatus: tasksByStatus.reduce(
-        (acc: Record<string, any>, row: any) => {
-          acc[row.status] = row._count;
-          return acc;
-        },
-        {}
-      ),
+      tasksByStatus: tasksByStatus.reduce((acc: Record<string, any>, curr: any) => ({ ...acc, [curr.status]: curr._count.status }), {}),
     },
   });
 }
@@ -74,17 +69,7 @@ export async function getMyTasks(req: Request, res: Response): Promise<void> {
   const [tasks, total] = await Promise.all([
     prisma.task.findMany({
       where,
-      select: {
-        id: true,
-        jobType: true,
-        description: true,
-        customerName: true,
-        customerPhone: true,
-        address: true,
-        status: true,
-        scheduledTime: true,
-        createdAt: true,
-      },
+      include: getTaskInclude(),
       orderBy: {
         scheduledTime: "asc",
       },
@@ -94,9 +79,11 @@ export async function getMyTasks(req: Request, res: Response): Promise<void> {
     prisma.task.count({ where }),
   ]);
 
+  const serializedTasks = tasks.map(serializeTask);
+
   res.status(200).json({
     data: {
-      tasks,
+      tasks: serializedTasks,
       pagination: {
         total,
         limit: Math.min(parseInt(limit as string) || 50, 100),
@@ -120,18 +107,7 @@ export async function getTaskDetails(req: Request, res: Response): Promise<void>
 
   const task = await prisma.task.findUnique({
     where: { id: parseInt(taskId) },
-    include: {
-      assignedBy: {
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-        },
-      },
-      taskImages: {
-        orderBy: { uploadedAt: "asc" },
-      },
-    },
+    include: getTaskInclude(),
   });
 
   if (!task) {
@@ -143,20 +119,7 @@ export async function getTaskDetails(req: Request, res: Response): Promise<void>
     throw new ApiError(403, "You do not have permission to view this task");
   }
 
-  const beforeImage = task.taskImages.find(img => img.type === "before" || img.type === "Before");
-  const afterImage = task.taskImages.find(img => img.type === "after" || img.type === "After");
-
-  const responseData = {
-    ...task,
-    beforeImageUrl: beforeImage?.url ?? null,
-    beforeLatitude: beforeImage?.latitude ?? null,
-    beforeLongitude: beforeImage?.longitude ?? null,
-    afterImageUrl: afterImage?.url ?? null,
-    afterLatitude: afterImage?.latitude ?? null,
-    afterLongitude: afterImage?.longitude ?? null,
-  };
-
-  res.status(200).json({ data: responseData });
+  res.status(200).json({ data: serializeTask(task) });
 }
 
 /**
@@ -229,14 +192,26 @@ export async function updateTaskStatus(req: Request, res: Response): Promise<voi
 export async function markTaskCompleted(req: Request, res: Response): Promise<void> {
   const auth = req.auth as AuthContext | undefined;
   const { taskId } = req.params;
-  const { completionMessage, completionDocumentUrl } = req.body;
+  const { 
+    completionMessage, 
+    completionDocumentUrl, 
+    sitePhotos, 
+    images, 
+    beforeImageUrl, 
+    afterImageUrl,
+    beforeLatitude,
+    beforeLongitude,
+    afterLatitude,
+    afterLongitude
+  } = req.body;
 
   if (!auth?.userId) {
     throw new ApiError(401, "Authentication required");
   }
 
-  const task = await prisma.task.findUnique({
-    where: { id: parseInt(taskId) },
+  const numericTaskId = parseInt(taskId, 10);
+  const task: any = await prisma.task.findUnique({
+    where: { id: numericTaskId },
   });
 
   if (!task) {
@@ -248,15 +223,88 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
     throw new ApiError(403, "You do not have permission to complete this task");
   }
 
+  // Process photos
+  const existingSitePhotos = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
+  const inputPhotos = (Array.isArray(sitePhotos) && sitePhotos.length > 0)
+    ? sitePhotos
+    : (Array.isArray(images) && images.length > 0 ? images : []);
+  const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, numericTaskId);
+  const finalSitePhotos = savedInputPhotos.length > 0
+    ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
+    : existingSitePhotos;
+
+  let savedBeforeUrl = task.beforeImageUrl;
+  if (beforeImageUrl) {
+    const saved = processAndSaveBase64Photos([beforeImageUrl], numericTaskId);
+    savedBeforeUrl = saved[0] || beforeImageUrl;
+  }
+
+  let savedAfterUrl = task.afterImageUrl;
+  if (afterImageUrl) {
+    const saved = processAndSaveBase64Photos([afterImageUrl], numericTaskId);
+    savedAfterUrl = saved[0] || afterImageUrl;
+  }
+
   const completedTask = await prisma.task.update({
-    where: { id: parseInt(taskId) },
+    where: { id: numericTaskId },
     data: {
       status: TaskStatus.COMPLETED,
       completionMessage,
-      completionDocumentUrl,
+      completionDocumentUrl: completionDocumentUrl ?? null,
+      beforeImageUrl: savedBeforeUrl,
+      afterImageUrl: savedAfterUrl,
+      beforeLatitude: (beforeLatitude !== undefined && beforeLatitude !== null) ? parseFloat(String(beforeLatitude)) : undefined,
+      beforeLongitude: (beforeLongitude !== undefined && beforeLongitude !== null) ? parseFloat(String(beforeLongitude)) : undefined,
+      afterLatitude: (afterLatitude !== undefined && afterLatitude !== null) ? parseFloat(String(afterLatitude)) : undefined,
+      afterLongitude: (afterLongitude !== undefined && afterLongitude !== null) ? parseFloat(String(afterLongitude)) : undefined,
+      sitePhotos: finalSitePhotos,
       completedAt: new Date(),
     },
   });
+
+  // Sync taskImage records
+  const imageRecords: any[] = [];
+  if (savedBeforeUrl) {
+    imageRecords.push({
+      taskId: numericTaskId,
+      employeeUserId: auth.userId,
+      type: "before",
+      url: savedBeforeUrl,
+      latitude: (beforeLatitude !== undefined && beforeLatitude !== null) ? parseFloat(String(beforeLatitude)) : null,
+      longitude: (beforeLongitude !== undefined && beforeLongitude !== null) ? parseFloat(String(beforeLongitude)) : null,
+    });
+  }
+  if (savedAfterUrl) {
+    imageRecords.push({
+      taskId: numericTaskId,
+      employeeUserId: auth.userId,
+      type: "after",
+      url: savedAfterUrl,
+      latitude: (afterLatitude !== undefined && afterLatitude !== null) ? parseFloat(String(afterLatitude)) : null,
+      longitude: (afterLongitude !== undefined && afterLongitude !== null) ? parseFloat(String(afterLongitude)) : null,
+    });
+  }
+  if (savedInputPhotos.length > 0) {
+    savedInputPhotos.forEach((photoUrl: string, idx: number) => {
+      if (photoUrl) {
+        imageRecords.push({
+          taskId: numericTaskId,
+          employeeUserId: auth.userId,
+          type: `site_photo_${idx + 1}`,
+          url: photoUrl,
+          latitude: null,
+          longitude: null,
+        });
+      }
+    });
+  }
+
+  if (imageRecords.length > 0) {
+    await prisma.taskImage.deleteMany({
+      where: { taskId: numericTaskId },
+    });
+    await prisma.taskImage.createMany({ data: imageRecords });
+  }
 
   // Audit log
   await prisma.auditLog.create({
@@ -268,6 +316,7 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
       metadata: {
         completionMessage,
         hasDocumentation: !!completionDocumentUrl,
+        photosCount: finalSitePhotos.length,
       },
     },
   }).catch(() => {

@@ -46,6 +46,7 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import com.swayog.employee.data.model.Task
 import com.swayog.employee.presentation.common.components.*
 import com.swayog.employee.core.util.OfflinePendingException
+import com.swayog.employee.core.util.OnlineSubmissionFailedException
 import com.swayog.employee.presentation.common.utils.WatermarkHelper
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.launch
@@ -60,6 +61,7 @@ fun TasksScreen(
     val tasksState by viewModel.tasksState.collectAsState()
     val tasksList by viewModel.tasks.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
+    val serverUrl by viewModel.serverUrl.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedTask by remember { mutableStateOf<Task?>(null) }
@@ -69,9 +71,9 @@ fun TasksScreen(
 
     val filteredTasks = remember(tasksList, selectedTab, searchQuery) {
         val tabFiltered = when (selectedTab) {
-            1 -> tasksList.filter { it.status != "completed" }
-            2 -> tasksList.filter { it.status == "completed" }
-            else -> tasksList.filter { it.status != "completed" }
+            1 -> tasksList.filter { !it.status.equals("completed", ignoreCase = true) }
+            2 -> tasksList.filter { it.status.equals("completed", ignoreCase = true) }
+            else -> tasksList.filter { !it.status.equals("completed", ignoreCase = true) }
         }
         if (searchQuery.isBlank()) tabFiltered
         else tabFiltered.filter {
@@ -83,8 +85,8 @@ fun TasksScreen(
     }
 
     // Counts for tab badges
-    val activeCount = tasksList.count { it.status != "completed" }
-    val completedCount = tasksList.count { it.status == "completed" }
+    val activeCount = tasksList.count { !it.status.equals("completed", ignoreCase = true) }
+    val completedCount = tasksList.count { it.status.equals("completed", ignoreCase = true) }
     val allCount = activeCount
 
     LaunchedEffect(tasksState) {
@@ -118,11 +120,39 @@ fun TasksScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            var isSyncing by remember { mutableStateOf(false) }
+
             PendingSyncBanner(
                 pendingCount = pendingSyncCount,
                 onClick = {
+                    if (isSyncing) return@PendingSyncBanner
+                    isSyncing = true
                     Toast.makeText(context, "Syncing pending actions...", Toast.LENGTH_SHORT).show()
-                    viewModel.refresh()
+                    viewModel.syncPending { summary ->
+                        isSyncing = false
+                        val message = when {
+                            summary.isOffline -> "No internet connection. Site visit remains saved locally."
+                            summary.isAuthError -> "Unable to sync. Please sign in again. Your site visit is still saved."
+                            summary.isPhotoError -> "Site visit could not be synced because one or more photos failed to upload. Data remains saved locally."
+                            summary.total == 0 -> "No pending actions to sync."
+                            summary.synced > 0 && summary.failed == 0 && summary.permanentlyFailed == 0 -> {
+                                if (summary.synced == 1) "Site visit synced successfully."
+                                else "${summary.synced} site visits synced successfully."
+                            }
+                            summary.permanentlyFailed > 0 && summary.synced == 0 && summary.failed == 0 -> {
+                                "Some pending tasks could not be submitted — the task was not found or you are not assigned to it. Please contact your coordinator."
+                            }
+                            summary.permanentlyFailed > 0 -> {
+                                val syncMsg = if (summary.synced > 0) "${summary.synced} synced. " else ""
+                                "${syncMsg}${summary.permanentlyFailed} item(s) removed: task not found or not authorized. Please check with your coordinator."
+                            }
+                            summary.synced > 0 && summary.failed > 0 -> {
+                                "${summary.synced} of ${summary.total} site visits synced. ${summary.failed} failed and will be retried."
+                            }
+                            else -> "Failed to sync site visits. Data remains saved locally."
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    }
                 }
             )
             
@@ -262,6 +292,7 @@ fun TasksScreen(
             selectedTask?.let { task ->
                 TaskDetailDialog(
                     task = task,
+                    serverUrl = serverUrl,
                     onDismiss = { selectedTask = null },
                     onStartTask = {
                         viewModel.updateTaskStatus(task.id, "IN_PROGRESS") { result ->
@@ -293,13 +324,32 @@ fun TasksScreen(
                                 viewModel.refresh()
                             } else {
                                 val exception = result.exceptionOrNull()
-                                if (exception is OfflinePendingException) {
-                                    selectedTask = null
-                                    viewModel.refresh()
-                                    Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
-                                } else {
-                                    val errorMsg = exception?.message ?: "Unknown error"
-                                    Toast.makeText(context, "Failed: $errorMsg", Toast.LENGTH_LONG).show()
+                                when (exception) {
+                                    is OfflinePendingException -> {
+                                        // Device was offline or had a connectivity error — data is saved locally.
+                                        // Dismiss the dialog and refresh so the task shows as completed (pending sync).
+                                        selectedTask = null
+                                        viewModel.refresh()
+                                        Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                                    }
+                                    is OnlineSubmissionFailedException -> {
+                                        // Device IS online but the server rejected the request.
+                                        // Do NOT dismiss the dialog — let the user see the error and retry.
+                                        val errMsg = exception.message ?: "Submission failed"
+                                        val userFriendlyMsg = when {
+                                            errMsg.contains("(404)") -> "Task not found on server (404). The task may have been removed or re-assigned. Please contact your coordinator."
+                                            errMsg.contains("(403)") -> "You are not authorized to complete this task (403). Please ask your service coordinator to reassign it to you as the primary employee."
+                                            errMsg.contains("(422)") -> "Submission rejected: some required fields are missing or invalid. Please check your input and try again."
+                                            errMsg.contains("(413)") -> "Photos are too large to upload. Please try with fewer photos or retake at lower resolution."
+                                            else -> errMsg
+                                        }
+                                        Toast.makeText(context, userFriendlyMsg, Toast.LENGTH_LONG).show()
+                                    }
+                                    else -> {
+                                        // Unknown error — surface it to the user without dismissing.
+                                        val errorMsg = exception?.message ?: "Unknown error"
+                                        Toast.makeText(context, "Failed: $errorMsg", Toast.LENGTH_LONG).show()
+                                    }
                                 }
                             }
                         }
@@ -768,7 +818,7 @@ fun TaskCard(
             }
 
             // Rate button for completed tasks
-            if (task.status == "completed") {
+            if (task.status?.equals("completed", ignoreCase = true) == true) {
                 Spacer(modifier = Modifier.height(8.dp))
                 SwayogButton(
                     text = "Rate Task",
@@ -786,7 +836,8 @@ fun TaskDetailDialog(
     task: Task,
     onDismiss: () -> Unit,
     onStartTask: () -> Unit,
-    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?) -> Unit
+    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?) -> Unit,
+    serverUrl: String? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -859,8 +910,11 @@ fun TaskDetailDialog(
                 val format = java.text.SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a", java.util.Locale.getDefault())
                 val timestamp = format.format(java.util.Date())
 
-                // Scale bitmap down to reduce memory usage and avoid 413 Payload Too Large on the backend
-                val maxDim = 1024f
+                // Scale bitmap down to reduce memory usage and avoid payload timeouts.
+                // Site visit photos get tighter compression (10+ photos) vs before/after (2 photos).
+                val isSiteVisitPhoto = type == "site_visit"
+                val maxDim = if (isSiteVisitPhoto) 600f else 800f
+                val jpegQuality = if (isSiteVisitPhoto) 60 else 75
                 val scale = minOf(maxDim / bitmap.width, maxDim / bitmap.height)
                 val scaledBitmap = if (scale < 1f) {
                     Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
@@ -873,7 +927,7 @@ fun TaskDetailDialog(
 
                 // Convert to base64 data URL
                 val outputStream = ByteArrayOutputStream()
-                watermarked.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+                watermarked.compress(Bitmap.CompressFormat.JPEG, jpegQuality, outputStream)
                 val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 
                 when (type) {
@@ -1177,7 +1231,8 @@ fun TaskDetailDialog(
                         afterImageUrl = task.afterImageUrl,
                         sitePhotos = task.sitePhotos ?: task.images,
                         taskType = task.taskType,
-                        isSiteVisit = task.isSiteVisit
+                        isSiteVisit = task.isSiteVisit,
+                        serverUrl = serverUrl
                     )
                 } else {
                     if (task.status?.equals("assigned", ignoreCase = true) == true) {
@@ -1278,15 +1333,17 @@ fun TaskDetailDialog(
                                         Toast.makeText(context, "Observations description must be at least 3 characters", Toast.LENGTH_SHORT).show()
                                     } else {
                                         val finalMessage = completionMessage.trim()
+                                        val firstPhoto = uploadedImages.firstOrNull()
+                                        val lastPhoto = if (uploadedImages.size > 1) uploadedImages.last() else firstPhoto
                                         onCompleteTask(
                                             finalMessage,
                                             docUrl.trim().ifEmpty { null },
-                                            null,
-                                            null,
-                                            null,
-                                            null,
-                                            null,
-                                            null,
+                                            firstPhoto,
+                                            lastPhoto,
+                                            beforeLat,
+                                            beforeLng,
+                                            afterLat,
+                                            afterLng,
                                             "SITE_VISIT",
                                             uploadedImages,
                                             null,

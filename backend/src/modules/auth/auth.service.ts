@@ -77,12 +77,13 @@ function toPublicUser(user: AuthUser): PublicUser {
   return safe;
 }
 
-async function issueSession(user: AuthUser) {
+async function issueSession(user: AuthUser, requestedRole?: string) {
+  const effectiveRole = (requestedRole === "PARTNER" || requestedRole === "partner" || user.role === UserRole.PARTNER) ? UserRole.PARTNER : user.role;
   const claims = {
     sub: user.id,
-    role: user.role,
+    role: effectiveRole,
     loginId: user.loginId,
-    jobRole: user.employeeProfile?.jobRole || user.designationTitle || undefined,
+    jobRole: user.employeeProfile?.jobRole || user.designationTitle,
   };
 
   const accessToken = issueAccessToken(claims);
@@ -100,10 +101,15 @@ async function issueSession(user: AuthUser) {
     console.warn("Could not save refresh token to DB (using in-memory bypass):", error);
   }
 
+  const publicUser = toPublicUser(user);
   return {
     accessToken,
     refreshToken,
-    user: toPublicUser(user),
+    user: {
+      ...publicUser,
+      role: effectiveRole,
+      jobRole: publicUser.employeeProfile?.jobRole || publicUser.designationTitle || undefined,
+    },
   };
 }
 
@@ -420,7 +426,7 @@ export async function login(input: LoginInput) {
 
     await resetLockoutState(user);
 
-    return issueSession(user);
+    return issueSession(user, input.role);
   } catch (error) {
     if (error instanceof ApiError) {
       throw error;

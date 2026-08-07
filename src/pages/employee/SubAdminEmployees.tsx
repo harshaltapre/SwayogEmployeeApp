@@ -352,10 +352,10 @@ export default function SubAdminEmployees() {
                                       {isSiteVisit && (() => {
                                         const totalPhotosCount = Array.from(new Set([
                                           ...(Array.isArray(task.sitePhotos) ? task.sitePhotos : []),
-                                          ...(Array.isArray(task.taskImages) ? task.taskImages.map((i: any) => i.url).filter(Boolean) : []),
+                                          ...(Array.isArray((task as any).taskImages) ? (task as any).taskImages.map((i: any) => i.url).filter(Boolean) : []),
                                           ...(task.beforeImageUrl ? [task.beforeImageUrl] : []),
                                           ...(task.afterImageUrl ? [task.afterImageUrl] : []),
-                                        ])).length;
+                                        ])).filter((url: any) => typeof url === "string" && url.trim().length > 0).length;
 
                                         return (
                                           <Button
@@ -425,7 +425,7 @@ export default function SubAdminEmployees() {
               ...(Array.isArray(activeTask.taskImages) ? activeTask.taskImages.map((img: any) => img.url).filter(Boolean) : []),
               ...(activeTask.beforeImageUrl ? [activeTask.beforeImageUrl] : []),
               ...(activeTask.afterImageUrl ? [activeTask.afterImageUrl] : []),
-            ]));
+            ])).filter((url: any) => typeof url === "string" && url.trim().length > 0);
 
             return (
               <div className="space-y-6">

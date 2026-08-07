@@ -245,6 +245,17 @@ interface ApiService {
         @Path("taskId") taskId: String,
         @Body request: CompleteTaskRequest
     ): Response<ApiResponse<Task>>
+
+    /**
+     * Dedicated endpoint to upload/update site photos for a task.
+     * Uses processAndSaveBase64Photos on the backend, storing file paths (not raw base64)
+     * in task.sitePhotos, ensuring they are correctly served to the dashboard.
+     */
+    @PATCH("tasks/{taskId}/photos")
+    suspend fun updateTaskPhotos(
+        @Path("taskId") taskId: String,
+        @Body request: Map<String, List<String>>
+    ): Response<ApiResponse<Task>>
     
     @POST("tasks/{taskId}/rate")
     suspend fun rateTask(

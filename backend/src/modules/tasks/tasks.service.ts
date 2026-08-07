@@ -10,7 +10,7 @@ import { recalculateMonthlyPerformance } from "../../services/attendanceService.
 import type { CompleteTaskInput, CreateTaskInput, CreateBulkTaskInput, ListTasksQueryInput } from "./tasks.schemas.js";
 import { createAdminNotification, createCustomerNotification } from "../../services/notificationService.js";
 
-function processAndSaveBase64Photos(sitePhotos: string[], taskId: number | string): string[] {
+export function processAndSaveBase64Photos(sitePhotos: string[], taskId: number | string): string[] {
   if (!Array.isArray(sitePhotos)) return [];
 
   const uploadsDir = path.join(process.cwd(), "uploads", "task-images");
@@ -20,14 +20,35 @@ function processAndSaveBase64Photos(sitePhotos: string[], taskId: number | strin
 
   return sitePhotos.map((item, index) => {
     if (!item || typeof item !== "string") return "";
-    if (!item.startsWith("data:image/")) return item;
+    let formattedItem = item.trim();
+    if (!formattedItem) return "";
+
+    // If it's already a saved file/web URL, return as-is
+    if (formattedItem.startsWith("/uploads/") || formattedItem.startsWith("http://") || formattedItem.startsWith("https://")) {
+      return formattedItem;
+    }
+
+    // Auto-prefix raw base64 if missing data URI header
+    if (!formattedItem.startsWith("data:image/")) {
+      if (formattedItem.startsWith("/9j/")) {
+        formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+      } else if (formattedItem.startsWith("iVBORw")) {
+        formattedItem = `data:image/png;base64,${formattedItem}`;
+      } else if (formattedItem.startsWith("R0lGOD")) {
+        formattedItem = `data:image/gif;base64,${formattedItem}`;
+      } else if (formattedItem.startsWith("UklGR")) {
+        formattedItem = `data:image/webp;base64,${formattedItem}`;
+      } else {
+        formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+      }
+    }
 
     try {
-      const matches = item.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
-      if (!matches || matches.length !== 3) return item;
+      const matches = formattedItem.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/s);
+      if (!matches || matches.length !== 3) return formattedItem;
 
       const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
-      const base64Data = matches[2];
+      const base64Data = matches[2].replace(/[\r\n\s]/g, "");
       const buffer = Buffer.from(base64Data, "base64");
 
       const filename = `site_photo_${taskId}_${Date.now()}_${index}_${Math.floor(Math.random() * 10000)}.${ext}`;
@@ -37,9 +58,9 @@ function processAndSaveBase64Photos(sitePhotos: string[], taskId: number | strin
       return `/uploads/task-images/${filename}`;
     } catch (err) {
       console.error(`Error saving base64 photo for task ${taskId}:`, err);
-      return item;
+      return formattedItem;
     }
-  }).filter(Boolean);
+  }).filter((url) => typeof url === "string" && url.trim().length > 0);
 }
 
 async function getRecursiveReporteeIds(userId: string): Promise<string[]> {
@@ -62,7 +83,7 @@ function isServiceCoordinator(auth: AuthContext): boolean {
   return auth.role === UserRole.SUB_ADMIN || normalizeJobRole(auth.jobRole) === "servicecoordinator";
 }
 
-function getTaskInclude() {
+export function getTaskInclude() {
   return {
     employee: {
       select: { id: true, fullName: true, loginId: true, email: true },
@@ -195,7 +216,7 @@ async function notifyTaskCompleted(auth: AuthContext, task: any, imageUrl?: stri
   await sendUserMessage(auth.userId, customer.userId, message);
 }
 
-function serializeTask(task: any) {
+export function serializeTask(task: any) {
   const assignedEmployees = Array.isArray(task.taskAssignments)
     ? task.taskAssignments.map((assignment: any) => ({
         id: assignment.id,
@@ -241,7 +262,13 @@ function serializeTask(task: any) {
     .filter((img: any) => img.type === "site_photo" || String(img.type).startsWith("site_photo"))
     .map((img: any) => img.url);
 
-  const mergedSitePhotos = Array.from(new Set([...sitePhotosFromColumn, ...sitePhotosFromImages]));
+  // Merge and filter out any empty strings
+  const mergedSitePhotos = Array.from(new Set([...sitePhotosFromColumn, ...sitePhotosFromImages]))
+    .filter((url: any) => typeof url === "string" && url.trim().length > 0);
+
+  const resolvedTaskType = task.taskType ?? (
+    task.jobType?.toLowerCase()?.includes("site") || mergedSitePhotos.length > 0 ? "SITE_VISIT" : "REGULAR"
+  );
 
   return {
     id: task.id,
@@ -261,15 +288,17 @@ function serializeTask(task: any) {
     completedAt: task.completedAt?.toISOString() ?? null,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
+    taskType: resolvedTaskType,
     assignedEmployees,
     taskImages,
     sitePhotos: mergedSitePhotos,
-    beforeImageUrl: beforeImageObj?.url ?? null,
-    beforeLatitude: beforeImageObj?.latitude ?? null,
-    beforeLongitude: beforeImageObj?.longitude ?? null,
-    afterImageUrl: afterImageObj?.url ?? null,
-    afterLatitude: afterImageObj?.latitude ?? null,
-    afterLongitude: afterImageObj?.longitude ?? null,
+    images: mergedSitePhotos,
+    beforeImageUrl: beforeImageObj?.url ?? task.beforeImageUrl ?? null,
+    beforeLatitude: beforeImageObj?.latitude ?? task.beforeLatitude ?? null,
+    beforeLongitude: beforeImageObj?.longitude ?? task.beforeLongitude ?? null,
+    afterImageUrl: afterImageObj?.url ?? task.afterImageUrl ?? null,
+    afterLatitude: afterImageObj?.latitude ?? task.afterLatitude ?? null,
+    afterLongitude: afterImageObj?.longitude ?? task.afterLongitude ?? null,
   };
 }
 
@@ -725,30 +754,82 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       throw new ApiError(404, "Task not found");
     }
 
-    const imageRecords: any[] = [];
+    if (auth.role === UserRole.EMPLOYEE && task.employeeUserId !== auth.userId) {
+      throw new ApiError(403, "You cannot complete tasks assigned to other employees");
+    }
+
+    // Process site photos (base64 -> disk file URLs)
+    const existingSitePhotos = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
+    const inputPhotos = (Array.isArray(input.sitePhotos) && input.sitePhotos.length > 0)
+      ? input.sitePhotos
+      : (Array.isArray((input as any).images) && (input as any).images.length > 0
+        ? (input as any).images
+        : []);
+    const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, id);
+    const finalSitePhotos = savedInputPhotos.length > 0 
+      ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
+      : existingSitePhotos;
+
+    // Process before/after images if passed as base64
+    let savedBeforeUrl = task.beforeImageUrl;
     if (input.beforeImageUrl) {
+      const saved = processAndSaveBase64Photos([input.beforeImageUrl], id);
+      savedBeforeUrl = saved[0] || input.beforeImageUrl;
+    }
+
+    let savedAfterUrl = task.afterImageUrl;
+    if (input.afterImageUrl) {
+      const saved = processAndSaveBase64Photos([input.afterImageUrl], id);
+      savedAfterUrl = saved[0] || input.afterImageUrl;
+    }
+
+    const updated: any = await prisma.task.update({
+      where: { id },
+      data: {
+        status: TaskStatus.COMPLETED,
+        completionMessage: input.message,
+        completionDocumentUrl: input.documentUrl ?? null,
+        beforeImageUrl: savedBeforeUrl,
+        afterImageUrl: savedAfterUrl,
+        beforeLatitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : undefined,
+        beforeLongitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : undefined,
+        afterLatitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : undefined,
+        afterLongitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : undefined,
+        sitePhotos: finalSitePhotos,
+        completedAt: new Date(),
+      },
+    });
+
+    await prisma.taskAssignment.updateMany({
+      where: { taskId: id },
+      data: { status: TaskAssignmentStatus.COMPLETED },
+    });
+
+    // Build taskImage records with clean disk file URLs (NOT raw base64)
+    const imageRecords: any[] = [];
+    if (savedBeforeUrl) {
       imageRecords.push({
         taskId: id,
         employeeUserId: auth.userId,
         type: "before",
-        url: input.beforeImageUrl,
+        url: savedBeforeUrl,
         latitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : null,
         longitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : null,
       });
     }
-    if (input.afterImageUrl) {
+    if (savedAfterUrl) {
       imageRecords.push({
         taskId: id,
         employeeUserId: auth.userId,
         type: "after",
-        url: input.afterImageUrl,
+        url: savedAfterUrl,
         latitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : null,
         longitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : null,
       });
     }
 
-    if (Array.isArray(input.sitePhotos) && input.sitePhotos.length > 0) {
-      input.sitePhotos.forEach((photoUrl: string, idx: number) => {
+    if (savedInputPhotos.length > 0) {
+      savedInputPhotos.forEach((photoUrl: string, idx: number) => {
         if (photoUrl) {
           imageRecords.push({
             taskId: id,
@@ -762,46 +843,10 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       });
     }
 
-    if (auth.role === UserRole.EMPLOYEE && task.employeeUserId !== auth.userId) {
-      throw new ApiError(403, "You cannot complete tasks assigned to other employees");
-    }
-
-    const existingSitePhotos = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
-    const inputPhotos = Array.isArray(input.sitePhotos) ? input.sitePhotos : [];
-    const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, id);
-    const finalSitePhotos = savedInputPhotos.length > 0 
-      ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
-      : existingSitePhotos;
-
-    const updated: any = await prisma.task.update({
-      where: { id },
-      data: {
-        status: TaskStatus.COMPLETED,
-        completionMessage: input.message,
-        completionDocumentUrl: input.documentUrl ?? null,
-        sitePhotos: finalSitePhotos,
-        completedAt: new Date(),
-      },
-    });
-
-    await prisma.taskAssignment.updateMany({
-      where: { taskId: id },
-      data: { status: TaskAssignmentStatus.COMPLETED },
-    });
-
     if (imageRecords.length > 0) {
-      if (Array.isArray(input.sitePhotos) && input.sitePhotos.length > 0) {
-        await prisma.taskImage.deleteMany({
-          where: { taskId: id, employeeUserId: auth.userId, type: { startsWith: "site_photo" } },
-        });
-      }
-      for (const image of imageRecords) {
-        if (!image.type.startsWith("site_photo")) {
-          await prisma.taskImage.deleteMany({
-            where: { taskId: id, employeeUserId: auth.userId, type: image.type },
-          });
-        }
-      }
+      await prisma.taskImage.deleteMany({
+        where: { taskId: id },
+      });
       await prisma.taskImage.createMany({ data: imageRecords });
     }
     await prisma.auditLog.create({
@@ -1112,6 +1157,23 @@ export async function updateTaskPhotos(auth: AuthContext, id: number | string, s
     if (isNaN(numericId)) throw new ApiError(400, "Invalid task ID");
     
     const savedPhotos = processAndSaveBase64Photos(sitePhotos, numericId);
+
+    // Sync taskImage records with clean disk file URLs
+    await prisma.taskImage.deleteMany({
+      where: { taskId: numericId, type: { startsWith: "site_photo" } },
+    });
+
+    if (savedPhotos.length > 0) {
+      const imageRecords = savedPhotos.map((photoUrl, idx) => ({
+        taskId: numericId,
+        employeeUserId: auth.userId,
+        type: `site_photo_${idx + 1}`,
+        url: photoUrl,
+        latitude: null,
+        longitude: null,
+      }));
+      await prisma.taskImage.createMany({ data: imageRecords });
+    }
 
     const updated = await prisma.task.update({
       where: { id: numericId },

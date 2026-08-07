@@ -191,5 +191,23 @@
     "createdAt": "2026-07-28T10:20:34.762Z",
     "updatedAt": "2026-07-28T10:20:34.762Z",
     "taskRate": null
+  },
+  {
+    "id": 12308,
+    "employeeUserId": "992313c0-e13c-45b4-b62e-38b65208c666",
+    "assignedById": "ed5a4328-6a9d-4c09-aa5d-13633fba3fb4",
+    "jobType": "Site Visit",
+    "description": "Site Capacity: 5kw",
+    "customerName": "ravi kisan",
+    "customerPhone": "3424554332",
+    "address": "Nagpur",
+    "status": "assigned",
+    "scheduledTime": "2026-08-04T06:30:00.000Z",
+    "completionMessage": null,
+    "completionDocumentUrl": null,
+    "completedAt": null,
+    "createdAt": "2026-08-04T06:32:30.318Z",
+    "updatedAt": "2026-08-04T06:32:30.318Z",
+    "taskRate": null
   }
 ]

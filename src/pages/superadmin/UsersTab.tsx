@@ -220,6 +220,8 @@ export function UserFormModal({ user, onClose, onSaved }: { user?: SAUser; onClo
                     <option value="Monitoring Analyst">Monitoring Analyst</option>
                     <option value="Intern">Intern</option>
                     <option value="Service Coordinator">Service Coordinator</option>
+                    <option value="Service & Executive Head">Service & Executive Head</option>
+                    <option value="Isphere Green head">Isphere Green head</option>
                     <option value="Other Position">Other Position</option>
                   </select>
                 </FormField>

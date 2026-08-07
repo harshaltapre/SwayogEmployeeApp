@@ -215,8 +215,10 @@ model Customer {
   email               String
   phoneNumber         String
   city                String
+  state               String?
   address             String
   systemSizeKw        Float
+  projectType         String?
   installationDate    DateTime
   warrantyExpiry      DateTime?
   panelBrand          String?

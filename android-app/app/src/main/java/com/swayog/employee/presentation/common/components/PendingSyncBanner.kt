@@ -7,7 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -34,21 +34,21 @@ fun PendingSyncBanner(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFD1603D)) // BrandOrange
+                .background(Color(0xFF6B4EAA)) // Purple — distinguishes "offline saved" from error orange
                 .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
             Icon(
-                imageVector = Icons.Default.CloudOff,
-                contentDescription = "Offline Sync",
+                imageVector = Icons.Default.CloudSync,
+                contentDescription = "Pending Sync",
                 tint = Color.White,
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "$pendingCount action${if (pendingCount > 1) "s" else ""} saved locally. Tap to sync now.",
+                text = "$pendingCount item${if (pendingCount > 1) "s" else ""} saved offline. Tap to sync now.",
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
@@ -63,3 +63,4 @@ fun PendingSyncBanner(
         }
     }
 }
+

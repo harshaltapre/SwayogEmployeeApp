@@ -31,6 +31,12 @@ class TasksViewModel @Inject constructor(
         initialValue = null
     )
 
+    val serverUrl: StateFlow<String?> = dataStoreManager.serverUrl.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
     init {
         viewModelScope.launch {
             userId.filterNotNull().collect { id ->
@@ -41,6 +47,17 @@ class TasksViewModel @Inject constructor(
             }
         }
         refresh()
+    }
+
+    fun syncPending(onResult: (com.swayog.employee.data.repository.SyncResultSummary) -> Unit) {
+        viewModelScope.launch {
+            val id = userId.value
+            val summary = taskRepository.syncPendingActions()
+            if (id != null && summary.synced > 0) {
+                taskRepository.refreshTasks(id)
+            }
+            onResult(summary)
+        }
     }
 
     fun refresh() {

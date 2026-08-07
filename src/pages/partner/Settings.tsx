@@ -162,9 +162,9 @@ export default function PartnerSettings() {
                 </thead>
                 <tbody>
                   <tr className="border-b border-slate-700">
-                    <td className="py-3">💻 Chrome on macOS</td>
-                    <td>San Francisco, CA</td>
-                    <td>5 minutes ago</td>
+                    <td className="py-3">💻 Current Session</td>
+                    <td>Unknown</td>
+                    <td>Active Now</td>
                   </tr>
                 </tbody>
               </table>
@@ -220,7 +220,7 @@ export default function PartnerSettings() {
                 <div className="flex items-center justify-between p-3 border border-slate-700 rounded">
                   <div>
                     <p className="text-sm font-medium text-white">Slack</p>
-                    <p className="text-xs text-slate-400">Workspace: partner-org</p>
+                    <p className="text-xs text-slate-400">Not Connected</p>
                   </div>
                   <button className="text-blue-400 hover:text-blue-300 text-sm">Manage</button>
                 </div>
@@ -233,12 +233,12 @@ export default function PartnerSettings() {
         return (
           <div className="space-y-4">
             <SettingCard title="Earnings">
-              <SettingRow label="Total Earnings" control={<span className="text-white font-semibold">$5,240.50</span>} />
-              <SettingRow label="Current Month" control={<span className="text-blue-400 font-semibold">$420.00</span>} />
+              <SettingRow label="Total Earnings" control={<span className="text-white font-semibold">₹ 0.00</span>} />
+              <SettingRow label="Current Month" control={<span className="text-blue-400 font-semibold">₹ 0.00</span>} />
             </SettingCard>
             <SettingCard title="Payment Method">
-              <SettingRow label="Account" control={<span className="text-white font-medium">Bank ending in 4242</span>} />
-              <SettingRow label="Next Payout" control={<span className="text-slate-400">May 15, 2026</span>} />
+              <SettingRow label="Account" control={<span className="text-white font-medium">Not configured</span>} />
+              <SettingRow label="Next Payout" control={<span className="text-slate-400">N/A</span>} />
             </SettingCard>
           </div>
         );

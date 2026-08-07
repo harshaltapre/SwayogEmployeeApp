@@ -11,6 +11,8 @@ export const EMPLOYEE_POSITIONS = [
   { value: "service_engineer", label: "Service Engineer" },
   { value: "monitoring_analyst", label: "Monitoring Analyst" },
   { value: "intern", label: "Intern" },
+  { value: "service_coordinator", label: "Service Coordinator" },
+  { value: "isphere_green_head", label: "Isphere Green head" },
   { value: "sub_admin", label: "Sub Admin" },
 ];
 
@@ -22,6 +24,8 @@ export const EMPLOYEE_POSITION_MAP: Record<string, string> = {
   service_engineer: "Service Engineer",
   monitoring_analyst: "Monitoring Analyst",
   intern: "Intern",
+  service_coordinator: "Service Coordinator",
+  isphere_green_head: "Isphere Green head",
   sub_admin: "Sub Admin",
   other: "Other",
 };

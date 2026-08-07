@@ -16,7 +16,7 @@ export const financialsRoutes = Router();
 // All financial routes require ADMIN-tier roles
 const financialAuth = [
   authenticateAccessToken,
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUB_ADMIN),
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUB_ADMIN, UserRole.PARTNER),
 ];
 
 financialsRoutes.get("/summary", ...financialAuth, asyncHandler(getFinancialSummary));

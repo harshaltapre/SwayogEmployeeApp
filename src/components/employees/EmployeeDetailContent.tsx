@@ -454,7 +454,7 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {["Intern", "Service Engineer", "Solar Design Engineer", "Team Lead", "Other Position"].map((role) => (
+                              {["Intern", "Service Engineer", "Solar Design Engineer", "Service Coordinator", "Isphere Green head", "Team Lead", "Other Position"].map((role) => (
                                 <SelectItem key={role} value={role}>{role}</SelectItem>
                               ))}
                             </SelectContent>
@@ -1501,7 +1501,7 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {["Intern", "Service Engineer", "Solar Design Engineer", "Team Lead", "Other Position"].map((role) => (
+                          {["Intern", "Service Engineer", "Solar Design Engineer", "Service Coordinator", "Isphere Green head", "Team Lead", "Other Position"].map((role) => (
                             <SelectItem key={role} value={role}>{role}</SelectItem>
                           ))}
                         </SelectContent>

@@ -7,6 +7,7 @@ export type UserRole =
   | 'team_lead'
   | 'employee'
   | 'partner'
+  | 'epc_contractor'
   | 'customer'
   | 'sub_admin';
 
@@ -27,6 +28,7 @@ function isUserRole(value: unknown): value is UserRole {
     lower === 'team_lead' ||
     lower === 'employee' ||
     lower === 'partner' ||
+    lower === 'epc_contractor' ||
     lower === 'customer' ||
     lower === 'sub_admin'
   );
@@ -50,7 +52,8 @@ function getSafeStoredUser(): User | null {
 
       if (roleStr === 'super_admin' || roleStr === 'superadmin') normalizedRole = 'super_admin';
       else if (roleStr === 'admin') normalizedRole = 'admin';
-      else if (roleStr === 'partner' || roleStr === 'epc_contractor' || roleStr === 'vendor') normalizedRole = 'partner';
+      else if (roleStr === 'epc_contractor' || roleStr === 'epccontractor' || roleStr === 'epc_partner') normalizedRole = 'epc_contractor';
+      else if (roleStr === 'partner' || roleStr === 'vendor') normalizedRole = 'partner';
       else if (roleStr === 'customer') normalizedRole = 'customer';
       else if (roleStr === 'sub_admin' || roleStr === 'subadmin') normalizedRole = 'sub_admin';
 
@@ -99,10 +102,22 @@ export function isInventoryExecutiveJobRole(jobRole?: string): boolean {
   return normalized === "inventory executive";
 }
 
+export function isServiceExecutiveHeadJobRole(jobRole?: string): boolean {
+  if (!jobRole) return false;
+  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
+  return (
+    normalized === "ispheregreenhead" ||
+    normalized === "ispheregreen" ||
+    normalized === "serviceandexecutivehead" ||
+    normalized === "serviceexecutivehead" ||
+    normalized === "servicehead"
+  );
+}
+
 export function isEpcPartnerJobRole(jobRole?: string): boolean {
   if (!jobRole) return false;
   const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
-  return normalized === "epccontractor" || normalized === "epc" || normalized === "partner" || normalized === "vendor";
+  return normalized === "epccontractor" || normalized === "epc" || normalized === "epcpartner";
 }
 
 export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
@@ -116,6 +131,10 @@ export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
     return '/admin/dashboard';
   }
 
+  if (isServiceExecutiveHeadJobRole(jobRole)) {
+    return '/service-executive/dashboard';
+  }
+
   if (isInventoryExecutiveJobRole(jobRole)) {
     return '/inventory/dashboard';
   }
@@ -124,7 +143,11 @@ export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
     return '/subadmin/dashboard';
   }
 
-  if (r === 'partner' || r === 'epc_contractor' || r === 'vendor' || isEpcPartnerJobRole(jobRole)) {
+  if (isEpcPartnerJobRole(jobRole) || r === 'epc_contractor') {
+    return '/epc-contractor/dashboard';
+  }
+
+  if (r === 'partner') {
     return '/partner/dashboard';
   }
 

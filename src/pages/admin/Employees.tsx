@@ -54,6 +54,9 @@ const JOB_ROLES = [
   "Service Engineer",
   "Monitoring Analyst",
   "Intern",
+  "Service Coordinator",
+  "Service & Executive Head",
+  "Isphere Green head",
   "Sub Admin",
   "Other Position",
 ];
