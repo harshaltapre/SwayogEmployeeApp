@@ -1,5 +1,5 @@
 import { Users, IndianRupee, CheckCircle, Star, MapPin, Download, Plus, LayoutGrid, List, ChevronRight, ClipboardList, Calendar, Clock, Phone, User as UserIcon, Compass, Camera, Eye } from "lucide-react";
-import { useListEmployees, useListTasks } from "@/lib/api-client";
+import { useListEmployees, useListTasks, buildAssetUrlFromPath } from "@/lib/api-client";
 import { useEffect, useState } from "react";
 import { EmployeeDetailContent } from "@/components/employees/EmployeeDetailContent";
 import { SubAdminLayout } from "@/components/subadmin/SubAdminLayout";
@@ -14,7 +14,7 @@ import { format } from "date-fns";
 
 export default function SubAdminEmployees() {
   const { data: rawEmployees, isLoading: employeesLoading, refetch: refetchEmployees } = useListEmployees();
-  const { data: tasks, isLoading: tasksLoading, refetch: refetchTasks } = useListTasks();
+  const { data: tasks, isLoading: tasksLoading, refetch: refetchTasks } = useListTasks(undefined, { query: { refetchInterval: 3000 } });
   const [viewMode, setViewMode] = useState<"grid" | "table">("table");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
@@ -349,17 +349,26 @@ export default function SubAdminEmployees() {
                                   </td>
                                   <td className="px-6 py-4 text-right">
                                     <div className="flex items-center justify-end gap-1.5">
-                                      {isSiteVisit && (
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-8 text-[10px] font-bold text-emerald-800 bg-emerald-50 border-emerald-300 hover:bg-emerald-100 gap-1 shadow-2xs"
-                                          onClick={() => setViewSiteVisitTask(task)}
-                                        >
-                                          <Camera size={12} className="text-emerald-700" />
-                                          Site Photos ({(task.sitePhotos?.length ?? 0)})
-                                        </Button>
-                                      )}
+                                      {isSiteVisit && (() => {
+                                        const totalPhotosCount = Array.from(new Set([
+                                          ...(Array.isArray(task.sitePhotos) ? task.sitePhotos : []),
+                                          ...(Array.isArray((task as any).taskImages) ? (task as any).taskImages.map((i: any) => i.url).filter(Boolean) : []),
+                                          ...(task.beforeImageUrl ? [task.beforeImageUrl] : []),
+                                          ...(task.afterImageUrl ? [task.afterImageUrl] : []),
+                                        ])).filter((url: any) => typeof url === "string" && url.trim().length > 0).length;
+
+                                        return (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 text-[10px] font-bold text-emerald-800 bg-emerald-50 border-emerald-300 hover:bg-emerald-100 gap-1 shadow-2xs"
+                                            onClick={() => setViewSiteVisitTask(task)}
+                                          >
+                                            <Camera size={12} className="text-emerald-700" />
+                                            Site Photos ({totalPhotosCount})
+                                          </Button>
+                                        );
+                                      })()}
                                       <Button 
                                         variant="ghost" 
                                         size="sm" 
@@ -404,13 +413,19 @@ export default function SubAdminEmployees() {
       <Dialog open={!!viewSiteVisitTask} onOpenChange={(open) => !open && setViewSiteVisitTask(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           {viewSiteVisitTask && (() => {
+            const activeTask = tasks?.find(t => String(t.id) === String(viewSiteVisitTask.id)) || viewSiteVisitTask;
             const assignedEmp = rawEmployees?.find(emp => 
-              emp.userId === viewSiteVisitTask.employeeUserId || 
-              String(emp.id) === String(viewSiteVisitTask.employeeUserId) || 
-              emp.loginId === viewSiteVisitTask.employeeUserId ||
-              emp.email === viewSiteVisitTask.employeeUserId
+              emp.userId === activeTask.employeeUserId || 
+              String(emp.id) === String(activeTask.employeeUserId) || 
+              emp.loginId === activeTask.employeeUserId ||
+              emp.email === activeTask.employeeUserId
             );
-            const photos: string[] = Array.isArray(viewSiteVisitTask.sitePhotos) ? viewSiteVisitTask.sitePhotos : [];
+            const photos: string[] = Array.from(new Set([
+              ...(Array.isArray(activeTask.sitePhotos) ? activeTask.sitePhotos : []),
+              ...(Array.isArray(activeTask.taskImages) ? activeTask.taskImages.map((img: any) => img.url).filter(Boolean) : []),
+              ...(activeTask.beforeImageUrl ? [activeTask.beforeImageUrl] : []),
+              ...(activeTask.afterImageUrl ? [activeTask.afterImageUrl] : []),
+            ])).filter((url: any) => typeof url === "string" && url.trim().length > 0);
 
             return (
               <div className="space-y-6">
@@ -461,48 +476,51 @@ export default function SubAdminEmployees() {
                   </div>
                 </div>
 
-                {/* 4-5 Site Visit Photos Gallery */}
+                {/* Min 4 - Max 10 Site Visit Photos Gallery */}
                 <div className="space-y-3 pt-2">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                       <Camera className="h-4 w-4 text-emerald-600" />
-                      Site Visit Photos ({photos.length} Photos)
+                      Site Visit Photos ({photos.length} Photos Uploaded)
                     </h3>
-                    <Badge variant="outline" className={photos.length >= 4 ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold" : "bg-amber-50 text-amber-800 border-amber-300"}>
-                      📸 {photos.length} / 5 Photos Uploaded
+                    <Badge variant="outline" className={photos.length >= 4 ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold" : "bg-amber-50 text-amber-800 border-amber-300 font-bold"}>
+                      📸 {photos.length} Photos (Min 4 - Max 10)
                     </Badge>
                   </div>
 
                   {photos.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {photos.map((photoUrl, idx) => (
-                        <div key={idx} className="group relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-900 aspect-video">
-                          <img
-                            src={photoUrl}
-                            alt={`Site Photo ${idx + 1}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 p-2 flex flex-col justify-between">
-                            <span className="self-end bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
-                              Photo #{idx + 1}
-                            </span>
-                            <a
-                              href={photoUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 py-1 px-2 rounded flex items-center justify-center gap-1 shadow transition-colors"
-                            >
-                              <Eye className="h-3 w-3" /> View Full Image
-                            </a>
+                      {photos.map((photoUrl, idx) => {
+                        const fullUrl = buildAssetUrlFromPath(photoUrl) || photoUrl;
+                        return (
+                          <div key={idx} className="group relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-900 aspect-video">
+                            <img
+                              src={fullUrl}
+                              alt={`Site Photo ${idx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 p-2 flex flex-col justify-between">
+                              <span className="self-end bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                                Photo #{idx + 1}
+                              </span>
+                              <a
+                                href={fullUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 py-1 px-2 rounded flex items-center justify-center gap-1 shadow transition-colors"
+                              >
+                                <Eye className="h-3 w-3" /> View Full Image
+                              </a>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400">
                       <Camera className="h-8 w-8 mx-auto mb-2 opacity-40 text-slate-400" />
                       <p className="text-xs font-semibold text-slate-500">No site photos uploaded yet for this site visit task.</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">The employee can upload 4-5 site photos from the Employee App/Section.</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">The employee must upload 4 to 10 site photos from the Employee App/Section.</p>
                     </div>
                   )}
                 </div>

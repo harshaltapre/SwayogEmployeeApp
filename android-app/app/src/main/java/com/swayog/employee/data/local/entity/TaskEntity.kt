@@ -50,8 +50,25 @@ data class TaskEntity(
 ) {
     fun toTask(): Task {
         val gson = com.google.gson.Gson()
-        val sitePhotosList = sitePhotosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
-            ?: imagesJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
+        var sitePhotosList = sitePhotosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList().filter { p -> p.isNotBlank() } } catch(_: Exception) { null } }
+            ?: imagesJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList().filter { p -> p.isNotBlank() } } catch(_: Exception) { null } }
+
+        if (sitePhotosList.isNullOrEmpty()) {
+            val fallbackList = mutableListOf<String>()
+            if (!beforeImageUrl.isNullOrBlank()) fallbackList.add(beforeImageUrl)
+            if (!afterImageUrl.isNullOrBlank() && afterImageUrl != beforeImageUrl) fallbackList.add(afterImageUrl)
+            if (fallbackList.isNotEmpty()) {
+                sitePhotosList = fallbackList
+            }
+        }
+
+        val inferredTaskType = taskType ?: when {
+            !sitePhotosList.isNullOrEmpty() -> "SITE_VISIT"
+            jobType?.lowercase()?.contains("amc") == true || id.startsWith("amc_") -> "AMC_VISIT"
+            jobType == "Site Visit" || jobType?.lowercase()?.contains("site") == true || jobType?.lowercase()?.contains("visit") == true -> "SITE_VISIT"
+            else -> "REGULAR"
+        }
+
         return Task(
             id = id,
             jobType = jobType,
@@ -77,7 +94,7 @@ data class TaskEntity(
             createdAt = createdAt,
             updatedAt = updatedAt,
             invoice = invoiceJson?.let { gson.fromJson(it, com.swayog.employee.data.model.Invoice::class.java) },
-            taskType = taskType,
+            taskType = inferredTaskType,
             images = sitePhotosList,
             sitePhotos = sitePhotosList,
             assignedEmployeeName = assignedEmployeeName,

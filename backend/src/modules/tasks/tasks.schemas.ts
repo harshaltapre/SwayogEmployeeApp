@@ -10,26 +10,26 @@ export const listTasksQuerySchema = z.object({
 export const createTaskSchema = z.object({
   employeeUserId: z.string(),
   jobType: z.string().trim().min(2).max(100),
-  description: z.string().trim().min(3).max(500),
-  customerName: z.string().trim().min(2).max(120),
-  customerPhone: z.string().trim().min(8).max(20),
-  address: z.string().trim().min(5).max(300),
+  description: z.string().trim().min(1).max(500),
+  customerName: z.string().trim().min(1).max(120),
+  customerPhone: z.string().trim().min(3).max(30),
+  address: z.string().trim().min(1).max(300),
   latitude: z.number().optional().nullable(),
   longitude: z.number().optional().nullable(),
-  scheduledTime: z.string().datetime(),
+  scheduledTime: z.string(),
   taskRate: z.number().nonnegative().optional().nullable(),
 });
 
 export const createBulkTaskSchema = z.object({
   employeeUserIds: z.array(z.string()).nonempty("Select at least one employee"),
   jobType: z.string().trim().min(2).max(100),
-  description: z.string().trim().min(3).max(500),
-  customerName: z.string().trim().min(2).max(120),
-  customerPhone: z.string().trim().min(8).max(20),
-  address: z.string().trim().min(5).max(300),
+  description: z.string().trim().min(1).max(500),
+  customerName: z.string().trim().min(1).max(120),
+  customerPhone: z.string().trim().min(3).max(30),
+  address: z.string().trim().min(1).max(300),
   latitude: z.number().optional().nullable(),
   longitude: z.number().optional().nullable(),
-  scheduledTime: z.string().datetime(),
+  scheduledTime: z.string(),
   taskRate: z.number().nonnegative().optional().nullable(),
 });
 
@@ -50,7 +50,6 @@ export const completeTaskSchema = z.object({
   images: z.array(z.string()).optional().nullable(),
   beforeImages: z.array(z.string()).optional().nullable(),
   afterImages: z.array(z.string()).optional().nullable(),
-  taskType: z.string().optional().nullable(),
 });
 
 export const rateTaskSchema = z.object({

@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { SidebarLayout } from "@/components/SidebarLayout";
 import { PageHeader } from "@/components/PageHeader";
-import { useCompleteTask, useListTasks, getListTasksQueryKey, useListEmployees } from "@/lib/api-client";
+import { useCompleteTask, useListTasks, getListTasksQueryKey, useListEmployees, useUpdateTaskPhotos } from "@/lib/api-client";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -134,6 +134,7 @@ function TaskDetailDrawer({
   const [completionMessage, setCompletionMessage] = useState("");
   const [documentUrl, setDocumentUrl] = useState("");
   const isSiteVisit = task.jobType === "Site Visit" || task.jobType?.toLowerCase().includes("site") || task.jobType?.toLowerCase().includes("visit");
+  const updateTaskPhotosMutation = useUpdateTaskPhotos();
   const [sitePhotos, setSitePhotos] = useState<string[]>(
     Array.isArray(task.sitePhotos) ? task.sitePhotos : []
   );
@@ -146,10 +147,10 @@ function TaskDetailDrawer({
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    if (sitePhotos.length >= 5) {
+    if (sitePhotos.length >= 10) {
       toast({
         title: "Photo Limit Reached",
-        description: "You can upload maximum 5 photos for this site visit.",
+        description: "You can upload maximum 10 photos for this site visit.",
         variant: "destructive"
       });
       return;
@@ -164,16 +165,21 @@ function TaskDetailDrawer({
         : `📍 GPS N/A | ${dateStr}`;
 
       const newPhotos: string[] = [];
-      const remainingSlots = 5 - sitePhotos.length;
+      const remainingSlots = 10 - sitePhotos.length;
       for (const file of files.slice(0, remainingSlots)) {
         const b64 = await watermarkImage(file, label);
         newPhotos.push(b64);
       }
 
-      setSitePhotos(prev => [...prev, ...newPhotos]);
+      const updatedList = [...sitePhotos, ...newPhotos];
+      setSitePhotos(updatedList);
+
+      // Immediately sync with database for real-time visibility to coordinators
+      updateTaskPhotosMutation.mutate({ taskId: task.id, sitePhotos: updatedList });
+
       toast({
         title: "Site Photos Added 📸",
-        description: `Uploaded ${newPhotos.length} site photo(s) with GPS stamp. (${sitePhotos.length + newPhotos.length}/5)`
+        description: `Uploaded ${newPhotos.length} site photo(s). Total: ${updatedList.length}/10 (Min 4 required). Visible immediately to coordinators.`
       });
     } catch (err) {
       console.error(err);
@@ -189,7 +195,9 @@ function TaskDetailDrawer({
   };
 
   const removeSitePhoto = (index: number) => {
-    setSitePhotos(prev => prev.filter((_, i) => i !== index));
+    const updatedList = sitePhotos.filter((_, i) => i !== index);
+    setSitePhotos(updatedList);
+    updateTaskPhotosMutation.mutate({ taskId: task.id, sitePhotos: updatedList });
   };
 
   const requiresPhotos = ["Cleaning", "Maintenance", "Visit", "Service"].includes(task.jobType);
@@ -404,15 +412,15 @@ function TaskDetailDrawer({
 
 
 
-          {/* Site Visit Photos Upload Section (4-5 Photos) */}
+          {/* Site Visit Photos Upload Section (Min 4 - Max 10 Photos) */}
           {isSiteVisit && task.status !== "completed" && (
             <div className="px-6 pb-5 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Camera className="h-4 w-4 text-emerald-600" /> Site Visit Photos (4-5 Photos Compulsory)
+                  <Camera className="h-4 w-4 text-emerald-600" /> Site Visit Photos (Min 4 - Max 10 Compulsory)
                 </h3>
-                <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0.5", sitePhotos.length >= 4 ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300")}>
-                  📸 {sitePhotos.length} / 5 Photos
+                <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0.5", sitePhotos.length >= 4 && sitePhotos.length <= 10 ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300")}>
+                  📸 {sitePhotos.length} / 10 Photos
                 </Badge>
               </div>
 
@@ -434,7 +442,7 @@ function TaskDetailDrawer({
                   </div>
                 ))}
 
-                {sitePhotos.length < 5 && (
+                {sitePhotos.length < 10 && (
                   <>
                     {/* Trigger button for Camera/Gallery modal */}
                     <button
@@ -475,7 +483,7 @@ function TaskDetailDrawer({
                 )}
               </div>
               <p className="text-[10px] text-slate-400 italic">
-                * Click "Add Photo" to take a photo using your <strong>Camera</strong> or pick 4-5 site photos from your <strong>Gallery</strong>. All photos are GPS stamped.
+                * Click "Add Photo" to take a photo using your <strong>Camera</strong> or pick 4 to 10 site photos from your <strong>Gallery</strong>. Photos sync live with the coordinator dashboard.
               </p>
             </div>
           )}
@@ -723,10 +731,12 @@ function TaskDetailDrawer({
               id={`btn-complete-task-${task.id}`}
               className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2"
               onClick={() => {
-                if (isSiteVisit && sitePhotos.length < 4) {
+                if (isSiteVisit && (sitePhotos.length < 4 || sitePhotos.length > 10)) {
                   toast({
-                    title: "Site Photos Compulsory",
-                    description: "Please upload at least 4 photos of the site before completing this Site Visit task.",
+                    title: sitePhotos.length < 4 ? "Min 4 Site Photos Required" : "Max 10 Site Photos Allowed",
+                    description: sitePhotos.length < 4
+                      ? "Please upload at least 4 photos of the site before completing this Site Visit task."
+                      : "Maximum 10 site photos allowed for this task.",
                     variant: "destructive"
                   });
                   return;

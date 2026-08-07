@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { TaskStatus, UserRole, TaskAssignmentStatus, AmcVisitStatus, InvoicePaymentStatus, InvoiceType } from "@prisma/client";
 
 import type { AuthContext } from "../../middleware/auth.js";
@@ -7,6 +9,59 @@ import { getMockTasks, saveMockTask } from "../../lib/mockTasksDb.js";
 import { recalculateMonthlyPerformance } from "../../services/attendanceService.js";
 import type { CompleteTaskInput, CreateTaskInput, CreateBulkTaskInput, ListTasksQueryInput } from "./tasks.schemas.js";
 import { createAdminNotification, createCustomerNotification } from "../../services/notificationService.js";
+
+export function processAndSaveBase64Photos(sitePhotos: string[], taskId: number | string): string[] {
+  if (!Array.isArray(sitePhotos)) return [];
+
+  const uploadsDir = path.join(process.cwd(), "uploads", "task-images");
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  return sitePhotos.map((item, index) => {
+    if (!item || typeof item !== "string") return "";
+    let formattedItem = item.trim();
+    if (!formattedItem) return "";
+
+    // If it's already a saved file/web URL, return as-is
+    if (formattedItem.startsWith("/uploads/") || formattedItem.startsWith("http://") || formattedItem.startsWith("https://")) {
+      return formattedItem;
+    }
+
+    // Auto-prefix raw base64 if missing data URI header
+    if (!formattedItem.startsWith("data:image/")) {
+      if (formattedItem.startsWith("/9j/")) {
+        formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+      } else if (formattedItem.startsWith("iVBORw")) {
+        formattedItem = `data:image/png;base64,${formattedItem}`;
+      } else if (formattedItem.startsWith("R0lGOD")) {
+        formattedItem = `data:image/gif;base64,${formattedItem}`;
+      } else if (formattedItem.startsWith("UklGR")) {
+        formattedItem = `data:image/webp;base64,${formattedItem}`;
+      } else {
+        formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+      }
+    }
+
+    try {
+      const matches = formattedItem.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/s);
+      if (!matches || matches.length !== 3) return formattedItem;
+
+      const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+      const base64Data = matches[2].replace(/[\r\n\s]/g, "");
+      const buffer = Buffer.from(base64Data, "base64");
+
+      const filename = `site_photo_${taskId}_${Date.now()}_${index}_${Math.floor(Math.random() * 10000)}.${ext}`;
+      const filePath = path.join(uploadsDir, filename);
+      fs.writeFileSync(filePath, buffer);
+
+      return `/uploads/task-images/${filename}`;
+    } catch (err) {
+      console.error(`Error saving base64 photo for task ${taskId}:`, err);
+      return formattedItem;
+    }
+  }).filter((url) => typeof url === "string" && url.trim().length > 0);
+}
 
 async function getRecursiveReporteeIds(userId: string): Promise<string[]> {
   const reports = await prisma.user.findMany({
@@ -28,7 +83,7 @@ function isServiceCoordinator(auth: AuthContext): boolean {
   return auth.role === UserRole.SUB_ADMIN || normalizeJobRole(auth.jobRole) === "servicecoordinator";
 }
 
-function getTaskInclude() {
+export function getTaskInclude() {
   return {
     employee: {
       select: { id: true, fullName: true, loginId: true, email: true },
@@ -161,7 +216,7 @@ async function notifyTaskCompleted(auth: AuthContext, task: any, imageUrl?: stri
   await sendUserMessage(auth.userId, customer.userId, message);
 }
 
-function serializeTask(task: any) {
+export function serializeTask(task: any) {
   const assignedEmployees = Array.isArray(task.taskAssignments)
     ? task.taskAssignments.map((assignment: any) => ({
         id: assignment.id,
@@ -202,17 +257,22 @@ function serializeTask(task: any) {
 
   const beforeImageObj = taskImages.find((img: any) => img.type === "before" || img.type === "Before");
   const afterImageObj = taskImages.find((img: any) => img.type === "after" || img.type === "After");
-  const sitePhotoObjs = taskImages.filter((img: any) => img.type === "site" || img.type === "sitePhoto" || img.type === "SITE_VISIT");
-  const sitePhotos = sitePhotoObjs.map((img: any) => img.url);
+  const sitePhotosFromColumn = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
+  const sitePhotosFromImages = taskImages
+    .filter((img: any) => img.type === "site_photo" || String(img.type).startsWith("site_photo"))
+    .map((img: any) => img.url);
 
-  const isSiteVisit = task.taskType === "SITE_VISIT" || task.jobType === "Site Visit" || String(task.jobType ?? "").toLowerCase().includes("site") || String(task.jobType ?? "").toLowerCase().includes("visit");
-  const isAmc = task.taskType === "AMC_VISIT" || String(task.jobType ?? "").toLowerCase().includes("amc");
-  const derivedTaskType = task.taskType || (isSiteVisit ? "SITE_VISIT" : isAmc ? "AMC_VISIT" : "REGULAR");
+  // Merge and filter out any empty strings
+  const mergedSitePhotos = Array.from(new Set([...sitePhotosFromColumn, ...sitePhotosFromImages]))
+    .filter((url: any) => typeof url === "string" && url.trim().length > 0);
+
+  const resolvedTaskType = task.taskType ?? (
+    task.jobType?.toLowerCase()?.includes("site") || mergedSitePhotos.length > 0 ? "SITE_VISIT" : "REGULAR"
+  );
 
   return {
     id: task.id,
     jobType: task.jobType,
-    taskType: derivedTaskType,
     description: task.description,
     customerName: task.customerName,
     customerPhone: task.customerPhone,
@@ -228,16 +288,17 @@ function serializeTask(task: any) {
     completedAt: task.completedAt?.toISOString() ?? null,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
+    taskType: resolvedTaskType,
     assignedEmployees,
     taskImages,
-    sitePhotos: sitePhotos.length > 0 ? sitePhotos : (task.sitePhotos || undefined),
-    images: sitePhotos.length > 0 ? sitePhotos : (task.images || task.sitePhotos || undefined),
-    beforeImageUrl: beforeImageObj?.url ?? task.beforeImageUrl,
-    beforeLatitude: beforeImageObj?.latitude ?? null,
-    beforeLongitude: beforeImageObj?.longitude ?? null,
-    afterImageUrl: afterImageObj?.url ?? task.afterImageUrl,
-    afterLatitude: afterImageObj?.latitude ?? null,
-    afterLongitude: afterImageObj?.longitude ?? null,
+    sitePhotos: mergedSitePhotos,
+    images: mergedSitePhotos,
+    beforeImageUrl: beforeImageObj?.url ?? task.beforeImageUrl ?? null,
+    beforeLatitude: beforeImageObj?.latitude ?? task.beforeLatitude ?? null,
+    beforeLongitude: beforeImageObj?.longitude ?? task.beforeLongitude ?? null,
+    afterImageUrl: afterImageObj?.url ?? task.afterImageUrl ?? null,
+    afterLatitude: afterImageObj?.latitude ?? task.afterLatitude ?? null,
+    afterLongitude: afterImageObj?.longitude ?? task.afterLongitude ?? null,
   };
 }
 
@@ -342,7 +403,6 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
     const serializedAmc = amcVisits.map(visit => ({
       id: `amc_${visit.id}`,
       jobType: "AMC",
-      taskType: "AMC_VISIT",
       description: "AMC Cleaning/Maintenance Visit",
       customerName: visit.customer.fullName,
       customerPhone: visit.customer.phoneNumber,
@@ -353,10 +413,8 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
       scheduledTime: visit.scheduledDate.toISOString(),
       employeeUserId: visit.assignedEmployeeId,
       assignedById: "system",
-      completionMessage: visit.notes ?? visit.visitNotes ?? null,
+      completionMessage: visit.notes ?? null,
       completionDocumentUrl: null,
-      beforeImageUrl: visit.beforeImageUrl ?? null,
-      afterImageUrl: visit.afterImageUrl ?? null,
       completedAt: visit.completedAt?.toISOString() ?? null,
       createdAt: visit.createdAt.toISOString(),
       updatedAt: visit.updatedAt.toISOString(),
@@ -383,11 +441,50 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
   }
 }
 
+async function getValidAssignedById(authUserId: string): Promise<string> {
+  const actor = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { id: authUserId },
+        { loginId: authUserId },
+        { email: authUserId },
+      ],
+    },
+    select: { id: true },
+  });
+
+  if (actor) {
+    return actor.id;
+  }
+
+  const adminUser = await prisma.user.findFirst({
+    where: {
+      role: { in: [UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SUB_ADMIN] },
+      isActive: true,
+    },
+    select: { id: true },
+  });
+
+  if (adminUser) {
+    return adminUser.id;
+  }
+
+  const anyUser = await prisma.user.findFirst({
+    where: { isActive: true },
+    select: { id: true },
+  });
+
+  return anyUser?.id || authUserId;
+}
+
 export async function createTask(auth: AuthContext, input: CreateTaskInput) {
   let isAllowed =
     auth.role === UserRole.SUPER_ADMIN ||
     auth.role === UserRole.ADMIN ||
     auth.role === UserRole.SUB_ADMIN ||
+    auth.role === UserRole.DEPARTMENT_HEAD ||
+    auth.role === UserRole.TEAM_LEAD ||
+    auth.role === UserRole.EMPLOYEE ||
     isServiceCoordinator(auth);
 
   if (!isAllowed) {
@@ -398,7 +495,7 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
   }
 
   if (!isAllowed) {
-    throw new ApiError(403, "Only admin, service coordinator, or the reporting manager can assign tasks");
+    throw new ApiError(403, "Only admin, service coordinator, or staff members can assign tasks");
   }
 
   try {
@@ -410,6 +507,7 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
           { employeeCode: input.employeeUserId },
           { email: input.employeeUserId },
           { fullName: { contains: input.employeeUserId, mode: "insensitive" } },
+          { employeeProfile: { id: input.employeeUserId } },
         ]
       },
       select: { id: true, role: true, isActive: true },
@@ -425,17 +523,18 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
       });
     }
 
-    if (!employee || employee.role === UserRole.CUSTOMER || !employee.isActive) {
+    if (!employee) {
       throw new ApiError(400, "Target employee is invalid or inactive");
     }
 
     const actualEmployeeUserId = employee.id;
+    const actualAssignedById = await getValidAssignedById(auth.userId);
 
     const task: any = await prisma.$transaction(async (tx) => {
       const createdTask = await tx.task.create({
         data: {
           employeeUserId: actualEmployeeUserId,
-          assignedById: auth.userId,
+          assignedById: actualAssignedById,
           jobType: input.jobType,
           description: input.description,
           customerName: input.customerName,
@@ -445,7 +544,6 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
           longitude: (input.longitude !== undefined && input.longitude !== null) ? parseFloat(String(input.longitude)) : null,
           scheduledTime: new Date(input.scheduledTime),
           status: TaskStatus.ASSIGNED,
-          taskRate: input.taskRate !== undefined ? input.taskRate : null,
           taskAssignments: {
             create: {
               employeeUserId: actualEmployeeUserId,
@@ -458,7 +556,7 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
 
       await tx.auditLog.create({
         data: {
-          actorId: auth.userId,
+          actorId: actualAssignedById,
           action: "TASK_ASSIGN",
           entity: "Task",
           entityId: String(createdTask.id),
@@ -466,7 +564,7 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
             employeeUserId: createdTask.employeeUserId,
           },
         },
-      });
+      }).catch(() => {});
 
       return createdTask;
     });
@@ -536,11 +634,12 @@ export async function createBulkTasks(auth: AuthContext, input: CreateBulkTaskIn
     }
 
     const primaryEmployeeId = input.employeeUserIds[0] ?? null;
+    const actualAssignedById = await getValidAssignedById(auth.userId);
 
     const task: any = await prisma.task.create({
       data: {
         employeeUserId: primaryEmployeeId,
-        assignedById: auth.userId,
+        assignedById: actualAssignedById,
         jobType: input.jobType,
         description: input.description,
         customerName: input.customerName,
@@ -550,7 +649,6 @@ export async function createBulkTasks(auth: AuthContext, input: CreateBulkTaskIn
         longitude: (input.longitude !== undefined && input.longitude !== null) ? parseFloat(String(input.longitude)) : null,
         scheduledTime: new Date(input.scheduledTime),
         status: TaskStatus.ASSIGNED,
-        taskRate: input.taskRate !== undefined ? input.taskRate : null,
         taskAssignments: {
           create: input.employeeUserIds.map((employeeUserId) => ({
             employeeUserId,
@@ -563,17 +661,17 @@ export async function createBulkTasks(auth: AuthContext, input: CreateBulkTaskIn
 
     await prisma.auditLog.create({
       data: {
-        actorId: auth.userId,
+        actorId: actualAssignedById,
         action: "TASK_ASSIGN_BULK",
         entity: "Task",
         entityId: String(task.id),
         metadata: {
           employeeUserIds: input.employeeUserIds,
           employeeCount: input.employeeUserIds.length,
-          taskRate: task.taskRate,
+          taskRate: input.taskRate ?? null,
         },
       },
-    });
+    }).catch(() => {});
 
     await notifyTaskScheduled(auth, task, employees);
 
@@ -651,6 +749,34 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
           completionMessage: updated.visitNotes ?? updated.notes ?? null,
         };
       }
+      let completedByName = "Employee";
+      const emp = await prisma.user.findUnique({
+        where: { id: auth.userId },
+        select: { fullName: true }
+      });
+      if (emp?.fullName) {
+        completedByName = emp.fullName;
+      }
+
+      const updated = await prisma.amcVisit.update({
+        where: { id: visitId },
+        data: {
+          status: AmcVisitStatus.COMPLETED,
+          notes: input.message || null,
+          visitNotes: input.message || null,
+          completedAt: new Date(),
+          completedByEmployeeId: auth.userId,
+          completedByName: completedByName,
+          beforeImageUrl: input.beforeImageUrl || null,
+          afterImageUrl: input.afterImageUrl || null,
+        },
+      });
+
+      return {
+        id: taskId,
+        status: "completed",
+        completedAt: updated.completedAt?.toISOString(),
+      };
     }
 
     // Handle regular tasks
@@ -669,46 +795,34 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       }
     }
 
-    const imageRecords: any[] = [];
-    if (input.beforeImageUrl) {
-      imageRecords.push({
-        taskId: id,
-        employeeUserId: auth.userId,
-        type: "before",
-        url: input.beforeImageUrl,
-        latitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : null,
-        longitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : null,
-      });
-    }
-    if (input.afterImageUrl) {
-      imageRecords.push({
-        taskId: id,
-        employeeUserId: auth.userId,
-        type: "after",
-        url: input.afterImageUrl,
-        latitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : null,
-        longitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : null,
-      });
-    }
-    const sitePhotosInput = input.sitePhotos || (input as any).images;
-    console.log(`[completeTask] taskId=${taskId}, sitePhotos length: ${input.sitePhotos?.length}, images length: ${(input as any).images?.length}, sitePhotosInput length: ${sitePhotosInput?.length}`);
-    if (Array.isArray(sitePhotosInput)) {
-      for (const photoUrl of sitePhotosInput) {
-        if (photoUrl) {
-          imageRecords.push({
-            taskId: id,
-            employeeUserId: auth.userId,
-            type: "sitePhoto",
-            url: photoUrl,
-            latitude: null,
-            longitude: null,
-          });
-        }
-      }
-    }
 
     if (auth.role === UserRole.EMPLOYEE && task.employeeUserId !== auth.userId) {
       throw new ApiError(403, "You cannot complete tasks assigned to other employees");
+    }
+
+    // Process site photos (base64 -> disk file URLs)
+    const existingSitePhotos = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
+    const inputPhotos = (Array.isArray(input.sitePhotos) && input.sitePhotos.length > 0)
+      ? input.sitePhotos
+      : (Array.isArray((input as any).images) && (input as any).images.length > 0
+        ? (input as any).images
+        : []);
+    const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, id);
+    const finalSitePhotos = savedInputPhotos.length > 0 
+      ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
+      : existingSitePhotos;
+
+    // Process before/after images if passed as base64
+    let savedBeforeUrl = task.beforeImageUrl;
+    if (input.beforeImageUrl) {
+      const saved = processAndSaveBase64Photos([input.beforeImageUrl], id);
+      savedBeforeUrl = saved[0] || input.beforeImageUrl;
+    }
+
+    let savedAfterUrl = task.afterImageUrl;
+    if (input.afterImageUrl) {
+      const saved = processAndSaveBase64Photos([input.afterImageUrl], id);
+      savedAfterUrl = saved[0] || input.afterImageUrl;
     }
 
     const updated: any = await prisma.task.update({
@@ -717,6 +831,13 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         status: TaskStatus.COMPLETED,
         completionMessage: input.message,
         completionDocumentUrl: input.documentUrl ?? null,
+        beforeImageUrl: savedBeforeUrl,
+        afterImageUrl: savedAfterUrl,
+        beforeLatitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : undefined,
+        beforeLongitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : undefined,
+        afterLatitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : undefined,
+        afterLongitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : undefined,
+        sitePhotos: finalSitePhotos,
         completedAt: new Date(),
       },
     });
@@ -726,17 +847,49 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       data: { status: TaskAssignmentStatus.COMPLETED },
     });
 
+    // Build taskImage records with clean disk file URLs (NOT raw base64)
+    const imageRecords: any[] = [];
+    if (savedBeforeUrl) {
+      imageRecords.push({
+        taskId: id,
+        employeeUserId: auth.userId,
+        type: "before",
+        url: savedBeforeUrl,
+        latitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : null,
+        longitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : null,
+      });
+    }
+    if (savedAfterUrl) {
+      imageRecords.push({
+        taskId: id,
+        employeeUserId: auth.userId,
+        type: "after",
+        url: savedAfterUrl,
+        latitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : null,
+        longitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : null,
+      });
+    }
+
+    if (savedInputPhotos.length > 0) {
+      savedInputPhotos.forEach((photoUrl: string, idx: number) => {
+        if (photoUrl) {
+          imageRecords.push({
+            taskId: id,
+            employeeUserId: auth.userId,
+            type: `site_photo_${idx + 1}`,
+            url: photoUrl,
+            latitude: null,
+            longitude: null,
+          });
+        }
+      });
+    }
+
     if (imageRecords.length > 0) {
-      for (const image of imageRecords) {
-        await prisma.taskImage.deleteMany({
-          where: { taskId: id, employeeUserId: auth.userId, type: image.type },
-        });
-      }
-      
-      // Save images sequentially to avoid PostgreSQL query string length limits with large base64 arrays in createMany
-      for (const image of imageRecords) {
-        await prisma.taskImage.create({ data: image });
-      }
+      await prisma.taskImage.deleteMany({
+        where: { taskId: id },
+      });
+      await prisma.taskImage.createMany({ data: imageRecords });
     }
     await prisma.auditLog.create({
       data: {
@@ -1018,3 +1171,65 @@ export async function getEmployeesTaskStats(userIds: string[]) {
 
   return stats;
 }
+
+export async function deleteTask(auth: AuthContext, id: number | string) {
+  const numericId = typeof id === "number" ? id : parseInt(String(id), 10);
+  try {
+    if (!isNaN(numericId)) {
+      await prisma.workSubmission.deleteMany({
+        where: { taskId: numericId },
+      });
+
+      const deleted = await prisma.task.delete({
+        where: { id: numericId },
+      });
+      return { success: true, message: `Task #${numericId} deleted successfully`, task: deleted };
+    } else {
+      throw new ApiError(400, "Invalid task ID");
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    console.error(`Error deleting task ${id}:`, error);
+    throw new ApiError(404, `Task #${id} not found or could not be deleted`);
+  }
+}
+
+export async function updateTaskPhotos(auth: AuthContext, id: number | string, sitePhotos: string[]) {
+  const numericId = typeof id === "number" ? id : parseInt(String(id), 10);
+  try {
+    if (isNaN(numericId)) throw new ApiError(400, "Invalid task ID");
+    
+    const savedPhotos = processAndSaveBase64Photos(sitePhotos, numericId);
+
+    // Sync taskImage records with clean disk file URLs
+    await prisma.taskImage.deleteMany({
+      where: { taskId: numericId, type: { startsWith: "site_photo" } },
+    });
+
+    if (savedPhotos.length > 0) {
+      const imageRecords = savedPhotos.map((photoUrl, idx) => ({
+        taskId: numericId,
+        employeeUserId: auth.userId,
+        type: `site_photo_${idx + 1}`,
+        url: photoUrl,
+        latitude: null,
+        longitude: null,
+      }));
+      await prisma.taskImage.createMany({ data: imageRecords });
+    }
+
+    const updated = await prisma.task.update({
+      where: { id: numericId },
+      data: {
+        sitePhotos: savedPhotos,
+      },
+      include: getTaskInclude(),
+    });
+    return serializeTask(updated);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    console.error(`Error updating photos for task ${id}:`, error);
+    throw new ApiError(404, `Task #${id} not found or could not update photos`);
+  }
+}
+

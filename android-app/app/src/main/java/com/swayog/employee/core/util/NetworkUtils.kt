@@ -13,11 +13,16 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 object NetworkUtils {
     
     fun isNetworkAvailable(context: Context): Boolean {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val hasTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                           capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                           capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                           capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+
+        return hasInternet && hasTransport
     }
     
     fun observeNetworkStatus(context: Context): Flow<Boolean> {
@@ -37,9 +42,12 @@ object NetworkUtils {
                     network: Network,
                     networkCapabilities: NetworkCapabilities
                 ) {
-                    val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                                     networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                    trySend(hasInternet)
+                    val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    val hasTransport = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                                       networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                                       networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                                       networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                    trySend(hasInternet && hasTransport)
                 }
             }
             

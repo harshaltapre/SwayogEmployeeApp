@@ -90,6 +90,7 @@ model Task {
   assignedById          String
   completionMessage     String?
   completionDocumentUrl String?
+  sitePhotos            String[]   @default([])
   completedAt           DateTime?
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
@@ -214,8 +215,10 @@ model Customer {
   email               String
   phoneNumber         String
   city                String
+  state               String?
   address             String
   systemSizeKw        Float
+  projectType         String?
   installationDate    DateTime
   warrantyExpiry      DateTime?
   panelBrand          String?

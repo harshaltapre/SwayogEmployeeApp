@@ -136,9 +136,10 @@ export const AssignSiteVisitModal: React.FC<AssignSiteVisitModalProps> = ({
         },
         onError: (err: any) => {
           console.error("Site Visit Assignment Error:", err);
+          const errorMessage = err?.response?.data?.error || err?.message || err?.error || (typeof err === "string" ? err : "Failed to create site visit task. Please try again.");
           toast({
             title: "Assignment Failed",
-            description: err?.message || "Failed to create site visit task. Please try again.",
+            description: errorMessage,
             variant: "destructive",
           });
         },

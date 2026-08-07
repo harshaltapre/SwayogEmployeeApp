@@ -5,17 +5,20 @@ import { Input } from "@/components/ui/input";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useCreateCustomer } from "@/lib/api-client";
+import { useSubmitLead, getListCustomersQueryKey } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 const projectSchema = z.object({
   fullName: z.string().trim().min(2, "Name is required"),
   phoneNumber: z.string().trim().min(8, "Phone is required"),
   email: z.string().trim().email("Enter a valid email").optional().or(z.literal("")),
   city: z.string().trim().min(2, "City is required"),
+  state: z.string().trim().min(2, "State is required"),
   address: z.string().trim().min(5, "Address is required"),
   systemSizeKw: z.coerce.number().positive("System size is required"),
+  projectType: z.string().optional(),
 });
 
 export function AddProjectModal({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
@@ -25,12 +28,14 @@ export function AddProjectModal({ open, onOpenChange }: { open: boolean, onOpenC
     defaultValues: { fullName: "", phoneNumber: "", email: "", city: "", address: "", systemSizeKw: 1 },
   });
 
-  const createMutation = useCreateCustomer({
+  const queryClient = useQueryClient();
+  const createMutation = useSubmitLead({
     mutation: {
       onSuccess: () => {
         toast({ title: "Project Added", description: "Your referred project has been submitted." });
         onOpenChange(false);
         form.reset();
+        queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
       },
       onError: (err: any) => {
         const errorMsg = err.message || err.error || "Failed to add project.";
@@ -41,13 +46,14 @@ export function AddProjectModal({ open, onOpenChange }: { open: boolean, onOpenC
 
   const onSubmit = (values: z.infer<typeof projectSchema>) => {
     createMutation.mutate({
-      data: {
-        ...values,
-        email: values.email || `lead-${Date.now()}-${Math.floor(Math.random() * 10000)}@swayog.in`, // Unique placeholder
-        installationDate: new Date().toISOString(),
-        status: "active",
-        projectStage: 1, // 1 = lead
-      } as any
+      customerName: values.fullName,
+      phone: values.phoneNumber,
+      location: values.city,
+      capacity: values.systemSizeKw.toString(),
+      address: values.address,
+      email: values.email,
+      state: values.state,
+      projectType: values.projectType,
     });
   };
 
@@ -75,8 +81,16 @@ export function AddProjectModal({ open, onOpenChange }: { open: boolean, onOpenC
               <FormField control={form.control} name="city" render={({ field }) => (
                 <FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
               )} />
+              <FormField control={form.control} name="state" render={({ field }) => (
+                <FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="email" render={({ field }) => (
                 <FormItem><FormLabel>Email (Optional)</FormLabel><FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="projectType" render={({ field }) => (
+                <FormItem><FormLabel>Project Type</FormLabel><FormControl><Input placeholder="e.g. Residential, Commercial" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
             <FormField control={form.control} name="address" render={({ field }) => (

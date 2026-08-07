@@ -77,12 +77,13 @@ function toPublicUser(user: AuthUser): PublicUser {
   return safe;
 }
 
-async function issueSession(user: AuthUser) {
+async function issueSession(user: AuthUser, requestedRole?: string) {
+  const effectiveRole = (requestedRole === "PARTNER" || requestedRole === "partner" || user.role === UserRole.PARTNER) ? UserRole.PARTNER : user.role;
   const claims = {
     sub: user.id,
-    role: user.role,
+    role: effectiveRole,
     loginId: user.loginId,
-    jobRole: user.employeeProfile?.jobRole || user.designationTitle || undefined,
+    jobRole: user.employeeProfile?.jobRole || user.designationTitle,
   };
 
   const accessToken = issueAccessToken(claims);
@@ -100,10 +101,15 @@ async function issueSession(user: AuthUser) {
     console.warn("Could not save refresh token to DB (using in-memory bypass):", error);
   }
 
+  const publicUser = toPublicUser(user);
   return {
     accessToken,
     refreshToken,
-    user: toPublicUser(user),
+    user: {
+      ...publicUser,
+      role: effectiveRole,
+      jobRole: publicUser.employeeProfile?.jobRole || publicUser.designationTitle || undefined,
+    },
   };
 }
 
@@ -332,10 +338,20 @@ export async function login(input: LoginInput) {
 
     // CRITICAL SECURITY CHECK: Validate role matches
     if (user.role !== input.role) {
-      // Specialized case: SUB_ADMIN users should be allowed to login using the "EMPLOYEE" role selection
+      // Specialized cases:
+      // 1. SUB_ADMIN users should be allowed to login using the "EMPLOYEE" role selection
+      // 2. PARTNER users / EPC Contractor users logging in via "Partner" role selection
       const isSubAdminLoggingAsEmployee = (user.role === UserRole.SUB_ADMIN && (input.role as string) === "EMPLOYEE");
+      const isPartnerLoggingIn = (
+        (user.role === UserRole.PARTNER && ((input.role as string) === "PARTNER" || (input.role as string) === "EMPLOYEE")) ||
+        (user.role === UserRole.EMPLOYEE && (input.role as string) === "PARTNER" && (
+          String(user.employeeProfile?.jobRole ?? "").toLowerCase().includes("epc") ||
+          String(user.employeeProfile?.jobRole ?? "").toLowerCase().includes("partner") ||
+          String(user.employeeProfile?.jobRole ?? "").toLowerCase().includes("vendor")
+        ))
+      );
 
-      if (!isSubAdminLoggingAsEmployee) {
+      if (!isSubAdminLoggingAsEmployee && !isPartnerLoggingIn) {
         console.warn("[AUTH] Role mismatch for identifier:", input.identifier, "user role:", user.role, "requested role:", input.role);
         // Log the unauthorized access attempt
         await prisma.auditLog.create({
@@ -386,26 +402,31 @@ export async function login(input: LoginInput) {
 
     console.log("[AUTH] Login successful for user:", user.id);
 
-    // Non-blocking asynchronous audit log and notification
-    prisma.auditLog.create({
+    await prisma.auditLog.create({
       data: {
         actorId: user.id,
         action: "AUTH_LOGIN",
         entity: "User",
         entityId: user.id,
-        metadata: { role: user.role },
+        metadata: {
+          role: user.role,
+        },
       },
-    }).catch((err) => console.error("[AUTH] Audit log error:", err));
+    }).catch((err) => {
+      console.error("[AUTH] Failed to create audit log:", err);
+    });
 
-    createAdminNotification({
+    await createAdminNotification({
       type: "USER_LOGIN",
       message: `${user.fullName || user.email || user.loginId} (${user.role}) logged in`,
       employeeId: user.id,
-    }).catch((err) => console.error("[AUTH] Notification error:", err));
+    }).catch((err) => {
+      console.error("[AUTH] Failed to create notification:", err);
+    });
 
-    resetLockoutState(user).catch(() => {});
+    await resetLockoutState(user);
 
-    return issueSession(user);
+    return issueSession(user, input.role);
   } catch (error) {
     if (error instanceof ApiError) {
       throw error;

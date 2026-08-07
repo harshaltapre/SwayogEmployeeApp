@@ -42,11 +42,11 @@ export const authenticateAccessToken: RequestHandler = (req, _res, next) => {
       role: payload.role,
       jobRole: payload.jobRole,
     };
-
-    next();
-  } catch {
-    next(new ApiError(401, "Invalid or expired access token"));
+  } catch (error) {
+    return next(new ApiError(401, "Invalid or expired access token"));
   }
+  
+  next();
 };
 
 /**

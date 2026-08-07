@@ -31,11 +31,21 @@ fun BeforeAfterImageSection(
 ) {
     val context = LocalContext.current
     var fullScreenImage by remember { mutableStateOf<Any?>(null) }
-    val resolvedSitePhotos = remember(sitePhotos) {
-        sitePhotos?.filter { it.isNotBlank() } ?: emptyList()
+    val resolvedSitePhotos = remember(sitePhotos, beforeImageUrl, afterImageUrl) {
+        val list = mutableListOf<String>()
+        if (!sitePhotos.isNullOrEmpty()) {
+            list.addAll(sitePhotos.filter { it.isNotBlank() })
+        }
+        if (!beforeImageUrl.isNullOrBlank() && !list.contains(beforeImageUrl)) {
+            list.add(beforeImageUrl)
+        }
+        if (!afterImageUrl.isNullOrBlank() && !list.contains(afterImageUrl)) {
+            list.add(afterImageUrl)
+        }
+        list.distinct()
     }
 
-    if (isSiteVisit || taskType == "SITE_VISIT") {
+    if (isSiteVisit || taskType == "SITE_VISIT" || !sitePhotos.isNullOrEmpty()) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "📸 Site Visit Photos (${resolvedSitePhotos.size})",
@@ -62,11 +72,14 @@ fun BeforeAfterImageSection(
                 }
             }
         } else {
+            val rowCount = (resolvedSitePhotos.size + 1) / 2
+            val gridHeight = (rowCount * 138).dp
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 320.dp),
+                    .height(gridHeight),
+                userScrollEnabled = false,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {

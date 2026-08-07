@@ -2,6 +2,8 @@ package com.swayog.employee.presentation.subadmin
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -23,8 +25,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.window.Dialog
 import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.Task
+import com.swayog.employee.presentation.common.components.BeforeAfterImageSection
 import com.swayog.employee.presentation.common.components.SwayogCard
 import com.swayog.employee.presentation.common.components.SwayogTopBar
 
@@ -219,6 +223,71 @@ fun EmployeeDetailContent(
     onBack: () -> Unit
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var selectedTaskForDetails by remember { mutableStateOf<Task?>(null) }
+
+    if (selectedTaskForDetails != null) {
+        val detailTask = selectedTaskForDetails!!
+        Dialog(onDismissRequest = { selectedTaskForDetails = null }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.85f),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = detailTask.jobType ?: "Task Details",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = { selectedTaskForDetails = null }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close")
+                        }
+                    }
+
+                    Divider()
+
+                    Text("Status: ${(detailTask.status ?: "Unknown").replace("_", " ").uppercase()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Description: ${detailTask.description ?: "N/A"}")
+                    Text("Customer: ${detailTask.customerName ?: "N/A"}")
+                    Text("Phone: ${detailTask.customerPhone ?: "N/A"}")
+                    Text("Address: ${detailTask.address ?: "N/A"}")
+
+                    if (!detailTask.completionMessage.isNullOrBlank()) {
+                        Text("Completion Remarks / Observations:", fontWeight = FontWeight.Bold)
+                        Text(detailTask.completionMessage, style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    BeforeAfterImageSection(
+                        beforeImageUrl = detailTask.beforeImageUrl,
+                        afterImageUrl = detailTask.afterImageUrl,
+                        sitePhotos = detailTask.sitePhotos ?: detailTask.images,
+                        taskType = detailTask.taskType,
+                        isSiteVisit = detailTask.isSiteVisit
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { selectedTaskForDetails = null },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Close")
+                    }
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -362,7 +431,7 @@ fun EmployeeDetailContent(
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(tasks) { task ->
-                            TaskCard(task)
+                            TaskCard(task = task, onClick = { selectedTaskForDetails = task })
                         }
                     }
                 }
@@ -383,8 +452,10 @@ fun EmployeeDetailContent(
 }
 
 @Composable
-fun TaskCard(task: Task) {
-    SwayogCard {
+fun TaskCard(task: Task, onClick: (() -> Unit)? = null) {
+    SwayogCard(
+        modifier = if (onClick != null) Modifier.clickable { onClick() } else Modifier
+    ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

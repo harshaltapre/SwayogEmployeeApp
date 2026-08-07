@@ -4,16 +4,18 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.swayog.employee.data.api.ApiService
-import com.swayog.employee.data.local.dao.OutboxQueueDao
-import com.swayog.employee.data.model.*
+import com.swayog.employee.data.repository.TaskRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import com.swayog.employee.data.local.dao.TaskDao
+import com.swayog.employee.data.local.dao.OutboxQueueDao
 import com.swayog.employee.data.local.entity.TaskEntity
+import com.swayog.employee.data.remote.ApiService
+import com.swayog.employee.data.remote.UpdateTaskRequest
+import com.swayog.employee.data.remote.DailyCommitRequest
 import com.swayog.employee.core.util.LocalFileHelper
 import com.google.gson.Gson
 import android.util.Log
@@ -238,7 +240,7 @@ class SyncWorker @AssistedInject constructor(
             }
         } catch (e: Exception) {
             Log.e("TASK_SYNC", "SyncWorker failed with exception: ${e.message}", e)
-            Result.failure()
+            Result.retry()
         }
     }
 }

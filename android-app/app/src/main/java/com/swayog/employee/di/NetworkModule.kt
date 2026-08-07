@@ -48,84 +48,37 @@ object NetworkModule {
         return Interceptor { chain ->
             val originalRequest = chain.request()
 
-            // Dynamic base URL: read saved server URL from preferences
-            val savedUrl = dataStoreManager.getServerUrlBlocking()
-            val request = if (!savedUrl.isNullOrBlank()) {
-                try {
-                    val newBaseUrl = savedUrl.let { url ->
-                        val normalized = if (url.endsWith("/")) url else "$url/"
-                        normalized.toHttpUrl()
-                    }
+            val savedUrl = dataStoreManager.getServerUrlBlocking()?.trim()
+            val defaultBaseUrl = BuildConfig.API_BASE_URL.trim()
 
-                    val defaultBaseUrl = BuildConfig.API_BASE_URL.let { url ->
-                        val normalized = if (url.endsWith("/")) url else "$url/"
-                        normalized.toHttpUrl()
-                    }
+            val requestBuilder = originalRequest.newBuilder()
+                .header("Content-Type", "application/json")
+                .header("bypass-tunnel-reminder", "true")
 
-                    val defaultPathSegments = defaultBaseUrl.pathSegments.filter { it.isNotEmpty() }
-                    val origPathSegments = originalRequest.url.pathSegments.filter { it.isNotEmpty() }
-
-                    // Strip default base path from original request path if present
-                    val relativeSegments = if (origPathSegments.take(defaultPathSegments.size) == defaultPathSegments) {
-                        origPathSegments.drop(defaultPathSegments.size)
-                    } else {
-                        origPathSegments
-                    }
-
-                    // Build path using saved base URL path + relative segments
-                    val savedBasePathSegments = newBaseUrl.pathSegments.filter { it.isNotEmpty() }
-                    val finalSegments = if (savedBasePathSegments.isEmpty() && relativeSegments.firstOrNull() != "api") {
-                        listOf("api", "v1") + relativeSegments
-                    } else {
-                        savedBasePathSegments + relativeSegments
-                    }
-
-                    val newUrlBuilder = originalRequest.url.newBuilder()
-                        .scheme(newBaseUrl.scheme)
-                        .host(newBaseUrl.host)
-                        .port(newBaseUrl.port)
-                        .encodedPath("/")
-
-                    finalSegments.forEach { seg ->
-                        newUrlBuilder.addPathSegment(seg)
-                    }
-
-                    val newUrl = newUrlBuilder.build()
-                    Log.d("NetworkModule", "Request URL: $newUrl")
-
-                    val requestBuilder = originalRequest.newBuilder()
-                        .url(newUrl)
-                        .header("Content-Type", "application/json")
-                        .header("bypass-tunnel-reminder", "true")
-
-                    val authToken = runBlocking { dataStoreManager.authToken.first() }
-                    if (authToken != null) {
-                        requestBuilder.header("Authorization", "Bearer $authToken")
-                    }
-                    requestBuilder.build()
-                } catch (e: Exception) {
-                    Log.e("NetworkModule", "Failed to parse saved server URL: $savedUrl", e)
-                    // Fallback to original request with auth header
-                    val requestBuilder = originalRequest.newBuilder()
-                        .header("Content-Type", "application/json")
-                        .header("bypass-tunnel-reminder", "true")
-                    val authToken = runBlocking { dataStoreManager.authToken.first() }
-                    if (authToken != null) {
-                        requestBuilder.header("Authorization", "Bearer $authToken")
-                    }
-                    requestBuilder.build()
-                }
-            } else {
-                val requestBuilder = originalRequest.newBuilder()
-                    .header("Content-Type", "application/json")
-                    .header("bypass-tunnel-reminder", "true")
-                val authToken = runBlocking { dataStoreManager.authToken.first() }
-                if (authToken != null) {
-                    requestBuilder.header("Authorization", "Bearer $authToken")
-                }
-                requestBuilder.build()
+            val authToken = runBlocking { dataStoreManager.authToken.first() }
+            if (!authToken.isNullOrBlank()) {
+                requestBuilder.header("Authorization", "Bearer $authToken")
             }
-            
+
+            if (!savedUrl.isNullOrBlank() && savedUrl.removeSuffix("/") != defaultBaseUrl.removeSuffix("/")) {
+                try {
+                    val customBaseUrl = if (savedUrl.endsWith("/")) savedUrl else "$savedUrl/"
+                    val newHttpUrl = customBaseUrl.toHttpUrl()
+
+                    val updatedUrl = originalRequest.url.newBuilder()
+                        .scheme(newHttpUrl.scheme)
+                        .host(newHttpUrl.host)
+                        .port(newHttpUrl.port)
+                        .build()
+
+                    Log.d("NetworkModule", "Using custom server URL: $updatedUrl")
+                    requestBuilder.url(updatedUrl)
+                } catch (e: Exception) {
+                    Log.e("NetworkModule", "Failed to apply custom server URL: $savedUrl", e)
+                }
+            }
+
+            val request = requestBuilder.build()
             var response = chain.proceed(request)
             
             val requestPath = request.url.encodedPath
@@ -214,22 +167,50 @@ object NetworkModule {
             .cache(cache)
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
-            .connectTimeout(60, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)   // Increased: site visits can have 10+ large photos
+            .writeTimeout(120, TimeUnit.SECONDS)  // Increased: large base64 payloads need more time
             .build()
     }
     
     @Provides
     @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+    fun provideGson(): com.google.gson.Gson {
+        // Custom type adapter ensures integer JSON fields (like task IDs "id": 123) are
+        // deserialized cleanly into String fields as "123" (not "123.0"), preventing 404s
+        // when the Android app sends the task ID back to the server for completion.
+        val integerAsStringAdapter = object : com.google.gson.TypeAdapter<String>() {
+            override fun write(out: com.google.gson.stream.JsonWriter, value: String?) {
+                if (value == null) out.nullValue() else out.value(value)
+            }
+            override fun read(reader: com.google.gson.stream.JsonReader): String? {
+                return when (reader.peek()) {
+                    com.google.gson.stream.JsonToken.NULL -> { reader.nextNull(); null }
+                    com.google.gson.stream.JsonToken.NUMBER -> {
+                        val numStr = reader.nextString()
+                        // Remove trailing .0 from integer representations (e.g., "123.0" → "123")
+                        if (numStr.endsWith(".0")) numStr.dropLast(2) else numStr
+                    }
+                    else -> reader.nextString()
+                }
+            }
+        }
+        return com.google.gson.GsonBuilder()
+            .setLenient()
+            .registerTypeAdapter(String::class.java, integerAsStringAdapter)
+            .create()
+    }
+
+    @Provides
+    @Singleton
+    fun provideRetrofit(okHttpClient: OkHttpClient, gson: com.google.gson.Gson): Retrofit {
         val baseUrl = BuildConfig.API_BASE_URL.let { url ->
             if (url.endsWith("/")) url else "$url/"
         }
         return Retrofit.Builder()
             .baseUrl(baseUrl)
             .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
     }
     

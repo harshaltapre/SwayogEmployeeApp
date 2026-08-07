@@ -10,9 +10,38 @@ import javax.net.ssl.SSLException
 
 class OfflinePendingException(message: String = "Saved locally. Will sync automatically when online.") : Exception(message)
 
+/**
+ * Thrown when the device IS online but the server rejected or failed the request
+ * (HTTP 4xx / 5xx or non-connectivity exception). Data is NOT saved to the outbox queue.
+ * The user should see the real error message and can retry manually.
+ */
+class OnlineSubmissionFailedException(message: String) : Exception(message)
+
 object ErrorUtils {
     /**
+     * Returns true if the exception is a genuine network/connectivity failure
+     * (no internet, DNS failure, timeout, etc.) — meaning it is safe to queue
+     * to the offline outbox for later retry.
+     * Returns false for server-level errors (HTTP 4xx/5xx) where the device IS online.
+     */
+    fun isNetworkException(e: Throwable): Boolean {
+        return e is UnknownHostException ||
+               e is ConnectException ||
+               e is SocketTimeoutException ||
+               e is NoRouteToHostException ||
+               e is SSLException ||
+               e is java.io.EOFException ||
+               e.message?.contains("Unable to resolve host", ignoreCase = true) == true ||
+               e.message?.contains("Failed to connect", ignoreCase = true) == true ||
+               e.message?.contains("Connection refused", ignoreCase = true) == true ||
+               e.message?.contains("Network is unreachable", ignoreCase = true) == true ||
+               e.message?.contains("No address associated with hostname", ignoreCase = true) == true ||
+               e.message?.contains("timeout", ignoreCase = true) == true
+    }
+
+    /**
      * Formats an exception into a guaranteed non-empty string,
+
      * including class names, and avoiding null messages.
      * Extracts HTTP bodies for HttpException.
      */

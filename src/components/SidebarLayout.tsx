@@ -1,7 +1,7 @@
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { isInventoryExecutiveJobRole, isSubAdminJobRole, useAuth } from "@/lib/auth";
+import { isInventoryExecutiveJobRole, isSubAdminJobRole, isServiceExecutiveHeadJobRole, isEpcPartnerJobRole, useAuth } from "@/lib/auth";
 
 import {
   LayoutDashboard,
@@ -21,6 +21,12 @@ import {
   ClipboardList,
   CalendarCheck,
   Leaf,
+  HardHat,
+  Truck,
+  GraduationCap,
+  FileCheck,
+  Camera,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
@@ -86,6 +92,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         { name: "Customers", href: "/admin/customers", icon: Users },
         { name: "Employees", href: "/admin/employees", icon: Briefcase },
         { name: "Partners", href: "/admin/partners", icon: Users },
+        { name: "Service & Executive", href: "/service-executive/dashboard", icon: Wrench },
         { name: "Complaints", href: "/admin/complaints", icon: Wrench },
         { name: "Inventory", href: "/admin/inventory", icon: Package },
         { name: "Isphere Green", href: "/admin/isphere-green", icon: Leaf },
@@ -103,8 +110,27 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       user.role === "team_lead" ||
       user.role === "department_head"
     ) {
+      const isServiceExecutive = isServiceExecutiveHeadJobRole(user.jobRole) || location.startsWith("/service-executive");
       const isInventory = isInventoryExecutiveJobRole(user.jobRole) || isInventoryPath;
       const isSubAdmin = isSubAdminJobRole(user.jobRole) || isSubAdminPath || user.role === "sub_admin";
+
+      if (isServiceExecutive) {
+        return [
+          { name: "Overview Dashboard", href: "/service-executive/dashboard?tab=overview", icon: LayoutDashboard },
+          { name: "EPC Contractors", href: "/service-executive/dashboard?tab=epc", icon: HardHat },
+          { name: "Projects", href: "/service-executive/dashboard?tab=projects", icon: Briefcase },
+          { name: "Installers", href: "/service-executive/dashboard?tab=installers", icon: Wrench },
+          { name: "Liaisoning & Experts", href: "/service-executive/dashboard?tab=liaisoning", icon: FileCheck },
+          { name: "Supply Chain", href: "/service-executive/dashboard?tab=supplychain", icon: Truck },
+          { name: "Knowledge & Experts", href: "/service-executive/dashboard?tab=knowledge", icon: GraduationCap },
+          { name: "Reports & Analytics", href: "/service-executive/dashboard?tab=reports", icon: FileText },
+          { name: "Employees Under Me", href: "/employee/under-me", icon: Users },
+          { name: "Tasks", href: "/employee/tasks", icon: CheckSquare },
+          { name: "Attendance", href: "/employee/attendance", icon: Calendar },
+          { name: "Daily Commit", href: "/employee/daily-commit", icon: FileText },
+          { name: "Settings", href: "/employee/settings", icon: Settings },
+        ];
+      }
 
       if (isInventory) {
         return [
@@ -140,13 +166,26 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       ];
     }
 
-    if (user.role === "partner") {
+    if (user.role === "partner" && !isEpcPartnerJobRole(user.jobRole)) {
+      // Standard Channel Partner sidebar
       return [
-        { name: "Dashboard", href: "/partner/dashboard", icon: LayoutDashboard },
-        { name: "Projects", href: "/partner/projects", icon: Briefcase },
-        { name: "Earnings", href: "/partner/earnings", icon: IndianRupee },
+        { name: "Partner Dashboard", href: "/partner/dashboard", icon: LayoutDashboard },
+        { name: "Referred Projects", href: "/partner/projects", icon: Briefcase },
+        { name: "Earnings & Payouts", href: "/partner/earnings", icon: IndianRupee },
         { name: "Messages", href: "/partner/messages", icon: MessageSquare },
         { name: "Settings", href: "/partner/settings", icon: Settings },
+      ];
+    }
+
+    if (isEpcPartnerJobRole(user.jobRole)) {
+      // EPC Contractor sidebar (links to dedicated /epc-contractor/dashboard)
+      return [
+        { name: "EPC Operations Center", href: "/epc-contractor/dashboard", icon: LayoutDashboard },
+        { name: "Assigned Projects", href: "/epc-contractor/dashboard", icon: Briefcase },
+        { name: "Material & Dispatches", href: "/epc-contractor/dashboard", icon: Truck },
+        { name: "Upload Site Photos", href: "/epc-contractor/dashboard", icon: Camera },
+        { name: "Invoices & Payments", href: "/epc-contractor/dashboard", icon: CreditCard },
+        { name: "Settings", href: "/epc-contractor/dashboard", icon: Settings },
       ];
     }
 
@@ -193,11 +232,22 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
         <nav className="space-y-1">
           {navItems.map((item) => {
-            const isActive = location === item.href;
+            const currentTab = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+            const itemTab = item.href.includes("?tab=") ? item.href.split("?tab=")[1] : null;
+            const isActive = itemTab
+              ? (currentTab ? currentTab === itemTab : itemTab === "overview")
+              : (location === item.href);
             return (
               <Link
                 key={item.name}
                 href={item.href}
+                onClick={(e) => {
+                  if (item.href.includes("?tab=")) {
+                    e.preventDefault();
+                    window.history.pushState({}, "", item.href);
+                    window.dispatchEvent(new Event("popstate"));
+                  }
+                }}
                 className="block rounded-md outline-none focus:outline-none focus-visible:outline-none"
               >
                 <div

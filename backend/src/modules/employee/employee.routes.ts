@@ -232,8 +232,13 @@ employeeRoutes.patch(
   asyncHandler(updateTaskStatus)
 );
 
-// Mark task as completed with documentation
+// Mark task as completed with documentation (supports POST and PATCH)
 employeeRoutes.post(
+  "/tasks/:taskId/complete",
+  employeeAuth,
+  asyncHandler(markTaskCompleted)
+);
+employeeRoutes.patch(
   "/tasks/:taskId/complete",
   employeeAuth,
   asyncHandler(markTaskCompleted)

@@ -39,7 +39,14 @@ data class Task(
 
     // Helper to check if this is a site visit
     val isSiteVisit: Boolean
-        get() = taskType == "SITE_VISIT" || jobType == "Site Visit" || jobType?.lowercase()?.contains("site") == true || jobType?.lowercase()?.contains("visit") == true
+        get() = !isAmcVisit && (
+            taskType == "SITE_VISIT" || 
+            jobType == "Site Visit" || 
+            jobType?.lowercase()?.contains("site") == true || 
+            (jobType?.lowercase()?.contains("visit") == true && !jobType.lowercase().contains("amc")) ||
+            !sitePhotos.isNullOrEmpty() ||
+            !images.isNullOrEmpty()
+        )
 
     // Helper to check if this is a regular task
     val isRegularTask: Boolean
