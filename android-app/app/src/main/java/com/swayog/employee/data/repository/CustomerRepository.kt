@@ -631,25 +631,6 @@ class CustomerRepository @Inject constructor(
 
     }
 
-    suspend fun createAmcVisit(request: CreateAmcVisitRequest): Result<Unit> {
-        return try {
-            val body = mapOf(
-                "customerId" to request.customerId.toString(),
-                "scheduledDate" to request.scheduledDate,
-                "scheduledTime" to request.timeSlot,
-                "assignedEmployeeId" to request.assignedEmployeeId,
-                "notes" to request.notes
-            )
-            val response = apiService.createAmcVisit(body)
-            if (response.isSuccessful) {
-                Result.success(Unit)
-            } else {
-                Result.failure(Exception("Failed to create AMC visit: ${response.message()}"))
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
 
     suspend fun updateAmcVisit(visitId: String, request: UpdateAmcVisitRequest): Result<AmcVisit> {
         return try {
@@ -658,6 +639,19 @@ class CustomerRepository @Inject constructor(
                 Result.success(response.body()!!.data!!)
             } else {
                 Result.failure(Exception("Failed to update AMC visit: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createAmcVisit(request: CreateAmcVisitRequest): Result<AmcVisit> {
+        return try {
+            val response = apiService.createAmcVisit(request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to create AMC visit: ${response.message()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

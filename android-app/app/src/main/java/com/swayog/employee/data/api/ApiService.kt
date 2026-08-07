@@ -214,6 +214,11 @@ interface ApiService {
         @Query("from") from: String?,
         @Query("to") to: String?
     ): Response<ApiResponse<List<AmcVisit>>>
+
+    @POST("subadmin/amc-visits")
+    suspend fun createAmcVisit(
+        @Body request: CreateAmcVisitRequest
+    ): Response<ApiResponse<AmcVisit>>
     
     // Task endpoints
     @GET("tasks")
@@ -240,7 +245,7 @@ interface ApiService {
         @Body request: AssignTaskRequest
     ): Response<ApiResponse<Task>>
     
-    @PATCH("tasks/{taskId}/complete")
+    @POST("employee/tasks/{taskId}/complete")
     suspend fun completeTask(
         @Path("taskId") taskId: String,
         @Body request: CompleteTaskRequest
@@ -258,11 +263,7 @@ interface ApiService {
         @Query("employeeId") employeeId: String?
     ): Response<ApiResponse<List<AmcVisit>>>
     
-    @POST("subadmin/amc-visits")
-    suspend fun createAmcVisit(
-        @Body request: Map<String, String?>
-    ): Response<ApiResponse<Unit>>
-    
+
     @PATCH("subadmin/amc-visits/{visitId}")
     suspend fun updateAmcVisit(
         @Path("visitId") visitId: String,

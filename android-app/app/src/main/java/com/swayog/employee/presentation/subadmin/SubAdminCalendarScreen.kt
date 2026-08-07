@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.swayog.employee.data.model.CreateAmcVisitRequest
 import com.swayog.employee.data.model.Customer
 import com.swayog.employee.presentation.common.components.SwayogCard
 import com.swayog.employee.presentation.common.components.SwayogTopBar
@@ -44,7 +43,6 @@ fun SubAdminCalendarScreen(
     val employees by viewModel.employees.collectAsState()
 
     var selectedFilters by remember { mutableStateOf(setOf("Complaints", "AMC Visits", "Tasks", "Holidays")) }
-    var isCreateDialogOpen by remember { mutableStateOf(false) }
     var selectedEventForUpdate by remember { mutableStateOf<CalendarEvent?>(null) }
     var selectedEventForDetails by remember { mutableStateOf<CalendarEvent?>(null) }
 
@@ -66,7 +64,6 @@ fun SubAdminCalendarScreen(
             is CalendarActionState.Success -> {
                 Toast.makeText(context, (actionState as CalendarActionState.Success).message, Toast.LENGTH_SHORT).show()
                 viewModel.resetActionState()
-                isCreateDialogOpen = false
                 selectedEventForUpdate = null
             }
             is CalendarActionState.Error -> {
@@ -90,13 +87,6 @@ fun SubAdminCalendarScreen(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { isCreateDialogOpen = true }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Create AMC Visit")
-            }
         }
     ) { paddingValues ->
         Column(
@@ -207,19 +197,6 @@ fun SubAdminCalendarScreen(
             }
         }
 
-        // Create AMC Visit Dialog
-        if (isCreateDialogOpen) {
-            val customers by viewModel.customers.collectAsState()
-            CreateAmcVisitDialog(
-                employees = employees,
-                customers = customers,
-                onDismiss = { isCreateDialogOpen = false },
-                onSubmit = { request ->
-                    viewModel.createAmcVisit(request)
-                },
-                isLoading = actionState is CalendarActionState.Loading
-            )
-        }
 
         selectedEventForUpdate?.let { event ->
             UpdateAmcVisitDialog(
@@ -367,221 +344,6 @@ fun CalendarEventDetailsDialog(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun CreateAmcVisitDialog(
-    employees: List<com.swayog.employee.data.model.Employee>,
-    customers: List<com.swayog.employee.data.model.Customer>,
-    onDismiss: () -> Unit,
-    onSubmit: (CreateAmcVisitRequest) -> Unit,
-    isLoading: Boolean
-) {
-    var selectedCustomerId by remember { mutableStateOf("") }
-    var customerSearchQuery by remember { mutableStateOf("") }
-    var customerDropdownExpanded by remember { mutableStateOf(false) }
-
-    val filteredCustomers = remember(customers, customerSearchQuery) {
-        customers.filter {
-            it.fullName.contains(customerSearchQuery, ignoreCase = true) ||
-            it.id.toString().contains(customerSearchQuery)
-        }
-    }
-
-    var scheduledDate by remember { mutableStateOf("") }
-    var timeSlot by remember { mutableStateOf("") }
-    var assignedEmployeeId by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    
-    var employeeDropdownExpanded by remember { mutableStateOf(false) }
-    val selectedCustomer = remember(customers, selectedCustomerId) {
-        customers.find { it.id.toString() == selectedCustomerId }
-    }
-    val selectedEmployee = remember(employees, assignedEmployeeId) {
-        employees.find { it.id.toString() == assignedEmployeeId }
-    }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "Create AMC Visit",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = "Visit Summary",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Customer: ${selectedCustomer?.fullName ?: "Select a customer"}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            text = "Assigned employee: ${selectedEmployee?.fullName ?: "Unassigned"}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-
-                ExposedDropdownMenuBox(
-                    expanded = customerDropdownExpanded,
-                    onExpandedChange = { customerDropdownExpanded = !customerDropdownExpanded }
-                ) {
-                    val selectedCustomerName = customers.find { it.id.toString() == selectedCustomerId }?.fullName ?: ""
-                    OutlinedTextField(
-                        value = customerSearchQuery.ifEmpty { selectedCustomerName },
-                        onValueChange = { 
-                            customerSearchQuery = it
-                            customerDropdownExpanded = true
-                        },
-                        label = { Text("Select Customer") },
-                        placeholder = { Text("Search by name...") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = customerDropdownExpanded) },
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = customerDropdownExpanded,
-                        onDismissRequest = { customerDropdownExpanded = false }
-                    ) {
-                        if (filteredCustomers.isEmpty()) {
-                            DropdownMenuItem(
-                                text = { Text("No customers found") },
-                                onClick = {}
-                            )
-                        } else {
-                            filteredCustomers.take(10).forEach { customer ->
-                                DropdownMenuItem(
-                                    text = { Text(customer.fullName) },
-                                    onClick = {
-                                        selectedCustomerId = customer.id.toString()
-                                        customerSearchQuery = ""
-                                        customerDropdownExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = scheduledDate,
-                    onValueChange = { scheduledDate = it },
-                    label = { Text("Scheduled Date (YYYY-MM-DD)") },
-                    placeholder = { Text("e.g. 2026-07-15") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = timeSlot,
-                    onValueChange = { timeSlot = it },
-                    label = { Text("Time Slot (Optional)") },
-                    placeholder = { Text("e.g. 10:00 AM - 12:00 PM") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                ExposedDropdownMenuBox(
-                    expanded = employeeDropdownExpanded,
-                    onExpandedChange = { employeeDropdownExpanded = !employeeDropdownExpanded }
-                ) {
-                    val selectedName = employees.find { it.id.toString() == assignedEmployeeId }?.fullName ?: ""
-                    OutlinedTextField(
-                        value = if (assignedEmployeeId.isEmpty()) "" else selectedName,
-                        onValueChange = { },
-                        readOnly = true,
-                        label = { Text("Assign Employee (Optional)") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employeeDropdownExpanded) },
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = employeeDropdownExpanded,
-                        onDismissRequest = { employeeDropdownExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Unassigned") },
-                            onClick = {
-                                assignedEmployeeId = ""
-                                employeeDropdownExpanded = false
-                            }
-                        )
-                        employees.forEach { employee ->
-                            DropdownMenuItem(
-                                text = { Text("${employee.fullName} (${employee.role})") },
-                                onClick = {
-                                    assignedEmployeeId = employee.id.toString()
-                                    employeeDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes (Optional)") },
-                    placeholder = { Text("Additional notes...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    maxLines = 4
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onDismiss, enabled = !isLoading) {
-                        Text("Cancel")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            val request = CreateAmcVisitRequest(
-                                customerId = selectedCustomerId.toIntOrNull() ?: 0,
-                                scheduledDate = scheduledDate,
-                                timeSlot = timeSlot.ifBlank { null },
-                                assignedEmployeeId = assignedEmployeeId.ifBlank { null },
-                                notes = notes.ifBlank { null }
-                            )
-                            onSubmit(request)
-                        },
-                        enabled = selectedCustomerId.isNotBlank() && scheduledDate.isNotBlank() && !isLoading
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                color = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        } else {
-                            Text("Create Visit")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

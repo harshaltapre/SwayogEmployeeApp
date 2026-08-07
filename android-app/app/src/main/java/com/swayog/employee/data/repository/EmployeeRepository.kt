@@ -57,6 +57,37 @@ class EmployeeRepository @Inject constructor(
         }
     }
 
+    fun getSubordinatesFlow(managerId: String): Flow<List<Employee>> {
+        return userDao.getSubordinatesFlow(managerId).map { entities ->
+            entities.map { entity ->
+                Employee(
+                    id = entity.id,
+                    loginId = entity.loginId,
+                    fullName = entity.fullName,
+                    email = entity.email,
+                    phoneNumber = entity.phoneNumber,
+                    role = entity.role,
+                    isActive = entity.isActive,
+                    createdAt = entity.createdAt,
+                    department = null,
+                    reportingManagerId = entity.reportingManagerId,
+                    employeeProfile = EmployeeProfile(
+                        id = null,
+                        userId = entity.id,
+                        jobRole = entity.jobRole,
+                        zone = entity.zone,
+                        monthlySalaryInr = entity.monthlySalaryInr,
+                        isActive = entity.isActive
+                    ),
+                    partnerProfile = null,
+                    rating = entity.rating ?: 0.0,
+                    activeTasksCount = 0,
+                    status = if (entity.isActive) "active" else "inactive"
+                )
+            }
+        }
+    }
+
     suspend fun getInternalUsers(role: String? = null): Result<List<Employee>> {
         return try {
             val response = apiService.getInternalUsers(role)

@@ -19,6 +19,12 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE role = :role OR jobRole = :role")
     fun getUsersByRole(role: String): Flow<List<UserEntity>>
 
+    @Query("SELECT * FROM users WHERE reportingManagerId = :managerId AND isActive = 1")
+    fun getSubordinatesFlow(managerId: String): Flow<List<UserEntity>>
+
+    @Query("SELECT * FROM users WHERE reportingManagerId = :managerId AND isActive = 1")
+    suspend fun getSubordinates(managerId: String): List<UserEntity>
+
     @Query("SELECT * FROM users")
     fun getAllUsers(): Flow<List<UserEntity>>
     

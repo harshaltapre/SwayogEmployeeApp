@@ -60,6 +60,7 @@ fun TasksScreen(
     val tasksState by viewModel.tasksState.collectAsState()
     val tasksList by viewModel.tasks.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
+    val canCreateTask by viewModel.canCreateTask.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedTask by remember { mutableStateOf<Task?>(null) }
@@ -101,13 +102,15 @@ fun TasksScreen(
                 onBackClick = onNavigateBack,
                 actions = {
                     IconButton(onClick = {
-                        Toast.makeText(context, "Syncing & Refreshing Tasks...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Refreshing tasks...", Toast.LENGTH_SHORT).show()
                         viewModel.refresh()
                     }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
-                    IconButton(onClick = { showCreateTaskDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Create Task")
+                    if (canCreateTask) {
+                        IconButton(onClick = { showCreateTaskDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = "Create Task")
+                        }
                     }
                 }
             )
@@ -121,7 +124,7 @@ fun TasksScreen(
             PendingSyncBanner(
                 pendingCount = pendingSyncCount,
                 onClick = {
-                    Toast.makeText(context, "Syncing pending actions...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Refreshing tasks...", Toast.LENGTH_SHORT).show()
                     viewModel.refresh()
                 }
             )
@@ -272,7 +275,7 @@ fun TasksScreen(
                             }
                         }
                     },
-                    onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng, taskType, images, beforeImages, afterImages ->
+                    onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng, taskType, images, beforeImages, afterImages, sitePhotos ->
                         viewModel.completeTask(
                             taskId = task.id,
                             message = msg,
@@ -286,7 +289,8 @@ fun TasksScreen(
                             taskType = taskType,
                             images = images,
                             beforeImages = beforeImages,
-                            afterImages = afterImages
+                            afterImages = afterImages,
+                            sitePhotos = sitePhotos
                         ) { result ->
                             if (result.isSuccess) {
                                 selectedTask = null
@@ -786,7 +790,7 @@ fun TaskDetailDialog(
     task: Task,
     onDismiss: () -> Unit,
     onStartTask: () -> Unit,
-    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?) -> Unit
+    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?, List<String>?) -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1290,7 +1294,8 @@ fun TaskDetailDialog(
                                             "SITE_VISIT",
                                             uploadedImages,
                                             null,
-                                            null
+                                            null,
+                                            uploadedImages
                                         )
                                     }
                                 }
@@ -1451,11 +1456,176 @@ fun TaskDetailDialog(
                                             taskType,
                                             null,
                                             null,
+                                            null,
                                             null
                                         )
                                     }
                                 }
                             )
+                        }
+
+                        // Completed Task Image Display
+                        if (task.status == "completed") {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // Site Visit / Multiple Task Photos Gallery
+                            val photosList = (task.sitePhotos?.takeIf { it.isNotEmpty() } ?: task.images)?.filter { it.isNotBlank() } ?: emptyList()
+                            if (photosList.isNotEmpty()) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0B6E4F).copy(alpha = 0.1f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFF0B6E4F))
+                                            Text(
+                                                text = "Site Visit Photos (${photosList.size})",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF0B6E4F)
+                                            )
+                                        }
+                                        
+                                        Divider()
+                                        
+                                        LazyColumn(
+                                            modifier = Modifier.height(220.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            items(photosList.size) { index ->
+                                                val photoUrl = photosList[index]
+                                                Card(
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Box {
+                                                        AsyncImage(
+                                                            model = photoUrl,
+                                                            contentDescription = "Site photo ${index + 1}",
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(150.dp),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                        Text(
+                                                            text = "Photo #${index + 1}",
+                                                            modifier = Modifier
+                                                                .align(Alignment.BottomStart)
+                                                                .padding(8.dp)
+                                                                .background(Color.Black.copy(alpha = 0.6f))
+                                                                .padding(4.dp),
+                                                            color = Color.White,
+                                                            style = MaterialTheme.typography.labelSmall
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Before/After Photos for Tasks
+                            if (task.beforeImageUrl != null || task.afterImageUrl != null) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0B6E4F).copy(alpha = 0.1f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFF0B6E4F))
+                                            Text(
+                                                text = "Work Proof Photos",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF0B6E4F)
+                                            )
+                                        }
+                                        
+                                        Divider()
+                                        
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            // Before Photo
+                                            if (task.beforeImageUrl != null) {
+                                                Card(
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Column {
+                                                        Text(
+                                                            text = "Before Work",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(8.dp)
+                                                        )
+                                                        AsyncImage(
+                                                            model = task.beforeImageUrl,
+                                                            contentDescription = "Before photo",
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(120.dp),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                        if (task.beforeLatitude != null && task.beforeLongitude != null) {
+                                                            Text(
+                                                                text = "📍 ${task.beforeLatitude!!.toString().take(6)}, ${task.beforeLongitude!!.toString().take(6)}",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                modifier = Modifier.padding(8.dp),
+                                                                color = Color.Blue
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // After Photo
+                                            if (task.afterImageUrl != null) {
+                                                Card(
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Column {
+                                                        Text(
+                                                            text = "After Work",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(8.dp)
+                                                        )
+                                                        AsyncImage(
+                                                            model = task.afterImageUrl,
+                                                            contentDescription = "After photo",
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(120.dp),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                        if (task.afterLatitude != null && task.afterLongitude != null) {
+                                                            Text(
+                                                                text = "📍 ${task.afterLatitude!!.toString().take(6)}, ${task.afterLongitude!!.toString().take(6)}",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                modifier = Modifier.padding(8.dp),
+                                                                color = Color.Blue
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // Invoice Display

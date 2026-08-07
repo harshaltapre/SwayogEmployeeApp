@@ -96,7 +96,7 @@ fun DailyCommitScreen(
             PendingSyncBanner(
                 pendingCount = pendingSyncCount,
                 onClick = {
-                    Toast.makeText(context, "Syncing daily commits...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Refreshing daily commits...", Toast.LENGTH_SHORT).show()
                     viewModel.refresh()
                 }
             )

@@ -48,7 +48,7 @@ fun PendingSyncBanner(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "$pendingCount action${if (pendingCount > 1) "s" else ""} saved locally. Tap to sync now.",
+                text = "$pendingCount action${if (pendingCount > 1) "s" else ""} saved locally. Sync will run automatically when online.",
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold

@@ -29,6 +29,14 @@ data class AmcVisit(
     val customer: AmcCustomerInfo? = null
 )
 
+data class CreateAmcVisitRequest(
+    val customerId: Int,
+    val scheduledDate: String,
+    val timeSlot: String? = null,
+    val assignedEmployeeId: String? = null,
+    val notes: String? = null
+)
+
 data class UpdateAmcVisitRequest(
     val status: String? = null,
     val scheduledDate: String? = null,
@@ -40,13 +48,6 @@ data class UpdateAmcVisitRequest(
     val visitNotes: String? = null
 )
 
-data class CreateAmcVisitRequest(
-    val customerId: Int,
-    val scheduledDate: String,
-    val timeSlot: String?,
-    val assignedEmployeeId: String?,
-    val notes: String?
-)
 
 data class UpdateAmcSettingsRequest(
     val clientType: String,

@@ -10,10 +10,13 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import com.swayog.employee.data.repository.EmployeeRepository
+
 @HiltViewModel
 class TasksViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val employeeRepository: EmployeeRepository
 ) : ViewModel() {
 
     private val _tasksState = MutableStateFlow<TasksState>(TasksState.Initial)
@@ -31,6 +34,25 @@ class TasksViewModel @Inject constructor(
         initialValue = null
     )
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val canCreateTask: StateFlow<Boolean> = combine(
+        dataStoreManager.userRole,
+        userId
+    ) { role, id ->
+        Pair(role, id)
+    }.flatMapLatest { (role, id) ->
+        val upperRole = role?.uppercase() ?: ""
+        if (upperRole == "SUPER_ADMIN" || upperRole == "ADMIN" || upperRole == "SUB_ADMIN") {
+            flowOf(true)
+        } else if (!id.isNullOrEmpty()) {
+            employeeRepository.getSubordinatesFlow(id).map { subordinates ->
+                subordinates.isNotEmpty()
+            }
+        } else {
+            flowOf(false)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     init {
         viewModelScope.launch {
             userId.filterNotNull().collect { id ->
@@ -40,6 +62,9 @@ class TasksViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch {
+            try { employeeRepository.getInternalUsers() } catch (_: Exception) {}
+        }
         refresh()
     }
 
@@ -47,7 +72,6 @@ class TasksViewModel @Inject constructor(
         viewModelScope.launch {
             val id = userId.value ?: return@launch
             _tasksState.value = TasksState.Loading
-            taskRepository.syncPendingActions()
             taskRepository.refreshTasks(id)
                 .onSuccess {
                     _tasksState.value = TasksState.Success
@@ -79,6 +103,7 @@ class TasksViewModel @Inject constructor(
         images: List<String>? = null,
         beforeImages: List<String>? = null,
         afterImages: List<String>? = null,
+        sitePhotos: List<String>? = null,
         onResult: (Result<Task>) -> Unit
     ) {
         viewModelScope.launch {
@@ -95,7 +120,8 @@ class TasksViewModel @Inject constructor(
                 taskType = taskType,
                 images = images,
                 beforeImages = beforeImages,
-                afterImages = afterImages
+                afterImages = afterImages,
+                sitePhotos = sitePhotos
             )
             onResult(res)
         }

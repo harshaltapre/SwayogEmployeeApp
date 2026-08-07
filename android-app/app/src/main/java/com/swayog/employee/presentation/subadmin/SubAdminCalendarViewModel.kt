@@ -3,10 +3,10 @@ package com.swayog.employee.presentation.subadmin
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.AmcVisit
-import com.swayog.employee.data.model.CreateAmcVisitRequest
 import com.swayog.employee.data.model.Employee
 import com.swayog.employee.data.model.ServiceRequest
 import com.swayog.employee.data.model.UpdateAmcVisitRequest
+import com.swayog.employee.data.model.CreateAmcVisitRequest
 import com.swayog.employee.data.model.User
 import com.swayog.employee.data.model.Customer
 import com.swayog.employee.data.repository.CustomerRepository
@@ -193,18 +193,6 @@ class SubAdminCalendarViewModel @Inject constructor(
         }
     }
 
-    fun createAmcVisit(request: CreateAmcVisitRequest) {
-        viewModelScope.launch {
-            _actionState.value = CalendarActionState.Loading
-            val result = customerRepository.createAmcVisit(request)
-            result.onSuccess {
-                _actionState.value = CalendarActionState.Success("AMC visit created successfully")
-                loadEvents() // Refresh the calendar
-            }.onFailure { error ->
-                _actionState.value = CalendarActionState.Error(error.message ?: "Failed to create AMC visit")
-            }
-        }
-    }
 
     fun updateAmcVisit(visitId: String, request: UpdateAmcVisitRequest) {
         viewModelScope.launch {

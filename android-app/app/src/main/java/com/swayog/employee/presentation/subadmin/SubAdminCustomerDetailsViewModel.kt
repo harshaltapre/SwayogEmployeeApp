@@ -6,10 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.*
 import com.swayog.employee.data.repository.CustomerRepository
 import com.swayog.employee.data.repository.EmployeeRepository
+import com.swayog.employee.data.local.preferences.DataStoreManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -17,6 +19,7 @@ import javax.inject.Inject
 class SubAdminCustomerDetailsViewModel @Inject constructor(
     private val customerRepository: CustomerRepository,
     private val employeeRepository: EmployeeRepository,
+    private val dataStoreManager: DataStoreManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -50,9 +53,6 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     private val _amcSettingsUpdateState = MutableStateFlow<AmcSettingsUpdateState>(AmcSettingsUpdateState.Idle)
     val amcSettingsUpdateState: StateFlow<AmcSettingsUpdateState> = _amcSettingsUpdateState.asStateFlow()
 
-    private val _scheduleActionState = MutableStateFlow<ScheduleActionState>(ScheduleActionState.Idle)
-    val scheduleActionState: StateFlow<ScheduleActionState> = _scheduleActionState.asStateFlow()
-
     private val _employees = MutableStateFlow<List<Employee>>(emptyList())
     val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
 
@@ -64,19 +64,15 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     fun loadData() {
         viewModelScope.launch {
             if (customerId == null) {
-                android.util.Log.e("SubAdminDetails", "Invalid Customer ID: null")
                 _summaryState.value = CustomerDetailsState.Error("Invalid Customer ID")
                 return@launch
             }
-            android.util.Log.d("SubAdminDetails", "Fetching summary for customerId: $customerId")
             _summaryState.value = CustomerDetailsState.Loading
             customerRepository.getCustomerSummary(customerId)
                 .onSuccess {
-                    android.util.Log.d("SubAdminDetails", "Summary fetch success: $it")
                     _summaryState.value = CustomerDetailsState.Success(it)
                 }
                 .onFailure {
-                    android.util.Log.e("SubAdminDetails", "Summary fetch failed: ${it.message}", it)
                     _summaryState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch summary")
                 }
         }
@@ -94,48 +90,47 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            if (customerId == null) return@launch
+            _amcVisitsState.value = CustomerDetailsState.Loading
+            customerRepository.getSubAdminAmcVisits(customerId)
+                .onSuccess {
+                    _amcVisitsState.value = CustomerDetailsState.Success(it)
+                }
+                .onFailure {
+                    _amcVisitsState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch AMC visits")
+                }
+        }
+
+        viewModelScope.launch {
+            val currentUserId = dataStoreManager.userId.firstOrNull()
+            val userRole = dataStoreManager.userRole.firstOrNull()?.uppercase() ?: ""
+
             employeeRepository.getInternalUsers("EMPLOYEE")
                 .onSuccess { list ->
-                    _employees.value = list.filter { emp ->
-                        val role = emp.role.lowercase()
-                        val jobRole = emp.employeeProfile?.jobRole?.lowercase() ?: ""
-                        role.contains("technician") || role.contains("engineer") ||
-                                jobRole.contains("technician") || jobRole.contains("engineer") ||
-                                jobRole.contains("field") || jobRole.contains("intern") || role.contains("employee")
+                    val isTopAdmin = userRole == "SUPER_ADMIN" || userRole == "ADMIN" || userRole == "SUB_ADMIN"
+                    val reportees = if (!currentUserId.isNullOrEmpty()) {
+                        list.filter { it.reportingManagerId == currentUserId }
+                    } else emptyList()
+
+                    if (!isTopAdmin && reportees.isNotEmpty()) {
+                        _employees.value = reportees
+                    } else {
+                        _employees.value = list.filter { emp ->
+                            val role = emp.role.lowercase()
+                            val jobRole = emp.employeeProfile?.jobRole?.lowercase() ?: ""
+                            role.contains("technician") || role.contains("engineer") ||
+                                    jobRole.contains("technician") || jobRole.contains("engineer") ||
+                                    jobRole.contains("field") || jobRole.contains("intern") || role.contains("employee")
+                        }
                     }
                 }
                 .onFailure { error ->
                     android.util.Log.e("SubAdminDetails", "Failed to fetch employees: ${error.message}")
                 }
-
-            if (customerId != null) {
-                _amcVisitsState.value = CustomerDetailsState.Loading
-                customerRepository.getSubAdminAmcVisits(customerId)
-                    .onSuccess {
-                        _amcVisitsState.value = CustomerDetailsState.Success(it)
-                    }
-                    .onFailure {
-                        _amcVisitsState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch AMC visits")
-                    }
-            }
         }
 
         loadHistory("monthly")
         loadInvoices()
-    }
-    
-    private fun loadInvoices() {
-        viewModelScope.launch {
-            if (customerId == null) return@launch
-            _invoicesState.value = CustomerDetailsState.Loading
-            customerRepository.getInvoices(customerId)
-                .onSuccess {
-                    _invoicesState.value = CustomerDetailsState.Success(it)
-                }
-                .onFailure {
-                    _invoicesState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch invoices")
-                }
-        }
     }
 
     fun loadHistory(period: String) {
@@ -150,8 +145,21 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
                     _historyState.value = CustomerDetailsState.Success(it)
                 }
                 .onFailure {
-                    android.util.Log.e("TelemetryFetch", "ViewModel caught fetch error", it)
                     _historyState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch generation history")
+                }
+        }
+    }
+
+    private fun loadInvoices() {
+        viewModelScope.launch {
+            if (customerId == null) return@launch
+            _invoicesState.value = CustomerDetailsState.Loading
+            customerRepository.getInvoices(customerId)
+                .onSuccess {
+                    _invoicesState.value = CustomerDetailsState.Success(it)
+                }
+                .onFailure {
+                    _invoicesState.value = CustomerDetailsState.Error(it.message ?: "Failed to fetch invoices")
                 }
         }
     }
@@ -184,7 +192,7 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
             customerRepository.createInvoice(request)
                 .onSuccess {
                     _createInvoiceState.value = CreateInvoiceState.Success(it)
-                    loadInvoices() // Refresh invoices list
+                    loadInvoices()
                 }
                 .onFailure {
                     _createInvoiceState.value = CreateInvoiceState.Error(it.message ?: "Failed to create invoice")
@@ -217,36 +225,6 @@ class SubAdminCustomerDetailsViewModel @Inject constructor(
     fun resetAmcSettingsUpdateState() {
         _amcSettingsUpdateState.value = AmcSettingsUpdateState.Idle
     }
-
-    fun scheduleAmcVisit(
-        scheduledDate: String,
-        timeSlot: String?,
-        assignedEmployeeId: String?,
-        notes: String?
-    ) {
-        viewModelScope.launch {
-            _scheduleActionState.value = ScheduleActionState.Loading
-            val request = CreateAmcVisitRequest(
-                customerId = customerId ?: 0,
-                scheduledDate = scheduledDate,
-                timeSlot = timeSlot,
-                assignedEmployeeId = assignedEmployeeId,
-                notes = notes
-            )
-            customerRepository.createAmcVisit(request)
-                .onSuccess {
-                    _scheduleActionState.value = ScheduleActionState.Success("AMC visit scheduled successfully!")
-                    loadData()
-                }
-                .onFailure {
-                    _scheduleActionState.value = ScheduleActionState.Error(it.message ?: "Failed to schedule AMC visit")
-                }
-        }
-    }
-
-    fun resetScheduleActionState() {
-        _scheduleActionState.value = ScheduleActionState.Idle
-    }
 }
 
 sealed class CustomerDetailsState<out T> {
@@ -275,11 +253,3 @@ sealed class AmcSettingsUpdateState {
     data class Success(val customer: Customer) : AmcSettingsUpdateState()
     data class Error(val message: String) : AmcSettingsUpdateState()
 }
-
-sealed class ScheduleActionState {
-    object Idle : ScheduleActionState()
-    object Loading : ScheduleActionState()
-    data class Success(val message: String) : ScheduleActionState()
-    data class Error(val message: String) : ScheduleActionState()
-}
-

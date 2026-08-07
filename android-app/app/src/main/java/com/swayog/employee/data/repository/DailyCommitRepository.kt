@@ -204,5 +204,6 @@ class DailyCommitRepository @Inject constructor(
             ExistingWorkPolicy.REPLACE,
             syncRequest
         )
+        android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work after daily commit queue update")
     }
 }

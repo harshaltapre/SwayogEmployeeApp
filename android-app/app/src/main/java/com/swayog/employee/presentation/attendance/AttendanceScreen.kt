@@ -226,7 +226,7 @@ fun AttendanceScreen(
             PendingSyncBanner(
                 pendingCount = pendingSyncCount,
                 onClick = {
-                    Toast.makeText(context, "Syncing attendance records...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Refreshing attendance records...", Toast.LENGTH_SHORT).show()
                     viewModel.loadData()
                 }
             )

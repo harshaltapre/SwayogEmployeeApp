@@ -398,10 +398,11 @@ class TaskRepository @Inject constructor(
         taskType: String? = null,
         images: List<String>? = null,
         beforeImages: List<String>? = null,
-        afterImages: List<String>? = null
+        afterImages: List<String>? = null,
+        sitePhotos: List<String>? = null
     ): Result<Task> {
-        if (taskId.startsWith("amc_")) {
-            val visitId = taskId.replace("amc_", "")
+        if (taskId.startsWith("amc_") || taskId.startsWith("amc_visit_") || taskId.startsWith("TASK-amc_")) {
+            val visitId = taskId.replace("TASK-amc_", "").replace("amc_visit_", "").replace("amc_", "")
             val body = mapOf(
                 "notes" to completionMessage,
                 "visitNotes" to completionMessage,
@@ -473,13 +474,13 @@ class TaskRepository @Inject constructor(
                     afterLongitude = afterLongitude,
                     taskType = taskType,
                     images = images,
-                    sitePhotos = images,
+                    sitePhotos = sitePhotos ?: images,
                     beforeImages = beforeImages,
                     afterImages = afterImages
                 )
-                android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: Endpoint=PATCH tasks/$taskId/complete, RequestBody={beforeImgLen=${req.beforeImageUrl?.length}, afterImgLen=${req.afterImageUrl?.length}, message=${req.message}}")
+                android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: Endpoint=POST employee/tasks/$taskId/complete, RequestBody={beforeImgLen=${req.beforeImageUrl?.length}, afterImgLen=${req.afterImageUrl?.length}, message=${req.message}, sitePhotosSize=${req.sitePhotos?.size}, imagesSize=${req.images?.size}}")
                 val response = apiService.completeTask(taskId, req)
-                android.util.Log.d("TaskSubmissionChain", "LOG 4 - API Call Returned: statusCode=${response.code()}, isSuccessful=${response.isSuccessful}, responseBodyDataBeforeImg=${response.body()?.data?.beforeImageUrl}, responseBodyDataAfterImg=${response.body()?.data?.afterImageUrl}")
+                android.util.Log.d("TaskSubmissionChain", "LOG 4 - API Call Returned: statusCode=${response.code()}, isSuccessful=${response.isSuccessful}, responseBodyDataBeforeImg=${response.body()?.data?.beforeImageUrl}, responseBodyDataAfterImg=${response.body()?.data?.afterImageUrl}, responseBodySitePhotosSize=${response.body()?.data?.sitePhotos?.size}")
                 if (response.isSuccessful && response.body()?.data != null) {
                     val task = response.body()!!.data!!
                     val entity = TaskEntity(
@@ -519,37 +520,26 @@ class TaskRepository @Inject constructor(
                     taskDao.updateTask(entity)
                     Result.success(task)
                 } else {
-                    // API call failed - save to outbox queue for offline sync
-                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude)
-                    Result.failure(OfflinePendingException())
+                    // API responded with HTTP error status - return error directly without offline queueing
+                    val errorMsg = ErrorUtils.formatResponseError(response)
+                    // Special handling for 404 - don't queue locally, surface clear error
+                    if (response.code() == 404) {
+                        Result.failure(Exception("Task not found - please refresh and try again. Server returned: $errorMsg"))
+                    } else {
+                        Result.failure(Exception("Failed to complete task: $errorMsg"))
+                    }
                 }
-            } catch (e: Exception) {
-                // Network error - save to outbox queue for offline sync
-                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude)
+            } catch (e: java.io.IOException) {
+                // Genuine Network / Socket / Timeout Exception - save to outbox queue for offline sync
+                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
                 Result.failure(OfflinePendingException())
+            } catch (e: Exception) {
+                // Other runtime exceptions
+                Result.failure(e)
             }
         } else {
             // Offline - save to outbox queue
-            saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude)
-            
-            // Update local entity with completion data
-            val localTask = taskDao.getTaskById(taskId)
-            if (localTask != null) {
-                taskDao.updateTask(localTask.copy(
-                    status = "completed",
-                    completionMessage = completionMessage,
-                    completionDocumentUrl = completionDocumentUrl,
-                    beforeImageUrl = beforeImageUrl,
-                    afterImageUrl = afterImageUrl,
-                    beforeLatitude = beforeLatitude,
-                    beforeLongitude = beforeLongitude,
-                    afterLatitude = afterLatitude,
-                    afterLongitude = afterLongitude,
-                    completedAt = java.time.LocalDateTime.now().toString(),
-                    isSynced = false
-                ))
-            }
-            
+            saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
             Result.failure(OfflinePendingException())
         }
     }
@@ -563,10 +553,18 @@ class TaskRepository @Inject constructor(
         beforeLatitude: Double?,
         beforeLongitude: Double?,
         afterLatitude: Double?,
-        afterLongitude: Double?
+        afterLongitude: Double?,
+        taskType: String? = null,
+        images: List<String>? = null,
+        beforeImages: List<String>? = null,
+        afterImages: List<String>? = null
     ) {
         val beforeImageFilePath = beforeImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_before") }
         val afterImageFilePath = afterImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_after") }
+        
+        val imageFilePaths = images?.mapIndexed { index, b64 -> LocalFileHelper.saveBase64ToFile(context, b64, "task_img_$index") }
+        val beforeImagePaths = beforeImages?.mapIndexed { index, b64 -> LocalFileHelper.saveBase64ToFile(context, b64, "task_bimg_$index") }
+        val afterImagePaths = afterImages?.mapIndexed { index, b64 -> LocalFileHelper.saveBase64ToFile(context, b64, "task_aimg_$index") }
 
         val payload = JSONObject().apply {
             put("taskId", taskId)
@@ -578,16 +576,42 @@ class TaskRepository @Inject constructor(
             put("beforeLongitude", beforeLongitude)
             put("afterLatitude", afterLatitude)
             put("afterLongitude", afterLongitude)
+            put("taskType", taskType)
+            if (imageFilePaths != null) put("imageFilePaths", org.json.JSONArray(imageFilePaths))
+            if (beforeImagePaths != null) put("beforeImagePaths", org.json.JSONArray(beforeImagePaths))
+            if (afterImagePaths != null) put("afterImagePaths", org.json.JSONArray(afterImagePaths))
         }.toString()
         
         val outboxItem = OutboxQueueEntity(
             id = UUID.randomUUID().toString(),
-            endpoint = "tasks/$taskId/complete",
+            endpoint = "employee/tasks/$taskId/complete",
             method = "POST",
             payload = payload,
             createdAt = System.currentTimeMillis().toString()
         )
         outboxQueueDao.insertItem(outboxItem)
+
+        // Update local entity in Room immediately so it shows as completed in UI
+        val localTask = taskDao.getTaskById(taskId)
+        if (localTask != null) {
+            taskDao.updateTask(localTask.copy(
+                status = "completed",
+                completionMessage = completionMessage,
+                completionDocumentUrl = completionDocumentUrl,
+                beforeImageUrl = beforeImageUrl,
+                afterImageUrl = afterImageUrl,
+                beforeLatitude = beforeLatitude,
+                beforeLongitude = beforeLongitude,
+                afterLatitude = afterLatitude,
+                afterLongitude = afterLongitude,
+                completedAt = java.time.LocalDateTime.now().toString(),
+                isSynced = false,
+                taskType = taskType ?: localTask.taskType,
+                imagesJson = images?.let { gson.toJson(it) } ?: localTask.imagesJson,
+                sitePhotosJson = (images ?: beforeImages)?.let { gson.toJson(it) } ?: localTask.sitePhotosJson
+            ))
+        }
+
         scheduleSync()
     }
 
@@ -670,6 +694,7 @@ class TaskRepository @Inject constructor(
         return withContext(Dispatchers.IO) {
             try {
                 val pendingItems = outboxQueueDao.getPendingItems()
+                android.util.Log.d("TASK_SYNC", "Manual syncPendingActions() started with ${pendingItems.size} pending outbox item(s)")
                 if (pendingItems.isEmpty()) {
                     android.util.Log.d("TASK_SYNC", "No pending outbox items to sync.")
                     return@withContext Result.success(Unit)
@@ -679,6 +704,7 @@ class TaskRepository @Inject constructor(
                 var syncedCount = 0
 
                 for (item in pendingItems) {
+                    var filesToDelete = mutableListOf<String>()
                     val success = try {
                         when {
                             item.endpoint.contains("complete") -> {
@@ -692,14 +718,110 @@ class TaskRepository @Inject constructor(
                                     val response = apiService.updateAmcVisit(visitId, UpdateAmcVisitRequest(status = "COMPLETED", notes = msg))
                                     response.isSuccessful
                                 } else {
+                                    val beforeImageFilePath = json.optString("beforeImageFilePath", null)
+                                    val afterImageFilePath = json.optString("afterImageFilePath", null)
+                                    
+                                    val beforeImageUrl = beforeImageFilePath?.takeIf { it.isNotBlank() }?.let { 
+                                        filesToDelete.add(it)
+                                        LocalFileHelper.readFileToBase64(it) 
+                                    } ?: json.optString("beforeImageUrl").takeIf { it.isNotEmpty() }
+                                    
+                                    val afterImageUrl = afterImageFilePath?.takeIf { it.isNotBlank() }?.let { 
+                                        filesToDelete.add(it)
+                                        LocalFileHelper.readFileToBase64(it) 
+                                    } ?: json.optString("afterImageUrl").takeIf { it.isNotEmpty() }
+                                    
+                                    val imageFilePathsArray = json.optJSONArray("imageFilePaths")
+                                    val imageFilePaths = if (imageFilePathsArray != null) {
+                                        List(imageFilePathsArray.length()) { imageFilePathsArray.getString(it) }
+                                    } else null
+                                    val images = imageFilePaths?.mapNotNull { 
+                                        filesToDelete.add(it)
+                                        LocalFileHelper.readFileToBase64(it) 
+                                    }
+
+                                    val beforeImagePathsArray = json.optJSONArray("beforeImagePaths")
+                                    val beforeImagePaths = if (beforeImagePathsArray != null) {
+                                        List(beforeImagePathsArray.length()) { beforeImagePathsArray.getString(it) }
+                                    } else null
+                                    val beforeImages = beforeImagePaths?.mapNotNull { 
+                                        filesToDelete.add(it)
+                                        LocalFileHelper.readFileToBase64(it) 
+                                    }
+
+                                    val afterImagePathsArray = json.optJSONArray("afterImagePaths")
+                                    val afterImagePaths = if (afterImagePathsArray != null) {
+                                        List(afterImagePathsArray.length()) { afterImagePathsArray.getString(it) }
+                                    } else null
+                                    val afterImages = afterImagePaths?.mapNotNull { 
+                                        filesToDelete.add(it)
+                                        LocalFileHelper.readFileToBase64(it) 
+                                    }
+
                                     val request = CompleteTaskRequest(
                                         message = json.optString("message"),
                                         documentUrl = json.optString("documentUrl").takeIf { it.isNotEmpty() },
-                                        beforeImageUrl = json.optString("beforeImageUrl").takeIf { it.isNotEmpty() },
-                                        afterImageUrl = json.optString("afterImageUrl").takeIf { it.isNotEmpty() }
+                                        beforeImageUrl = beforeImageUrl,
+                                        afterImageUrl = afterImageUrl,
+                                        beforeLatitude = json.optDouble("beforeLatitude").takeIf { !json.isNull("beforeLatitude") },
+                                        beforeLongitude = json.optDouble("beforeLongitude").takeIf { !json.isNull("beforeLongitude") },
+                                        afterLatitude = json.optDouble("afterLatitude").takeIf { !json.isNull("afterLatitude") },
+                                        afterLongitude = json.optDouble("afterLongitude").takeIf { !json.isNull("afterLongitude") },
+                                        taskType = json.optString("taskType").takeIf { it.isNotEmpty() },
+                                        images = images,
+                                        sitePhotos = images,
+                                        beforeImages = beforeImages,
+                                        afterImages = afterImages
                                     )
                                     val response = apiService.completeTask(taskId, request)
-                                    response.isSuccessful
+                                    if (response.isSuccessful) {
+                                        val task = response.body()?.data
+                                        if (task != null) {
+                                            val entity = TaskEntity(
+                                                id = task.id,
+                                                jobType = task.jobType,
+                                                description = task.description,
+                                                customerName = task.customerName,
+                                                customerPhone = task.customerPhone,
+                                                address = task.address,
+                                                latitude = task.latitude,
+                                                longitude = task.longitude,
+                                                status = task.status,
+                                                scheduledTime = task.scheduledTime,
+                                                employeeUserId = task.employeeUserId,
+                                                assignedById = task.assignedById,
+                                                completionMessage = task.completionMessage,
+                                                completionDocumentUrl = task.completionDocumentUrl,
+                                                beforeImageUrl = task.beforeImageUrl,
+                                                afterImageUrl = task.afterImageUrl,
+                                                beforeLatitude = task.beforeLatitude,
+                                                beforeLongitude = task.beforeLongitude,
+                                                afterLatitude = task.afterLatitude,
+                                                afterLongitude = task.afterLongitude,
+                                                completedAt = task.completedAt,
+                                                createdAt = task.createdAt,
+                                                updatedAt = task.updatedAt,
+                                                isSynced = true,
+                                                invoiceJson = task.invoice?.let { gson.toJson(it) },
+                                                taskType = task.taskType,
+                                                imagesJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
+                                                sitePhotosJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
+                                                beforeImagesJson = beforeImages?.let { gson.toJson(it) },
+                                                afterImagesJson = afterImages?.let { gson.toJson(it) },
+                                                assignedEmployeeName = task.assignedEmployeeName,
+                                                assignedEmployeePhone = task.assignedEmployeePhone
+                                            )
+                                            taskDao.updateTask(entity)
+                                        } else {
+                                            val localTask = taskDao.getTaskById(taskId)
+                                            if (localTask != null) {
+                                                taskDao.updateTask(localTask.copy(status = "completed", isSynced = true))
+                                            }
+                                        }
+                                        true
+                                    } else {
+                                        false
+                                    }
                                 }
                             }
                             item.endpoint.startsWith("tasks/") || item.endpoint.contains("status") -> {
@@ -712,13 +834,27 @@ class TaskRepository @Inject constructor(
                                     response.isSuccessful
                                 } else {
                                     val response = apiService.updateTask(taskId, UpdateTaskRequest(status = status))
-                                    response.isSuccessful
+                                    if (response.isSuccessful) {
+                                        val localTask = taskDao.getTaskById(taskId)
+                                        if (localTask != null) {
+                                            taskDao.updateTask(localTask.copy(status = status, isSynced = true))
+                                        }
+                                        true
+                                    } else {
+                                        false
+                                    }
                                 }
                             }
                             item.endpoint.contains("check-in") -> {
                                 val json = org.json.JSONObject(item.payload)
+                                val selfieFilePath = json.optString("selfieFilePath", null)
+                                val selfie = selfieFilePath?.takeIf { it.isNotBlank() }?.let { 
+                                    filesToDelete.add(it)
+                                    LocalFileHelper.readFileToBase64(it) 
+                                } ?: json.optString("selfie").takeIf { it.isNotEmpty() }
+
                                 val request = CheckInRequest(
-                                    selfie = json.optString("selfie").takeIf { it.isNotEmpty() },
+                                    selfie = selfie,
                                     latitude = json.optDouble("latitude").takeIf { !json.isNull("latitude") },
                                     longitude = json.optDouble("longitude").takeIf { !json.isNull("longitude") }
                                 )
@@ -745,7 +881,10 @@ class TaskRepository @Inject constructor(
                         false
                     }
 
-                    if (success || item.retryCount >= 3) {
+                    if (success || item.retryCount >= 5) {
+                        filesToDelete.forEach { filePath ->
+                            LocalFileHelper.deleteFile(filePath)
+                        }
                         outboxQueueDao.deleteItem(item)
                         syncedCount++
                         android.util.Log.d("TASK_SYNC", "Cleared item ${item.id} (success=$success, retryCount=${item.retryCount})")
@@ -778,5 +917,6 @@ class TaskRepository @Inject constructor(
             ExistingWorkPolicy.REPLACE,
             syncRequest
         )
+        android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work after task queue update")
     }
 }

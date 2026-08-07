@@ -29,7 +29,7 @@ data class Task(
     val invoice: Invoice? = null,
     val taskType: String? = null, // "SITE_VISIT", "AMC_VISIT", "REGULAR"
     val images: List<String>? = null, // Multiple images for site visits
-    val sitePhotos: List<String>? = null, // Site visit photo gallery
+    val sitePhotos: List<String>? = null, // Site visit photo gallery (4-5 photos)
     val assignedEmployeeName: String? = null, // Employee name for customer notifications
     val assignedEmployeePhone: String? = null // Employee phone for customer notifications
 ) {

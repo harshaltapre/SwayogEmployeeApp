@@ -227,6 +227,7 @@ class AttendanceRepository @Inject constructor(
             ExistingWorkPolicy.REPLACE,
             syncRequest
         )
+        android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work after attendance queue update")
     }
     
     suspend fun checkOut(): Result<Unit> {

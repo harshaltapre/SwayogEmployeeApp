@@ -130,6 +130,10 @@ export const updateAmcSettings = async (req: Request, res: Response) => {
   const normalizedAssignedEmployeeId = normalizeAssignedEmployeeId(assignedEmployeeId);
   const manualVisitDate = parseManualVisitDate(nextSurveyDate);
 
+  const authUserId = req.auth?.userId || "system";
+  const userObj = await prisma.user.findUnique({ where: { id: authUserId } });
+  const userName = userObj?.fullName || req.auth?.loginId || "System";
+
   const existingCustomer = await prisma.customer.findUnique({
     where: { id }
   });
@@ -287,6 +291,28 @@ export const updateAmcSettings = async (req: Request, res: Response) => {
       await prisma.amcVisit.createMany({
         data: newVisits
       });
+
+      if (normalizedAssignedEmployeeId) {
+        const employee = await prisma.user.findUnique({ where: { id: normalizedAssignedEmployeeId } });
+        if (employee) {
+          const message = `You have been assigned to new AMC visits for customer: ${customer.fullName}. Total visits scheduled: ${newVisits.length}`;
+          await prisma.message.create({
+            data: { senderId: authUserId, receiverId: employee.id, content: message }
+          });
+        }
+      }
+
+      const customerMsg = `Your AMC schedule has been updated. ${newVisits.length} visits have been scheduled for the selected period.`;
+      await createCustomerNotification({
+        customerId: id,
+        type: "AMC_SCHEDULED",
+        message: customerMsg
+      });
+      if (customer.userId) {
+        await prisma.message.create({
+          data: { senderId: authUserId, receiverId: customer.userId, content: customerMsg }
+        });
+      }
     }
   }
 
@@ -294,10 +320,6 @@ export const updateAmcSettings = async (req: Request, res: Response) => {
     await upsertAmcVisitForDate(id, manualVisitDate, normalizedAssignedEmployeeId);
   }
 
-  const authUserId = req.auth?.userId || "system";
-  const userObj = await prisma.user.findUnique({ where: { id: authUserId } });
-  const userName = userObj?.fullName || req.auth?.loginId || "System";
-  
   await createAdminNotification({
     type: "CLEANING_SCHEDULE",
     message: `${userName} scheduled/updated AMC cleaning plan for customer ${customer.fullName} (${cleaningsPerMonth} cleanings/month)`,
@@ -566,6 +588,10 @@ export const updateApartmentAmcSettings = async (req: Request, res: Response) =>
   const normalizedAssignedEmployeeId = normalizeAssignedEmployeeId(assignedEmployeeId);
   const manualVisitDate = parseManualVisitDate(nextSurveyDate);
 
+  const authUserId = req.auth?.userId || "system";
+  const userObj = await prisma.user.findUnique({ where: { id: authUserId } });
+  const userName = userObj?.fullName || req.auth?.loginId || "System";
+
   const apartment = await prisma.apartment.findUnique({
     where: { id: aptId },
     include: {
@@ -729,6 +755,28 @@ export const updateApartmentAmcSettings = async (req: Request, res: Response) =>
         await prisma.amcVisit.createMany({
           data: newVisits
         });
+
+        if (normalizedAssignedEmployeeId) {
+          const employee = await prisma.user.findUnique({ where: { id: normalizedAssignedEmployeeId } });
+          if (employee) {
+            const message = `You have been assigned to new AMC visits for customer: ${cust.fullName}. Total visits scheduled: ${newVisits.length}`;
+            await prisma.message.create({
+              data: { senderId: authUserId, receiverId: employee.id, content: message }
+            });
+          }
+        }
+
+        const customerMsg = `Your AMC schedule has been updated. ${newVisits.length} visits have been scheduled for the selected period.`;
+        await createCustomerNotification({
+          customerId: cust.id,
+          type: "AMC_SCHEDULED",
+          message: customerMsg
+        });
+        if (cust.userId) {
+          await prisma.message.create({
+            data: { senderId: authUserId, receiverId: cust.userId, content: customerMsg }
+          });
+        }
       }
     }
 
@@ -736,10 +784,6 @@ export const updateApartmentAmcSettings = async (req: Request, res: Response) =>
       await upsertAmcVisitForDate(cust.id, manualVisitDate, normalizedAssignedEmployeeId);
     }
   }
-
-  const authUserId = req.auth?.userId || "system";
-  const userObj = await prisma.user.findUnique({ where: { id: authUserId } });
-  const userName = userObj?.fullName || req.auth?.loginId || "System";
 
   await createAdminNotification({
     type: "CLEANING_SCHEDULE",

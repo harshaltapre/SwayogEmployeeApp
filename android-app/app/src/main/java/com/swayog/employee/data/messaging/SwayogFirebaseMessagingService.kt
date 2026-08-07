@@ -64,9 +64,22 @@ class SwayogFirebaseMessagingService : FirebaseMessagingService() {
     private fun sendNotification(title: String, message: String) {
         val channelId = "swayog_employee_channel"
         
+        // Create the NotificationChannel, but only on API 26+ because
+        // the NotificationChannel class is new and not in the support library
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Swayog Notifications"
+            val importance = NotificationManager.IMPORTANCE_HIGH
+            val channel = NotificationChannel(channelId, name, importance)
+            val notificationManager: NotificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+        
         // Create intent for notification tap
-        val intent = Intent(this, MainActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -74,23 +87,24 @@ class SwayogFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
-        val notificationBuilder = NotificationCompat.Builder(this, channelId).apply {
-            setSmallIcon(R.drawable.ic_launcher_foreground)
-            setContentTitle(title)
-            setContentText(message)
-            setPriority(NotificationCompat.PRIORITY_HIGH)
-            setAutoCancel(true)
-            setContentIntent(pendingIntent)
-        }
+        val notificationBuilder = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
         
         val notificationManager = NotificationManagerCompat.from(this)
+        val notificationId = (System.currentTimeMillis() % 10000).toInt()
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val permission = android.Manifest.permission.POST_NOTIFICATIONS
             if (androidx.core.content.ContextCompat.checkSelfPermission(this, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+                notificationManager.notify(notificationId, notificationBuilder.build())
             }
         } else {
-            notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+            notificationManager.notify(notificationId, notificationBuilder.build())
         }
     }
 }
