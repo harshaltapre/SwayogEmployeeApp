@@ -47,14 +47,13 @@ fun LoginScreen(
     val isBiometricAvailable by viewModel.isBiometricAvailable.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val dataStoreManager = remember { DataStoreManager(context) }
 
     // Server URL configuration state
     var showServerDialog by remember { mutableStateOf(false) }
     var serverUrlInput by remember { mutableStateOf("") }
     
     LaunchedEffect(Unit) {
-        dataStoreManager.serverUrl.collect { saved ->
+        viewModel.serverUrl.collect { saved ->
             serverUrlInput = saved ?: BuildConfig.API_BASE_URL
         }
     }
@@ -351,9 +350,7 @@ fun LoginScreen(
                     ) {
                         TextButton(onClick = {
                             serverUrlInput = BuildConfig.API_BASE_URL
-                            scope.launch {
-                                dataStoreManager.saveServerUrl(BuildConfig.API_BASE_URL)
-                            }
+                            viewModel.saveServerUrl(BuildConfig.API_BASE_URL)
                             Toast.makeText(context, "Reset to default. Restart app to apply.", Toast.LENGTH_SHORT).show()
                             showServerDialog = false
                         }) {
@@ -362,9 +359,7 @@ fun LoginScreen(
                         Button(onClick = {
                             val url = serverUrlInput.trim()
                             if (url.startsWith("http://") || url.startsWith("https://")) {
-                                scope.launch {
-                                    dataStoreManager.saveServerUrl(url)
-                                }
+                                viewModel.saveServerUrl(url)
                                 Toast.makeText(context, "Server URL saved! Changes take effect immediately.", Toast.LENGTH_SHORT).show()
                                 showServerDialog = false
                             } else {

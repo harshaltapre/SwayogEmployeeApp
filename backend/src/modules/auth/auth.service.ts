@@ -83,7 +83,7 @@ async function issueSession(user: AuthUser, requestedRole?: string) {
     sub: user.id,
     role: effectiveRole,
     loginId: user.loginId,
-    jobRole: user.employeeProfile?.jobRole || user.designationTitle,
+    jobRole: user.employeeProfile?.jobRole || user.designationTitle || undefined,
   };
 
   const accessToken = issueAccessToken(claims);

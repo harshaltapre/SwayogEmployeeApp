@@ -10,8 +10,6 @@ import com.swayog.employee.data.local.entity.OutboxQueueEntity
 import com.swayog.employee.data.model.*
 import com.swayog.employee.core.util.ErrorUtils
 import com.swayog.employee.core.util.OfflinePendingException
-import com.swayog.employee.core.util.OnlineSubmissionFailedException
-import java.io.IOException
 import com.swayog.employee.core.util.LocalFileHelper
 import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.data.sync.SyncWorker
@@ -518,18 +516,25 @@ class TaskRepository @Inject constructor(
         sitePhotos: List<String>? = null
     ): Result<Task> {
         val cleanTaskId = sanitizeTaskId(taskId)
+        val photosToSubmit = (sitePhotos ?: images)?.filter { it.isNotBlank() }
         if (cleanTaskId.startsWith("amc_")) {
             val visitId = cleanTaskId.replace("amc_", "")
-            val body = mapOf(
+            val body: Map<String, Any?> = mutableMapOf<String, Any?>(
                 "notes" to completionMessage,
                 "visitNotes" to completionMessage,
                 "beforeImageUrl" to beforeImageUrl,
                 "afterImageUrl" to afterImageUrl
-            )
+            ).apply {
+                if (!photosToSubmit.isNullOrEmpty()) {
+                    put("sitePhotos", photosToSubmit)
+                    put("images", photosToSubmit)
+                }
+            }
             return try {
                 val response = apiService.markAmcVisitDone(visitId, body)
                 if (response.isSuccessful && response.body()?.data != null) {
                     val visit = response.body()!!.data!!
+                    val visitSitePhotos = photosToSubmit
                     val completedTask = Task(
                         id = cleanTaskId,
                         jobType = "AMC",
@@ -542,8 +547,10 @@ class TaskRepository @Inject constructor(
                         employeeUserId = visit.assignedEmployeeId,
                         assignedById = "system",
                         completionMessage = completionMessage,
-                        beforeImageUrl = beforeImageUrl,
-                        afterImageUrl = afterImageUrl,
+                        beforeImageUrl = visit.beforeImageUrl ?: beforeImageUrl,
+                        afterImageUrl = visit.afterImageUrl ?: afterImageUrl,
+                        sitePhotos = visitSitePhotos,
+                        images = visitSitePhotos,
                         completedAt = visit.completedAt,
                         createdAt = visit.createdAt,
                         updatedAt = visit.updatedAt
@@ -560,8 +567,10 @@ class TaskRepository @Inject constructor(
                         employeeUserId = completedTask.employeeUserId,
                         assignedById = completedTask.assignedById,
                         completionMessage = completionMessage,
-                        beforeImageUrl = beforeImageUrl,
-                        afterImageUrl = afterImageUrl,
+                        beforeImageUrl = completedTask.beforeImageUrl,
+                        afterImageUrl = completedTask.afterImageUrl,
+                        sitePhotosJson = visitSitePhotos?.let { gson.toJson(it) },
+                        imagesJson = visitSitePhotos?.let { gson.toJson(it) },
                         completedAt = completedTask.completedAt,
                         createdAt = completedTask.createdAt,
                         updatedAt = completedTask.updatedAt,
@@ -600,7 +609,7 @@ class TaskRepository @Inject constructor(
                     afterImages = afterImages
                 )
                 android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: RawTaskId=$taskId, CleanTaskId=$cleanTaskId, Endpoint=PATCH tasks/$cleanTaskId/complete, sitePhotosCount=${req.sitePhotos?.size}, message=${req.message}")
-                var response = apiService.completeTask(cleanTaskId, req)
+                val response = apiService.completeTask(cleanTaskId, req)
                 android.util.Log.d("TaskSubmissionChain", "LOG 4 - API Call Returned: statusCode=${response.code()}, isSuccessful=${response.isSuccessful}, cleanTaskId=$cleanTaskId")
                 
                 var successTask: Task? = if (response.isSuccessful && response.body()?.data != null) response.body()!!.data else null
@@ -690,8 +699,14 @@ class TaskRepository @Inject constructor(
                         assignedEmployeeName = task.assignedEmployeeName,
                         assignedEmployeePhone = task.assignedEmployeePhone
                     )
+                    val finalTask = task.copy(
+                        sitePhotos = finalSitePhotos,
+                        images = finalSitePhotos,
+                        beforeImageUrl = task.beforeImageUrl ?: beforeImageUrl,
+                        afterImageUrl = task.afterImageUrl ?: afterImageUrl
+                    )
                     taskDao.updateTask(entity)
-                    Result.success(task)
+                    Result.success(finalTask)
                 } else {
                     // ⚠️ Server returned HTTP error (404, 403, 500, etc.).
                     // Save locally as completed so the employee is not blocked, and queue to outbox for background sync!
@@ -864,10 +879,6 @@ class TaskRepository @Inject constructor(
         val beforeImageFilePath = beforeImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_before") }
         val afterImageFilePath = afterImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_after") }
         
-        val imageFilePaths = images?.mapIndexed { index, b64 -> LocalFileHelper.saveBase64ToFile(context, b64, "task_img_$index") }
-        val beforeImagePaths = beforeImages?.mapIndexed { index, b64 -> LocalFileHelper.saveBase64ToFile(context, b64, "task_bimg_$index") }
-        val afterImagePaths = afterImages?.mapIndexed { index, b64 -> LocalFileHelper.saveBase64ToFile(context, b64, "task_aimg_$index") }
-
         val sitePhotoFilePaths = images?.mapNotNull { base64 ->
             if (base64.isNotBlank()) LocalFileHelper.saveBase64ToFile(context, base64, "task_site_photo") else null
         }
@@ -1049,12 +1060,13 @@ class TaskRepository @Inject constructor(
                                 if (taskId.startsWith("amc_")) {
                                     val visitId = taskId.removePrefix("amc_")
                                     val msg = json.optString("message", "")
-                                    val response = apiService.updateAmcVisit(visitId, UpdateAmcVisitRequest(status = "COMPLETED", notes = msg))
+                                    val body = mapOf("notes" to msg, "visitNotes" to msg, "status" to "COMPLETED")
+                                    val response = apiService.markAmcVisitDone(visitId, body)
                                     if (response.code() == 401) isAuthErrorForItem = true
                                     response.isSuccessful
                                 } else {
-                                    val beforeImageFilePath = json.optString("beforeImageFilePath", null)
-                                    val afterImageFilePath = json.optString("afterImageFilePath", null)
+                                    val beforeImageFilePath = if (json.isNull("beforeImageFilePath")) null else json.optString("beforeImageFilePath")
+                                    val afterImageFilePath = if (json.isNull("afterImageFilePath")) null else json.optString("afterImageFilePath")
 
                                     val beforeImageUrl = beforeImageFilePath?.takeIf { it.isNotBlank() }?.let { path ->
                                         filesToDelete.add(path)
@@ -1243,7 +1255,7 @@ class TaskRepository @Inject constructor(
                             }
                             item.endpoint.contains("check-in") -> {
                                 val json = JSONObject(item.payload)
-                                val selfieFilePath = json.optString("selfieFilePath", null)
+                                val selfieFilePath = if (json.isNull("selfieFilePath")) null else json.optString("selfieFilePath")
                                 val selfie = selfieFilePath?.takeIf { it.isNotBlank() }?.let {
                                     filesToDelete.add(it)
                                     LocalFileHelper.readFileToBase64(it)

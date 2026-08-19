@@ -23,10 +23,12 @@ class FaceAnalyzer(
     private val detector = FaceDetection.getClient(options)
     
     private var isProcessing = false
+    private var lastAnalysisTime = 0L
 
     @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(imageProxy: ImageProxy) {
-        if (isProcessing) {
+        val currentTime = System.currentTimeMillis()
+        if (isProcessing || (currentTime - lastAnalysisTime < 500)) {
             imageProxy.close()
             return
         }
@@ -34,6 +36,7 @@ class FaceAnalyzer(
         val mediaImage = imageProxy.image
         if (mediaImage != null) {
             isProcessing = true
+            lastAnalysisTime = currentTime
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
             val rawBitmap = imageProxy.toBitmap()
             
@@ -64,6 +67,7 @@ class FaceAnalyzer(
                                 safeBounds.height()
                             )
                             val embedding = faceEmbeddingHelper.getFaceEmbedding(faceBitmap)
+                            faceBitmap.recycle() // Clean up face bitmap
                             onFaceDetected(face, embedding)
                         } else {
                             onFaceDetected(face, null)
@@ -74,6 +78,8 @@ class FaceAnalyzer(
                 }
                 .addOnCompleteListener {
                     imageProxy.close()
+                    if (bitmap != rawBitmap) bitmap.recycle() // Clean up rotated bitmap
+                    rawBitmap.recycle() // Clean up raw bitmap
                     isProcessing = false
                 }
         } else {

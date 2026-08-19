@@ -4,6 +4,7 @@ import { prisma } from "../../lib/prisma.js";
 import { ApiError } from "../../middleware/error.js";
 import { recalculateMonthlyPerformance } from "../../services/attendanceService.js";
 import { createAdminNotification, createCustomerNotification } from "../../services/notificationService.js";
+import { processAndSaveBase64Photos } from "../tasks/tasks.service.js";
 
 const normalizeAssignedEmployeeId = (value?: string | null) => {
   if (!value) {
@@ -107,10 +108,10 @@ export const getAmcCustomers = async (req: Request, res: Response) => {
  */
 export const updateAmcSettings = async (req: Request, res: Response) => {
   const { customerId } = req.params;
-  const { 
-    clientType, 
-    consumerNumber, 
-    monthlyCleaningRate, 
+  const {
+    clientType,
+    consumerNumber,
+    monthlyCleaningRate,
     remarks,
     cleaningsPerMonth,
     cleaningWindow1,
@@ -215,11 +216,11 @@ export const updateAmcSettings = async (req: Request, res: Response) => {
       cleaningWindow1, cleaningWindow2, cleaningWindow3, cleaningWindow4,
       cleaningWindow5, cleaningWindow6, cleaningWindow7, cleaningWindow8
     ].filter(Boolean);
-    
-    const newVisits: Array<{ 
-      customerId: number; 
-      scheduledDate: Date; 
-      status: AmcVisitStatus; 
+
+    const newVisits: Array<{
+      customerId: number;
+      scheduledDate: Date;
+      status: AmcVisitStatus;
       assignedEmployeeId: string | null;
       cleaningNumber: number;
       timeSlot: string;
@@ -243,8 +244,8 @@ export const updateAmcSettings = async (req: Request, res: Response) => {
             const visitDay = resolveVisitDay(window, currentMonth);
             const scheduledDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), visitDay, 10, 0, 0);
 
-            const timeSlot = useVariableTiming 
-              ? (req.body[`cleaningTimeSlot${i+1}`] || "09:00")
+            const timeSlot = useVariableTiming
+              ? (req.body[`cleaningTimeSlot${i + 1}`] || "09:00")
               : (req.body.cleaningTimeSlot1 || "09:00");
 
             if (scheduledDate >= start && scheduledDate <= end) {
@@ -268,8 +269,8 @@ export const updateAmcSettings = async (req: Request, res: Response) => {
           const visitDay = resolveVisitDay(window, currentMonth);
           const scheduledDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), visitDay, 10, 0, 0);
 
-          const timeSlot = useVariableTiming 
-            ? (req.body[`cleaningTimeSlot${i+1}`] || "09:00")
+          const timeSlot = useVariableTiming
+            ? (req.body[`cleaningTimeSlot${i + 1}`] || "09:00")
             : (req.body.cleaningTimeSlot1 || "09:00");
 
           if (scheduledDate >= start && scheduledDate <= end) {
@@ -338,8 +339,19 @@ export const listAmcVisits = async (req: Request, res: Response) => {
 
   const where: any = {};
   if (customerId) where.customerId = Number(customerId);
-  if (status) where.status = status;
-  
+  if (status) {
+    const statusUpper = String(status).toUpperCase();
+    if (statusUpper === "PENDING" || statusUpper === "ASSIGNED" || statusUpper === "IN_PROGRESS") {
+      where.status = AmcVisitStatus.PENDING;
+    } else if (statusUpper === "COMPLETED") {
+      where.status = AmcVisitStatus.COMPLETED;
+    } else if (statusUpper === "CANCELLED") {
+      where.status = AmcVisitStatus.CANCELLED;
+    } else if (Object.values(AmcVisitStatus).includes(statusUpper as any)) {
+      where.status = statusUpper as AmcVisitStatus;
+    }
+  }
+
   if (from || to) {
     where.scheduledDate = {};
     if (from) where.scheduledDate.gte = new Date(from as string);
@@ -390,7 +402,7 @@ export const listAmcVisits = async (req: Request, res: Response) => {
  */
 export const markVisitCompleted = async (req: Request, res: Response) => {
   const { visitId } = req.params;
-  const { completedByEmployeeId, completedByName, notes, beforeImageUrl, afterImageUrl } = req.body;
+  const { completedByEmployeeId, completedByName, notes, beforeImageUrl, afterImageUrl, sitePhotos, images } = req.body;
 
   const resolvedEmployeeId = completedByEmployeeId || req.auth?.userId || null;
   let resolvedName = completedByName || null;
@@ -403,6 +415,31 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
     resolvedName = emp?.fullName || null;
   }
 
+  // Fetch existing visit to preserve photos if needed
+  const existingVisit = await prisma.amcVisit.findUnique({ where: { id: visitId } }).catch(() => null);
+  const existingSitePhotos = Array.isArray((existingVisit as any)?.sitePhotos) ? (existingVisit as any).sitePhotos : [];
+
+  const inputPhotos = (Array.isArray(sitePhotos) && sitePhotos.length > 0)
+    ? sitePhotos
+    : (Array.isArray(images) && images.length > 0 ? images : []);
+
+  const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, visitId);
+  const finalSitePhotos = savedInputPhotos.length > 0
+    ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
+    : existingSitePhotos;
+
+  let savedBeforeUrl = existingVisit?.beforeImageUrl || null;
+  if (beforeImageUrl) {
+    const saved = processAndSaveBase64Photos([beforeImageUrl], visitId);
+    savedBeforeUrl = saved[0] || beforeImageUrl;
+  }
+
+  let savedAfterUrl = existingVisit?.afterImageUrl || null;
+  if (afterImageUrl) {
+    const saved = processAndSaveBase64Photos([afterImageUrl], visitId);
+    savedAfterUrl = saved[0] || afterImageUrl;
+  }
+
   const visit = await prisma.amcVisit.update({
     where: { id: visitId },
     data: {
@@ -412,8 +449,9 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
       completedByName: resolvedName,
       visitNotes: notes || null,
       notes: notes || null,
-      beforeImageUrl: beforeImageUrl || null,
-      afterImageUrl: afterImageUrl || null
+      beforeImageUrl: savedBeforeUrl,
+      afterImageUrl: savedAfterUrl,
+      sitePhotos: finalSitePhotos,
     },
     include: {
       assignedEmployee: {
@@ -434,6 +472,7 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
   // Format to match listAmcVisits response format
   const formattedVisit = {
     ...visit,
+    images: visit.sitePhotos,
     assignedEmployee: (visit as any).assignedEmployee ? {
       id: (visit as any).assignedEmployee.id,
       name: (visit as any).assignedEmployee.fullName
@@ -463,7 +502,7 @@ export const updateAmcVisit = async (req: Request, res: Response) => {
     }
     data.scheduledDate = dateObj;
   }
-  
+
   if (assignedEmployeeId !== undefined) {
     data.assignedEmployeeId = (assignedEmployeeId === "none" || !assignedEmployeeId) ? null : assignedEmployeeId;
   }
@@ -566,9 +605,9 @@ export const updateAmcVisit = async (req: Request, res: Response) => {
  */
 export const updateApartmentAmcSettings = async (req: Request, res: Response) => {
   const { apartmentId } = req.params;
-  const { 
-    clientType, 
-    monthlyCleaningRate, 
+  const {
+    clientType,
+    monthlyCleaningRate,
     remarks,
     cleaningsPerMonth,
     cleaningWindow1,
@@ -680,10 +719,10 @@ export const updateApartmentAmcSettings = async (req: Request, res: Response) =>
         cleaningWindow5, cleaningWindow6, cleaningWindow7, cleaningWindow8
       ].filter(Boolean);
 
-      const newVisits: Array<{ 
-        customerId: number; 
-        scheduledDate: Date; 
-        status: AmcVisitStatus; 
+      const newVisits: Array<{
+        customerId: number;
+        scheduledDate: Date;
+        status: AmcVisitStatus;
         assignedEmployeeId: string | null;
         cleaningNumber: number;
         timeSlot: string;
@@ -707,8 +746,8 @@ export const updateApartmentAmcSettings = async (req: Request, res: Response) =>
               const visitDay = resolveVisitDay(window, currentMonth);
               const scheduledDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), visitDay, 10, 0, 0);
 
-              const timeSlot = useVariableTiming 
-                ? (req.body[`cleaningTimeSlot${i+1}`] || "09:00")
+              const timeSlot = useVariableTiming
+                ? (req.body[`cleaningTimeSlot${i + 1}`] || "09:00")
                 : (req.body.cleaningTimeSlot1 || "09:00");
 
               if (scheduledDate >= start && scheduledDate <= end) {
@@ -732,8 +771,8 @@ export const updateApartmentAmcSettings = async (req: Request, res: Response) =>
             const visitDay = resolveVisitDay(window, currentMonth);
             const scheduledDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), visitDay, 10, 0, 0);
 
-            const timeSlot = useVariableTiming 
-              ? (req.body[`cleaningTimeSlot${i+1}`] || "09:00")
+            const timeSlot = useVariableTiming
+              ? (req.body[`cleaningTimeSlot${i + 1}`] || "09:00")
               : (req.body.cleaningTimeSlot1 || "09:00");
 
             if (scheduledDate >= start && scheduledDate <= end) {

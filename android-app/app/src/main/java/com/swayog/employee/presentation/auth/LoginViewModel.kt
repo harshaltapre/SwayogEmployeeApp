@@ -39,6 +39,14 @@ class LoginViewModel @Inject constructor(
     private val _isBiometricAvailable = MutableStateFlow(false)
     val isBiometricAvailable: StateFlow<Boolean> = _isBiometricAvailable.asStateFlow()
     
+    val serverUrl: Flow<String?> = dataStoreManager.serverUrl
+
+    fun saveServerUrl(url: String) {
+        viewModelScope.launch {
+            dataStoreManager.saveServerUrl(url)
+        }
+    }
+    
     fun onEmailChange(newEmail: String) {
         _email.value = newEmail
     }

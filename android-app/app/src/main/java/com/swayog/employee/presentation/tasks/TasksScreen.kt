@@ -1235,6 +1235,7 @@ fun TaskDetailDialog(
                         afterImageUrl = task.afterImageUrl,
                         sitePhotos = task.sitePhotos ?: task.images,
                         taskType = task.taskType,
+                        jobType = task.jobType,
                         isSiteVisit = task.isSiteVisit,
                         serverUrl = serverUrl
                     )

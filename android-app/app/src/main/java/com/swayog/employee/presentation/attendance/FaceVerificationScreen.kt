@@ -44,10 +44,12 @@ fun FaceVerificationScreen(
     var isProcessing by remember { mutableStateOf(false) }
 
     val faceEmbeddingHelper = remember { FaceEmbeddingHelper(context) }
+    val analyzerExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
     
     DisposableEffect(Unit) {
         onDispose {
             faceEmbeddingHelper.close()
+            analyzerExecutor.shutdown()
         }
     }
 
@@ -77,26 +79,34 @@ fun FaceVerificationScreen(
                         .build()
 
                     imageAnalyzer.setAnalyzer(
-                        ContextCompat.getMainExecutor(ctx),
+                        analyzerExecutor,
                         FaceAnalyzer(faceEmbeddingHelper) { face, embedding ->
                             if (isProcessing) return@FaceAnalyzer
                             
                             if (face == null || embedding == null) {
-                                faceStatusText = "No face detected"
+                                // Update UI on main thread
+                                ContextCompat.getMainExecutor(ctx).execute {
+                                    faceStatusText = "No face detected"
+                                }
                             } else {
                                 val matchScore = FaceMatcher.findBestMatch(embedding, faceDescriptors)
                                 if (matchScore >= FaceMatcher.THRESHOLD) {
-                                    faceStatusText = "Match Success! Checking in..."
                                     isProcessing = true
-                                    
-                                    val capturedBitmap = previewView.bitmap
-                                    if (capturedBitmap != null) {
-                                        onVerificationSuccess(capturedBitmap, matchScore)
-                                    } else {
-                                        onVerificationFailed("Failed to capture image")
+                                    // Update UI and trigger success on main thread
+                                    ContextCompat.getMainExecutor(ctx).execute {
+                                        faceStatusText = "Match Success! Checking in..."
+                                        val capturedBitmap = previewView.bitmap
+                                        if (capturedBitmap != null) {
+                                            onVerificationSuccess(capturedBitmap, matchScore)
+                                        } else {
+                                            onVerificationFailed("Failed to capture image")
+                                        }
                                     }
                                 } else {
-                                    faceStatusText = "Verification failed: Match score too low"
+                                    // Update UI on main thread
+                                    ContextCompat.getMainExecutor(ctx).execute {
+                                        faceStatusText = "Verification failed: Match score too low"
+                                    }
                                 }
                             }
                         }

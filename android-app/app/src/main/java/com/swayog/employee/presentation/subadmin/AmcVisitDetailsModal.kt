@@ -182,7 +182,9 @@ fun AmcVisitDetailsModal(
 
                     BeforeAfterImageSection(
                         beforeImageUrl = event.beforeImageUrl,
-                        afterImageUrl = event.afterImageUrl
+                        afterImageUrl = event.afterImageUrl,
+                        sitePhotos = event.sitePhotos ?: event.images,
+                        isSiteVisit = true
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))

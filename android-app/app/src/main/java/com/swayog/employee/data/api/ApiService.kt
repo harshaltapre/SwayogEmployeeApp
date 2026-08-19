@@ -284,7 +284,7 @@ interface ApiService {
     @POST("subadmin/amc-visits/{visitId}/complete")
     suspend fun markAmcVisitDone(
         @Path("visitId") visitId: String,
-        @Body request: Map<String, String?>
+        @Body request: Map<String, @JvmSuppressWildcards Any?>
     ): Response<ApiResponse<AmcVisit>>
     
     // Inventory endpoints

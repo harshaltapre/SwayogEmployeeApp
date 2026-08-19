@@ -384,6 +384,12 @@ fun AttendanceScreen(
                                     }
                                 }
 
+                                val mapUrl = remember(currentLatitude, currentLongitude) {
+                                    val lat = currentLatitude ?: 18.5204
+                                    val lon = currentLongitude ?: 73.8567
+                                    "https://www.openstreetmap.org/export/embed.html?bbox=${lon - 0.005}%2C${lat - 0.003}%2C${lon + 0.005}%2C${lat + 0.003}&layer=mapnik&marker=${lat}%2C${lon}"
+                                }
+
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -399,10 +405,9 @@ fun AttendanceScreen(
                                             }
                                         },
                                         update = { webView ->
-                                            val lat = currentLatitude ?: 18.5204
-                                            val lon = currentLongitude ?: 73.8567
-                                            val url = "https://www.openstreetmap.org/export/embed.html?bbox=${lon - 0.005}%2C${lat - 0.003}%2C${lon + 0.005}%2C${lat + 0.003}&layer=mapnik&marker=${lat}%2C${lon}"
-                                            webView.loadUrl(url)
+                                            if (webView.url != mapUrl) {
+                                                webView.loadUrl(mapUrl)
+                                            }
                                         },
                                         modifier = Modifier.fillMaxSize()
                                     )

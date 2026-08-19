@@ -24,6 +24,8 @@ data class AmcVisit(
     val visitNotes: String?,
     val beforeImageUrl: String?,
     val afterImageUrl: String?,
+    val sitePhotos: List<String>? = null,
+    val images: List<String>? = null,
     val createdAt: String,
     val updatedAt: String,
     val customer: AmcCustomerInfo? = null

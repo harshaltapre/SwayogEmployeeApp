@@ -36,6 +36,13 @@ fun FaceEnrollmentScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
+    val analyzerExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    
+    DisposableEffect(Unit) {
+        onDispose {
+            analyzerExecutor.shutdown()
+        }
+    }
     
     val uiState by viewModel.uiState.collectAsState()
     
@@ -111,7 +118,7 @@ fun FaceEnrollmentScreen(
                                     .build()
                                     
                                 imageAnalysis.setAnalyzer(
-                                    ContextCompat.getMainExecutor(ctx),
+                                    analyzerExecutor,
                                     FaceAnalyzer(viewModel.faceEmbeddingHelper) { face, embedding ->
                                         viewModel.processFace(face, embedding)
                                     }

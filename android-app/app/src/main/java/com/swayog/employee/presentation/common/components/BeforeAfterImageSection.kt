@@ -2,17 +2,11 @@ package com.swayog.employee.presentation.common.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -26,26 +20,52 @@ fun BeforeAfterImageSection(
     afterImageUrl: String?,
     sitePhotos: List<String>? = null,
     taskType: String? = null,
+    jobType: String? = null,
     isSiteVisit: Boolean = false,
     serverUrl: String? = null
 ) {
     val context = LocalContext.current
     var fullScreenImage by remember { mutableStateOf<Any?>(null) }
+
     val resolvedSitePhotos = remember(sitePhotos, beforeImageUrl, afterImageUrl) {
-        val list = mutableListOf<String>()
-        if (!sitePhotos.isNullOrEmpty()) {
-            list.addAll(sitePhotos.filter { it.isNotBlank() })
+        val result = mutableListOf<String>()
+        val seenKeys = mutableSetOf<String>()
+
+        fun getKey(url: String): String {
+            return if (url.length > 200) {
+                "${url.length}_${url.take(40)}_${url.takeLast(40)}"
+            } else {
+                url
+            }
         }
-        if (!beforeImageUrl.isNullOrBlank() && !list.contains(beforeImageUrl)) {
-            list.add(beforeImageUrl)
+
+        sitePhotos?.forEach { photo ->
+            if (photo.isNotBlank()) {
+                val key = getKey(photo)
+                if (seenKeys.add(key)) {
+                    result.add(photo)
+                }
+            }
         }
-        if (!afterImageUrl.isNullOrBlank() && !list.contains(afterImageUrl)) {
-            list.add(afterImageUrl)
+
+        if (!beforeImageUrl.isNullOrBlank()) {
+            val key = getKey(beforeImageUrl)
+            if (seenKeys.add(key)) {
+                result.add(beforeImageUrl)
+            }
         }
-        list.distinct()
+
+        if (!afterImageUrl.isNullOrBlank()) {
+            val key = getKey(afterImageUrl)
+            if (seenKeys.add(key)) {
+                result.add(afterImageUrl)
+            }
+        }
+
+        result
     }
 
-    if (isSiteVisit || taskType == "SITE_VISIT" || !sitePhotos.isNullOrEmpty()) {
+    if (isSiteVisit || taskType == "SITE_VISIT" || !sitePhotos.isNullOrEmpty() || resolvedSitePhotos.size > 2 || jobType?.lowercase()?.contains("survey") == true) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "📸 Site Visit Photos (${resolvedSitePhotos.size})",
@@ -72,33 +92,37 @@ fun BeforeAfterImageSection(
                 }
             }
         } else {
-            val rowCount = (resolvedSitePhotos.size + 1) / 2
-            val gridHeight = (rowCount * 138).dp
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(gridHeight),
-                userScrollEnabled = false,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            val photoPairs = remember(resolvedSitePhotos) { resolvedSitePhotos.chunked(2) }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                items(resolvedSitePhotos) { photoUrl ->
-                    val model = ImageUtils.resolveImageModel(context, photoUrl, serverUrl)
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(130.dp)
-                            .clickable { fullScreenImage = model },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        shape = RoundedCornerShape(8.dp)
+                photoPairs.forEach { pair ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        AsyncImage(
-                            model = ImageUtils.rememberImageRequest(context, photoUrl, serverUrl),
-                            contentDescription = "Site Photo",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                        pair.forEach { photoUrl ->
+                            val model = ImageUtils.resolveImageModel(context, photoUrl, serverUrl)
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(130.dp)
+                                    .clickable { fullScreenImage = model },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                AsyncImage(
+                                    model = ImageUtils.rememberImageRequest(context, photoUrl, serverUrl),
+                                    contentDescription = "Site Photo",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+                        if (pair.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }

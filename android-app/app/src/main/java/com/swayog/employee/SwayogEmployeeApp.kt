@@ -16,9 +16,17 @@ class SwayogEmployeeApp : Application(), Configuration.Provider {
     lateinit var workerFactory: HiltWorkerFactory
 
     override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .build()
+        get() = try {
+            if (::workerFactory.isInitialized) {
+                Configuration.Builder()
+                    .setWorkerFactory(workerFactory)
+                    .build()
+            } else {
+                Configuration.Builder().build()
+            }
+        } catch (e: Exception) {
+            Configuration.Builder().build()
+        }
     
     override fun onCreate() {
         super.onCreate()

@@ -37,16 +37,17 @@ data class Task(
     val isAmcVisit: Boolean
         get() = taskType == "AMC_VISIT" || jobType?.lowercase()?.contains("amc") == true || id.startsWith("amc_") || id.startsWith("TASK-amc_")
 
-    // Helper to check if this is a site visit
+    // Helper to check if this is a site visit / site survey / AMC multi-photo task
     val isSiteVisit: Boolean
-        get() = !isAmcVisit && (
-            taskType == "SITE_VISIT" || 
+        get() = taskType == "SITE_VISIT" || 
+            taskType == "AMC_VISIT" ||
             jobType == "Site Visit" || 
             jobType?.lowercase()?.contains("site") == true || 
-            (jobType?.lowercase()?.contains("visit") == true && !jobType.lowercase().contains("amc")) ||
+            jobType?.lowercase()?.contains("survey") == true ||
+            jobType?.lowercase()?.contains("visit") == true ||
+            isAmcVisit ||
             !sitePhotos.isNullOrEmpty() ||
             !images.isNullOrEmpty()
-        )
 
     // Helper to check if this is a regular task
     val isRegularTask: Boolean
@@ -55,8 +56,8 @@ data class Task(
     // Get required image count based on task type
     val requiredImageCount: Int
         get() = when {
-            isSiteVisit -> 4 // Minimum 4 photos for site visits
-            else -> 2 // 1 before + 1 after for regular/AMC tasks
+            isSiteVisit || isAmcVisit || jobType?.lowercase()?.contains("survey") == true -> 4 // Minimum 4 photos for site visits, surveys & AMC visits
+            else -> 2 // 1 before + 1 after for regular tasks
         }
 
     // Extract the actual visit ID if this is an AMC visit

@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.swayog.employee.data.repository.TaskRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
@@ -13,9 +12,8 @@ import org.json.JSONObject
 import com.swayog.employee.data.local.dao.TaskDao
 import com.swayog.employee.data.local.dao.OutboxQueueDao
 import com.swayog.employee.data.local.entity.TaskEntity
-import com.swayog.employee.data.remote.ApiService
-import com.swayog.employee.data.remote.UpdateTaskRequest
-import com.swayog.employee.data.remote.DailyCommitRequest
+import com.swayog.employee.data.api.ApiService
+import com.swayog.employee.data.model.*
 import com.swayog.employee.core.util.LocalFileHelper
 import com.google.gson.Gson
 import android.util.Log
@@ -44,7 +42,7 @@ class SyncWorker @AssistedInject constructor(
 
             for (item in pendingItems) {
                 Log.d("TASK_SYNC", "Processing outbox item ${item.id} endpoint=${item.endpoint} method=${item.method} retryCount=${item.retryCount}")
-                var filesToDelete = mutableListOf<String>()
+                val filesToDelete = mutableListOf<String>()
                 val success = try {
                     when {
                         item.endpoint.startsWith("tasks/") && item.method == "PATCH" -> {
@@ -70,8 +68,8 @@ class SyncWorker @AssistedInject constructor(
                             val json = JSONObject(item.payload)
                             val taskId = json.optString("taskId")
                             if (taskId.isNotEmpty()) {
-                                val beforeImageFilePath = json.optString("beforeImageFilePath", null)
-                                val afterImageFilePath = json.optString("afterImageFilePath", null)
+                                val beforeImageFilePath = if (json.isNull("beforeImageFilePath")) null else json.optString("beforeImageFilePath")
+                                val afterImageFilePath = if (json.isNull("afterImageFilePath")) null else json.optString("afterImageFilePath")
                                 
                                 val beforeImageUrl = beforeImageFilePath?.takeIf { it.isNotBlank() }?.let { 
                                     filesToDelete.add(it)
@@ -181,7 +179,7 @@ class SyncWorker @AssistedInject constructor(
                         item.endpoint.contains("check-in") && item.method == "POST" -> {
                             val json = JSONObject(item.payload)
                             
-                            val selfieFilePath = json.optString("selfieFilePath", null)
+                            val selfieFilePath = if (json.isNull("selfieFilePath")) null else json.optString("selfieFilePath")
                             val selfie = selfieFilePath?.takeIf { it.isNotBlank() }?.let { 
                                 filesToDelete.add(it)
                                 LocalFileHelper.readFileToBase64(it) 

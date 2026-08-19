@@ -239,6 +239,8 @@ data class CalendarEvent(
     val status: String?,
     val beforeImageUrl: String? = null,
     val afterImageUrl: String? = null,
+    val sitePhotos: List<String>? = null,
+    val images: List<String>? = null,
     val visitNotes: String? = null,
     val completedByEmployeeId: String? = null,
     val completedAt: String? = null

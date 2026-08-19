@@ -1,9 +1,6 @@
 package com.swayog.employee.presentation.common.utils
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Base64
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import coil.request.CachePolicy
@@ -18,24 +15,13 @@ object ImageUtils {
     ): Any? {
         if (photoUrl.isNullOrBlank()) return null
 
-        return if (photoUrl.startsWith("data:")) {
-            try {
-                val base64Data = photoUrl.substringAfter(",")
-                val decodedBytes = Base64.decode(base64Data, Base64.DEFAULT)
-                val bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
-                if (bitmap != null) {
-                    android.util.Log.d("PROFILE_RENDER", "Successfully decoded Base64 image to Bitmap (${bitmap.width}x${bitmap.height})")
-                } else {
-                    android.util.Log.e("PROFILE_RENDER", "Base64 decode returned null Bitmap")
-                }
-                bitmap
-            } catch (e: Exception) {
-                android.util.Log.e("PROFILE_RENDER", "Error decoding Base64 image string: ${e.message}", e)
-                null
-            }
-        } else if (photoUrl.startsWith("http://") || photoUrl.startsWith("https://")) {
-            android.util.Log.d("PROFILE_RENDER", "Using HTTP(S) image URL: $photoUrl")
-            photoUrl
+        val trimmed = photoUrl.trim()
+        return if (trimmed.startsWith("data:")) {
+            trimmed
+        } else if (trimmed.startsWith("/9j/") || trimmed.startsWith("iVBORw") || trimmed.startsWith("R0lGOD") || trimmed.startsWith("UklGR")) {
+            "data:image/jpeg;base64,$trimmed"
+        } else if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            trimmed
         } else {
             val currentServerUrl = serverUrl
             val base = if (!currentServerUrl.isNullOrBlank()) {
@@ -43,10 +29,8 @@ object ImageUtils {
             } else {
                 com.swayog.employee.BuildConfig.API_BASE_URL.removeSuffix("/").removeSuffix("/api/v1")
             }
-            val cleanPath = if (photoUrl.startsWith("/")) photoUrl else "/$photoUrl"
-            val fullUrl = "$base$cleanPath"
-            android.util.Log.d("PROFILE_RENDER", "Resolved relative image path to full URL: $fullUrl")
-            fullUrl
+            val cleanPath = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
+            "$base$cleanPath"
         }
     }
 

@@ -47,6 +47,7 @@ class FaceEmbeddingHelper(context: Context) {
 
         val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
         resizedBitmap.getPixels(intValues, 0, resizedBitmap.width, 0, 0, resizedBitmap.width, resizedBitmap.height)
+        resizedBitmap.recycle()
         
         imgData.rewind()
         for (i in 0 until inputSize) {
