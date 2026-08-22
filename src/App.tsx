@@ -3,7 +3,7 @@ import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getRoleDashboardPath, isEpcPartnerJobRole, isServiceExecutiveHeadJobRole, useAuth } from "@/lib/auth";
+import { getRoleDashboardPath, isEpcPartnerJobRole, isInstallationTeamJobRole, isServiceExecutiveHeadJobRole, useAuth } from "@/lib/auth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import NotFound from "@/pages/not-found";
@@ -41,6 +41,7 @@ import PartnerMessages from "@/pages/partner/Messages";
 import PartnerSettings from "@/pages/partner/Settings";
 
 import EpcContractorDashboard from "@/pages/epc-contractor/Dashboard";
+import InstallerDashboard from "@/pages/installer/Dashboard";
 
 import CustomerDashboard from "@/pages/customer/Dashboard";
 import CustomerInstallation from "@/pages/customer/Installation";
@@ -58,6 +59,7 @@ import WaareeSolarDashboard from "@/pages/employee/WaareeSolarDashboard";
 import SubAdminCustomers from "@/pages/employee/SubAdminCustomers";
 import SubAdminAttendance from "@/pages/employee/SubAdminAttendance";
 import SubAdminDailyCommit from "@/pages/employee/SubAdminDailyCommit";
+import SubAdminPartnerLeads from "@/pages/employee/SubAdminPartnerLeads";
 import SubAdminSettings from "@/pages/employee/SubAdminSettings";
 
 import InventoryExecutiveDashboard from "@/pages/inventory/Dashboard";
@@ -81,10 +83,11 @@ function ProtectedRoute({ component: Component, allowedRoles, path }: { componen
           return <Redirect to="/login" />;
         }
         
-        const isPartnerRouteAccess = path.startsWith("/partner/") && (user.role === "partner" && !isEpcPartnerJobRole(user.jobRole));
+        const isPartnerRouteAccess = path.startsWith("/partner/") && (user.role === "partner" && !isEpcPartnerJobRole(user.jobRole) && !isInstallationTeamJobRole(user.jobRole));
         const isEpcRouteAccess = path.startsWith("/epc-contractor/") && (isEpcPartnerJobRole(user.jobRole) || (user.role as string) === "epc_contractor");
+        const isInstallerRouteAccess = path.startsWith("/installer/") && (isInstallationTeamJobRole(user.jobRole) || (user.role as string) === "installer");
         const isServiceExecutiveRouteAccess = path.startsWith("/service-executive") && (isServiceExecutiveHeadJobRole(user.jobRole) || user.role === "admin" || user.role === "super_admin");
-        const isAllowed = allowedRoles.includes(user.role) || isPartnerRouteAccess || isEpcRouteAccess || isServiceExecutiveRouteAccess;
+        const isAllowed = allowedRoles.includes(user.role) || isPartnerRouteAccess || isEpcRouteAccess || isInstallerRouteAccess || isServiceExecutiveRouteAccess;
         
         if (!isAllowed) {
           return <Redirect to={getRoleDashboardPath(user.role, user.jobRole)} />;
@@ -156,6 +159,9 @@ function Router() {
       {/* EPC Contractor Routes */}
       <ProtectedRoute path="/epc-contractor/dashboard" component={EpcContractorDashboard} allowedRoles={['admin', 'super_admin', 'epc_contractor', 'partner']} />
       
+      {/* Installation Team Routes */}
+      <ProtectedRoute path="/installer/dashboard" component={InstallerDashboard} allowedRoles={['admin', 'super_admin', 'partner', 'employee', 'installer']} />
+      
       {/* Customer Routes */}
       <ProtectedRoute path="/customer/dashboard" component={CustomerDashboard} allowedRoles={['admin', 'super_admin', 'customer']} />
       <ProtectedRoute path="/customer/installation" component={CustomerInstallation} allowedRoles={['admin', 'super_admin', 'customer']} />
@@ -165,6 +171,8 @@ function Router() {
       
       {/* Sub Admin Routes */}
       <ProtectedRoute path="/subadmin/dashboard" component={SubAdminDashboard} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
+      <ProtectedRoute path="/subadmin/partner-leads" component={SubAdminPartnerLeads} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
+      <ProtectedRoute path="/subadmin/partners-lead" component={SubAdminPartnerLeads} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/customers" component={SubAdminCustomers} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/customers/:id" component={AdminCustomerDetail} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />
       <ProtectedRoute path="/subadmin/complaints" component={SubAdminComplaints} allowedRoles={['admin', 'super_admin', 'sub_admin', 'employee']} />

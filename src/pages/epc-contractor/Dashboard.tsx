@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Briefcase, Zap, Clock, CheckCircle2, Users, Package,
   Truck, Camera, FileText, CreditCard, Star, Folder, Bell, Settings,
   HelpCircle, Search, ArrowUpRight, ArrowDownRight,
-  Eye, RefreshCw, LogOut, Plus, Upload, Lock,
+  Eye, RefreshCw, LogOut, Plus, Upload, Lock, Check, X, HardHat, Building2, IndianRupee
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,8 +13,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useListEpcAssignedLeads, useUpdateEpcAssignmentStatus, CustomerRecord } from "@/lib/api-client";
+import { useQueryClient } from "@tanstack/react-query";
 
-// ─── INITIAL STORAGE DATA (empty — data is added by actual users) ────────────────────────────────────────────────────
+
+// â”€â”€â”€ INITIAL STORAGE DATA (empty â€” data is added by actual users) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const INITIAL_PROJECTS: any[] = [];
 const INITIAL_ENGINEERS: any[] = [];
@@ -113,14 +116,141 @@ export default function EpcContractorDashboard() {
   });
   const [passwords, setPasswords] = useState({ next: "", confirm: "" });
 
+  const queryClient = useQueryClient();
   const vendorName = profile.companyName;
+
+  // Fetch customer leads assigned from ISphere Green Head (using safe EPC lead query)
+  const { data: epcLeadsFromBackend = [], refetch: refetchEpcLeads } = useListEpcAssignedLeads(vendorName);
+
+  const updateEpcStatusMutation = useUpdateEpcAssignmentStatus({
+    mutation: {
+      onSuccess: (_data: any, variables: any) => {
+        toast({
+          title: variables.status === "ACCEPTED" ? "Project Accepted!" : "Project Declined",
+          description:
+            variables.status === "ACCEPTED"
+              ? "You accepted this solar installation project. It is now active in your operations."
+              : "You declined this project assignment. Isphere Green Head has been notified.",
+        });
+        refetchEpcLeads();
+        queryClient.invalidateQueries({ queryKey: ["epc-assigned-leads"] });
+      },
+      onError: () => {
+        toast({ title: "Action Failed", description: "Could not update status. Please try again.", variant: "destructive" });
+      },
+    },
+  });
+
+  const [actionUpdatingId, setActionUpdatingId] = useState<number | null>(null);
+
+  const handleAcceptRejectIsphereProject = async (leadId: number, status: "ACCEPTED" | "REJECTED") => {
+    setActionUpdatingId(leadId);
+    try {
+      try {
+        const saved = localStorage.getItem("local_customer_epc_assignments") || "{}";
+        const map = JSON.parse(saved);
+        if (map[leadId]) {
+          map[leadId].epcAssignmentStatus = status;
+        } else {
+          map[leadId] = { assignedEpc: vendorName, epcAssignmentStatus: status };
+        }
+        localStorage.setItem("local_customer_epc_assignments", JSON.stringify(map));
+        window.dispatchEvent(new Event("storage"));
+      } catch (_) {}
+
+      await updateEpcStatusMutation.mutateAsync({ id: leadId, status, epcCompanyName: vendorName });
+    } catch (_) {
+    } finally {
+      setActionUpdatingId(null);
+    }
+  };
+
+  // Listen for storage events so local assignment updates immediately reflect
+  const [storageTick, setStorageTick] = useState(0);
+  useEffect(() => {
+    const handleStorage = () => setStorageTick((t) => t + 1);
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  // Compute Isphere Green Head assigned projects
+  const isphereProjects = React.useMemo(() => {
+    const map = new Map<string, any>();
+    const normalizedVendor = (vendorName || user?.name || "").trim().toLowerCase();
+
+    let localAssignments: Record<string, any> = {};
+    try {
+      const saved = localStorage.getItem("local_customer_epc_assignments");
+      if (saved) localAssignments = JSON.parse(saved);
+    } catch (_) {}
+
+    const processCustomer = (c: any) => {
+      if (!c || (!c.id && !c.rawId)) return;
+      const rawId = c.rawId || c.id;
+      const local = localAssignments[rawId] || localAssignments[String(rawId)];
+      const assignedEpcName = local?.assignedEpc || c.assignedEpc;
+      if (!assignedEpcName) return;
+
+      const epc = assignedEpcName.trim().toLowerCase();
+      // Match against logged-in contractor vendorName / user name / company name
+      const isMatch =
+        !normalizedVendor ||
+        normalizedVendor === "solar" ||
+        epc === normalizedVendor ||
+        epc.includes(normalizedVendor) ||
+        normalizedVendor.includes(epc) ||
+        (user?.email && epc.includes(user.email.toLowerCase())) ||
+        (user?.name && epc.includes(user.name.toLowerCase()));
+
+      if (!isMatch && epcLeadsFromBackend.every((l) => l.id !== rawId)) return;
+
+      const status = local?.epcAssignmentStatus !== undefined ? local.epcAssignmentStatus : c.epcAssignmentStatus;
+      const partnerName = c.partnerName || c.partner?.companyName || c.partner?.businessName || c.partner?.name || "Isphere Green Partner";
+
+      const savedProgress = local?.progress !== undefined ? Number(local.progress) : (status === "ACCEPTED" ? 30 : 0);
+      const savedStage = local?.stage || (status === "ACCEPTED" ? "Project Accepted & Running" : status === "REJECTED" ? "Declined by EPC" : "Pending Response");
+
+      map.set(String(rawId), {
+        id: c.customerCode || `SWY-LEAD-${rawId}`,
+        rawId: rawId,
+        customer: c.name || c.customer || "Customer Lead",
+        location: c.city || c.location || c.address || "Nagpur",
+        capacity: typeof c.capacity === 'string' ? c.capacity : `${c.systemSizeKw || 5} kWp`,
+        stage: savedStage,
+        stageKey: savedProgress === 100 ? "completed" : status === "ACCEPTED" ? "installation" : "assigned",
+        progress: savedProgress,
+        expected: "30 Aug 2026",
+        payment: "Partner Lead",
+        amount: (Number(c.systemSizeKw || 5)) * 45000,
+        isFromIsphere: true,
+        assignedEpc: assignedEpcName,
+        partnerName,
+        epcAssignmentStatus: status,
+        phone: c.phone || "",
+      });
+    };
+
+    // 1. Process all local assignments saved by ISphere Green Head
+    Object.values(localAssignments).forEach(processCustomer);
+
+    // 2. Process all backend assigned leads
+    epcLeadsFromBackend.forEach(processCustomer);
+
+    return Array.from(map.values());
+  }, [epcLeadsFromBackend, vendorName, user?.name, storageTick]);
+
+  const combinedProjects = React.useMemo(() => {
+    return [...isphereProjects, ...projects];
+  }, [isphereProjects, projects]);
+
+  const pendingIsphereCount = isphereProjects.filter((p) => !p.epcAssignmentStatus || p.epcAssignmentStatus === null).length;
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "assigned", label: "Assigned Projects", icon: Briefcase, count: projects.length },
-    { id: "running", label: "Running Projects", icon: Zap, count: projects.filter((p: any) => p.progress > 0 && p.progress < 100).length },
-    { id: "pending", label: "Pending Projects", icon: Clock, count: projects.filter((p: any) => p.progress < 50).length },
-    { id: "completed", label: "Completed Projects", icon: CheckCircle2, count: projects.filter((p: any) => p.progress === 100).length },
+    { id: "assigned", label: "Assigned Projects", icon: Briefcase, count: combinedProjects.length, badge: pendingIsphereCount },
+    { id: "running", label: "Running Projects", icon: Zap, count: combinedProjects.filter((p: any) => p.progress > 0 && p.progress < 100).length },
+    { id: "pending", label: "Pending Projects", icon: Clock, count: combinedProjects.filter((p: any) => p.progress < 50).length },
+    { id: "completed", label: "Completed Projects", icon: CheckCircle2, count: combinedProjects.filter((p: any) => p.progress === 100).length },
     { id: "team", label: "Engineers & Team", icon: Users, count: engineers.length },
     { id: "material-required", label: "Material Required", icon: Package, count: materials.length },
     { id: "material-dispatch", label: "Material Dispatch", icon: Truck, count: dispatches.length },
@@ -141,28 +271,93 @@ export default function EpcContractorDashboard() {
       toast({ title: "Validation Error", description: "Customer & location required", variant: "destructive" });
       return;
     }
+    const contractorName = vendorName || profile.companyName || user?.name || "SunTech Solar Solutions";
     const created = {
       id: `SWY-2026-${Math.floor(100000 + Math.random() * 900000)}`,
-      customer: newProject.customer, location: newProject.location,
-      capacity: newProject.capacity || "25 kWp", stage: "Site Survey Completed",
-      stageKey: "survey", progress: 20, expected: "30 Aug 2026", payment: "20% Paid",
+      customer: newProject.customer,
+      location: newProject.location,
+      capacity: newProject.capacity || "25 kWp",
+      stage: "Site Survey Completed",
+      stageKey: "survey",
+      progress: 20,
+      expected: "30 Aug 2026",
+      payment: "20% Paid",
       amount: Number(newProject.amount) || 1200000,
+      assignedEpc: contractorName,
+      addedByEpc: contractorName,
+      isCustomEpcProject: true,
     };
-    setProjects([created, ...projects]);
+    const updated = [created, ...projects];
+    setProjects(updated);
+    try {
+      localStorage.setItem("epc_projects", JSON.stringify(updated));
+      window.dispatchEvent(new Event("storage"));
+    } catch (_) {}
     setIsAddProjectOpen(false);
     setNewProject({ customer: "", location: "", capacity: "", amount: "" });
-    toast({ title: "Project Created", description: `Assigned project ${created.id} added.` });
+    toast({ title: "Project Created", description: `Project ${created.id} created by ${contractorName}.` });
   };
 
   const handleUpdateStage = (e: React.FormEvent) => {
     e.preventDefault();
-    setProjects(projects.map((p: any) =>
-      p.id === stageUpdate.projectId
-        ? { ...p, stage: stageUpdate.stage, progress: stageUpdate.progress, stageKey: stageUpdate.progress === 100 ? "completed" : "installation" }
-        : p
-    ));
+    const { projectId, stage, progress } = stageUpdate;
+    const numericProgress = Number(progress);
+
+    // A. Check if project is an Isphere assigned lead
+    const targetProject = combinedProjects.find((p: any) => p.id === projectId);
+
+    if (targetProject && targetProject.isFromIsphere) {
+      const rawId = targetProject.rawId;
+      try {
+        const saved = localStorage.getItem("local_customer_epc_assignments") || "{}";
+        const map = JSON.parse(saved);
+        const existing = map[rawId] || map[String(rawId)] || {};
+
+        map[rawId] = {
+          ...existing,
+          assignedEpc: existing.assignedEpc || targetProject.assignedEpc || vendorName,
+          epcAssignmentStatus: existing.epcAssignmentStatus || targetProject.epcAssignmentStatus || "ACCEPTED",
+          stage: stage,
+          progress: numericProgress,
+        };
+
+        localStorage.setItem("local_customer_epc_assignments", JSON.stringify(map));
+        window.dispatchEvent(new Event("storage"));
+      } catch (err) {
+        console.error("Failed to update Isphere lead progress in localStorage:", err);
+      }
+    }
+
+    // B. Also update custom EPC contractor created projects
+    setProjects((prevProjects: any[]) =>
+      prevProjects.map((p: any) =>
+        p.id === projectId
+          ? {
+              ...p,
+              stage: stage,
+              progress: numericProgress,
+              stageKey: numericProgress === 100 ? "completed" : "installation",
+            }
+          : p
+      )
+    );
+
+    // C. Update selectedProject if project details popup is currently open
+    if (selectedProject && selectedProject.id === projectId) {
+      setSelectedProject((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              stage: stage,
+              progress: numericProgress,
+              stageKey: numericProgress === 100 ? "completed" : "installation",
+            }
+          : null
+      );
+    }
+
     setIsUpdateStageOpen(false);
-    toast({ title: "Stage Updated", description: "Project progress updated successfully." });
+    toast({ title: "Stage Updated", description: `Project progress updated to ${numericProgress}%.` });
   };
 
   const handleAddEngineer = (e: React.FormEvent) => {
@@ -218,7 +413,7 @@ export default function EpcContractorDashboard() {
       category: newPhoto.category,
       url: newPhoto.previewUrl || "https://images.unsplash.com/photo-1509391365360-2e959784a276?w=500&q=80",
       time: new Date().toLocaleString(),
-      geo: "📍 Lat: 18.5204 N, Lng: 73.8567 E | Stamped",
+      geo: "ðŸ“ Lat: 18.5204 N, Lng: 73.8567 E | Stamped",
     };
     setPhotos([created, ...photos]);
     setIsUploadPhotoOpen(false);
@@ -283,12 +478,12 @@ export default function EpcContractorDashboard() {
     toast({ title: "Password Changed", description: "Your portal password was updated." });
   };
 
-  // ─── RENDER ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ RENDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-100 font-sans text-slate-900">
 
-      {/* ─── SIDEBAR ─────────────────────────────────────────────────────────── */}
+      {/* â”€â”€â”€ SIDEBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <aside className="w-64 bg-[#022c22] text-slate-300 flex flex-col justify-between shrink-0 shadow-xl border-r border-[#064e3b]/40">
         <div>
           {/* Logo */}
@@ -345,11 +540,11 @@ export default function EpcContractorDashboard() {
               Contact Support &gt;
             </Button>
           </div>
-          <div className="text-[9px] text-slate-500 text-center mt-2 font-mono">© 2026 Swayog Solar Platform.</div>
+          <div className="text-[9px] text-slate-500 text-center mt-2 font-mono">Â© 2026 Swayog Solar Platform.</div>
         </div>
       </aside>
 
-      {/* ─── MAIN CONTENT ────────────────────────────────────────────────────── */}
+      {/* â”€â”€â”€ MAIN CONTENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
 
         {/* TOP HEADER */}
@@ -360,7 +555,7 @@ export default function EpcContractorDashboard() {
             </h1>
             <p className="text-xs text-slate-500 mt-1">
               Welcome back, <strong className="text-emerald-700 font-bold">{vendorName}</strong>!
-              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-100 text-emerald-700 text-[10px] ml-1">✓</span>
+              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-100 text-emerald-700 text-[10px] ml-1 font-bold">✓</span>
             </p>
           </div>
 
@@ -426,12 +621,12 @@ export default function EpcContractorDashboard() {
               {/* 6 KPI Cards */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 {[
-                  { label: "Total Projects", val: projects.length, icon: <Briefcase className="h-5 w-5"/>, bg: "bg-emerald-50 text-emerald-600", trend: "+16.7%", up: true },
-                  { label: "Running", val: projects.filter((p: any) => p.progress > 0 && p.progress < 100).length, icon: <Zap className="h-5 w-5"/>, bg: "bg-blue-50 text-blue-600", trend: "+9.1%", up: true },
-                  { label: "Pending", val: projects.filter((p: any) => p.progress < 50).length, icon: <Clock className="h-5 w-5"/>, bg: "bg-amber-50 text-amber-600", trend: "-14.3%", up: false },
-                  { label: "Completed", val: projects.filter((p: any) => p.progress === 100).length, icon: <CheckCircle2 className="h-5 w-5"/>, bg: "bg-purple-50 text-purple-600", trend: "+25.0%", up: true },
-                  { label: "Total Earnings", val: `₹${((invoices.filter((i: any) => i.status === 'Paid').reduce((a: number, b: any) => a + b.amount, 0)) || 1875000).toLocaleString()}`, icon: <span className="font-black text-base">₹</span>, bg: "bg-teal-50 text-teal-600", trend: "+12.5%", up: true },
-                  { label: "Pending Pay.", val: `₹${((invoices.filter((i: any) => i.status === 'Pending').reduce((a: number, b: any) => a + b.amount, 0)) || 625000).toLocaleString()}`, icon: <CreditCard className="h-5 w-5"/>, bg: "bg-red-50 text-red-600", trend: `${invoices.filter((i: any) => i.status === 'Pending').length} Inv.`, up: false },
+                  { label: "Total Projects", val: combinedProjects.length, icon: <Briefcase className="h-5 w-5"/>, bg: "bg-emerald-50 text-emerald-600", trend: `${combinedProjects.length} Total`, up: true },
+                  { label: "Running", val: combinedProjects.filter((p: any) => p.progress > 0 && p.progress < 100).length, icon: <Zap className="h-5 w-5"/>, bg: "bg-blue-50 text-blue-600", trend: `${combinedProjects.filter((p: any) => p.progress > 0 && p.progress < 100).length} Active`, up: true },
+                  { label: "Pending", val: combinedProjects.filter((p: any) => p.progress < 50).length, icon: <Clock className="h-5 w-5"/>, bg: "bg-amber-50 text-amber-600", trend: `${combinedProjects.filter((p: any) => p.progress < 50).length} Pending`, up: false },
+                  { label: "Completed", val: combinedProjects.filter((p: any) => p.progress === 100).length, icon: <CheckCircle2 className="h-5 w-5"/>, bg: "bg-purple-50 text-purple-600", trend: `${combinedProjects.filter((p: any) => p.progress === 100).length} Done`, up: true },
+                  { label: "Total Earnings", val: `₹ ${(invoices.filter((i: any) => i.status === 'Paid').reduce((a: number, b: any) => a + b.amount, 0)).toLocaleString()}`, icon: <IndianRupee className="h-5 w-5"/>, bg: "bg-teal-50 text-teal-600", trend: `${invoices.filter((i: any) => i.status === 'Paid').length} Paid`, up: true },
+                  { label: "Pending Pay.", val: `₹ ${(invoices.filter((i: any) => i.status === 'Pending').reduce((a: number, b: any) => a + b.amount, 0)).toLocaleString()}`, icon: <CreditCard className="h-5 w-5"/>, bg: "bg-red-50 text-red-600", trend: `${invoices.filter((i: any) => i.status === 'Pending').length} Inv.`, up: false },
                 ].map((card, i) => (
                   <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-2">
                     <div className="flex items-center justify-between">
@@ -455,11 +650,20 @@ export default function EpcContractorDashboard() {
                     <h3 className="text-sm font-bold text-slate-900">Project Pipeline</h3>
                     <button onClick={() => setActiveTab("assigned")} className="text-[11px] font-bold text-emerald-600 hover:underline">View All</button>
                   </div>
-                  {projects.slice(0, 4).map((p: any) => (
-                    <div key={p.id} className="space-y-1">
-                      <div className="flex justify-between text-xs font-semibold">
+                  {combinedProjects.slice(0, 4).map((p: any) => (
+                    <div key={p.id} className="space-y-1.5 p-2 rounded-lg hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                      <div className="flex justify-between items-center text-xs font-semibold">
                         <span className="text-slate-800">{p.customer} <span className="text-slate-400 font-mono text-[10px]">({p.id})</span></span>
-                        <span className="font-bold text-emerald-700">{p.progress}%</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-emerald-700">{p.progress}%</span>
+                          <button
+                            onClick={() => { setStageUpdate({ projectId: p.id, stage: p.stage, progress: p.progress }); setIsUpdateStageOpen(true); }}
+                            className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                            title="Update Progress"
+                          >
+                            <RefreshCw className="h-3 w-3" />
+                          </button>
+                        </div>
                       </div>
                       <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                         <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${p.progress}%` }} />
@@ -498,47 +702,121 @@ export default function EpcContractorDashboard() {
               <div className="flex items-center justify-between border-b pb-3">
                 <div>
                   <h2 className="text-base font-bold text-slate-900">All Assigned Projects</h2>
-                  <p className="text-xs text-slate-500">Manage solar installations and project stages.</p>
+                  <p className="text-xs text-slate-500">Manage solar installations assigned from Isphere Green Head & manual entries.</p>
                 </div>
                 <Button onClick={() => setIsAddProjectOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white gap-1 text-xs">
                   <Plus className="h-4 w-4" /> Add New Project
                 </Button>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b text-slate-500 font-bold uppercase text-[10px]">
-                      <th className="p-3">Project ID</th><th className="p-3">Customer</th><th className="p-3">Location</th>
-                      <th className="p-3">Capacity</th><th className="p-3">Stage</th><th className="p-3">Progress</th><th className="p-3 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y font-medium text-slate-800">
-                    {projects.map((p: any) => (
-                      <tr key={p.id} className="hover:bg-slate-50">
-                        <td className="p-3 font-mono font-bold text-slate-900">{p.id}</td>
-                        <td className="p-3 font-bold">{p.customer}</td>
-                        <td className="p-3 text-slate-600">{p.location}</td>
-                        <td className="p-3 font-bold text-emerald-700">{p.capacity}</td>
-                        <td className="p-3"><Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[10px] font-bold">{p.stage}</Badge></td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-20 bg-slate-100 h-2 rounded-full overflow-hidden"><div className="bg-emerald-500 h-full" style={{ width: `${p.progress}%` }} /></div>
-                            <span className="font-mono text-[10px]">{p.progress}%</span>
-                          </div>
-                        </td>
-                        <td className="p-3 text-center flex justify-center gap-1">
-                          <button onClick={() => { setStageUpdate({ projectId: p.id, stage: p.stage, progress: p.progress }); setIsUpdateStageOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Update Stage">
-                            <RefreshCw className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => setSelectedProject(p)} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded" title="View Details">
-                            <Eye className="h-4 w-4" />
-                          </button>
-                        </td>
+
+              {combinedProjects.length === 0 ? (
+                <div className="p-12 text-center space-y-2 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                  <Briefcase className="h-10 w-10 text-slate-300 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700">No Assigned Projects Yet</p>
+                  <p className="text-xs text-slate-500">
+                    Projects assigned by Isphere Green Head will appear here automatically.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b text-slate-500 font-bold uppercase text-[10px]">
+                        <th className="p-3">Project ID</th>
+                        <th className="p-3">Customer / Partner</th>
+                        <th className="p-3">Location</th>
+                        <th className="p-3">Capacity</th>
+                        <th className="p-3">Stage / Status</th>
+                        <th className="p-3">Progress</th>
+                        <th className="p-3 text-center">Action / Response</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y font-medium text-slate-800">
+                      {combinedProjects.map((p: any) => {
+                        const isPendingResponse = p.isFromIsphere && (!p.epcAssignmentStatus || p.epcAssignmentStatus === null);
+                        const isAccepted = p.isFromIsphere && p.epcAssignmentStatus === "ACCEPTED";
+                        const isRejected = p.isFromIsphere && p.epcAssignmentStatus === "REJECTED";
+                        const isUpdatingThis = actionUpdatingId === p.rawId;
+
+                        return (
+                          <tr key={p.id} className={`hover:bg-slate-50/80 transition-colors ${isPendingResponse ? "bg-amber-50/40" : ""}`}>
+                            <td className="p-3 font-mono font-bold text-slate-900">
+                              {p.id}
+                              {p.isFromIsphere && (
+                                <span className="block text-[9px] font-extrabold text-emerald-700 bg-emerald-100 border border-emerald-300 rounded px-1.5 py-0.5 w-fit mt-0.5">
+                                  Isphere Head Lead
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-slate-900">{p.customer}</div>
+                              {p.partnerName && <div className="text-[10px] text-slate-500 font-semibold">Ref: {p.partnerName}</div>}
+                            </td>
+                            <td className="p-3 text-slate-600">{p.location}</td>
+                            <td className="p-3 font-bold text-emerald-700">{p.capacity}</td>
+                            <td className="p-3">
+                              {isPendingResponse ? (
+                                <Badge className="bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-extrabold flex items-center gap-1 w-fit">
+                                  <Clock className="h-3 w-3" /> Awaiting Your Response
+                                </Badge>
+                              ) : isRejected ? (
+                                <Badge className="bg-red-100 text-red-800 border border-red-300 text-[10px] font-extrabold flex items-center gap-1 w-fit">
+                                  <X className="h-3 w-3" /> Declined by EPC
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[10px] font-bold">
+                                  {p.stage}
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-20 bg-slate-100 h-2 rounded-full overflow-hidden">
+                                  <div className="bg-emerald-500 h-full" style={{ width: `${p.progress}%` }} />
+                                </div>
+                                <span className="font-mono text-[10px]">{p.progress}%</span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-center">
+                              {isPendingResponse ? (
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    disabled={isUpdatingThis}
+                                    onClick={() => handleAcceptRejectIsphereProject(p.rawId, "ACCEPTED")}
+                                    className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+                                  >
+                                    <Check className="h-3.5 w-3.5" /> Accept
+                                  </button>
+                                  <button
+                                    disabled={isUpdatingThis}
+                                    onClick={() => handleAcceptRejectIsphereProject(p.rawId, "REJECTED")}
+                                    className="flex items-center gap-1 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-400 text-[11px] font-extrabold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+                                  >
+                                    <X className="h-3.5 w-3.5" /> Reject
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex justify-center gap-1">
+                                  <button
+                                    onClick={() => { setStageUpdate({ projectId: p.id, stage: p.stage, progress: p.progress }); setIsUpdateStageOpen(true); }}
+                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                                    title="Update Stage"
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                  </button>
+                                  <button onClick={() => setSelectedProject(p)} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded" title="View Details">
+                                    <Eye className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
@@ -547,7 +825,7 @@ export default function EpcContractorDashboard() {
             <div className="bg-white p-5 rounded-2xl border space-y-4">
               <h2 className="text-base font-bold text-slate-900 border-b pb-2">Active Running Projects</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {projects.filter((p: any) => p.progress > 0 && p.progress < 100).map((p: any) => (
+                {combinedProjects.filter((p: any) => p.progress > 0 && p.progress < 100).map((p: any) => (
                   <div key={p.id} className="p-4 rounded-xl border border-slate-200 space-y-3 bg-slate-50/50">
                     <div className="flex justify-between items-center">
                       <span className="font-mono font-bold text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">{p.id}</span>
@@ -555,8 +833,19 @@ export default function EpcContractorDashboard() {
                     </div>
                     <div><h4 className="font-bold text-slate-900">{p.customer}</h4><p className="text-xs text-slate-500">{p.location}</p></div>
                     <div className="space-y-1">
-                      <div className="flex justify-between text-xs font-medium"><span>Progress</span><span className="font-bold">{p.progress}%</span></div>
+                      <div className="flex justify-between text-xs font-medium"><span>Stage: <span className="font-bold text-slate-700">{p.stage}</span></span><span className="font-bold text-emerald-700">{p.progress}%</span></div>
                       <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="bg-emerald-500 h-full" style={{ width: `${p.progress}%` }} /></div>
+                    </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                      <button
+                        onClick={() => { setStageUpdate({ projectId: p.id, stage: p.stage, progress: p.progress }); setIsUpdateStageOpen(true); }}
+                        className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" /> Update Progress
+                      </button>
+                      <button onClick={() => setSelectedProject(p)} className="text-xs text-slate-500 hover:text-slate-800 hover:underline">
+                        View Details
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -569,10 +858,19 @@ export default function EpcContractorDashboard() {
             <div className="bg-white p-5 rounded-2xl border space-y-4">
               <h2 className="text-base font-bold text-slate-900 border-b pb-2">Pending Projects</h2>
               <div className="space-y-3">
-                {projects.filter((p: any) => p.progress < 50).map((p: any) => (
+                {combinedProjects.filter((p: any) => p.progress < 50).map((p: any) => (
                   <div key={p.id} className="flex justify-between items-center p-3 rounded-xl border border-amber-200 bg-amber-50/40 text-xs">
                     <div><span className="font-bold text-slate-900">{p.id} - {p.customer}</span><p className="text-slate-500">{p.location} ({p.capacity})</p></div>
-                    <Badge className="bg-amber-100 text-amber-800">{p.stage}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-amber-100 text-amber-800">{p.stage}</Badge>
+                      <button
+                        onClick={() => { setStageUpdate({ projectId: p.id, stage: p.stage, progress: p.progress }); setIsUpdateStageOpen(true); }}
+                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                        title="Update Progress"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -584,10 +882,19 @@ export default function EpcContractorDashboard() {
             <div className="bg-white p-5 rounded-2xl border space-y-4">
               <h2 className="text-base font-bold text-slate-900 border-b pb-2">Completed Projects Archive</h2>
               <div className="space-y-3">
-                {projects.filter((p: any) => p.progress === 100).map((p: any) => (
+                {combinedProjects.filter((p: any) => p.progress === 100).map((p: any) => (
                   <div key={p.id} className="flex justify-between items-center p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 text-xs">
                     <div><span className="font-bold text-slate-900">{p.id} - {p.customer}</span><p className="text-slate-500">{p.location} ({p.capacity})</p></div>
-                    <Badge className="bg-emerald-600 text-white">100% Completed</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-emerald-600 text-white">100% Completed</Badge>
+                      <button
+                        onClick={() => { setStageUpdate({ projectId: p.id, stage: p.stage, progress: p.progress }); setIsUpdateStageOpen(true); }}
+                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                        title="Update Stage"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -708,7 +1015,7 @@ export default function EpcContractorDashboard() {
                   <div key={inv.id} className="flex justify-between items-center p-3 rounded-xl border text-xs">
                     <div><span className="font-bold text-slate-900">{inv.id} - {inv.customer}</span><p className="text-[10px] text-slate-500">Project: {inv.project} | Date: {inv.date}</p></div>
                     <div className="text-right">
-                      <div className="font-bold text-emerald-700">₹ {inv.amount.toLocaleString()}</div>
+                      <div className="font-bold text-emerald-700">â‚¹ {inv.amount.toLocaleString()}</div>
                       <Badge className={inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}>{inv.status}</Badge>
                     </div>
                   </div>
@@ -722,7 +1029,7 @@ export default function EpcContractorDashboard() {
             <div className="bg-white p-5 rounded-2xl border space-y-4">
               <h2 className="text-base font-bold text-slate-900 border-b pb-2">Vendor Quality & Safety Ratings</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200"><div className="text-3xl font-black">4.6 ★</div><p className="text-xs text-slate-500 mt-1">Overall Quality Rating</p></div>
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200"><div className="text-3xl font-black">4.6 â˜…</div><p className="text-xs text-slate-500 mt-1">Overall Quality Rating</p></div>
                 <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200"><div className="text-3xl font-black text-emerald-700">92%</div><p className="text-xs text-slate-500 mt-1">On-Time Completion</p></div>
                 <div className="p-4 rounded-xl bg-blue-50 border border-blue-200"><div className="text-3xl font-black text-blue-700">95%</div><p className="text-xs text-slate-500 mt-1">Safety Compliance</p></div>
               </div>
@@ -792,7 +1099,7 @@ export default function EpcContractorDashboard() {
         </main>
       </div>
 
-      {/* ─── MODALS ──────────────────────────────────────────────────────────── */}
+      {/* â”€â”€â”€ MODALS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
 
       <Dialog open={isAddProjectOpen} onOpenChange={setIsAddProjectOpen}>
         <DialogContent className="max-w-md p-6">
@@ -812,9 +1119,17 @@ export default function EpcContractorDashboard() {
           <form onSubmit={handleUpdateStage} className="space-y-3 text-xs pt-2">
             <div className="space-y-1">
               <Label>Current Stage</Label>
-              <Select value={stageUpdate.stage} onValueChange={v => setStageUpdate({ ...stageUpdate, stage: v })}>
+              <Select
+                value={stageUpdate.stage}
+                onValueChange={v => setStageUpdate({
+                  ...stageUpdate,
+                  stage: v,
+                  progress: (v === "Completed" || v === "Completed (100%)") ? 100 : stageUpdate.progress
+                })}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="Project Accepted & Running">Project Accepted & Running</SelectItem>
                   <SelectItem value="Site Survey Completed">Site Survey Completed</SelectItem>
                   <SelectItem value="Material Dispatch">Material Dispatch</SelectItem>
                   <SelectItem value="Installation Running">Installation Running</SelectItem>
@@ -825,7 +1140,21 @@ export default function EpcContractorDashboard() {
             </div>
             <div className="space-y-1">
               <Label>Progress % ({stageUpdate.progress}%)</Label>
-              <input type="range" min="0" max="100" value={stageUpdate.progress} onChange={e => setStageUpdate({ ...stageUpdate, progress: Number(e.target.value) })} className="w-full" />
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={stageUpdate.progress}
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  setStageUpdate({
+                    ...stageUpdate,
+                    progress: val,
+                    stage: val === 100 ? "Completed" : stageUpdate.stage
+                  });
+                }}
+                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+              />
             </div>
             <DialogFooter className="pt-2"><Button type="submit" className="bg-emerald-600 hover:bg-emerald-500 w-full text-xs">Save Stage Progress</Button></DialogFooter>
           </form>
@@ -926,7 +1255,7 @@ export default function EpcContractorDashboard() {
           <DialogHeader><DialogTitle className="text-base font-bold">Raise Invoice</DialogTitle></DialogHeader>
           <form onSubmit={handleRaiseInvoice} className="space-y-3 text-xs pt-2">
             <div className="space-y-1"><Label>Customer Name</Label><Input value={newInvoice.customer} onChange={e => setNewInvoice({ ...newInvoice, customer: e.target.value })} required /></div>
-            <div className="space-y-1"><Label>Invoice Amount (₹)</Label><Input type="number" value={newInvoice.amount} onChange={e => setNewInvoice({ ...newInvoice, amount: e.target.value })} required /></div>
+            <div className="space-y-1"><Label>Invoice Amount (â‚¹)</Label><Input type="number" value={newInvoice.amount} onChange={e => setNewInvoice({ ...newInvoice, amount: e.target.value })} required /></div>
             <DialogFooter className="pt-2"><Button type="submit" className="bg-emerald-600 hover:bg-emerald-500 w-full text-xs">Generate Invoice</Button></DialogFooter>
           </form>
         </DialogContent>
@@ -959,15 +1288,25 @@ export default function EpcContractorDashboard() {
         <DialogContent className="max-w-md p-6">
           {selectedProject && (
             <>
-              <DialogHeader><DialogTitle className="text-base font-bold">Project Details — {selectedProject.id}</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="text-base font-bold">Project Details â€” {selectedProject.id}</DialogTitle></DialogHeader>
               <div className="space-y-2 text-xs mt-2">
                 <div className="flex justify-between"><span className="text-slate-500">Customer</span><span className="font-bold">{selectedProject.customer}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Location</span><span className="font-bold">{selectedProject.location}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Capacity</span><span className="font-bold text-emerald-700">{selectedProject.capacity}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Stage</span><Badge className="bg-emerald-100 text-emerald-800">{selectedProject.stage}</Badge></div>
-                <div className="flex justify-between"><span className="text-slate-500">Progress</span><span className="font-bold">{selectedProject.progress}%</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Progress</span><span className="font-bold text-emerald-700">{selectedProject.progress}%</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Expected</span><span className="font-bold">{selectedProject.expected}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Payment</span><span className="font-bold text-blue-700">{selectedProject.payment}</span></div>
+                <Button
+                  size="sm"
+                  className="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white text-xs gap-1.5 font-bold"
+                  onClick={() => {
+                    setStageUpdate({ projectId: selectedProject.id, stage: selectedProject.stage, progress: selectedProject.progress });
+                    setIsUpdateStageOpen(true);
+                  }}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Update Stage & Progress
+                </Button>
               </div>
             </>
           )}

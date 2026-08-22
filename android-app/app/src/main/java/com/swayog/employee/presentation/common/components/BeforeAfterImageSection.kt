@@ -236,7 +236,7 @@ fun BeforeAfterImageSection(
 
     fullScreenImage?.let { imageModel ->
         FullScreenImageDialog(
-            imageUrl = imageModel.toString(),
+            imageModel = imageModel,
             onDismiss = { fullScreenImage = null }
         )
     }

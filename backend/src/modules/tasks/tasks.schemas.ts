@@ -9,6 +9,7 @@ export const listTasksQuerySchema = z.object({
 
 export const createTaskSchema = z.object({
   employeeUserId: z.string(),
+  taskType: z.enum(["AMC_VISIT", "SITE_VISIT", "REGULAR"]).optional(),
   jobType: z.string().trim().min(2).max(100),
   description: z.string().trim().min(1).max(500),
   customerName: z.string().trim().min(1).max(120),
@@ -22,6 +23,7 @@ export const createTaskSchema = z.object({
 
 export const createBulkTaskSchema = z.object({
   employeeUserIds: z.array(z.string()).nonempty("Select at least one employee"),
+  taskType: z.enum(["AMC_VISIT", "SITE_VISIT", "REGULAR"]).optional(),
   jobType: z.string().trim().min(2).max(100),
   description: z.string().trim().min(1).max(500),
   customerName: z.string().trim().min(1).max(120),

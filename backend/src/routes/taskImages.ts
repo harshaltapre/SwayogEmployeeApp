@@ -100,15 +100,7 @@ router.post(
         },
       });
 
-      // Update task with before image URL
-      await prisma.task.update({
-        where: { id: parseInt(taskId) },
-        data: {
-          beforeImageUrl: taskImage.url,
-          beforeLatitude: latitude ? parseFloat(latitude) : null,
-          beforeLongitude: longitude ? parseFloat(longitude) : null,
-        },
-      });
+
 
       uploadedImages.push(taskImage);
     }
@@ -147,15 +139,7 @@ router.post(
         },
       });
 
-      // Update task with after image URL
-      await prisma.task.update({
-        where: { id: parseInt(taskId) },
-        data: {
-          afterImageUrl: taskImage.url,
-          afterLatitude: latitude ? parseFloat(latitude) : null,
-          afterLongitude: longitude ? parseFloat(longitude) : null,
-        },
-      });
+
 
       uploadedImages.push(taskImage);
     }

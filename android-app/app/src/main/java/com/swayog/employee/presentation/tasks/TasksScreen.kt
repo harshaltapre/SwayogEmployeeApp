@@ -326,35 +326,18 @@ fun TasksScreen(
                             if (result.isSuccess) {
                                 selectedTask = null
                                 viewModel.refresh()
+                                Toast.makeText(context, "Site Visit submitted & verified by server ✓", Toast.LENGTH_SHORT).show()
                             } else {
                                 val exception = result.exceptionOrNull()
-                                when (exception) {
-                                    is OfflinePendingException -> {
-                                        // Device was offline or had a connectivity error — data is saved locally.
-                                        // Dismiss the dialog and refresh so the task shows as completed (pending sync).
-                                        selectedTask = null
-                                        viewModel.refresh()
-                                        Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
-                                    }
-                                    is OnlineSubmissionFailedException -> {
-                                        // Device IS online but the server rejected the request.
-                                        // Do NOT dismiss the dialog — let the user see the error and retry.
-                                        val errMsg = exception.message ?: "Submission failed"
-                                        val userFriendlyMsg = when {
-                                            errMsg.contains("(404)") -> "Task not found on server (404). The task may have been removed or re-assigned. Please contact your coordinator."
-                                            errMsg.contains("(403)") -> "You are not authorized to complete this task (403). Please ask your service coordinator to reassign it to you as the primary employee."
-                                            errMsg.contains("(422)") -> "Submission rejected: some required fields are missing or invalid. Please check your input and try again."
-                                            errMsg.contains("(413)") -> "Photos are too large to upload. Please try with fewer photos or retake at lower resolution."
-                                            else -> errMsg
-                                        }
-                                        Toast.makeText(context, userFriendlyMsg, Toast.LENGTH_LONG).show()
-                                    }
-                                    else -> {
-                                        // Unknown error — surface it to the user without dismissing.
-                                        val errorMsg = exception?.message ?: "Unknown error"
-                                        Toast.makeText(context, "Failed: $errorMsg", Toast.LENGTH_LONG).show()
-                                    }
+                                val errMsg = exception?.message ?: "Submission failed"
+                                val userFriendlyMsg = when {
+                                    errMsg.contains("(404)") -> "Task not found on server (404). The task may have been removed or re-assigned. Please contact your coordinator."
+                                    errMsg.contains("(403)") -> "You are not authorized to complete this task (403). Please ask your service coordinator to reassign it to you as the primary employee."
+                                    errMsg.contains("(422)") -> "Submission rejected: some required fields are missing or invalid. Please check your input and try again."
+                                    errMsg.contains("(413)") -> "Photos are too large to upload. Please try with fewer photos or retake at lower resolution."
+                                    else -> errMsg
                                 }
+                                Toast.makeText(context, userFriendlyMsg, Toast.LENGTH_LONG).show()
                             }
                         }
                     }
@@ -958,8 +941,9 @@ fun TaskDetailDialog(
                         afterImages = afterImages + base64String
                     }
                 }
-                android.util.Log.d("TaskSubmissionChain", "LOG 1 - Image Captured: type=$type, base64Length=${base64String.length}, lat=$lat, lng=$lng")
-                Toast.makeText(context, "${type.replaceFirstChar { it.uppercase() }} photo captured with GPS stamp ✓", Toast.LENGTH_SHORT).show()
+                val approxSizeKb = outputStream.size() / 1024
+                android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Photo Captured: type=$type, dimensions=${watermarked.width}x${watermarked.height}, size=$approxSizeKb KB, base64Length=${base64String.length}, lat=$lat, lng=$lng")
+                Toast.makeText(context, "${type.replaceFirstChar { it.uppercase() }} photo captured with GPS stamp ✓ ($approxSizeKb KB)", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to process photo: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
@@ -986,12 +970,18 @@ fun TaskDetailDialog(
             try {
                 val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                     val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
-                    android.graphics.ImageDecoder.decodeBitmap(source)
+                    android.graphics.ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                        decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                        val maxDim = maxOf(info.size.width, info.size.height)
+                        if (maxDim > 1024) {
+                            val targetScale = 1024f / maxDim
+                            decoder.setTargetSize((info.size.width * targetScale).toInt(), (info.size.height * targetScale).toInt())
+                        }
+                    }
                 } else {
                     @Suppress("DEPRECATION")
                     android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
                 }
-                // Convert hardware bitmap to software if needed
                 val softwareBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
                 processPhoto(softwareBitmap, pendingPhotoType!!)
             } catch (e: Exception) {
@@ -1338,13 +1328,11 @@ fun TaskDetailDialog(
                                         Toast.makeText(context, "Observations description must be at least 3 characters", Toast.LENGTH_SHORT).show()
                                     } else {
                                         val finalMessage = completionMessage.trim()
-                                        val firstPhoto = uploadedImages.firstOrNull()
-                                        val lastPhoto = if (uploadedImages.size > 1) uploadedImages.last() else firstPhoto
                                         onCompleteTask(
                                             finalMessage,
                                             docUrl.trim().ifEmpty { null },
-                                            firstPhoto,
-                                            lastPhoto,
+                                            null,
+                                            null,
                                             beforeLat,
                                             beforeLng,
                                             afterLat,

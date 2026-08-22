@@ -104,6 +104,10 @@ data class CompleteTaskRequest(
     val afterImages: List<String>? = null // Multiple after images for AMC visits
 )
 
+data class UpdateTaskPhotosRequest(
+    val sitePhotos: List<String>
+)
+
 data class TaskAssignee(
     val id: String,
     val taskId: String,

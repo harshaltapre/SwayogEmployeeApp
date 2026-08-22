@@ -521,7 +521,8 @@ export default function AdminEmployees() {
     createEmployeeMutation.mutate({
       data: {
         fullName: values.fullName,
-        email: values.email,
+        email: values.email.toLowerCase(),
+        loginId: values.email.toLowerCase(),
         phoneNumber: values.phoneNumber?.trim() ? values.phoneNumber.trim() : undefined,
         password: values.password,
         role: "EMPLOYEE",
@@ -719,10 +720,11 @@ export default function AdminEmployees() {
                     name="email"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email</FormLabel>
+                        <FormLabel>Email (Login ID)</FormLabel>
                         <FormControl>
                           <Input type="email" placeholder="employee@company.com" {...field} />
                         </FormControl>
+                        <p className="text-[11px] text-muted-foreground">This email address will be assigned as the employee's Login ID.</p>
                         <FormMessage />
                       </FormItem>
                     )}

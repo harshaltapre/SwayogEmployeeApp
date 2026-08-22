@@ -99,8 +99,8 @@ export default function ServiceCoordinatorDashboard() {
     return matchesSearch && matchesStatus && matchesDate;
   }) || [];
 
-  const activeTasks = filteredTasks.filter(t => t.status === "assigned" || t.status === "in_progress");
-  const completedTasks = filteredTasks.filter(t => t.status === "completed");
+  const activeTasks = filteredTasks.filter(t => String(t.status).toLowerCase() === "assigned" || String(t.status).toLowerCase() === "in_progress");
+  const completedTasks = filteredTasks.filter(t => String(t.status).toLowerCase() === "completed");
   const todayTasks = filteredTasks.filter(t => 
     new Date(t.scheduledTime).toDateString() === new Date().toDateString()
   );
@@ -447,24 +447,20 @@ function TaskDetailModal({ task, open, onOpenChange }: {
 
             <div className="space-y-4">
               {(() => {
-                const sitePhotosList: string[] = Array.from(new Set([
-                  ...(Array.isArray(task.sitePhotos) ? task.sitePhotos : []),
-                  ...(Array.isArray((task as any).images) ? (task as any).images : []),
-                  ...(Array.isArray((task as any).taskImages) ? (task as any).taskImages.map((i: any) => i.url).filter(Boolean) : []),
-                  ...(task.beforeImageUrl ? [task.beforeImageUrl] : []),
-                  ...(task.afterImageUrl ? [task.afterImageUrl] : []),
-                ])).filter((url: any) => typeof url === "string" && url.trim().length > 0);
+                const displaySitePhotos = Array.isArray(task.sitePhotos)
+                  ? Array.from(new Set(task.sitePhotos.filter((url) => typeof url === "string" && url.trim().length > 0)))
+                  : [];
 
                 return (
                   <div>
                     <h3 className="font-semibold text-sm text-slate-500 mb-2">
-                      {sitePhotosList.length > 0
-                        ? `Site Visit Photos (${sitePhotosList.length} Uploaded)`
+                      {displaySitePhotos.length > 0
+                        ? `Site Visit Photos (${displaySitePhotos.length} Uploaded)`
                         : "Work Photos"}
                     </h3>
-                    {sitePhotosList.length > 0 ? (
+                    {displaySitePhotos.length > 0 ? (
                       <div className="grid grid-cols-2 gap-3">
-                        {sitePhotosList.map((url, index) => {
+                        {displaySitePhotos.map((url, index) => {
                           const fullUrl = buildAssetUrlFromPath(url) || url;
                           return (
                             <div key={index} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-video group">
@@ -489,7 +485,32 @@ function TaskDetailModal({ task, open, onOpenChange }: {
                         })}
                       </div>
                     ) : (
-                      <p className="text-sm text-slate-400 italic">No photos uploaded yet</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {task.beforeImageUrl && (
+                          <div className="relative">
+                            <img 
+                              src={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} 
+                              alt="Before Work" 
+                              className="w-full h-32 object-cover rounded-lg border border-slate-200"
+                            />
+                            <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+                              Before Work
+                            </div>
+                          </div>
+                        )}
+                        {task.afterImageUrl && (
+                          <div className="relative">
+                            <img 
+                              src={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl} 
+                              alt="After Work" 
+                              className="w-full h-32 object-cover rounded-lg border border-slate-200"
+                            />
+                            <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+                              After Work
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 );

@@ -48,10 +48,14 @@ const createCustomerSchema = z.object({
   warrantyExpiry: z.string().optional(),
   panelBrand: z.string().optional(),
   inverterBrand: z.string().optional(),
+  inverterName: z.string().optional(),
   inverterModel: z.string().optional(),
+  inverterUid: z.string().optional(),
   inverterLoginId: z.string().optional(),
   inverterPassword: z.string().optional(),
   inverterApiKey: z.string().optional(),
+  dataLoggerSrNo: z.string().optional(),
+  inverterSrNo: z.string().optional(),
   portalPassword: z.string().optional(),
   amcStatus: z.enum(["active", "expired", "none"]).default("none"),
   amcExpiryDate: z.string().optional(),
@@ -74,10 +78,14 @@ const defaultCreateCustomerValues: CreateCustomerFormValues = {
   warrantyExpiry: "",
   panelBrand: "",
   inverterBrand: "",
+  inverterName: "",
   inverterModel: "",
+  inverterUid: "",
   inverterLoginId: "",
   inverterPassword: "",
   inverterApiKey: "",
+  dataLoggerSrNo: "",
+  inverterSrNo: "",
   portalPassword: "",
   amcStatus: "none",
   amcExpiryDate: "",
@@ -192,10 +200,14 @@ export default function AdminCustomers() {
         warrantyExpiry: values.warrantyExpiry ? values.warrantyExpiry : null,
         panelBrand: values.panelBrand?.trim() ? values.panelBrand.trim() : undefined,
         inverterBrand: values.inverterBrand?.trim() ? values.inverterBrand.trim() : undefined,
+        inverterName: values.inverterName?.trim() ? values.inverterName.trim() : undefined,
         inverterModel: values.inverterModel?.trim() ? values.inverterModel.trim() : undefined,
+        inverterUid: values.inverterUid?.trim() ? values.inverterUid.trim() : undefined,
         inverterLoginId: values.inverterLoginId?.trim() ? values.inverterLoginId.trim() : undefined,
         inverterPassword: values.inverterPassword?.trim() ? values.inverterPassword.trim() : undefined,
         inverterApiKey: values.inverterApiKey?.trim() ? values.inverterApiKey.trim() : undefined,
+        dataLoggerSrNo: values.dataLoggerSrNo?.trim() ? values.dataLoggerSrNo.trim() : undefined,
+        inverterSrNo: values.inverterSrNo?.trim() ? values.inverterSrNo.trim() : undefined,
         portalPassword: values.portalPassword?.trim() ? values.portalPassword.trim() : undefined,
         amcStatus: values.amcStatus,
         amcExpiryDate: values.amcExpiryDate ? values.amcExpiryDate : null,
@@ -685,12 +697,40 @@ export default function AdminCustomers() {
 
                     <FormField
                       control={createForm.control}
+                      name="inverterName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Inverter Name (Optional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Main inverter / rooftop inverter" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={createForm.control}
                       name="inverterModel"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Inverter Model (Optional)</FormLabel>
                           <FormControl>
                             <Input placeholder="Inverter model name/number" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={createForm.control}
+                      name="inverterUid"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Inverter UID / Serial (Optional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Unique inverter identifier / serial number" {...field} value={field.value ?? ""} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -719,6 +759,34 @@ export default function AdminCustomers() {
                           <FormLabel>Inverter Password (Optional)</FormLabel>
                           <FormControl>
                             <Input placeholder="Inverter password" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={createForm.control}
+                      name="dataLoggerSrNo"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Data Logger Sr No (Optional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Data logger serial number" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={createForm.control}
+                      name="inverterSrNo"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Inverter Sr No (Optional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Inverter serial number" {...field} value={field.value ?? ""} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

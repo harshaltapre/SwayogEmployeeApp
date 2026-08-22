@@ -533,7 +533,11 @@ export async function createInternalUser(actorId: string, actorRole: InternalUse
     );
   }
 
-  const loginId = await generateUniqueLoginId(input.role as any);
+  const loginId = input.loginId
+    ? input.loginId.trim()
+    : input.role === ROLE.EMPLOYEE
+    ? input.email.toLowerCase()
+    : await generateUniqueLoginId(input.role as any);
 
   let finalEmployeeCode = input.employeeCode;
   const isEmployeeRole = [

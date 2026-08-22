@@ -19,7 +19,7 @@ import coil.compose.AsyncImage
 
 @Composable
 fun FullScreenImageDialog(
-    imageUrl: String,
+    imageModel: Any,
     onDismiss: () -> Unit
 ) {
     Dialog(
@@ -38,7 +38,7 @@ fun FullScreenImageDialog(
         ) {
             AsyncImage(
                 model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                    .data(imageUrl)
+                    .data(imageModel)
                     .crossfade(true)
                     .build(),
                 contentDescription = "Full Screen Image",

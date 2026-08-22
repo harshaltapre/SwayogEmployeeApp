@@ -239,7 +239,7 @@ function DirectReportDetail({
 
   if (!employee) return <div>Employee not found</div>;
 
-  const completedTasks = tasks?.filter(t => t.status === "completed") ?? [];
+  const completedTasks = tasks?.filter(t => String(t.status).toLowerCase() === "completed") ?? [];
 
   // Combine direct tasks and general daily task submissions chronologically
   const combinedFeed = [

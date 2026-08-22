@@ -214,11 +214,6 @@ interface ApiService {
         @Query("from") from: String?,
         @Query("to") to: String?
     ): Response<ApiResponse<List<AmcVisit>>>
-
-    @POST("subadmin/amc-visits")
-    suspend fun createAmcVisit(
-        @Body request: CreateAmcVisitRequest
-    ): Response<ApiResponse<AmcVisit>>
     
     // Task endpoints
     @GET("tasks")
@@ -245,8 +240,14 @@ interface ApiService {
         @Body request: AssignTaskRequest
     ): Response<ApiResponse<Task>>
     
-    @POST("employee/tasks/{taskId}/complete")
+    @PATCH("tasks/{taskId}/complete")
     suspend fun completeTask(
+        @Path("taskId") taskId: String,
+        @Body request: CompleteTaskRequest
+    ): Response<ApiResponse<Task>>
+
+    @PATCH("employee/tasks/{taskId}/complete")
+    suspend fun completeEmployeeTask(
         @Path("taskId") taskId: String,
         @Body request: CompleteTaskRequest
     ): Response<ApiResponse<Task>>
@@ -259,7 +260,7 @@ interface ApiService {
     @PATCH("tasks/{taskId}/photos")
     suspend fun updateTaskPhotos(
         @Path("taskId") taskId: String,
-        @Body request: Map<String, List<String>>
+        @Body request: UpdateTaskPhotosRequest
     ): Response<ApiResponse<Task>>
     
     @POST("tasks/{taskId}/rate")
@@ -274,7 +275,11 @@ interface ApiService {
         @Query("employeeId") employeeId: String?
     ): Response<ApiResponse<List<AmcVisit>>>
     
-
+    @POST("subadmin/amc-visits")
+    suspend fun createAmcVisit(
+        @Body request: @JvmSuppressWildcards Map<String, String?>
+    ): Response<ApiResponse<Unit>>
+    
     @PATCH("subadmin/amc-visits/{visitId}")
     suspend fun updateAmcVisit(
         @Path("visitId") visitId: String,
@@ -284,7 +289,7 @@ interface ApiService {
     @POST("subadmin/amc-visits/{visitId}/complete")
     suspend fun markAmcVisitDone(
         @Path("visitId") visitId: String,
-        @Body request: Map<String, @JvmSuppressWildcards Any?>
+        @Body request: @JvmSuppressWildcards Map<String, String?>
     ): Response<ApiResponse<AmcVisit>>
     
     // Inventory endpoints

@@ -5,7 +5,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PartnerRecord, useListCustomers, CustomerRecord, buildAssetUrlFromPath } from "@/lib/api-client";
+import { PartnerRecord, useListCustomers, CustomerRecord, buildAssetUrlFromPath, openAssetUrl } from "@/lib/api-client";
 import { C, Pill, Card } from "./shared";
 import { Globe, Phone, Mail, MapPin, Package, Zap, IndianRupee, Clock, ChevronRight, User } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -171,7 +171,7 @@ export function PartnerDetailsModal({ partner, open, onOpenChange }: PartnerDeta
                             <Pill text="COMPLETED" variant="green" />
                             {cust.commissionProofUrl && (
                               <button 
-                                onClick={() => window.open(buildAssetUrlFromPath(cust.commissionProofUrl) ?? cust.commissionProofUrl, '_blank')}
+                                onClick={() => openAssetUrl(cust.commissionProofUrl)}
                                 style={{ 
                                   background: "none", border: "none", padding: 0,
                                   fontSize: 10, color: C.sky, fontWeight: 600, display: "flex", 
@@ -182,9 +182,13 @@ export function PartnerDetailsModal({ partner, open, onOpenChange }: PartnerDeta
                               </button>
                             )}
                           </div>
-                        ) : (
+                        ) : cust.partnerLeadStatus === "REJECTED" ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            <Pill text="PENDING" variant="yellow" />
+                            <Pill text="REJECTED BY COORDINATOR" variant="red" />
+                          </div>
+                        ) : cust.partnerLeadStatus === "APPROVED" ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <Pill text="APPROVED LEAD" variant="green" />
                             <button
                               onClick={() => handleConfirmClick(cust.id)}
                               disabled={confirmCommission.isPending && confirmingId === cust.id}
@@ -211,6 +215,10 @@ export function PartnerDetailsModal({ partner, open, onOpenChange }: PartnerDeta
                               )}
                               Confirm Paid
                             </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <Pill text="AWAITING COORDINATOR APPROVAL" variant="yellow" />
                           </div>
                         )}
                       </div>

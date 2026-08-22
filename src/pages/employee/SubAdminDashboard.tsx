@@ -76,10 +76,15 @@ export default function SubAdminDashboard() {
 
   const [credentialDraft, setCredentialDraft] = useState({
     inverterBrand: "",
+    inverterModel: "",
+    monitoringProvider: "",
+    monitoringPortalUrl: "",
+    monitoringPlantId: "",
     inverterLoginId: "",
     inverterPassword: "",
     inverterApiKey: "",
     inverterDeviceSn: "",
+    inverterUid: "",
     city: "",
     address: "",
     projectStage: "",
@@ -245,6 +250,7 @@ export default function SubAdminDashboard() {
                 <Popover open={isCustomerSelectOpen} onOpenChange={setIsCustomerSelectOpen}>
                   <PopoverTrigger asChild>
                     <Button
+                      type="button"
                       variant="outline"
                       role="combobox"
                       aria-expanded={isCustomerSelectOpen}
@@ -529,10 +535,15 @@ export default function SubAdminDashboard() {
                       setModalConnectionType(connectionType);
                       setCredentialDraft({
                         inverterBrand: selectedCustomer.inverterBrand ?? "",
+                        inverterModel: selectedCustomer.inverterModel ?? "",
+                        monitoringProvider: selectedCustomer.monitoringProvider ?? "",
+                        monitoringPortalUrl: selectedCustomer.monitoringPortalUrl ?? "",
+                        monitoringPlantId: selectedCustomer.monitoringPlantId ?? "",
                         inverterLoginId: selectedCustomer.inverterLoginId ?? "",
                         inverterPassword: selectedCustomer.inverterPassword ?? "",
                         inverterApiKey: selectedCustomer.inverterApiKey ?? "",
                         inverterDeviceSn: selectedCustomer.inverterDeviceSn ?? "",
+                        inverterUid: selectedCustomer.inverterUid ?? "",
                         city: selectedCustomer.city ?? "",
                         address: selectedCustomer.address ?? "",
                         projectStage: selectedCustomer.projectStage?.toString() ?? "",
@@ -620,6 +631,29 @@ export default function SubAdminDashboard() {
                         <span className="font-mono font-bold text-slate-700 text-xs truncate block max-w-full mt-1">
                           {selectedCustomer.inverterLoginId || (selectedCustomer.inverterApiKey ? "API Key Configured" : "Missing credentials")}
                         </span>
+                      </div>
+                      <div className="border-t border-slate-200/60 pt-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Monitoring Provider</span>
+                          <span className="text-xs font-bold text-slate-700">{selectedCustomer.monitoringProvider || "Not identified"}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Connection Status</span>
+                          <span className={`text-xs font-bold ${selectedCustomer.monitoringStatus?.toLowerCase() === "connected" ? "text-emerald-600" : selectedCustomer.monitoringStatus ? "text-amber-600" : "text-slate-500"}`}>
+                            {selectedCustomer.monitoringStatus || "Not tested"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Last Data</span>
+                          <span className="text-xs font-semibold text-slate-600">
+                            {selectedCustomer.monitoringLastDataAt ? new Date(selectedCustomer.monitoringLastDataAt).toLocaleString("en-IN") : "No data received"}
+                          </span>
+                        </div>
+                        {selectedCustomer.monitoringLastError && (
+                          <p className="rounded-md bg-rose-50 px-2.5 py-2 text-[11px] leading-relaxed text-rose-700">
+                            {selectedCustomer.monitoringLastError}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1303,6 +1337,59 @@ export default function SubAdminDashboard() {
               </select>
             </div>
 
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Inverter Model</label>
+                <Input
+                  value={credentialDraft.inverterModel}
+                  onChange={(event) => setCredentialDraft((prev) => ({ ...prev, inverterModel: event.target.value }))}
+                  placeholder="Exact inverter model"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Monitoring Provider</label>
+                <select
+                  value={credentialDraft.monitoringProvider}
+                  onChange={(event) => setCredentialDraft((prev) => ({ ...prev, monitoringProvider: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 font-medium"
+                >
+                  <option value="">Select provider</option>
+                  <option value="ShineMonitor">ShineMonitor</option>
+                  <option value="Growatt">Growatt</option>
+                  <option value="FoxESS">FoxESS</option>
+                  <option value="SOLARMAN">SOLARMAN / IGEN</option>
+                  <option value="PVblink">PVblink Cloud</option>
+                  <option value="Waaree">Waaree</option>
+                  <option value="SMTEN">SMTEN</option>
+                  <option value="Direct API">Direct API</option>
+                  <option value="Unknown">Unknown / verify onsite</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Portal URL</label>
+                <Input
+                  type="url"
+                  value={credentialDraft.monitoringPortalUrl}
+                  onChange={(event) => setCredentialDraft((prev) => ({ ...prev, monitoringPortalUrl: event.target.value }))}
+                  placeholder="https://portal.example.com"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Plant / Site ID</label>
+                <Input
+                  value={credentialDraft.monitoringPlantId}
+                  onChange={(event) => setCredentialDraft((prev) => ({ ...prev, monitoringPlantId: event.target.value }))}
+                  placeholder="Plant, station, or site ID"
+                  className="font-mono text-xs h-10"
+                />
+              </div>
+            </div>
+
             {modalBrand && (
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">API Connection Type</label>
@@ -1360,18 +1447,18 @@ export default function SubAdminDashboard() {
                   <>
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                        {modalBrand} Username / Login ID
+                        {modalBrand || "Inverter"} Username / Login ID
                       </label>
                       <Input
                         value={credentialDraft.inverterLoginId}
                         onChange={(event) => setCredentialDraft((prev) => ({ ...prev, inverterLoginId: event.target.value }))}
-                        placeholder={`Enter ${modalBrand} username`}
+                        placeholder={`Enter ${modalBrand || "inverter"} username or login ID`}
                         className="h-10"
                       />
                     </div>
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                        {modalBrand} Password
+                        {modalBrand || "Inverter"} Password
                       </label>
                       <Input
                         type="password"
@@ -1383,31 +1470,44 @@ export default function SubAdminDashboard() {
                     </div>
                   </>
                 ) : (
-                  <>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Waaree Token ID
+                    </label>
+                    <Input
+                      value={credentialDraft.inverterApiKey}
+                      onChange={(event) => setCredentialDraft((prev) => ({ ...prev, inverterApiKey: event.target.value }))}
+                      placeholder="Enter Waaree Solax Token ID"
+                      className="font-mono text-sm h-10"
+                    />
+                  </div>
+                )}
+
+                <div className="mt-2 border-t border-slate-100 pt-3 space-y-3">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                    Device Identification
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Waaree Token ID
-                      </label>
-                      <Input
-                        value={credentialDraft.inverterApiKey}
-                        onChange={(event) => setCredentialDraft((prev) => ({ ...prev, inverterApiKey: event.target.value }))}
-                        placeholder="Enter Waaree Solax Token ID"
-                        className="font-mono text-sm h-10"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Inverter Serial Number (SN)
-                      </label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Inverter SR Number / Device SN</label>
                       <Input
                         value={credentialDraft.inverterDeviceSn}
                         onChange={(event) => setCredentialDraft((prev) => ({ ...prev, inverterDeviceSn: event.target.value }))}
-                        placeholder="Enter Inverter SN (e.g. SFxxxxxxxx)"
-                        className="font-mono text-sm h-10"
+                        placeholder="Inverter SR number / device serial"
+                        className="font-mono text-xs h-9"
                       />
                     </div>
-                  </>
-                )}
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Data Logger SR Number / Logger UID</label>
+                      <Input
+                        value={credentialDraft.inverterUid}
+                        onChange={(event) => setCredentialDraft((prev) => ({ ...prev, inverterUid: event.target.value }))}
+                        placeholder="Data logger SR number / UID"
+                        className="font-mono text-xs h-9"
+                      />
+                    </div>
+                  </div>
+                </div>
 
                 {["FoxESS", "Solarman", "Solis"].includes(modalConnectionType) && (
                   <div className="mt-2 border-t border-slate-100 pt-3 space-y-3">
@@ -1500,10 +1600,15 @@ export default function SubAdminDashboard() {
                       if (!["KSolar", "Growatt", "UTL", "Solarman"].includes(modalBrand) && modalConnectionType === "Simulation") return modalBrand;
                       return `${modalBrand} (${modalConnectionType})`;
                     })(),
+                    inverterModel: credentialDraft.inverterModel || undefined,
+                    monitoringProvider: credentialDraft.monitoringProvider || undefined,
+                    monitoringPortalUrl: credentialDraft.monitoringPortalUrl || undefined,
+                    monitoringPlantId: credentialDraft.monitoringPlantId || undefined,
                     inverterLoginId: credentialDraft.inverterLoginId || undefined,
                     inverterPassword: credentialDraft.inverterPassword || undefined,
                     inverterApiKey: credentialDraft.inverterApiKey || undefined,
                     inverterDeviceSn: credentialDraft.inverterDeviceSn || undefined,
+                    inverterUid: credentialDraft.inverterUid || undefined,
                     city: credentialDraft.city || undefined,
                     address: credentialDraft.address || undefined,
                     projectStage: credentialDraft.projectStage ? Number(credentialDraft.projectStage) : undefined,

@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { IndianRupee, MapPin, Zap, Plus } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { useListCustomers, CustomerRecord, buildAssetUrlFromPath } from "@/lib/api-client";
+import { useListCustomers, CustomerRecord, buildAssetUrlFromPath, openAssetUrl } from "@/lib/api-client";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AddProjectModal } from "./AddProjectModal";
@@ -103,14 +103,12 @@ export default function PartnerProjects() {
                         <>
                           <StatusBadge status="paid" className="text-[10px] py-0 h-4" />
                           {project.commissionProofUrl && (
-                            <a 
-                              href={buildAssetUrlFromPath(project.commissionProofUrl) ?? project.commissionProofUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-[10px] text-blue-600 flex items-center gap-1 hover:underline"
+                            <button 
+                              onClick={() => openAssetUrl(project.commissionProofUrl)}
+                              className="text-[10px] text-blue-600 flex items-center gap-1 hover:underline bg-transparent border-none p-0 cursor-pointer"
                             >
                               View Proof
-                            </a>
+                            </button>
                           )}
                         </>
                       ) : (

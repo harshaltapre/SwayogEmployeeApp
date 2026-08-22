@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { IndianRupee, Download, ArrowUpRight, Eye } from "lucide-react";
-import { useListPartnerPayouts, getListPartnerPayoutsQueryKey, useListCustomers, buildAssetUrlFromPath } from "@/lib/api-client";
+import { useListPartnerPayouts, getListPartnerPayoutsQueryKey, useListCustomers, buildAssetUrlFromPath, openAssetUrl } from "@/lib/api-client";
 import { StatusBadge } from "@/components/StatusBadge";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -158,7 +158,7 @@ export default function PartnerEarnings() {
                         variant="ghost" 
                         size="sm" 
                         className="h-8 w-8 p-0"
-                        onClick={() => window.open(buildAssetUrlFromPath(entry.proofUrl) ?? entry.proofUrl, '_blank')}
+                        onClick={() => openAssetUrl(entry.proofUrl)}
                       >
                         <Eye className="h-4 w-4 text-slate-500" />
                       </Button>

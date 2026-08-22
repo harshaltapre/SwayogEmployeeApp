@@ -240,13 +240,14 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
 
             <div className="space-y-1.5">
               <Label className="text-sm font-semibold">
-                Email Address {subcategory === "EPC_CONTRACTOR" && <span className="text-red-500">*</span>}
+                Email Address {(subcategory === "EPC_CONTRACTOR" || subcategory === "INSTALLER") && <span className="text-red-500">*</span>}
               </Label>
               <Input
                 type="email"
                 placeholder="contact@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                required={subcategory === "EPC_CONTRACTOR" || subcategory === "INSTALLER"}
               />
             </div>
 
@@ -254,7 +255,7 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
               <Label className="text-sm font-semibold flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-slate-900 dark:text-white">
                   <Lock className="w-3.5 h-3.5 text-emerald-600" />
-                  Portal Login Password {subcategory === "EPC_CONTRACTOR" && <span className="text-red-500">*</span>}
+                  Portal Login Password {(subcategory === "EPC_CONTRACTOR" || subcategory === "INSTALLER") && <span className="text-red-500">*</span>}
                 </span>
               </Label>
               <div className="relative">
@@ -264,7 +265,7 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pr-10 bg-white dark:bg-slate-900 border-emerald-300 focus:border-emerald-500 font-mono text-sm"
-                  required={subcategory === "EPC_CONTRACTOR"}
+                  required={subcategory === "EPC_CONTRACTOR" || subcategory === "INSTALLER"}
                 />
                 <button
                   type="button"
@@ -274,7 +275,7 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-[10px] text-emerald-700 font-medium">Required for Partner section login</p>
+              <p className="text-[10px] text-emerald-700 font-medium">Required for Partner section login access</p>
             </div>
 
             <div className="space-y-1.5">

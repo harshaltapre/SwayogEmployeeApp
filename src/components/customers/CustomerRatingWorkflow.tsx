@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Star, IndianRupee, Camera, MapPin, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { buildAssetUrlFromPath } from "@/lib/api-client";
 
 interface CustomerRatingWorkflowProps {
   open: boolean;
@@ -21,6 +22,7 @@ interface CustomerRatingWorkflowProps {
     beforeLongitude?: number;
     afterLatitude?: number;
     afterLongitude?: number;
+    sitePhotos?: string[];
   } | null;
   onSubmitRating: (data: {
     taskId: number;
@@ -106,54 +108,71 @@ export function CustomerRatingWorkflow({
               <Camera className="h-4 w-4" />
               Work Photos
             </h3>
-            <div className="grid grid-cols-2 gap-4">
-              {task.beforeImageUrl && (
-                <div className="relative">
-                  <img 
-                    src={task.beforeImageUrl} 
-                    alt="Before work" 
-                    className="w-full h-40 object-cover rounded-lg border"
-                  />
-                  <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                    Before
+            {Array.isArray(task.sitePhotos) && task.sitePhotos.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {task.sitePhotos.map((photo, i) => (
+                  <div key={i} className="relative aspect-video rounded-lg overflow-hidden border">
+                    <img 
+                      src={buildAssetUrlFromPath(photo) || photo} 
+                      alt={`Site photo ${i + 1}`} 
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+                      Photo #{i + 1}
+                    </div>
                   </div>
-                  {task.beforeLatitude && task.beforeLongitude && (
-                    <a 
-                      href={`https://www.google.com/maps?q=${task.beforeLatitude},${task.beforeLongitude}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded hover:bg-blue-600 flex items-center gap-1"
-                    >
-                      <MapPin className="h-3 w-3" />
-                      Location
-                    </a>
-                  )}
-                </div>
-              )}
-              {task.afterImageUrl && (
-                <div className="relative">
-                  <img 
-                    src={task.afterImageUrl} 
-                    alt="After work" 
-                    className="w-full h-40 object-cover rounded-lg border"
-                  />
-                  <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                    After
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                {task.beforeImageUrl && (
+                  <div className="relative">
+                    <img 
+                      src={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} 
+                      alt="Before work" 
+                      className="w-full h-40 object-cover rounded-lg border"
+                    />
+                    <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                      Before
+                    </div>
+                    {task.beforeLatitude && task.beforeLongitude && (
+                      <a 
+                        href={`https://www.google.com/maps?q=${task.beforeLatitude},${task.beforeLongitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded hover:bg-blue-600 flex items-center gap-1"
+                      >
+                        <MapPin className="h-3 w-3" />
+                        Location
+                      </a>
+                    )}
                   </div>
-                  {task.afterLatitude && task.afterLongitude && (
-                    <a 
-                      href={`https://www.google.com/maps?q=${task.afterLatitude},${task.afterLongitude}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded hover:bg-blue-600 flex items-center gap-1"
-                    >
-                      <MapPin className="h-3 w-3" />
-                      Location
-                    </a>
-                  )}
-                </div>
-              )}
-            </div>
+                )}
+                {task.afterImageUrl && (
+                  <div className="relative">
+                    <img 
+                      src={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl} 
+                      alt="After work" 
+                      className="w-full h-40 object-cover rounded-lg border"
+                    />
+                    <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                      After
+                    </div>
+                    {task.afterLatitude && task.afterLongitude && (
+                      <a 
+                        href={`https://www.google.com/maps?q=${task.afterLatitude},${task.afterLongitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded hover:bg-blue-600 flex items-center gap-1"
+                      >
+                        <MapPin className="h-3 w-3" />
+                        Location
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Star Rating */}

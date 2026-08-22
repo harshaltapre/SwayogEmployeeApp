@@ -120,6 +120,17 @@ export function isEpcPartnerJobRole(jobRole?: string): boolean {
   return normalized === "epccontractor" || normalized === "epc" || normalized === "epcpartner";
 }
 
+export function isInstallationTeamJobRole(jobRole?: string): boolean {
+  if (!jobRole) return false;
+  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
+  return (
+    normalized === "installer" ||
+    normalized === "installationteam" ||
+    normalized === "installersquad" ||
+    normalized === "certifiedinstaller"
+  );
+}
+
 export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
   const r = String(role || '').toLowerCase();
 
@@ -133,6 +144,10 @@ export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
 
   if (isServiceExecutiveHeadJobRole(jobRole)) {
     return '/service-executive/dashboard';
+  }
+
+  if (isInstallationTeamJobRole(jobRole) || r === 'installer') {
+    return '/installer/dashboard';
   }
 
   if (isInventoryExecutiveJobRole(jobRole)) {
