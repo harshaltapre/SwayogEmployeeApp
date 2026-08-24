@@ -12,12 +12,13 @@ export const getIsphereGreenEntries = async (req: Request, res: Response): Promi
     if (subcategory && typeof subcategory === "string") {
       where.subcategory = subcategory;
     }
-    if (search && typeof search === "string") {
+    if (search && typeof search === "string" && search.trim()) {
+      const searchTerm = search.trim();
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { place: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
+        { name: { contains: searchTerm, mode: "insensitive" } },
+        { place: { contains: searchTerm, mode: "insensitive" } },
+        { phone: { contains: searchTerm, mode: "insensitive" } },
+        { email: { contains: searchTerm, mode: "insensitive" } },
       ];
     }
 

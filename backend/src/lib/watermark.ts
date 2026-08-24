@@ -1,14 +1,17 @@
 import sharp from 'sharp';
 
 export async function addWatermarkToImage(
-  imagePath: string,
+  imagePathOrBuffer: string | Buffer,
   employeeName: string,
   timestamp: string,
   latitude?: number,
   longitude?: number
 ): Promise<Buffer> {
   try {
-    const image = sharp(imagePath);
+    const image = typeof imagePathOrBuffer === 'string' 
+      ? sharp(imagePathOrBuffer)
+      : sharp(imagePathOrBuffer);
+    
     const metadata = await image.metadata();
     
     // Create watermark text

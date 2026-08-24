@@ -1,7 +1,7 @@
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { isInventoryExecutiveJobRole, isSubAdminJobRole, isServiceExecutiveHeadJobRole, isEpcPartnerJobRole, useAuth } from "@/lib/auth";
+import { isInventoryExecutiveJobRole, isSubAdminJobRole, isServiceExecutiveHeadJobRole, isEpcPartnerJobRole, isInstallationTeamJobRole, useAuth } from "@/lib/auth";
 
 import {
   LayoutDashboard,
@@ -47,6 +47,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     const saved = localStorage.getItem('quickTourEnabled');
     return saved === null ? true : saved === 'true';
   });
+  const canShowQuickTour = ["employee", "team_lead", "department_head"].includes(user?.role ?? "");
 
   // Keep in sync when localStorage changes (e.g. Settings page updates it)
   useState(() => {
@@ -117,6 +118,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       if (isServiceExecutive) {
         return [
           { name: "Overview Dashboard", href: "/service-executive/dashboard?tab=overview", icon: LayoutDashboard },
+          { name: "Partners Lead", href: "/service-executive/dashboard?tab=partners-lead", icon: Users },
           { name: "EPC Contractors", href: "/service-executive/dashboard?tab=epc", icon: HardHat },
           { name: "Projects", href: "/service-executive/dashboard?tab=projects", icon: Briefcase },
           { name: "Installers", href: "/service-executive/dashboard?tab=installers", icon: Wrench },
@@ -145,6 +147,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       if (isSubAdmin) {
         return [
           { name: "Dashboard", href: "/subadmin/dashboard", icon: LayoutDashboard },
+          { name: "Partners Lead", href: "/subadmin/partner-leads", icon: Users },
           { name: "Customers", href: "/subadmin/customers", icon: Users },
           { name: "Complaints", href: "/subadmin/complaints", icon: Wrench },
           { name: "AMC Management", href: "/subadmin/amc-management", icon: Calendar },
@@ -166,7 +169,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       ];
     }
 
-    if (user.role === "partner" && !isEpcPartnerJobRole(user.jobRole)) {
+    if (isInstallationTeamJobRole(user.jobRole) || (user.role as string) === "installer") {
+      return [
+        { name: "Installation Dashboard", href: "/installer/dashboard?tab=overview", icon: LayoutDashboard },
+        { name: "Assigned Installations", href: "/installer/dashboard?tab=installations", icon: Wrench },
+        { name: "Connect with iSphere Head", href: "/installer/dashboard?tab=connect-head", icon: Leaf },
+        { name: "Settings", href: "/partner/settings", icon: Settings },
+      ];
+    }
+
+    if (user.role === "partner" && !isEpcPartnerJobRole(user.jobRole) && !isInstallationTeamJobRole(user.jobRole)) {
       // Standard Channel Partner sidebar
       return [
         { name: "Partner Dashboard", href: "/partner/dashboard", icon: LayoutDashboard },
@@ -205,6 +217,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const navItems = getNavItems();
 
   const getRoleLabel = () => {
+    if (isInstallationTeamJobRole(user.jobRole) || (user.role as string) === "installer") return "CERTIFIED INSTALLER";
     if (user.role === "super_admin") return "SUPER ADMIN";
     if (user.role === "admin") return "ADMIN";
     if (user.role === "partner") return "PARTNER";
@@ -333,8 +346,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         </main>
       </div>
 
-      {/* Onboarding Tour Button — hidden when user has disabled it in Settings */}
-      {quickTourEnabled && (
+      {/* Onboarding Tour Button — only for employee-level roles */}
+      {canShowQuickTour && quickTourEnabled && (
         <button
           onClick={() => {
             setTourStep(0);

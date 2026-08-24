@@ -27,10 +27,12 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.window.Dialog
 import com.swayog.employee.data.model.Employee
+import android.widget.Toast
 import com.swayog.employee.data.model.Task
 import com.swayog.employee.presentation.common.components.BeforeAfterImageSection
 import com.swayog.employee.presentation.common.components.SwayogCard
 import com.swayog.employee.presentation.common.components.SwayogTopBar
+import com.swayog.employee.presentation.common.utils.ImageUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,18 +40,40 @@ fun SubAdminEmployeesScreen(
     onNavigateBack: () -> Unit,
     viewModel: SubAdminEmployeesViewModel = hiltViewModel()
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
-    var selectedTabIndex by remember { mutableStateOf(0) }
+    val serverUrl by viewModel.dataStoreManager.serverUrl.collectAsState(initial = null)
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
     var selectedEmployee by remember { mutableStateOf<Employee?>(null) }
     var viewMode by remember { mutableStateOf("grid") }
+    var showCreateEmployeeDialog by remember { mutableStateOf(false) }
 
     if (selectedEmployee != null) {
         EmployeeDetailContent(
             employee = selectedEmployee!!,
             tasks = uiState.tasks.filter { it.employeeUserId == selectedEmployee!!.id },
+            serverUrl = serverUrl,
             onBack = { selectedEmployee = null }
         )
         return
+    }
+
+    if (showCreateEmployeeDialog) {
+        CreateEmployeeDialog(
+            onDismiss = { showCreateEmployeeDialog = false },
+            onCreateEmployee = { request ->
+                viewModel.createEmployee(
+                    request = request,
+                    onSuccess = {
+                        showCreateEmployeeDialog = false
+                        Toast.makeText(context, "Employee created successfully!", Toast.LENGTH_SHORT).show()
+                    },
+                    onError = { err ->
+                        Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                    }
+                )
+            }
+        )
     }
 
     Scaffold(
@@ -59,11 +83,22 @@ fun SubAdminEmployeesScreen(
                 showBackButton = true,
                 onBackClick = onNavigateBack,
                 actions = {
+                    IconButton(onClick = { showCreateEmployeeDialog = true }) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = "Add Employee")
+                    }
                     IconButton(onClick = { viewModel.loadData() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showCreateEmployeeDialog = true },
+                containerColor = MaterialTheme.colorScheme.primary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Employee")
+            }
         }
     ) { paddingValues ->
         Column(
@@ -139,7 +174,20 @@ fun SubAdminEmployeesScreen(
                 } else {
                     AssignedTasksTab(
                         tasks = uiState.tasks,
-                        employees = uiState.employees
+                        employees = uiState.employees,
+                        serverUrl = serverUrl,
+                        onAssignTask = { taskId, empId ->
+                            viewModel.assignTask(
+                                taskId = taskId,
+                                employeeUserId = empId,
+                                onSuccess = {
+                                    Toast.makeText(context, "Task assigned successfully!", Toast.LENGTH_SHORT).show()
+                                },
+                                onError = { err ->
+                                    Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        }
                     )
                 }
             }
@@ -220,6 +268,7 @@ fun StaffDirectoryTab(
 fun EmployeeDetailContent(
     employee: Employee,
     tasks: List<Task>,
+    serverUrl: String?,
     onBack: () -> Unit
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -274,7 +323,9 @@ fun EmployeeDetailContent(
                         afterImageUrl = detailTask.afterImageUrl,
                         sitePhotos = detailTask.sitePhotos ?: detailTask.images,
                         taskType = detailTask.taskType,
-                        isSiteVisit = detailTask.isSiteVisit
+                        jobType = detailTask.jobType,
+                        isSiteVisit = detailTask.isSiteVisit,
+                        serverUrl = serverUrl
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -608,31 +659,173 @@ fun EmployeeListCard(employee: Employee, onClick: (Employee) -> Unit) {
 }
 
 @Composable
-fun AssignedTasksTab(tasks: List<Task>, employees: List<Employee>) {
+fun AssignedTasksTab(
+    tasks: List<Task>,
+    employees: List<Employee>,
+    serverUrl: String? = null,
+    onAssignTask: (String, String) -> Unit = { _, _ -> }
+) {
+    var showAssignDialog by remember { mutableStateOf<Task?>(null) }
+    var selectedTaskForPreview by remember { mutableStateOf<Task?>(null) }
+
+    if (selectedTaskForPreview != null) {
+        val detailTask = selectedTaskForPreview!!
+        Dialog(onDismissRequest = { selectedTaskForPreview = null }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.85f),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = detailTask.jobType ?: "Task Details",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = { selectedTaskForPreview = null }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close")
+                        }
+                    }
+
+                    Divider()
+
+                    Text("Status: ${(detailTask.status ?: "Unknown").replace("_", " ").uppercase()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Description: ${detailTask.description ?: "N/A"}")
+                    Text("Customer: ${detailTask.customerName ?: "N/A"}")
+                    Text("Phone: ${detailTask.customerPhone ?: "N/A"}")
+                    Text("Address: ${detailTask.address ?: "N/A"}")
+
+                    if (!detailTask.completionMessage.isNullOrBlank()) {
+                        Text("Completion Remarks / Observations:", fontWeight = FontWeight.Bold)
+                        Text(detailTask.completionMessage, style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    BeforeAfterImageSection(
+                        beforeImageUrl = detailTask.beforeImageUrl,
+                        afterImageUrl = detailTask.afterImageUrl,
+                        sitePhotos = detailTask.sitePhotos ?: detailTask.images,
+                        taskType = detailTask.taskType,
+                        jobType = detailTask.jobType,
+                        isSiteVisit = detailTask.isSiteVisit,
+                        serverUrl = serverUrl
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { selectedTaskForPreview = null },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Close")
+                    }
+                }
+            }
+        }
+    }
+    
+    if (showAssignDialog != null) {
+        val task = showAssignDialog!!
+        var selectedEmpId by remember { mutableStateOf(task.employeeUserId ?: "") }
+        
+        AlertDialog(
+            onDismissRequest = { showAssignDialog = null },
+            title = { Text("Assign Task") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Select employee for: ${task.jobType}")
+                    LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                        items(employees) { emp ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedEmpId = emp.id }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(selected = selectedEmpId == emp.id, onClick = { selectedEmpId = emp.id })
+                                Text(emp.fullName)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onAssignTask(task.id, selectedEmpId)
+                        showAssignDialog = null
+                    },
+                    enabled = selectedEmpId.isNotBlank()
+                ) { Text("Assign") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAssignDialog = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         items(tasks) { task ->
             val assignedEmp = employees.find { it.id == task.employeeUserId }
-            SwayogCard(elevation = 0) {
-                Column(modifier = Modifier.padding(4.dp)) {
+            SwayogCard(
+                elevation = 0,
+                modifier = Modifier.clickable { 
+                    if (task.status == "completed") {
+                        selectedTaskForPreview = task
+                    } else {
+                        showAssignDialog = task
+                    }
+                }
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(task.jobType ?: "Unknown", fontWeight = FontWeight.Bold)
-                        Text(task.status ?: "Unknown", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        Badge(
+                            containerColor = if (task.status == "completed") Color(0xFFDCFCE7) else Color(0xFFFEF3C7)
+                        ) {
+                            Text(task.status ?: "Unknown", fontSize = 10.sp)
+                        }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(task.customerName ?: "Unknown", fontSize = 14.sp)
                     Text(task.scheduledTime ?: "", fontSize = 12.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Gray)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = assignedEmp?.fullName ?: "Unassigned",
-                            fontSize = 12.sp,
-                            color = if (assignedEmp != null) Color.Black else Color.Gray
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Gray)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = assignedEmp?.fullName ?: "Unassigned",
+                                fontSize = 12.sp,
+                                color = if (assignedEmp != null) Color.Black else Color.Gray
+                            )
+                        }
+                        if (task.status != "completed") {
+                            Text(
+                                "Tap to reassign",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
             }

@@ -37,6 +37,7 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
     const saved = localStorage.getItem('quickTourEnabled');
     return saved === null ? true : saved === 'true';
   });
+  const canShowQuickTour = ["employee", "team_lead", "department_head"].includes(user?.role ?? "");
 
   // Keep in sync when localStorage changes (e.g. Settings page updates it)
   useState(() => {
@@ -72,6 +73,7 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
 
   const navItems = [
     { name: "Dashboard", href: "/subadmin/dashboard", icon: LayoutDashboard },
+    { name: "Partners Lead", href: "/subadmin/partner-leads", icon: Users },
     { name: "Customers", href: "/subadmin/customers", icon: Users },
     { name: "Complaints", href: "/subadmin/complaints", icon: ClipboardList },
     { name: "AMC Management", href: "/subadmin/amc-management", icon: CalendarDays },
@@ -200,8 +202,8 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
         </main>
       </div>
 
-      {/* Onboarding Tour Button — hidden when user has disabled it in Settings */}
-      {quickTourEnabled && (
+      {/* Onboarding Tour Button — only for employee-level roles */}
+      {canShowQuickTour && quickTourEnabled && (
         <button
           onClick={() => {
             setTourStep(0);

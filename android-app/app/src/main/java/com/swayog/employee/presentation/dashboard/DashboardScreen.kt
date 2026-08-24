@@ -41,6 +41,7 @@ fun DashboardScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToDailyCommit: () -> Unit,
+    onNavigateToNotifications: () -> Unit = {},
     onNavigateToSubAdminCustomers: () -> Unit,
     onNavigateToSubAdminCustomerDetails: (Int) -> Unit,
     onNavigateToSubAdminComplaints: () -> Unit,
@@ -110,6 +111,9 @@ fun DashboardScreen(
                     actions = {
                         IconButton(onClick = { viewModel.retryLoading() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        }
+                        IconButton(onClick = onNavigateToNotifications) {
+                            Icon(Icons.Default.Notifications, contentDescription = "Notifications")
                         }
                         IconButton(onClick = onNavigateToProfile) {
                             Icon(Icons.Default.Person, contentDescription = "Profile")

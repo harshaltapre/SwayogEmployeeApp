@@ -61,6 +61,8 @@ const updateCustomerSchema = z.object({
   warrantyExpiry: z.string().optional(),
   panelBrand: z.string().optional(),
   inverterBrand: z.string().optional(),
+  inverterName: z.string().optional(),
+  inverterUid: z.string().optional(),
   projectStage: z.number().min(0, "Stage must be between 0 and 11").max(11, "Stage must be between 0 and 11").optional(),
   amcStatus: z.enum(["active", "expired", "none"]).default("none"),
   amcExpiryDate: z.string().optional(),
@@ -71,6 +73,8 @@ const updateCustomerSchema = z.object({
   commissionAmount: z.coerce.number().min(0).optional(),
   inverterLoginId: z.string().optional(),
   inverterPassword: z.string().optional(),
+  dataLoggerSrNo: z.string().optional(),
+  inverterSrNo: z.string().optional(),
   portalPassword: z.string().optional(),
 });
 
@@ -235,6 +239,8 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
       warrantyExpiry: customer.warrantyExpiry ? format(new Date(customer.warrantyExpiry), "yyyy-MM-dd") : "",
       panelBrand: customer.panelBrand ?? "",
       inverterBrand: customer.inverterBrand ?? "",
+      inverterName: customer.inverterName ?? "",
+      inverterUid: customer.inverterUid ?? "",
       projectStage: customer.projectStage ?? 0,
       amcStatus: (customer.amcStatus as any) ?? "none",
       amcExpiryDate: customer.amcExpiryDate ? format(new Date(customer.amcExpiryDate), "yyyy-MM-dd") : "",
@@ -242,6 +248,8 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
       commissionAmount: customer.commissionAmount ?? 0,
       inverterLoginId: customer.inverterLoginId ?? "",
       inverterPassword: customer.inverterPassword ?? "",
+      dataLoggerSrNo: customer.dataLoggerSrNo ?? customer.inverterUid ?? "",
+      inverterSrNo: customer.inverterSrNo ?? customer.inverterDeviceSn ?? "",
       portalPassword: customer.portalPassword ?? "",
       contractStartDate: customer.contractStartDate ? format(new Date(customer.contractStartDate), "yyyy-MM-dd") : "",
       contractEndDate: customer.contractEndDate ? format(new Date(customer.contractEndDate), "yyyy-MM-dd") : "",
@@ -267,6 +275,8 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
                 amcExpiryDate: v.amcExpiryDate ? v.amcExpiryDate : null,
                 contractStartDate: v.contractStartDate ? v.contractStartDate : null,
                 contractEndDate: v.contractEndDate ? v.contractEndDate : null,
+                dataLoggerSrNo: v.dataLoggerSrNo?.trim() ? v.dataLoggerSrNo.trim() : null,
+                inverterSrNo: v.inverterSrNo?.trim() ? v.inverterSrNo.trim() : null,
               };
               updateCustomerMutation.mutate({ id: customerId, data: cleanedData });
             })} className="space-y-4">
@@ -408,6 +418,12 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
                 <FormField control={editForm.control} name="inverterPassword" render={({ field }) => (
                   <FormItem><FormLabel>Inverter Password</FormLabel><FormControl><Input placeholder="Inverter password" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
+                <FormField control={editForm.control} name="dataLoggerSrNo" render={({ field }) => (
+                  <FormItem><FormLabel>Data Logger Sr No</FormLabel><FormControl><Input placeholder="Data logger serial number" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={editForm.control} name="inverterSrNo" render={({ field }) => (
+                  <FormItem><FormLabel>Inverter Sr No</FormLabel><FormControl><Input placeholder="Inverter serial number" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
                 <FormField control={editForm.control} name="portalPassword" render={({ field }) => (
                   <FormItem><FormLabel>Customer Portal Password</FormLabel><FormControl><Input placeholder="Portal login password" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
@@ -455,7 +471,7 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
             
             {/* Inverter login info */}
             <div className="pt-4 border-t space-y-2">
-              <div className="font-semibold text-xs text-slate-500 uppercase tracking-wider">Inverter Login</div>
+              <div className="font-semibold text-xs text-slate-500 uppercase tracking-wider">Inverter Login Details</div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-500">Login ID</span>
                 <div className="flex items-center gap-1.5">
@@ -491,6 +507,48 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
                       onClick={() => {
                         navigator.clipboard.writeText(customer.inverterPassword || "");
                         toast({ title: "Copied", description: "Inverter Password copied to clipboard" });
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5 text-slate-400 hover:text-slate-900" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Data Logger Sr No</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs">
+                    {customer.dataLoggerSrNo || customer.inverterUid || "Not set"}
+                  </span>
+                  {(customer.dataLoggerSrNo || customer.inverterUid) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={() => {
+                        navigator.clipboard.writeText(customer.dataLoggerSrNo || customer.inverterUid || "");
+                        toast({ title: "Copied", description: "Data Logger Sr No copied to clipboard" });
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5 text-slate-400 hover:text-slate-900" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Inverter Sr No</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-xs">
+                    {customer.inverterSrNo || customer.inverterDeviceSn || "Not set"}
+                  </span>
+                  {(customer.inverterSrNo || customer.inverterDeviceSn) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={() => {
+                        navigator.clipboard.writeText(customer.inverterSrNo || customer.inverterDeviceSn || "");
+                        toast({ title: "Copied", description: "Inverter Sr No copied to clipboard" });
                       }}
                     >
                       <Copy className="h-3.5 w-3.5 text-slate-400 hover:text-slate-900" />

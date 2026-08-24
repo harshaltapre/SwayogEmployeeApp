@@ -32,9 +32,11 @@ CREATE DATABASE dashboard_swayog;
 Make sure your PostgreSQL is running with these credentials:
 - **Host**: localhost
 - **Port**: 5432 (default)
-- **Username**: postgresSQL
-- **Password**: 12345678
+- **Username**: (configured in .env file)
+- **Password**: (configured in .env file)
 - **Database**: dashboard_swayog
+
+**IMPORTANT**: Never commit actual database credentials to version control. Use environment variables as shown in the .env.example file.
 
 ### 2. **Backend Setup**
 

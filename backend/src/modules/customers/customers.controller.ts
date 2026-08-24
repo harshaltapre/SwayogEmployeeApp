@@ -8,6 +8,9 @@ import {
   getCustomerById,
   listCustomers,
   updateCustomer,
+  updatePartnerLeadStatus,
+  listEpcAssignedLeads,
+  updateEpcAssignmentStatus,
 } from "./customers.service.js";
 import type {
   CreateCustomerInput,
@@ -60,7 +63,50 @@ export async function updateCustomerHandler(
   res.status(200).json({ data: customer });
 }
 
+export async function updatePartnerLeadStatusHandler(
+  req: Request<{ id: string }, unknown, { status: "APPROVED" | "REJECTED" }>,
+  res: Response,
+): Promise<void> {
+  const { status } = req.body;
+  if (status !== "APPROVED" && status !== "REJECTED") {
+    throw new ApiError(400, "Status must be APPROVED or REJECTED");
+  }
+  const customer = await updatePartnerLeadStatus(getAuth(req), parseCustomerId(req.params.id), status);
+  res.status(200).json({ data: customer });
+}
+
 export async function deleteCustomerHandler(req: Request, res: Response): Promise<void> {
   const data = await deleteCustomer(getAuth(req), parseCustomerId(req.params.id));
   res.status(200).json({ data });
+}
+
+// ─── EPC CONTRACTOR HANDLERS ───────────────────────────────────────────────────
+
+export async function listEpcAssignedLeadsHandler(req: Request, res: Response): Promise<void> {
+  const epcCompanyName = req.query.epcCompany as string;
+  if (!epcCompanyName) {
+    throw new ApiError(400, "epcCompany query parameter is required");
+  }
+  const data = await listEpcAssignedLeads(getAuth(req), epcCompanyName);
+  res.status(200).json({ data });
+}
+
+export async function updateEpcAssignmentStatusHandler(
+  req: Request<{ id: string }, unknown, { status: "ACCEPTED" | "REJECTED"; epcCompanyName: string }>,
+  res: Response,
+): Promise<void> {
+  const { status, epcCompanyName } = req.body;
+  if (status !== "ACCEPTED" && status !== "REJECTED") {
+    throw new ApiError(400, "Status must be ACCEPTED or REJECTED");
+  }
+  if (!epcCompanyName) {
+    throw new ApiError(400, "epcCompanyName is required");
+  }
+  const customer = await updateEpcAssignmentStatus(
+    getAuth(req),
+    parseCustomerId(req.params.id),
+    status,
+    epcCompanyName,
+  );
+  res.status(200).json({ data: customer });
 }

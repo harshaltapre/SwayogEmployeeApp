@@ -202,6 +202,9 @@ function getPrisma(): any {
               errStr.includes("EADDRNOTAVAIL") ||
               errStr.includes("ECONNREFUSED") ||
               errStr.includes("connection refused") ||
+              errStr.includes("ConnectionReset") ||
+              errStr.includes("forcibly closed") ||
+              errStr.includes("10054") ||
               error?.code === "P2024" ||
               error?.code === "P1001" ||
               error?.code === "P1002" ||
@@ -209,14 +212,24 @@ function getPrisma(): any {
               error?.code === "P1008" ||
               error?.code === "P1017";
 
-            if (isConnectionError && process.env.NODE_ENV === 'development') {
-              console.warn("[Prisma] Database connection lost or unavailable. Dynamically switching to mock database fallback.");
-              mockMode = true;
-              await ensureMockDbInitialized();
-              const mockClient = createMockPrismaWrapper();
-              const modelProp = (mockClient as any)[model];
-              if (modelProp && typeof modelProp[operation] === 'function') {
-                return modelProp[operation](args);
+            if (isConnectionError) {
+              try {
+                console.warn(`[Prisma] Temporary connection reset/lost (${error?.message || error?.code}). Retrying query in 500ms...`);
+                await new Promise((r) => setTimeout(r, 500));
+                const retryResult = await query(args);
+                return processFields(retryResult, decryptVal);
+              } catch (retryErr: any) {
+                if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_FALLBACK === 'true') {
+                  console.warn("[Prisma] Database connection lost and USE_MOCK_FALLBACK enabled. Switching to mock database fallback.");
+                  mockMode = true;
+                  await ensureMockDbInitialized();
+                  const mockClient = createMockPrismaWrapper();
+                  const modelProp = (mockClient as any)[model];
+                  if (modelProp && typeof modelProp[operation] === 'function') {
+                    return modelProp[operation](args);
+                  }
+                }
+                throw retryErr;
               }
             }
             throw error;
@@ -259,12 +272,24 @@ export const prisma: any = new Proxy({} as any, {
               const isConnectionError = 
                 errStr.includes("Can't reach database server") || 
                 errStr.includes("ECONNREFUSED") ||
+                errStr.includes("ConnectionReset") ||
+                errStr.includes("forcibly closed") ||
+                errStr.includes("10054") ||
                 error?.code === "P1001";
-              if (isConnectionError && process.env.NODE_ENV === 'development') {
-                console.warn("[Prisma] Database connection lost on raw query. Switching to mock client.");
-                mockMode = true;
-                await ensureMockDbInitialized();
-                return prop === '$queryRaw' ? [1] : 1;
+              if (isConnectionError) {
+                try {
+                  console.warn(`[Prisma] Connection reset on raw query (${error?.message || error?.code}). Retrying in 500ms...`);
+                  await new Promise((r) => setTimeout(r, 500));
+                  return await value.apply(instance, args);
+                } catch (retryErr: any) {
+                  if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_FALLBACK === 'true') {
+                    console.warn("[Prisma] Database connection lost on raw query. Switching to mock client.");
+                    mockMode = true;
+                    await ensureMockDbInitialized();
+                    return prop === '$queryRaw' ? [1] : 1;
+                  }
+                  throw retryErr;
+                }
               }
               throw error;
             }
@@ -274,7 +299,7 @@ export const prisma: any = new Proxy({} as any, {
       }
       return value;
     } catch (error: any) {
-      if (process.env.NODE_ENV === 'development') {
+      if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_FALLBACK === 'true') {
         console.warn("[Prisma] Failed to resolve prisma instance. Switching to mock client.");
         mockMode = true;
         ensureMockDbInitialized();
@@ -287,13 +312,18 @@ export const prisma: any = new Proxy({} as any, {
 });
 
 export async function ensurePrismaInitialized() {
-  if (mockMode) return createMockPrismaWrapper();
+  if (mockMode && process.env.USE_MOCK_FALLBACK !== 'true') {
+    mockMode = false;
+    globalForPrisma.mockMode = false;
+  }
   try {
     const client = getPrisma();
     await client.$queryRaw`SELECT 1`;
+    mockMode = false;
+    globalForPrisma.mockMode = false;
     return client;
   } catch (error: any) {
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_FALLBACK === 'true') {
       console.warn("[Prisma] ensurePrismaInitialized failed to connect. Forcing mock database fallback.");
       mockMode = true;
       await ensureMockDbInitialized();

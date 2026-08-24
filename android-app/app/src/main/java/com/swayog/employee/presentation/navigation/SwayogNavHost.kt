@@ -18,6 +18,8 @@ import com.swayog.employee.presentation.dailycommit.DailyCommitScreen
 import com.swayog.employee.presentation.subadmin.*
 import com.swayog.employee.presentation.attendance.face.FaceEnrollmentScreen
 
+import com.swayog.employee.presentation.notifications.NotificationsScreen
+
 @Composable
 fun SwayogNavHost(
     navController: NavHostController = androidx.navigation.compose.rememberNavController(),
@@ -81,6 +83,9 @@ fun SwayogNavHost(
                 },
                 onNavigateToDailyCommit = {
                     navController.navigate(Screen.DailyCommit.route)
+                },
+                onNavigateToNotifications = {
+                    navController.navigate(Screen.Notifications.route)
                 },
                 onNavigateToSubAdminCustomers = {
                     navController.navigate(Screen.SubAdminCustomers.route)
@@ -154,6 +159,14 @@ fun SwayogNavHost(
             )
         }
 
+        composable(Screen.Notifications.route) {
+            NotificationsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
         if (isServiceCoordinator) {
             composable(Screen.SubAdminCustomers.route) {
                 SubAdminCustomersScreen(
@@ -218,6 +231,7 @@ sealed class Screen(val route: String) {
     data object Profile : Screen("profile")
     data object Settings : Screen("settings")
     data object DailyCommit : Screen("daily_commit")
+    data object Notifications : Screen("notifications")
     data object SubAdminCustomers : Screen("subadmin_customers")
     data object SubAdminCustomerDetails : Screen("subadmin_customer_details/{customerId}") {
         fun createRoute(customerId: Int) = "subadmin_customer_details/$customerId"

@@ -46,6 +46,8 @@ const createCustomerSchema = z.object({
   inverterBrand: z.string().optional(),
   inverterLoginId: z.string().optional(),
   inverterPassword: z.string().optional(),
+  dataLoggerSrNo: z.string().optional(),
+  inverterSrNo: z.string().optional(),
   portalPassword: z.string().optional(),
   amcStatus: z.enum(["active", "expired", "none"]).default("none"),
   amcExpiryDate: z.string().optional(),
@@ -68,6 +70,8 @@ const defaultValues: CreateCustomerValues = {
   inverterBrand: "",
   inverterLoginId: "",
   inverterPassword: "",
+  dataLoggerSrNo: "",
+  inverterSrNo: "",
   portalPassword: "",
   amcStatus: "none",
   amcExpiryDate: "",
@@ -139,6 +143,8 @@ export function CustomerFormModal({ open, onOpenChange, onSuccess, apartmentId, 
                 inverterBrand: data.inverterBrand?.trim() ? data.inverterBrand.trim() : undefined,
                 inverterLoginId: data.inverterLoginId?.trim() ? data.inverterLoginId.trim() : undefined,
                 inverterPassword: data.inverterPassword?.trim() ? data.inverterPassword.trim() : undefined,
+                dataLoggerSrNo: data.dataLoggerSrNo?.trim() ? data.dataLoggerSrNo.trim() : undefined,
+                inverterSrNo: data.inverterSrNo?.trim() ? data.inverterSrNo.trim() : undefined,
                 portalPassword: data.portalPassword?.trim() ? data.portalPassword.trim() : undefined,
                 warrantyExpiry: data.warrantyExpiry ? data.warrantyExpiry : undefined,
                 amcExpiryDate: data.amcExpiryDate ? data.amcExpiryDate : undefined,
@@ -188,6 +194,12 @@ export function CustomerFormModal({ open, onOpenChange, onSuccess, apartmentId, 
               )} />
               <FormField control={form.control} name="inverterPassword" render={({ field }) => (
                 <FormItem><FormLabel>Inverter Password (Optional)</FormLabel><FormControl><Input placeholder="Inverter password" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="dataLoggerSrNo" render={({ field }) => (
+                <FormItem><FormLabel>Data Logger Sr No (Optional)</FormLabel><FormControl><Input placeholder="Data Logger serial number" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="inverterSrNo" render={({ field }) => (
+                <FormItem><FormLabel>Inverter Sr No (Optional)</FormLabel><FormControl><Input placeholder="Inverter serial number" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="portalPassword" render={({ field }) => (
                 <FormItem><FormLabel>Customer Portal Password (Optional)</FormLabel><FormControl><Input placeholder="Will auto-generate if blank" {...field} /></FormControl><FormMessage /></FormItem>

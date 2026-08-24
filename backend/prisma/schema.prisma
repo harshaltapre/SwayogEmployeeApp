@@ -77,6 +77,8 @@ model Department {
 
 model Task {
   id                    Int              @id @default(autoincrement())
+  customerId            Int?
+  taskType              String           @default("REGULAR")
   jobType               String
   description           String
   customerName          String
@@ -90,10 +92,21 @@ model Task {
   assignedById          String
   completionMessage     String?
   completionDocumentUrl String?
+  taskRate              Float?
+  beforeImageUrl        String?
+  beforeLatitude        Float?
+  beforeLongitude       Float?
+  afterImageUrl         String?
+  afterLatitude         Float?
+  afterLongitude        Float?
   sitePhotos            String[]   @default([])
+  customerRating        Int?
+  customerFeedback      String?
+  fixCharges            Float?
   completedAt           DateTime?
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
+  customer              Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
   assignedBy            User       @relation("task_creator", fields: [assignedById], references: [id], onDelete: Cascade)
   employee              User       @relation("task_employee", fields: [employeeUserId], references: [id], onDelete: Cascade)
   taskAssignees         TaskAssignee[]
@@ -103,6 +116,8 @@ model Task {
   taskImages            TaskImage[]
   payments              Payment[]
 
+  @@index([customerId])
+  @@index([taskType])
   @@index([employeeUserId])
   @@index([assignedById])
   @@index([status])
@@ -223,7 +238,16 @@ model Customer {
   warrantyExpiry      DateTime?
   panelBrand          String?
   inverterBrand       String?
+  inverterName        String?
   inverterModel       String?
+  inverterUid         String?
+  monitoringProvider  String?
+  monitoringPortalUrl String?
+  monitoringPlantId   String?
+  monitoringStatus    String?
+  monitoringLastDataAt DateTime?
+  monitoringLastSyncAt DateTime?
+  monitoringLastError String?
   amcStatus           CustomerAmcStatus @default(NONE)
   amcExpiryDate       DateTime?
   status              CustomerStatus    @default(ACTIVE)
@@ -253,10 +277,15 @@ model Customer {
   commissionStatus    CommissionStatus  @default(PENDING)
   commissionProofUrl  String?
   commissionPaidAt    DateTime?
+  partnerLeadStatus       String?           @default("PENDING")
+  assignedEpc             String?
+  epcAssignmentStatus     String?
   inverterLoginId     String?
   inverterPassword    String?
   inverterApiKey       String?
   inverterDeviceSn     String?
+  dataLoggerSrNo      String?
+  inverterSrNo        String?
   portalPassword      String?
   latitude            Float?
   longitude           Float?
@@ -273,6 +302,9 @@ model Customer {
   apartment           Apartment?        @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
   payments            Payment[]
   notifications       CustomerNotification[]
+  tasks               Task[]
+  inverterInstallations InverterInstallation[]
+  generationLogs      GenerationLog[]
 
   @@index([partnerId])
   @@index([status])
@@ -766,8 +798,12 @@ model TaskImage {
   id           String   @id @default(uuid())
   taskId       Int
   employeeUserId String
-  type         String   // before, after
-  url          String
+  type         String   // before, after, site-visit
+  url          String   // R2 public URL or local path (for backward compatibility)
+  objectKey    String?  // R2 object key: tasks/{taskId}/{type}/{uuid}.jpg
+  fileName     String?  // Original filename
+  mimeType     String?  // image/jpeg, image/png, etc.
+  fileSize     Int?     // File size in bytes
   latitude     Float?
   longitude    Float?
   watermarkText String?
@@ -778,6 +814,7 @@ model TaskImage {
   @@index([taskId])
   @@index([employeeUserId])
   @@index([type])
+  @@index([objectKey])
 }
 
 // ---------------------------------------------------------------------------
@@ -881,4 +918,95 @@ model IsphereGreenEntry {
 
   @@index([category])
   @@index([subcategory])
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Inverter System (New Architecture)
+// ---------------------------------------------------------------------------
+
+enum InverterProviderType {
+  K_SOLAR
+  GROWATT
+  FOXESS
+  UTL
+  SOLARMAN
+  SOLIS
+  WAAREE
+  PV_BLINK
+  PANASONIC
+  ANCHOR
+  UPS_SOLAR
+  HAVELLS
+  VSOLE
+  WARI
+  SOLACE
+  HEAVEN
+  QUALICAP
+  ONE
+  GENERIC_REST
+  MANUAL
+}
+
+enum GenerationDataSource {
+  LIVE_API           // Real-time from inverter manufacturer API
+  CACHE              // Cached from previous API call
+  DB_SCHEDULER       // From periodic background scheduler
+  MANUAL             // Manually entered by user
+  ESTIMATED          // System-generated estimate
+  SIMULATED          // Demo/test data
+}
+
+model InverterInstallation {
+  id                  Int       @id @default(autoincrement())
+  customerId          Int
+  brand               InverterProviderType
+  model               String?
+  serialNumber        String?
+  capacity            Float?    // in kW
+  credentials         Json?     // Encrypted provider-specific credentials
+  isActive            Boolean   @default(true)
+  lastFetchTime       DateTime?
+  lastFetchStatus     String?   // "success", "failed", "unauthorized", etc.
+  errorMessage        String?
+  consecutiveFailures Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  customer            Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  generationLogs      GenerationLog[]
+
+  @@unique([customerId, serialNumber])
+  @@index([customerId])
+  @@index([brand])
+  @@index([isActive])
+  @@index([lastFetchTime])
+  @@map("inverter_installations")
+}
+
+model GenerationLog {
+  id                  Int       @id @default(autoincrement())
+  installationId      Int
+  customerId          Int
+  timestamp           DateTime
+  currentPowerW       Float?    // Instantaneous power in Watts
+  dailyGenerationKwh  Float?    // Energy generated today in kWh
+  monthlyGenerationKwh Float?   // Energy generated this month in kWh
+  yearlyGenerationKwh Float?    // Energy generated this year in kWh
+  totalGenerationKwh  Float?    // Lifetime generation in kWh
+  dataSource          GenerationDataSource
+  isEstimated         Boolean   @default(false)
+  fetchedFromApi      Boolean   @default(false)
+  manualEntry         Boolean   @default(false)
+  status              String?   // "online", "offline", "error", etc.
+  metadata            Json?     // Provider-specific extra fields
+  createdAt           DateTime  @default(now())
+  installation        InverterInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  customer            Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([installationId])
+  @@index([customerId])
+  @@index([timestamp])
+  @@index([dataSource])
+  @@index([customerId, timestamp])
+  @@index([installationId, timestamp])
+  @@map("generation_logs")
 }

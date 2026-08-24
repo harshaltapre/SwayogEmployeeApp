@@ -83,8 +83,20 @@ export type CustomerRecord = {
   warrantyExpiry: string | null;
   panelBrand: string | null;
   inverterBrand: string | null;
+  inverterName?: string | null;
+  inverterModel?: string | null;
+  inverterUid?: string | null;
   inverterApiKey?: string | null;
   inverterDeviceSn?: string | null;
+  dataLoggerSrNo?: string | null;
+  inverterSrNo?: string | null;
+  monitoringProvider?: string | null;
+  monitoringPortalUrl?: string | null;
+  monitoringPlantId?: string | null;
+  monitoringStatus?: string | null;
+  monitoringLastDataAt?: string | null;
+  monitoringLastSyncAt?: string | null;
+  monitoringLastError?: string | null;
   amcStatus: CustomerAmcStatus;
   amcExpiryDate: string | null;
   status: CustomerStatus;
@@ -118,9 +130,13 @@ export type CustomerRecord = {
   commissionStatus?: "PENDING" | "COMPLETED";
   commissionProofUrl?: string | null;
   commissionPaidAt?: string | null;
+  partnerLeadStatus?: "PENDING" | "APPROVED" | "REJECTED" | null;
+  assignedEpc?: string | null;
+  epcAssignmentStatus?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
   apartmentId?: number | null;
   apartment?: { id: number; name: string; address: string; city: string } | null;
   assignedEmployee?: { id: string; name: string } | null;
+  partner?: { id: string; businessName?: string; companyName?: string; name?: string; email?: string | null; phone?: string | null; zone?: string | null } | null;
 };
 
 export type ApartmentRecord = {
@@ -179,9 +195,13 @@ export type CreateCustomerInput = {
   warrantyExpiry?: string | null;
   panelBrand?: string;
   inverterBrand?: string;
+  inverterName?: string;
   inverterModel?: string;
+  inverterUid?: string;
   inverterApiKey?: string;
   inverterDeviceSn?: string;
+  dataLoggerSrNo?: string;
+  inverterSrNo?: string;
   inverterLoginId?: string;
   inverterPassword?: string;
   portalLoginId?: string;
@@ -265,6 +285,7 @@ type InternalUserRole = "SUPER_ADMIN" | "ADMIN" | "EMPLOYEE" | "PARTNER" | "CUST
 export type CreateInternalUserInput = {
   fullName: string;
   email: string;
+  loginId?: string;
   phoneNumber?: string;
   password: string;
   role: Exclude<InternalUserRole, "CUSTOMER">;
@@ -786,12 +807,36 @@ export function buildAssetUrlFromPath(assetPath?: string | null): string | null 
     return null;
   }
 
-  if (/^(https?|data):/i.test(assetPath)) {
+  // If already a presigned R2 URL (has X-Amz-Signature) or base64 Data URL, return directly
+  if (assetPath.startsWith("data:") || (assetPath.includes(".r2.cloudflarestorage.com/") && assetPath.includes("X-Amz-Signature"))) {
+    return assetPath;
+  }
+
+  const apiBaseUrl = getApiBaseUrl();
+
+  // If unsigned raw R2 URL, route through backend presigned view resolver
+  if (assetPath.includes(".r2.cloudflarestorage.com/")) {
+    if (apiBaseUrl) {
+      const base = apiBaseUrl.replace(/\/api\/v\d+$/i, "").replace(/\/$/, "");
+      return `${base}/api/v1/tasks/images/view?url=${encodeURIComponent(assetPath)}`;
+    }
+    return `/api/v1/tasks/images/view?url=${encodeURIComponent(assetPath)}`;
+  }
+
+  // If an R2 object key directly (e.g. tasks/123/before/...)
+  if (assetPath.startsWith("tasks/")) {
+    if (apiBaseUrl) {
+      const base = apiBaseUrl.replace(/\/api\/v\d+$/i, "").replace(/\/$/, "");
+      return `${base}/api/v1/tasks/images/view?key=${encodeURIComponent(assetPath)}`;
+    }
+    return `/api/v1/tasks/images/view?key=${encodeURIComponent(assetPath)}`;
+  }
+
+  if (/^(https?):/i.test(assetPath)) {
     return assetPath;
   }
 
   const normalizedPath = assetPath.startsWith("/") ? assetPath : `/${assetPath}`;
-  const apiBaseUrl = getApiBaseUrl();
   if (apiBaseUrl) {
     const base = apiBaseUrl.replace(/\/api\/v\d+$/i, "").replace(/\/$/, "");
     return `${base}${normalizedPath}`;
@@ -799,6 +844,41 @@ export function buildAssetUrlFromPath(assetPath?: string | null): string | null 
 
   return normalizedPath;
 }
+
+export function openAssetUrl(assetPath?: string | null): void {
+  if (!assetPath || typeof assetPath !== "string") return;
+
+  const url = buildAssetUrlFromPath(assetPath) || assetPath;
+
+  if (url.startsWith("data:")) {
+    try {
+      const parts = url.split(",");
+      const mimeMatch = parts[0].match(/:(.*?);/);
+      const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      const blob = new Blob([u8arr], { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+      const win = window.open(blobUrl, "_blank");
+      if (!win) {
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.target = "_blank";
+        a.click();
+      }
+      return;
+    } catch (err) {
+      console.error("Error opening data URL blob:", err);
+    }
+  }
+
+  window.open(url, "_blank");
+}
+
 
 function getAuthHeaders(initHeaders?: HeadersInit): Headers {
   const headers = new Headers(initHeaders);
@@ -975,7 +1055,11 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
     panelBrand: typeof raw?.panelBrand === "string" ? raw.panelBrand : null,
     inverterApiKey: typeof raw?.inverterApiKey === "string" ? raw.inverterApiKey : null,
     inverterDeviceSn: typeof raw?.inverterDeviceSn === "string" ? raw.inverterDeviceSn : null,
+    dataLoggerSrNo: typeof raw?.dataLoggerSrNo === "string" ? raw.dataLoggerSrNo : null,
+    inverterSrNo: typeof raw?.inverterSrNo === "string" ? raw.inverterSrNo : null,
     inverterBrand: typeof raw?.inverterBrand === "string" ? raw.inverterBrand : null,
+    inverterName: typeof raw?.inverterName === "string" ? raw.inverterName : null,
+    inverterModel: typeof raw?.inverterModel === "string" ? raw.inverterModel : null,
     amcStatus: String(raw?.amcStatus ?? "none").toLowerCase() as CustomerAmcStatus,
     amcExpiryDate: normalizeDateValue(raw?.amcExpiryDate),
     status: String(raw?.status ?? "active").toLowerCase() as CustomerStatus,
@@ -984,6 +1068,14 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
     generatedPassword: typeof raw?.generatedPassword === "string" ? raw.generatedPassword : undefined,
     inverterLoginId: typeof raw?.inverterLoginId === "string" ? raw.inverterLoginId : null,
     inverterPassword: typeof raw?.inverterPassword === "string" ? raw.inverterPassword : null,
+    inverterUid: typeof raw?.inverterUid === "string" ? raw.inverterUid : null,
+    monitoringProvider: typeof raw?.monitoringProvider === "string" ? raw.monitoringProvider : null,
+    monitoringPortalUrl: typeof raw?.monitoringPortalUrl === "string" ? raw.monitoringPortalUrl : null,
+    monitoringPlantId: typeof raw?.monitoringPlantId === "string" ? raw.monitoringPlantId : null,
+    monitoringStatus: typeof raw?.monitoringStatus === "string" ? raw.monitoringStatus : null,
+    monitoringLastDataAt: normalizeDateValue(raw?.monitoringLastDataAt),
+    monitoringLastSyncAt: normalizeDateValue(raw?.monitoringLastSyncAt),
+    monitoringLastError: typeof raw?.monitoringLastError === "string" ? raw.monitoringLastError : null,
     portalLoginId: typeof raw?.portalLoginId === "string" ? raw.portalLoginId : undefined,
     portalPassword: typeof raw?.portalPassword === "string" ? raw.portalPassword : null,
     clientType: raw?.clientType as ClientType,
@@ -1007,6 +1099,9 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
     commissionStatus: String(raw?.commissionStatus ?? "PENDING").toUpperCase() as "PENDING" | "COMPLETED",
     commissionProofUrl: typeof raw?.commissionProofUrl === "string" ? raw.commissionProofUrl : null,
     commissionPaidAt: normalizeDateValue(raw?.commissionPaidAt),
+    partnerLeadStatus: raw?.partnerLeadStatus ? (String(raw.partnerLeadStatus).toUpperCase() as "PENDING" | "APPROVED" | "REJECTED") : (raw?.partnerId ? "PENDING" : null),
+    assignedEpc: typeof raw?.assignedEpc === "string" ? raw.assignedEpc : null,
+    epcAssignmentStatus: raw?.epcAssignmentStatus ? (String(raw.epcAssignmentStatus).toUpperCase() as "PENDING" | "ACCEPTED" | "REJECTED") : null,
     completedVisits: raw?.completedVisits !== undefined ? Number(raw.completedVisits) : undefined,
     pendingVisits: raw?.pendingVisits !== undefined ? Number(raw.pendingVisits) : undefined,
     apartmentId: raw?.apartmentId ? Number(raw.apartmentId) : null,
@@ -1019,6 +1114,15 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
     assignedEmployee: raw?.assignedEmployee ? {
       id: String(raw.assignedEmployee.id),
       name: String(raw.assignedEmployee.fullName || raw.assignedEmployee.name || ""),
+    } : null,
+    partner: raw?.partner ? {
+      id: String(raw.partner.id || ""),
+      businessName: raw.partner.businessName ? String(raw.partner.businessName) : undefined,
+      companyName: raw.partner.companyName ? String(raw.partner.companyName) : undefined,
+      name: raw.partner.name ? String(raw.partner.name) : undefined,
+      email: raw.partner.email ? String(raw.partner.email) : null,
+      phone: raw.partner.phone ? String(raw.partner.phone) : null,
+      zone: raw.partner.zone ? String(raw.partner.zone) : null,
     } : null,
   };
 }
@@ -1367,6 +1471,107 @@ export function useSubmitLead(opts?: any) {
   });
 }
 
+export function useUpdatePartnerLeadStatus(opts?: any) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: "APPROVED" | "REJECTED" }) => {
+      const response = await requestApi<{ data: CustomerRecord }>(`/customers/${id}/partner-lead-status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
+    },
+    ...opts?.mutation,
+  });
+}
+
+// ─── EPC CONTRACTOR HOOKS ────────────────────────────────────────────────────────
+
+export function getEpcAssignedLeadsQueryKey(epcCompany: string) {
+  return ["epc-assigned-leads", epcCompany] as const;
+}
+
+export function useListEpcAssignedLeads(epcCompany: string, opts?: any) {
+  return useQuery<CustomerRecord[]>({
+    queryKey: getEpcAssignedLeadsQueryKey(epcCompany),
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) return [];
+      // Use a direct fetch with the auth token so that a 401 on this EPC-specific
+      // endpoint does NOT trigger the global logout in requestApi. EPC contractors
+      // have their own token and this endpoint may legitimately return 401 if the
+      // backend does not yet support the EPC contractor role for this route.
+      try {
+        const token = useAuth.getState().token;
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        const res = await fetch(
+          buildApiUrl(apiBaseUrl, `/customers/epc-assigned-leads?epcCompany=${encodeURIComponent(epcCompany)}`),
+          { headers },
+        );
+        if (!res.ok) return [];
+        const payload = await res.json().catch(() => null);
+        const data =
+          payload && typeof payload === "object" && "data" in payload
+            ? (payload as { data: unknown }).data
+            : payload;
+        return Array.isArray(data) ? data.map(normalizeCustomerRecord) : [];
+      } catch {
+        return [];
+      }
+    },
+    enabled: Boolean(epcCompany),
+    ...opts?.query,
+  });
+}
+
+export function useUpdateEpcAssignmentStatus(opts?: any) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      status,
+      epcCompanyName,
+    }: {
+      id: number;
+      status: "ACCEPTED" | "REJECTED";
+      epcCompanyName: string;
+    }) => {
+      // Use direct fetch to avoid triggering global logout on 401 for EPC endpoints.
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) throw { error: "Backend API URL is not configured." };
+      try {
+        const token = useAuth.getState().token;
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        const res = await fetch(
+          buildApiUrl(apiBaseUrl, `/customers/${id}/epc-assignment-status`),
+          { method: "PATCH", headers, body: JSON.stringify({ status, epcCompanyName }) },
+        );
+        const payload = await res.json().catch(() => null);
+        if (!res.ok) throw { error: parseErrorMessage(payload, "Failed to update EPC assignment status") };
+        const data =
+          payload && typeof payload === "object" && "data" in payload
+            ? (payload as { data: CustomerRecord }).data
+            : payload;
+        return data as CustomerRecord;
+      } catch (err: any) {
+        if (err?.error) throw err;
+        throw { error: "Failed to update EPC assignment status" };
+      }
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getEpcAssignedLeadsQueryKey(variables.epcCompanyName) });
+    },
+    ...opts?.mutation,
+  });
+}
+
+
 export function useListCustomers(params?: ListCustomersParams, opts?: any) {
   return useQuery<CustomerRecord[]>({
     queryKey: getListCustomersQueryKey(params),
@@ -1581,7 +1786,7 @@ export function useUpdateSubadminCustomerCredentials(opts?: any) {
   const { onSuccess, ...restMutationOptions } = mutationOptions;
 
   return useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<{ inverterBrand: string; inverterLoginId: string; inverterPassword: string; inverterApiKey: string; inverterDeviceSn: string; city: string; address: string; projectStage: number }> }) => {
+    mutationFn: async ({ id, data }: { id: number; data: Partial<{ inverterBrand: string; inverterModel: string; inverterLoginId: string; inverterPassword: string; inverterApiKey: string; inverterDeviceSn: string; inverterUid: string; monitoringProvider: string; monitoringPortalUrl: string; monitoringPlantId: string; monitoringStatus: string; monitoringLastDataAt: string; monitoringLastSyncAt: string; monitoringLastError: string; city: string; address: string; projectStage: number }> }) => {
       const apiBaseUrl = getApiBaseUrl();
       if (!apiBaseUrl) {
         throw { error: "Backend API URL is required to update customer credentials." };
@@ -2857,27 +3062,31 @@ export function useCreateBulkTaskAssignment(opts?: any) {
         });
       }
 
-      const results: TaskRecord[] = [];
-      for (const empId of data.employeeUserIds) {
-        const nextId = mockTasks.reduce((max, current) => Math.max(max, Number(current.id) || 0), 0) + 1;
-        const created: TaskRecord = {
-          id: nextId,
-          jobType: data.jobType,
-          description: data.description,
-          customerName: data.customerName,
-          customerPhone: data.customerPhone,
-          address: data.address,
-          status: "assigned",
-          scheduledTime: data.scheduledTime,
+      // Create ONE task with multiple assignments (matching backend behavior)
+      const primaryEmployeeId = data.employeeUserIds[0] ?? null;
+      const nextId = mockTasks.reduce((max, current) => Math.max(max, Number(current.id) || 0), 0) + 1;
+      
+      const created: TaskRecord = {
+        id: nextId,
+        jobType: data.jobType,
+        description: data.description,
+        customerName: data.customerName,
+        customerPhone: data.customerPhone,
+        address: data.address,
+        status: "assigned",
+        scheduledTime: data.scheduledTime,
+        employeeUserId: primaryEmployeeId,
+        completionMessage: null,
+        completionDocumentUrl: null,
+        taskRate: data.taskRate ?? null,
+        taskAssignments: data.employeeUserIds.map((empId) => ({
           employeeUserId: empId,
-          completionMessage: null,
-          completionDocumentUrl: null,
-          taskRate: data.taskRate ?? null,
-        };
-        (mockTasks as TaskRecord[]).unshift(created);
-        results.push(created);
-      }
-      return delay(results, 120);
+          status: "assigned",
+        })),
+      };
+      
+      (mockTasks as TaskRecord[]).unshift(created);
+      return delay([created], 120);
     },
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -2919,10 +3128,36 @@ export function useCompleteTask(opts?: any) {
       if (data.sitePhotos) {
         task.sitePhotos = data.sitePhotos;
       }
+      task.completedAt = new Date().toISOString();
+
+      const storedTasks = getStoredMockTasks();
+      const storedIdx = storedTasks.findIndex((item: any) => String(item.id) === String(taskId));
+      if (storedIdx >= 0) {
+        storedTasks[storedIdx] = {
+          ...storedTasks[storedIdx],
+          status: "completed",
+          completionMessage: data.message,
+          completionDocumentUrl: data.documentUrl ?? null,
+          beforeImageUrl: data.beforeImageUrl ?? null,
+          afterImageUrl: data.afterImageUrl ?? null,
+          beforeLatitude: data.beforeLatitude ?? null,
+          beforeLongitude: data.beforeLongitude ?? null,
+          afterLatitude: data.afterLatitude ?? null,
+          afterLongitude: data.afterLongitude ?? null,
+          completedAt: new Date().toISOString(),
+          sitePhotos: data.sitePhotos ?? storedTasks[storedIdx].sitePhotos,
+        };
+        saveStoredMockTasks(storedTasks);
+      }
+
       return delay(task, 120);
     },
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["amc-visits"] });
+      queryClient.invalidateQueries({ queryKey: ["amc"] });
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      queryClient.invalidateQueries({ queryKey: ["task", String(variables.taskId)] });
       onSuccess?.(data, variables, context);
     },
     ...restMutationOptions,
@@ -2998,10 +3233,27 @@ export function useUpdateTaskPhotos(opts?: any) {
           body: JSON.stringify({ sitePhotos }),
         });
       }
+      const task = (mockTasks as TaskRecord[]).find((item) => String(item.id) === String(taskId));
+      if (task) {
+        task.sitePhotos = sitePhotos;
+      }
+
+      const storedTasks = getStoredMockTasks();
+      const storedIdx = storedTasks.findIndex((item: any) => String(item.id) === String(taskId));
+      if (storedIdx >= 0) {
+        storedTasks[storedIdx] = {
+          ...storedTasks[storedIdx],
+          sitePhotos: sitePhotos,
+        };
+        saveStoredMockTasks(storedTasks);
+      }
+
       return delay({ success: true, sitePhotos }, 120);
     },
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      // Also invalidate specific task queries to ensure cache consistency
+      queryClient.invalidateQueries({ queryKey: ["task", String(variables.taskId)] });
       onSuccess?.(data, variables, context);
     },
     ...restMutationOptions,
@@ -3050,6 +3302,31 @@ export function useLogin(opts?: any) {
         }
       } catch (e) {
         console.warn("Error reading epc_contractor_logins", e);
+      }
+
+      // ── Check Installer accounts (created via iSphere Green Head) ──
+      try {
+        const storedInstallers = JSON.parse(localStorage.getItem("se_installers") || "[]");
+        const matchedInstaller = storedInstallers.find((acc: any) =>
+          (acc.email?.toLowerCase() === identifier.toLowerCase() || acc.phone === identifier) &&
+          (!acc.password || acc.password === data.password)
+        );
+
+        if (matchedInstaller) {
+          return {
+            token: `token_installer_${matchedInstaller.id || Date.now()}`,
+            user: {
+              id: matchedInstaller.id || `installer_${Date.now()}`,
+              name: matchedInstaller.name || "Certified Installer",
+              email: matchedInstaller.email || identifier,
+              role: "partner" as any,
+              jobRole: "Installer",  // Installer-specific jobRole -> routes to /installer/dashboard
+              avatarInitials: (matchedInstaller.name || "IN").slice(0, 2).toUpperCase(),
+            }
+          };
+        }
+      } catch (e) {
+        console.warn("Error reading se_installers logins", e);
       }
 
       // ── Try backend API ──

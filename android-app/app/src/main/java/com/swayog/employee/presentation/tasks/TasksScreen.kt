@@ -48,6 +48,9 @@ import com.swayog.employee.presentation.common.components.*
 import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.core.util.OnlineSubmissionFailedException
 import com.swayog.employee.presentation.common.utils.WatermarkHelper
+import com.swayog.employee.core.util.NetworkUtils
+import com.swayog.employee.presentation.common.utils.ImageUtils
+
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -841,7 +844,8 @@ fun TaskDetailDialog(
     onDismiss: () -> Unit,
     onStartTask: () -> Unit,
     onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?, List<String>?) -> Unit,
-    serverUrl: String? = null
+    serverUrl: String? = null,
+    viewModel: TasksViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -916,7 +920,7 @@ fun TaskDetailDialog(
 
                 // Scale bitmap down to reduce memory usage and avoid payload timeouts.
                 // Site visit photos get tighter compression (10+ photos) vs before/after (2 photos).
-                val isSiteVisitPhoto = type == "site_visit"
+                val isSiteVisitPhoto = type == "site_visit" || type == "amc_before" || type == "amc_after"
                 val maxDim = if (isSiteVisitPhoto) 600f else 800f
                 val jpegQuality = if (isSiteVisitPhoto) 60 else 75
                 val scale = minOf(maxDim / bitmap.width, maxDim / bitmap.height)
@@ -948,14 +952,20 @@ fun TaskDetailDialog(
                         afterLng = lng
                     }
                     "site_visit" -> {
-                        uploadedImages = uploadedImages + base64String
+                        val updatedList = uploadedImages + base64String
+                        uploadedImages = updatedList
                         imageBitmaps = imageBitmaps + watermarked
+                        if (NetworkUtils.isNetworkAvailable(context)) {
+                            viewModel.updateTaskPhotos(task.id, updatedList)
+                        }
                     }
                     "amc_before" -> {
                         beforeImages = beforeImages + base64String
+                        imageBitmaps = imageBitmaps + watermarked
                     }
                     "amc_after" -> {
                         afterImages = afterImages + base64String
+                        imageBitmaps = imageBitmaps + watermarked
                     }
                 }
                 android.util.Log.d("TaskSubmissionChain", "LOG 1 - Image Captured: type=$type, base64Length=${base64String.length}, lat=$lat, lng=$lng")
@@ -1230,6 +1240,10 @@ fun TaskDetailDialog(
                         })
                     }
                     
+                    if (task.beforeLatitude != null || task.afterLatitude != null) {
+                         Text("GPS Captured: Yes", style = MaterialTheme.typography.bodySmall, color = Color(0xFF0B6E4F))
+                    }
+
                     BeforeAfterImageSection(
                         beforeImageUrl = task.beforeImageUrl,
                         afterImageUrl = task.afterImageUrl,
@@ -1247,6 +1261,7 @@ fun TaskDetailDialog(
                         )
                     } else if (task.status?.equals("in_progress", ignoreCase = true) == true || task.status?.equals("pending", ignoreCase = true) == true) {
                         val isSiteVisitTask = task.isSiteVisit
+                        val isAmcVisitTask = task.isAmcVisit
 
                         if (isSiteVisitTask) {
                             // Site Visit Photo Upload Flow (Gallery + Description)
@@ -1281,8 +1296,12 @@ fun TaskDetailDialog(
                                             )
                                             IconButton(
                                                 onClick = {
-                                                    imageBitmaps = imageBitmaps.toMutableList().apply { removeAt(idx) }
-                                                    uploadedImages = uploadedImages.toMutableList().apply { removeAt(idx) }
+                                                     imageBitmaps = imageBitmaps.toMutableList().apply { removeAt(idx) }
+                                                     val updatedList = uploadedImages.toMutableList().apply { removeAt(idx) }
+                                                     uploadedImages = updatedList
+                                                     if (NetworkUtils.isNetworkAvailable(context)) {
+                                                        viewModel.updateTaskPhotos(task.id, updatedList)
+                                                     }
                                                 },
                                                 modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
                                             ) {
@@ -1356,6 +1375,116 @@ fun TaskDetailDialog(
                                             uploadedImages
                                         )
                                     }
+                                }
+                            )
+                        } else if (isAmcVisitTask) {
+                            // AMC Visit Photo Upload Flow
+                            Text(
+                                text = "📋 AMC Visit Photos (GPS Proof)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "Required: At least 1 'Before' and 1 'After' photo",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (beforeImages.isNotEmpty() && afterImages.isNotEmpty()) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            // Before Images section
+                            Text("Before Maintenance", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            if (beforeImages.isNotEmpty()) {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    itemsIndexed(beforeImages) { idx, img ->
+                                        Box(modifier = Modifier.size(80.dp)) {
+                                            AsyncImage(
+                                                model = ImageUtils.resolveImageModel(context, img, serverUrl),
+                                                contentDescription = "Before $idx",
+                                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            IconButton(
+                                                onClick = { beforeImages = beforeImages.toMutableList().apply { removeAt(idx) } },
+                                                modifier = Modifier.align(Alignment.TopEnd).size(20.dp)
+                                            ) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.Red, modifier = Modifier.size(12.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { launchPhotoPicker("amc_before") },
+                                modifier = Modifier.fillMaxWidth().height(40.dp),
+                                enabled = !isProcessing
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Add Before Photo", style = MaterialTheme.typography.labelSmall)
+                            }
+
+                            // After Images section
+                            Text("After Maintenance", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            if (afterImages.isNotEmpty()) {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    itemsIndexed(afterImages) { idx, img ->
+                                        Box(modifier = Modifier.size(80.dp)) {
+                                            AsyncImage(
+                                                model = ImageUtils.resolveImageModel(context, img, serverUrl),
+                                                contentDescription = "After $idx",
+                                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            IconButton(
+                                                onClick = { afterImages = afterImages.toMutableList().apply { removeAt(idx) } },
+                                                modifier = Modifier.align(Alignment.TopEnd).size(20.dp)
+                                            ) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.Red, modifier = Modifier.size(12.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { launchPhotoPicker("amc_after") },
+                                modifier = Modifier.fillMaxWidth().height(40.dp),
+                                enabled = beforeImages.isNotEmpty() && !isProcessing
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Add After Photo", style = MaterialTheme.typography.labelSmall)
+                            }
+
+                            Text("Maintenance Observations", fontWeight = FontWeight.Bold)
+                            SwayogTextField(
+                                value = completionMessage,
+                                onValueChange = { completionMessage = it },
+                                label = "AMC Report / Notes",
+                                placeholder = "Enter system health, panels cleaned, wiring status...",
+                                singleLine = false
+                            )
+
+                            SwayogButton(
+                                text = if (isProcessing) "Processing..." else "Submit AMC Visit",
+                                enabled = beforeImages.isNotEmpty() && afterImages.isNotEmpty() && completionMessage.trim().length >= 3 && !isProcessing,
+                                onClick = {
+                                    val finalMessage = completionMessage.trim()
+                                    onCompleteTask(
+                                        finalMessage,
+                                        docUrl.trim().ifEmpty { null },
+                                        beforeImages.firstOrNull(),
+                                        afterImages.firstOrNull(),
+                                        beforeLat,
+                                        beforeLng,
+                                        afterLat,
+                                        afterLng,
+                                        "AMC_VISIT",
+                                        null,
+                                        beforeImages,
+                                        afterImages,
+                                        null
+                                    )
                                 }
                             )
                         } else {
@@ -1563,7 +1692,7 @@ fun TaskDetailDialog(
                                                 ) {
                                                     Box {
                                                         AsyncImage(
-                                                            model = photoUrl,
+                                                            model = ImageUtils.resolveImageModel(context, photoUrl, serverUrl),
                                                             contentDescription = "Site photo ${index + 1}",
                                                             modifier = Modifier
                                                                 .fillMaxWidth()
@@ -1630,7 +1759,7 @@ fun TaskDetailDialog(
                                                             modifier = Modifier.padding(8.dp)
                                                         )
                                                         AsyncImage(
-                                                            model = task.beforeImageUrl,
+                                                            model = ImageUtils.resolveImageModel(context, task.beforeImageUrl, serverUrl),
                                                             contentDescription = "Before photo",
                                                             modifier = Modifier
                                                                 .fillMaxWidth()
@@ -1662,7 +1791,7 @@ fun TaskDetailDialog(
                                                             modifier = Modifier.padding(8.dp)
                                                         )
                                                         AsyncImage(
-                                                            model = task.afterImageUrl,
+                                                            model = ImageUtils.resolveImageModel(context, task.afterImageUrl, serverUrl),
                                                             contentDescription = "After photo",
                                                             modifier = Modifier
                                                                 .fillMaxWidth()

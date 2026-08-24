@@ -1,8 +1,18 @@
 import dotenv from "dotenv";
 import { z } from "zod";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+
+// Get the directory of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env from the backend directory (go up two levels from src/config)
+const envPath = path.join(__dirname, "..", "..", ".env");
 
 // Ensure local backend/.env values are used even if machine-level env vars exist.
-dotenv.config({ override: true });
+dotenv.config({ path: envPath, override: true });
 
 // Strip surrounding quotes from process.env keys (e.g. Vercel dashboard copy-pastes)
 for (const key of Object.keys(process.env)) {
@@ -66,6 +76,11 @@ const envSchema = z.object({
   WAAREE_PLANT_ID: z.string().optional(),
   WAAREE_SOLAX_TOKEN_ID: z.string().optional(),
   WAAREE_SOLAX_INVERTER_SN: z.string().optional(),
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET_NAME: z.string().optional(),
+  R2_ENDPOINT: z.string().optional(),
 });
 
 let parsedEnv: any;

@@ -120,6 +120,8 @@ export function validateCustomerData(rows: Record<string, unknown>[]): Validated
     const inverterPassword = String(row['Password'] || row['inverterPassword'] || '').trim();
     const inverterApiKey = String(row['API Key / Plant ID'] || row['Api optional'] || row['inverterApiKey'] || '').trim();
     const inverterModel = String(row['Inverter Model'] || row['inverterModel'] || '').trim();
+    const dataLoggerSrNo = String(row['Data Logger Sr No'] || row['Logger Sr No'] || row['dataLoggerSrNo'] || '').trim();
+    const inverterSrNo = String(row['Inverter Sr No'] || row['Inverter Serial No'] || row['inverterSrNo'] || '').trim();
     const monthlyCleaningRate = parseFloat(String(row['Monthly Rate (₹)'] || row['Monthly Rate'] || row['monthlyCleaningRate'] || '0')) || null;
     const paymentTerms = String(row['Payment Terms'] || row['paymentTerms'] || '').trim() || null;
     const remarks = String(row['Remarks'] || row['remarks'] || '').trim() || null;
@@ -160,6 +162,8 @@ export function validateCustomerData(rows: Record<string, unknown>[]): Validated
       inverterPassword: inverterPassword || undefined,
       inverterApiKey: inverterApiKey || undefined,
       inverterModel: inverterModel || undefined,
+      dataLoggerSrNo: dataLoggerSrNo || undefined,
+      inverterSrNo: inverterSrNo || undefined,
       monthlyCleaningRate: monthlyCleaningRate || undefined,
       paymentTerms: paymentTerms || undefined,
       remarks: remarks || undefined,
@@ -311,6 +315,8 @@ export type ValidatedCustomerData = {
   inverterLoginId?: string;
   inverterPassword?: string;
   inverterApiKey?: string;
+  dataLoggerSrNo?: string;
+  inverterSrNo?: string;
   contractStartDate?: string;
   cleaningsPerMonth?: number;
   amcStatus?: string;
@@ -340,7 +346,7 @@ export async function exportCustomersToExcel(customers: any[]): Promise<Blob> {
   const headers = [
     "Customer Name", "Site Location", "Phone", "Email", "City", "Plant Size (kW)", 
     "Installation Date", "AMC Status", "Contract Start", "Cleanings / Month", 
-    "Inverter Brand", "Inverter Login ID", "Password", "API Key / Plant ID", 
+    "Inverter Brand", "Inverter Login ID", "Password", "Data Logger Sr No", "Inverter Sr No", "API Key / Plant ID", 
     "Status (Online/Offline)", "Inverter Model", "NO of Cleaning", "Monthly Rate (₹)", 
     "Payment Terms", "Remarks"
   ];
@@ -359,6 +365,8 @@ export async function exportCustomersToExcel(customers: any[]): Promise<Blob> {
     "Inverter Brand": c.inverterBrand || "",
     "Inverter Login ID": c.inverterLoginId || c.portalLoginId || "",
     "Password": c.inverterPassword || c.portalPassword || "",
+    "Data Logger Sr No": c.dataLoggerSrNo || c.inverterUid || "",
+    "Inverter Sr No": c.inverterSrNo || c.inverterDeviceSn || "",
     "API Key / Plant ID": c.inverterApiKey || "",
     "Status (Online/Offline)": c.status || "active",
     "Inverter Model": c.inverterModel || "",

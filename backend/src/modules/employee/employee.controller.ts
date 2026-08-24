@@ -6,6 +6,10 @@ import { ApiError } from "../../middleware/error.js";
 import type { AuthContext } from "../../middleware/auth.js";
 import { processAndSaveBase64Photos, serializeTask, getTaskInclude } from "../tasks/tasks.service.js";
 
+function isTaskAssignedToEmployee(task: { employeeUserId: string; taskAssignments?: Array<{ employeeUserId: string }> }, employeeId: string): boolean {
+  return task.employeeUserId === employeeId || (task.taskAssignments ?? []).some((assignment) => assignment.employeeUserId === employeeId);
+}
+
 /**
  * Get employee dashboard with task summary
  */
@@ -16,18 +20,25 @@ export async function getEmployeeDashboard(req: Request, res: Response): Promise
     throw new ApiError(401, "Authentication required");
   }
 
+  const employeeTaskScope = {
+    OR: [
+      { employeeUserId: auth.userId },
+      { taskAssignments: { some: { employeeUserId: auth.userId } } },
+    ],
+  };
+
   const [totalTasks, tasksByStatus, completedToday] = await Promise.all([
     prisma.task.count({
-      where: { employeeUserId: auth.userId },
+      where: employeeTaskScope,
     }),
     prisma.task.groupBy({
       by: ["status"],
-      where: { employeeUserId: auth.userId },
+      where: employeeTaskScope,
       _count: { status: true },
     }),
     prisma.task.count({
       where: {
-        employeeUserId: auth.userId,
+        ...employeeTaskScope,
         status: TaskStatus.COMPLETED,
         completedAt: {
           gte: new Date(new Date().setHours(0, 0, 0, 0)),
@@ -59,7 +70,10 @@ export async function getMyTasks(req: Request, res: Response): Promise<void> {
   }
 
   const where: any = {
-    employeeUserId: auth.userId,
+    OR: [
+      { employeeUserId: auth.userId },
+      { taskAssignments: { some: { employeeUserId: auth.userId } } },
+    ],
   };
 
   if (status) {
@@ -115,7 +129,7 @@ export async function getTaskDetails(req: Request, res: Response): Promise<void>
   }
 
   // Verify the task belongs to this employee
-  if (task.employeeUserId !== auth.userId) {
+  if (!isTaskAssignedToEmployee(task, auth.userId)) {
     throw new ApiError(403, "You do not have permission to view this task");
   }
 
@@ -142,6 +156,7 @@ export async function updateTaskStatus(req: Request, res: Response): Promise<voi
 
   const task = await prisma.task.findUnique({
     where: { id: parseInt(taskId) },
+    include: { taskAssignments: { select: { employeeUserId: true } } },
   });
 
   if (!task) {
@@ -149,7 +164,7 @@ export async function updateTaskStatus(req: Request, res: Response): Promise<voi
   }
 
   // Verify the task belongs to this employee
-  if (task.employeeUserId !== auth.userId) {
+  if (!isTaskAssignedToEmployee(task, auth.userId)) {
     throw new ApiError(403, "You do not have permission to update this task");
   }
 
@@ -212,6 +227,7 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
   const numericTaskId = parseInt(taskId, 10);
   const task: any = await prisma.task.findUnique({
     where: { id: numericTaskId },
+    include: { taskAssignments: { select: { employeeUserId: true } } },
   });
 
   if (!task) {
@@ -219,29 +235,29 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
   }
 
   // Verify the task belongs to this employee
-  if (task.employeeUserId !== auth.userId) {
+  if (!isTaskAssignedToEmployee(task, auth.userId)) {
     throw new ApiError(403, "You do not have permission to complete this task");
   }
 
-  // Process photos
+  // Process photos to Cloudflare R2
   const existingSitePhotos = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
   const inputPhotos = (Array.isArray(sitePhotos) && sitePhotos.length > 0)
     ? sitePhotos
     : (Array.isArray(images) && images.length > 0 ? images : []);
-  const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, numericTaskId);
+  const savedInputPhotos = await processAndSaveBase64Photos(inputPhotos, numericTaskId, "site-visit");
   const finalSitePhotos = savedInputPhotos.length > 0
     ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
     : existingSitePhotos;
 
   let savedBeforeUrl = task.beforeImageUrl;
   if (beforeImageUrl) {
-    const saved = processAndSaveBase64Photos([beforeImageUrl], numericTaskId);
+    const saved = await processAndSaveBase64Photos([beforeImageUrl], numericTaskId, "before");
     savedBeforeUrl = saved[0] || beforeImageUrl;
   }
 
   let savedAfterUrl = task.afterImageUrl;
   if (afterImageUrl) {
-    const saved = processAndSaveBase64Photos([afterImageUrl], numericTaskId);
+    const saved = await processAndSaveBase64Photos([afterImageUrl], numericTaskId, "after");
     savedAfterUrl = saved[0] || afterImageUrl;
   }
 
@@ -253,10 +269,6 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
       completionDocumentUrl: completionDocumentUrl ?? null,
       beforeImageUrl: savedBeforeUrl,
       afterImageUrl: savedAfterUrl,
-      beforeLatitude: (beforeLatitude !== undefined && beforeLatitude !== null) ? parseFloat(String(beforeLatitude)) : undefined,
-      beforeLongitude: (beforeLongitude !== undefined && beforeLongitude !== null) ? parseFloat(String(beforeLongitude)) : undefined,
-      afterLatitude: (afterLatitude !== undefined && afterLatitude !== null) ? parseFloat(String(afterLatitude)) : undefined,
-      afterLongitude: (afterLongitude !== undefined && afterLongitude !== null) ? parseFloat(String(afterLongitude)) : undefined,
       sitePhotos: finalSitePhotos,
       completedAt: new Date(),
     },
@@ -270,6 +282,7 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
       employeeUserId: auth.userId,
       type: "before",
       url: savedBeforeUrl,
+      objectKey: savedBeforeUrl.includes(".r2.cloudflarestorage.com/") ? savedBeforeUrl.split("/").slice(-4).join("/") : null,
       latitude: (beforeLatitude !== undefined && beforeLatitude !== null) ? parseFloat(String(beforeLatitude)) : null,
       longitude: (beforeLongitude !== undefined && beforeLongitude !== null) ? parseFloat(String(beforeLongitude)) : null,
     });
@@ -280,6 +293,7 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
       employeeUserId: auth.userId,
       type: "after",
       url: savedAfterUrl,
+      objectKey: savedAfterUrl.includes(".r2.cloudflarestorage.com/") ? savedAfterUrl.split("/").slice(-4).join("/") : null,
       latitude: (afterLatitude !== undefined && afterLatitude !== null) ? parseFloat(String(afterLatitude)) : null,
       longitude: (afterLongitude !== undefined && afterLongitude !== null) ? parseFloat(String(afterLongitude)) : null,
     });
@@ -292,8 +306,7 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
           employeeUserId: auth.userId,
           type: `site_photo_${idx + 1}`,
           url: photoUrl,
-          latitude: null,
-          longitude: null,
+          objectKey: photoUrl.includes(".r2.cloudflarestorage.com/") ? photoUrl.split("/").slice(-4).join("/") : null,
         });
       }
     });

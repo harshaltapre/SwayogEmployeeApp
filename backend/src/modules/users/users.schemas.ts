@@ -24,6 +24,7 @@ export const createInternalUserSchema = z.object({
   designationTitle: z.string().trim().min(2).max(100).optional(),
   employeeCode: z.string().trim().min(3).max(32).optional(),
   businessName: z.string().trim().min(2).max(150).optional(),
+  loginId: z.string().trim().min(2).max(100).optional(),
   jobRole: z.string().trim().min(2).max(100).optional(),
   zone: z.string().trim().min(2).max(100).optional(),
   monthlySalaryInr: z.coerce.number().int().nonnegative().max(5000000).optional(),

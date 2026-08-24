@@ -11,12 +11,17 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 import com.swayog.employee.data.repository.EmployeeRepository
+import com.swayog.employee.core.util.NetworkUtils
+import com.swayog.employee.core.util.OfflinePendingException
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 @HiltViewModel
 class TasksViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
     private val taskRepository: TaskRepository,
-    private val employeeRepository: EmployeeRepository
+    private val employeeRepository: EmployeeRepository,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _tasksState = MutableStateFlow<TasksState>(TasksState.Initial)
@@ -140,6 +145,14 @@ class TasksViewModel @Inject constructor(
                 afterImages = afterImages,
                 sitePhotos = sitePhotos
             )
+            
+            // Auto-sync if offline exception occurs but we are actually online
+            if (res.isFailure && res.exceptionOrNull() is OfflinePendingException) {
+                if (NetworkUtils.isNetworkAvailable(context)) {
+                    syncPending { /* result handled by state flows */ }
+                }
+            }
+
             onResult(res)
         }
     }
@@ -195,6 +208,12 @@ class TasksViewModel @Inject constructor(
                 refresh()
             }
             onResult(res)
+        }
+    }
+
+    fun updateTaskPhotos(taskId: String, sitePhotos: List<String>) {
+        viewModelScope.launch {
+            taskRepository.updateTaskPhotos(taskId, sitePhotos)
         }
     }
 }

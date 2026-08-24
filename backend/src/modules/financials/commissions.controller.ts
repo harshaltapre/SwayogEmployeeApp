@@ -2,50 +2,37 @@
 import { Request, Response } from "express";
 import multer from "multer";
 import path from "path";
-import fs from "fs";
 import { prisma } from "../../lib/prisma.js";
 import { ApiError } from "../../middleware/error.js";
 
-// Setup multer storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = "uploads/commissions";
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
-  },
-});
+// Setup multer memory storage (store proof image directly in PostgreSQL as Data URL, not in local filesystem)
+const storage = multer.memoryStorage();
 
 export const upload = multer({
   storage: storage,
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [".jpg", ".jpeg", ".png", ".pdf"];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedTypes.includes(ext)) {
+    const allowedExtensions = [".jpg", ".jpeg", ".png", ".pdf", ".webp"];
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    if (allowedExtensions.includes(ext) || file.mimetype.startsWith("image/") || file.mimetype === "application/pdf") {
       cb(null, true);
     } else {
-      cb(new Error("Only .jpg, .jpeg, .png and .pdf formats are allowed!"));
+      cb(new Error("Only .jpg, .jpeg, .png, .webp and .pdf formats are allowed!"));
     }
   },
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB limit
   },
 });
 
 /**
  * POST /api/v1/financials/commissions/:customerId/confirm
- * Confirms commission payment and uploads proof
+ * Confirms commission payment and uploads proof saved directly in PostgreSQL
  */
 export const confirmCommissionPayment = async (req: Request, res: Response) => {
   const { customerId } = req.params;
   const file = req.file;
 
-  if (!file) {
+  if (!file || !file.buffer) {
     throw new ApiError(400, "Proof of payment file is required");
   }
 
@@ -62,7 +49,10 @@ export const confirmCommissionPayment = async (req: Request, res: Response) => {
     throw new ApiError(404, "Customer not found");
   }
 
-  const proofUrl = `/uploads/commissions/${file.filename}`;
+  // Convert uploaded image/file buffer to base64 Data URL to store directly in PostgreSQL
+  const mimeType = file.mimetype || "image/png";
+  const base64Data = file.buffer.toString("base64");
+  const proofUrl = `data:${mimeType};base64,${base64Data}`;
 
   const updatedCustomer = await prisma.customer.update({
     where: { id },
@@ -82,8 +72,8 @@ export const confirmCommissionPayment = async (req: Request, res: Response) => {
       entity: "Customer",
       entityId: String(id),
       metadata: {
-        proofUrl,
         commissionAmount: customer.commissionAmount,
+        hasProof: true,
       },
     },
   });
@@ -99,3 +89,4 @@ export const confirmCommissionPayment = async (req: Request, res: Response) => {
     },
   });
 };
+

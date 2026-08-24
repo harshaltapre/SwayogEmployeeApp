@@ -120,10 +120,19 @@ async function findUserByIdentifier(identifier: string): Promise<AuthUser | null
   }
 
   if (trimmed.includes("@")) {
-    return prisma.user.findUnique({
-      where: { email: trimmed.toLowerCase() },
+    const userByEmail = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: trimmed.toLowerCase() },
+          { loginId: trimmed.toLowerCase() },
+          { loginId: trimmed },
+        ],
+      },
       select: authUserSelect,
     });
+    if (userByEmail) {
+      return userByEmail;
+    }
   }
 
   // Look up by phone number (exact and cleaned digits formats)
@@ -145,8 +154,14 @@ async function findUserByIdentifier(identifier: string): Promise<AuthUser | null
   const normalized = trimmed.toUpperCase();
 
   // Primary lookup by auth loginId.
-  const direct = await prisma.user.findUnique({
-    where: { loginId: normalized },
+  const direct = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { loginId: normalized },
+        { loginId: trimmed },
+        { loginId: trimmed.toLowerCase() },
+      ],
+    },
     select: authUserSelect,
   });
   if (direct) {
@@ -347,7 +362,11 @@ export async function login(input: LoginInput) {
         (user.role === UserRole.EMPLOYEE && (input.role as string) === "PARTNER" && (
           String(user.employeeProfile?.jobRole ?? "").toLowerCase().includes("epc") ||
           String(user.employeeProfile?.jobRole ?? "").toLowerCase().includes("partner") ||
-          String(user.employeeProfile?.jobRole ?? "").toLowerCase().includes("vendor")
+          String(user.employeeProfile?.jobRole ?? "").toLowerCase().includes("vendor") ||
+          String(user.employeeProfile?.jobRole ?? "").toLowerCase().includes("installer") ||
+          String(user.employeeProfile?.jobRole ?? "").toLowerCase().includes("installation") ||
+          String(user.designationTitle ?? "").toLowerCase().includes("installer") ||
+          String(user.designationTitle ?? "").toLowerCase().includes("installation")
         ))
       );
 

@@ -80,13 +80,19 @@ class TaskRepository @Inject constructor(
 
                     val entities = tasks.map { task ->
                         val existingLocal = taskDao.getTaskById(task.id)
+                        val isAssignedToRequestedEmployee = task.employeeUserId == employeeUserId ||
+                            task.assignedEmployees?.any { it.userId == employeeUserId } == true
                         val mergedSitePhotos = (task.sitePhotos ?: task.images)?.filter { it.isNotBlank() }
                             ?: existingLocal?.sitePhotosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
                             ?: existingLocal?.imagesJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
 
-                        val mergedTaskType = task.taskType 
-                            ?: existingLocal?.taskType 
-                            ?: if (!mergedSitePhotos.isNullOrEmpty()) "SITE_VISIT" else null
+                        val normalizedJobType = task.jobType?.lowercase().orEmpty()
+                        val mergedTaskType = when {
+                            normalizedJobType.contains("amc") -> "AMC_VISIT"
+                            !task.taskType.isNullOrBlank() -> task.taskType
+                            normalizedJobType.contains("site") || normalizedJobType.contains("survey") -> "SITE_VISIT"
+                            else -> existingLocal?.taskType ?: "REGULAR"
+                        }
 
                         TaskEntity(
                             id = task.id,
@@ -99,7 +105,7 @@ class TaskRepository @Inject constructor(
                             longitude = task.longitude,
                             status = task.status,
                             scheduledTime = task.scheduledTime,
-                            employeeUserId = task.employeeUserId,
+                            employeeUserId = if (isAssignedToRequestedEmployee) employeeUserId else task.employeeUserId,
                             assignedById = task.assignedById,
                             completionMessage = task.completionMessage ?: existingLocal?.completionMessage,
                             completionDocumentUrl = task.completionDocumentUrl ?: existingLocal?.completionDocumentUrl,
@@ -121,6 +127,11 @@ class TaskRepository @Inject constructor(
                             assignedEmployeePhone = task.assignedEmployeePhone
                         )
                     }
+                    // ── Purge stale tasks: delete all SYNCED tasks for this employee
+                    // before inserting fresh API data. This ensures tasks that were
+                    // removed/reassigned on the backend are cleaned from the local DB.
+                    // Unsynced tasks (pending local completions) are preserved.
+                    taskDao.deleteSyncedTasksByEmployeeId(employeeUserId)
                     taskDao.insertTasks(entities)
 
                     // Re-queue completions for tasks the backend still shows as not-completed
@@ -201,52 +212,11 @@ class TaskRepository @Inject constructor(
             val response = apiService.getTasks(employeeUserId, status)
             if (response.isSuccessful && response.body()?.data != null) {
                 val tasks = response.body()!!.data!!
-                withContext(Dispatchers.IO) {
-                    val entities = tasks.map { task ->
-                        val existingLocal = taskDao.getTaskById(task.id)
-                        val mergedSitePhotos = (task.sitePhotos ?: task.images)?.filter { it.isNotBlank() }
-                            ?: existingLocal?.sitePhotosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
-                            ?: existingLocal?.imagesJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
-
-                        val mergedTaskType = task.taskType 
-                            ?: existingLocal?.taskType 
-                            ?: if (!mergedSitePhotos.isNullOrEmpty()) "SITE_VISIT" else null
-
-                        TaskEntity(
-                            id = task.id,
-                            jobType = task.jobType,
-                            description = task.description,
-                            customerName = task.customerName,
-                            customerPhone = task.customerPhone,
-                            address = task.address,
-                            latitude = task.latitude,
-                            longitude = task.longitude,
-                            status = task.status,
-                            scheduledTime = task.scheduledTime,
-                            employeeUserId = task.employeeUserId,
-                            assignedById = task.assignedById,
-                            completionMessage = task.completionMessage ?: existingLocal?.completionMessage,
-                            completionDocumentUrl = task.completionDocumentUrl ?: existingLocal?.completionDocumentUrl,
-                            beforeImageUrl = task.beforeImageUrl ?: existingLocal?.beforeImageUrl,
-                            afterImageUrl = task.afterImageUrl ?: existingLocal?.afterImageUrl,
-                            beforeLatitude = task.beforeLatitude ?: existingLocal?.beforeLatitude,
-                            beforeLongitude = task.beforeLongitude ?: existingLocal?.beforeLongitude,
-                            afterLatitude = task.afterLatitude ?: existingLocal?.afterLatitude,
-                            afterLongitude = task.afterLongitude ?: existingLocal?.afterLongitude,
-                            completedAt = task.completedAt ?: existingLocal?.completedAt,
-                            createdAt = task.createdAt,
-                            updatedAt = task.updatedAt,
-                            isSynced = existingLocal?.isSynced ?: true,
-                            invoiceJson = task.invoice?.let { gson.toJson(it) } ?: existingLocal?.invoiceJson,
-                            taskType = mergedTaskType,
-                            imagesJson = mergedSitePhotos?.let { gson.toJson(it) },
-                            sitePhotosJson = mergedSitePhotos?.let { gson.toJson(it) },
-                            assignedEmployeeName = task.assignedEmployeeName,
-                            assignedEmployeePhone = task.assignedEmployeePhone
-                        )
-                    }
-                    taskDao.insertTasks(entities)
-                }
+                // ── DO NOT write these tasks to Room DB! ──
+                // This method fetches ALL tasks (across all employees) for SubAdmin views.
+                // Writing them to the shared Room `tasks` table would pollute
+                // employee-specific queries (getTasksByEmployeeId), causing stale
+                // task counts for individual employee dashboards.
                 Result.success(tasks)
             } else {
                 Result.failure(Exception("Failed to fetch all tasks: ${ErrorUtils.formatResponseError(response)}"))
@@ -255,7 +225,23 @@ class TaskRepository @Inject constructor(
             Result.failure(Exception("Failed to fetch all tasks: ${ErrorUtils.formatException(e)}"))
         }
     }
+
     
+    suspend fun assignTask(taskId: String, employeeUserId: String): Result<Task> {
+        return try {
+            val response = apiService.assignTask(taskId, com.swayog.employee.data.model.AssignTaskRequest(employeeUserId, null))
+            if (response.isSuccessful && response.body()?.success == true) {
+                val updatedTask = response.body()!!.data!!
+                saveTaskLocally(updatedTask)
+                Result.success(updatedTask)
+            } else {
+                Result.failure(Exception(ErrorUtils.formatResponseError(response)))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun updateTaskStatus(taskId: String, status: String): Result<Task> {
         val cleanTaskId = sanitizeTaskId(taskId)
         if (cleanTaskId.startsWith("amc_")) {
@@ -1334,6 +1320,52 @@ class TaskRepository @Inject constructor(
                 SyncResultSummary(total = 0, synced = 0, failed = 1, lastError = e.message)
             }
         }
+    }
+
+    suspend fun updateTaskPhotos(taskId: String, sitePhotos: List<String>): Result<Task> {
+        val cleanTaskId = taskId.removePrefix("temp_")
+        return try {
+            val response = apiService.updateTaskPhotos(cleanTaskId, mapOf("sitePhotos" to sitePhotos))
+            if (response.isSuccessful && response.body()?.data != null) {
+                val updatedTask = response.body()!!.data!!
+                saveTaskLocally(updatedTask)
+                Result.success(updatedTask)
+            } else {
+                Result.failure(Exception("Failed to update photos: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to update photos: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    private suspend fun saveTaskLocally(task: Task) {
+        val entity = TaskEntity(
+            id = task.id,
+            jobType = task.jobType,
+            description = task.description,
+            customerName = task.customerName,
+            customerPhone = task.customerPhone,
+            address = task.address,
+            latitude = task.latitude,
+            longitude = task.longitude,
+            status = task.status,
+            scheduledTime = task.scheduledTime,
+            employeeUserId = task.employeeUserId,
+            assignedById = task.assignedById,
+            completionMessage = task.completionMessage,
+            completionDocumentUrl = task.completionDocumentUrl,
+            beforeImageUrl = task.beforeImageUrl,
+            afterImageUrl = task.afterImageUrl,
+            beforeLatitude = task.beforeLatitude,
+            beforeLongitude = task.beforeLongitude,
+            afterLatitude = task.afterLatitude,
+            afterLongitude = task.afterLongitude,
+            completedAt = task.completedAt,
+            createdAt = task.createdAt,
+            updatedAt = task.updatedAt,
+            isSynced = true
+        )
+        taskDao.insertTask(entity)
     }
 
     private fun scheduleSync() {

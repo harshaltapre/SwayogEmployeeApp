@@ -65,7 +65,12 @@ fun BeforeAfterImageSection(
         result
     }
 
-    if (isSiteVisit || taskType == "SITE_VISIT" || !sitePhotos.isNullOrEmpty() || resolvedSitePhotos.size > 2 || jobType?.lowercase()?.contains("survey") == true) {
+    val isExplicitSiteVisit = isSiteVisit ||
+        taskType == "SITE_VISIT" ||
+        jobType?.lowercase()?.contains("site") == true ||
+        jobType?.lowercase()?.contains("survey") == true
+
+    if (isExplicitSiteVisit) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "📸 Site Visit Photos (${resolvedSitePhotos.size})",

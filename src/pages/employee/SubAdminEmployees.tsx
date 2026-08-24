@@ -12,6 +12,32 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { format } from "date-fns";
 
+function getCleanSitePhotos(task: any): string[] {
+  if (!task) return [];
+  const rawSitePhotos: string[] = Array.isArray(task.sitePhotos)
+    ? task.sitePhotos.filter((url: any) => typeof url === "string" && url.trim().length > 0)
+    : [];
+
+  if (rawSitePhotos.length > 0) {
+    return Array.from(new Set(rawSitePhotos));
+  }
+
+  const taskImageUrls: string[] = Array.isArray((task as any).taskImages)
+    ? (task as any).taskImages
+        .map((i: any) => i.url)
+        .filter((url: any) => typeof url === "string" && url.trim().length > 0)
+    : [];
+
+  if (taskImageUrls.length > 0) {
+    return Array.from(new Set(taskImageUrls));
+  }
+
+  const fallbackUrls = [task.beforeImageUrl, task.afterImageUrl].filter(
+    (url): url is string => typeof url === "string" && url.trim().length > 0
+  );
+  return Array.from(new Set(fallbackUrls));
+}
+
 export default function SubAdminEmployees() {
   const { data: rawEmployees, isLoading: employeesLoading, refetch: refetchEmployees } = useListEmployees();
   const { data: tasks, isLoading: tasksLoading, refetch: refetchTasks } = useListTasks(undefined, { query: { refetchInterval: 3000 } });
@@ -19,16 +45,17 @@ export default function SubAdminEmployees() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [viewSiteVisitTask, setViewSiteVisitTask] = useState<any | null>(null);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
   const [outerTab, setOuterTab] = useState("directory");
   const [innerTab, setInnerTab] = useState("all");
 
-  const employees = rawEmployees?.filter(e => 
+  const employees = rawEmployees?.filter(e =>
     [
-      "electrical engineer", "electrical_engineer", 
-      "site survey engineer", "site_survey_engineer", 
-      "o&m technician", "om_technician", 
-      "service engineer", "service_engineer", 
-      "field technician", "field_technician", 
+      "electrical engineer", "electrical_engineer",
+      "site survey engineer", "site_survey_engineer",
+      "o&m technician", "om_technician",
+      "service engineer", "service_engineer",
+      "field technician", "field_technician",
       "technician", "intern", "employee"
     ].includes(String(e.role || "").toLowerCase())
   );
@@ -38,17 +65,17 @@ export default function SubAdminEmployees() {
   if (selectedEmployeeId) {
     return (
       <SubAdminLayout>
-        <EmployeeDetailContent 
-          id={selectedEmployeeId} 
-          onBack={() => setSelectedEmployeeId(null)} 
+        <EmployeeDetailContent
+          id={selectedEmployeeId}
+          onBack={() => setSelectedEmployeeId(null)}
           hideHeader
         />
       </SubAdminLayout>
     );
   }
 
-  const avgRating = employees?.length 
-    ? (employees.reduce((s, e) => s + e.rating, 0) / employees.length).toFixed(1) 
+  const avgRating = employees?.length
+    ? (employees.reduce((s, e) => s + e.rating, 0) / employees.length).toFixed(1)
     : "0.0";
 
   return (
@@ -61,7 +88,7 @@ export default function SubAdminEmployees() {
               Manage staff and track assigned tasks.
             </p>
           </div>
-          <Button 
+          <Button
             onClick={() => setAssignModalOpen(true)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-2 shadow-sm shrink-0 h-10 px-4"
           >
@@ -164,8 +191,8 @@ export default function SubAdminEmployees() {
                               <p className="text-sm font-bold text-slate-700 mt-1">{e.activeTasksCount || 0}</p>
                             </div>
                           </div>
-                          <Button 
-                            variant="outline" 
+                          <Button
+                            variant="outline"
                             className="w-full text-xs font-bold gap-2 h-9 border-slate-200"
                             onClick={() => setSelectedEmployeeId(e.id)}
                           >
@@ -214,9 +241,9 @@ export default function SubAdminEmployees() {
                               </Badge>
                             </td>
                             <td className="px-6 py-4">
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
+                              <Button
+                                variant="ghost"
+                                size="sm"
                                 className="h-8 text-xs font-bold text-primary hover:bg-primary/5"
                                 onClick={() => setSelectedEmployeeId(e.id)}
                               >
@@ -248,9 +275,9 @@ export default function SubAdminEmployees() {
               {[
                 { value: "all", label: "Total Assignments", data: tasks ?? [] },
                 { value: "site-visits", label: "Site Visit Tasks", data: tasks?.filter(t => t.jobType === "Site Visit" || t.jobType?.toLowerCase().includes("site") || t.jobType?.toLowerCase().includes("visit")) ?? [] },
-                { value: "today", label: "Today Tasks", data: tasks?.filter(t => (t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd")) || t.scheduledTime < format(new Date(), "yyyy-MM-dd")) && t.status !== "completed") ?? [] },
-                { value: "upcoming", label: "Upcoming Tasks", data: tasks?.filter(t => t.scheduledTime > format(new Date(), "yyyy-MM-dd") && t.status !== "completed" && !t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd"))) ?? [] },
-                { value: "completed", label: "Completed Tasks", data: tasks?.filter(t => t.status === "completed") ?? [] }
+                { value: "today", label: "Today Tasks", data: tasks?.filter(t => (t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd")) || t.scheduledTime < format(new Date(), "yyyy-MM-dd")) && String(t.status).toLowerCase() !== "completed") ?? [] },
+                { value: "upcoming", label: "Upcoming Tasks", data: tasks?.filter(t => t.scheduledTime > format(new Date(), "yyyy-MM-dd") && String(t.status).toLowerCase() !== "completed" && !t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd"))) ?? [] },
+                { value: "completed", label: "Completed Tasks", data: tasks?.filter(t => String(t.status).toLowerCase() === "completed") ?? [] }
               ].map(({ value, label, data: filteredTasks }) => (
                 <TabsContent key={value} value={value} className="mt-0">
                   <div className="flex items-center justify-end mb-4 -mt-12">
@@ -280,9 +307,9 @@ export default function SubAdminEmployees() {
                             </td></tr>
                           ) : (
                             filteredTasks.map(task => {
-                              const assignedEmp = rawEmployees?.find(emp => 
-                                emp.userId === task.employeeUserId || 
-                                String(emp.id) === String(task.employeeUserId) || 
+                              const assignedEmp = rawEmployees?.find(emp =>
+                                emp.userId === task.employeeUserId ||
+                                String(emp.id) === String(task.employeeUserId) ||
                                 emp.loginId === task.employeeUserId ||
                                 emp.email === task.employeeUserId
                               );
@@ -291,11 +318,10 @@ export default function SubAdminEmployees() {
                                 <tr key={task.id} className="hover:bg-slate-50/50 transition-colors group">
                                   <td className="px-6 py-4">
                                     <div className="flex items-center gap-1.5">
-                                      <Badge className={`text-[10px] font-bold px-2 py-0.5 border ${
-                                        isSiteVisit 
-                                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                                      <Badge className={`text-[10px] font-bold px-2 py-0.5 border ${isSiteVisit
+                                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                                           : 'bg-slate-100 text-slate-800 border-slate-300'
-                                      }`}>
+                                        }`}>
                                         {isSiteVisit ? "📍 Site Visit" : task.jobType}
                                       </Badge>
                                       <span className="text-[10px] text-slate-400 font-mono">#{task.id}</span>
@@ -318,12 +344,11 @@ export default function SubAdminEmployees() {
                                     )}
                                   </td>
                                   <td className="px-6 py-4">
-                                    <Badge className={`capitalize text-[10px] px-2 py-0 h-5 border-none shadow-none ${
-                                      task.status === 'completed' ? 'bg-green-100 text-green-700' : 
-                                      task.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
-                                      'bg-amber-100 text-amber-700'
-                                    }`} variant="outline">
-                                      {task.status.replace('_', ' ')}
+                                    <Badge className={`capitalize text-[10px] px-2 py-0 h-5 border-none shadow-none ${String(task.status).toLowerCase() === 'completed' ? 'bg-green-100 text-green-700' :
+                                        String(task.status).toLowerCase() === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                                          'bg-amber-100 text-amber-700'
+                                      }`} variant="outline">
+                                      {String(task.status).replace('_', ' ')}
                                     </Badge>
                                   </td>
                                   <td className="px-6 py-4">
@@ -350,12 +375,7 @@ export default function SubAdminEmployees() {
                                   <td className="px-6 py-4 text-right">
                                     <div className="flex items-center justify-end gap-1.5">
                                       {isSiteVisit && (() => {
-                                        const totalPhotosCount = Array.from(new Set([
-                                          ...(Array.isArray(task.sitePhotos) ? task.sitePhotos : []),
-                                          ...(Array.isArray((task as any).taskImages) ? (task as any).taskImages.map((i: any) => i.url).filter(Boolean) : []),
-                                          ...(task.beforeImageUrl ? [task.beforeImageUrl] : []),
-                                          ...(task.afterImageUrl ? [task.afterImageUrl] : []),
-                                        ])).filter((url: any) => typeof url === "string" && url.trim().length > 0).length;
+                                        const totalPhotosCount = getCleanSitePhotos(task).length;
 
                                         return (
                                           <Button
@@ -369,9 +389,9 @@ export default function SubAdminEmployees() {
                                           </Button>
                                         );
                                       })()}
-                                      <Button 
-                                        variant="ghost" 
-                                        size="sm" 
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
                                         className="h-8 text-[10px] font-black uppercase tracking-tight text-primary hover:bg-primary/5"
                                         onClick={() => {
                                           if (assignedEmp) setSelectedEmployeeId(assignedEmp.id);
@@ -414,18 +434,13 @@ export default function SubAdminEmployees() {
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           {viewSiteVisitTask && (() => {
             const activeTask = tasks?.find(t => String(t.id) === String(viewSiteVisitTask.id)) || viewSiteVisitTask;
-            const assignedEmp = rawEmployees?.find(emp => 
-              emp.userId === activeTask.employeeUserId || 
-              String(emp.id) === String(activeTask.employeeUserId) || 
+            const assignedEmp = rawEmployees?.find(emp =>
+              emp.userId === activeTask.employeeUserId ||
+              String(emp.id) === String(activeTask.employeeUserId) ||
               emp.loginId === activeTask.employeeUserId ||
               emp.email === activeTask.employeeUserId
             );
-            const photos: string[] = Array.from(new Set([
-              ...(Array.isArray(activeTask.sitePhotos) ? activeTask.sitePhotos : []),
-              ...(Array.isArray(activeTask.taskImages) ? activeTask.taskImages.map((img: any) => img.url).filter(Boolean) : []),
-              ...(activeTask.beforeImageUrl ? [activeTask.beforeImageUrl] : []),
-              ...(activeTask.afterImageUrl ? [activeTask.afterImageUrl] : []),
-            ])).filter((url: any) => typeof url === "string" && url.trim().length > 0);
+            const photos: string[] = getCleanSitePhotos(activeTask);
 
             return (
               <div className="space-y-6">
@@ -435,7 +450,7 @@ export default function SubAdminEmployees() {
                       📍 Site Visit Task #{viewSiteVisitTask.id}
                     </Badge>
                     <Badge className="capitalize bg-slate-100 text-slate-800 border-slate-200 text-xs">
-                      {viewSiteVisitTask.status.replace("_", " ")}
+                      {String(activeTask.status).replace("_", " ")}
                     </Badge>
                   </div>
                   <DialogTitle className="text-xl font-bold text-slate-900">
@@ -503,14 +518,13 @@ export default function SubAdminEmployees() {
                               <span className="self-end bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
                                 Photo #{idx + 1}
                               </span>
-                              <a
-                                href={fullUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 py-1 px-2 rounded flex items-center justify-center gap-1 shadow transition-colors"
+                              <button
+                                type="button"
+                                onClick={() => setPreviewPhotoUrl(fullUrl)}
+                                className="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 py-1 px-2 rounded flex items-center justify-center gap-1 shadow transition-colors w-full cursor-pointer"
                               >
                                 <Eye className="h-3 w-3" /> View Full Image
-                              </a>
+                              </button>
                             </div>
                           </div>
                         );
@@ -527,6 +541,26 @@ export default function SubAdminEmployees() {
               </div>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Full-Screen Site Photo Lightbox Modal */}
+      <Dialog open={!!previewPhotoUrl} onOpenChange={(open) => !open && setPreviewPhotoUrl(null)}>
+        <DialogContent className="max-w-4xl p-2 bg-slate-950 border-slate-800">
+          <DialogHeader className="p-2 border-b border-slate-800">
+            <DialogTitle className="text-sm font-bold text-white flex items-center gap-2">
+              <Camera className="h-4 w-4 text-emerald-400" /> Site Photo Full Inspection
+            </DialogTitle>
+          </DialogHeader>
+          {previewPhotoUrl && (
+            <div className="flex flex-col items-center justify-center p-2 min-h-[60vh]">
+              <img
+                src={previewPhotoUrl}
+                alt="Site Photo Full Preview"
+                className="max-h-[75vh] w-auto object-contain rounded-lg shadow-2xl border border-slate-800"
+              />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </SubAdminLayout>

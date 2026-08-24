@@ -711,10 +711,19 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
     select: {
       id: true,
       inverterBrand: true,
+      inverterModel: true,
+      inverterUid: true,
       inverterLoginId: true,
       inverterPassword: true,
       inverterApiKey: true,
       inverterDeviceSn: true,
+      monitoringProvider: true,
+      monitoringPortalUrl: true,
+      monitoringPlantId: true,
+      monitoringStatus: true,
+      monitoringLastDataAt: true,
+      monitoringLastSyncAt: true,
+      monitoringLastError: true,
       systemSizeKw: true,
     },
   });
@@ -1021,19 +1030,37 @@ export async function updateCustomerCredentials(req: Request, res: Response): Pr
   const customerId = parseCustomerId(req.params.customerId);
   const {
     inverterBrand,
+    inverterModel,
+    monitoringProvider,
+    monitoringPortalUrl,
+    monitoringPlantId,
+    monitoringStatus,
+    monitoringLastDataAt,
+    monitoringLastSyncAt,
+    monitoringLastError,
     inverterLoginId,
     inverterPassword,
     inverterApiKey,
     inverterDeviceSn,
+    inverterUid,
     city,
     address,
     projectStage,
   } = req.body as {
     inverterBrand?: string;
+    inverterModel?: string;
+    monitoringProvider?: string;
+    monitoringPortalUrl?: string;
+    monitoringPlantId?: string;
+    monitoringStatus?: string;
+    monitoringLastDataAt?: string;
+    monitoringLastSyncAt?: string;
+    monitoringLastError?: string;
     inverterLoginId?: string;
     inverterPassword?: string;
     inverterApiKey?: string;
     inverterDeviceSn?: string;
+    inverterUid?: string;
     city?: string;
     address?: string;
     projectStage?: number;
@@ -1041,10 +1068,19 @@ export async function updateCustomerCredentials(req: Request, res: Response): Pr
 
   if (
     inverterBrand === undefined &&
+    inverterModel === undefined &&
+    monitoringProvider === undefined &&
+    monitoringPortalUrl === undefined &&
+    monitoringPlantId === undefined &&
+    monitoringStatus === undefined &&
+    monitoringLastDataAt === undefined &&
+    monitoringLastSyncAt === undefined &&
+    monitoringLastError === undefined &&
     inverterLoginId === undefined &&
     inverterPassword === undefined &&
     inverterApiKey === undefined &&
     inverterDeviceSn === undefined &&
+    inverterUid === undefined &&
     city === undefined &&
     address === undefined &&
     projectStage === undefined
@@ -1061,10 +1097,19 @@ export async function updateCustomerCredentials(req: Request, res: Response): Pr
     where: { id: customerId },
     data: {
       inverterBrand: inverterBrand ?? customer.inverterBrand,
+      inverterModel: inverterModel ?? customer.inverterModel,
+      monitoringProvider: monitoringProvider ?? customer.monitoringProvider,
+      monitoringPortalUrl: monitoringPortalUrl ?? customer.monitoringPortalUrl,
+      monitoringPlantId: monitoringPlantId ?? customer.monitoringPlantId,
+      monitoringStatus: monitoringStatus ?? customer.monitoringStatus,
+      monitoringLastDataAt: monitoringLastDataAt === undefined ? customer.monitoringLastDataAt : (monitoringLastDataAt ? new Date(monitoringLastDataAt) : null),
+      monitoringLastSyncAt: monitoringLastSyncAt === undefined ? customer.monitoringLastSyncAt : (monitoringLastSyncAt ? new Date(monitoringLastSyncAt) : null),
+      monitoringLastError: monitoringLastError ?? customer.monitoringLastError,
       inverterLoginId: inverterLoginId ?? customer.inverterLoginId,
       inverterPassword: inverterPassword ?? customer.inverterPassword,
       inverterApiKey: inverterApiKey ?? customer.inverterApiKey,
       inverterDeviceSn: inverterDeviceSn ?? customer.inverterDeviceSn,
+      inverterUid: inverterUid ?? customer.inverterUid,
       city: city ?? customer.city,
       address: address ?? customer.address,
       projectStage: projectStage ?? customer.projectStage,

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { SidebarLayout } from "@/components/SidebarLayout";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { PartnersLeadSection } from "./PartnersLeadSection";
 import {
   LayoutDashboard,
   HardHat,
@@ -50,7 +51,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
@@ -116,60 +117,9 @@ const DUMMY_CONTRACTORS = [
   }
 ];
 
-const DUMMY_PROJECTS = [
-  {
-    id: "PRJ-2026-001",
-    customerName: "Vidarbha Spinning Mill",
-    city: "Nagpur",
-    capacityKw: "50 kWp",
-    projectValue: "₹ 24,50,000",
-    assignedEpc: "Solarix Green Solutions",
-    installerTeam: "Rohit Sharma Squad",
-    liaisoningTeam: "MSEDCL Grid Approval Team",
-    consultant: "Dr. Arvind Mehta",
-    progress: 75,
-    status: "In Progress",
-    startDate: "2026-06-10",
-    completionDate: "2026-08-15"
-  },
-  {
-    id: "PRJ-2026-002",
-    customerName: "Sahyadri Cold Storage",
-    city: "Pune",
-    capacityKw: "100 kWp",
-    projectValue: "₹ 48,00,000",
-    assignedEpc: "SunTech Energy EPC",
-    installerTeam: "Sandeep Jadhav Squad",
-    liaisoningTeam: "MSEDCL Grid Approval Team",
-    consultant: "Er. Vivek Joshi",
-    progress: 40,
-    status: "In Progress",
-    startDate: "2026-07-01",
-    completionDate: "2026-09-01"
-  },
-  {
-    id: "PRJ-2026-003",
-    customerName: "Shree Ganesh Warehousing",
-    city: "Thane",
-    capacityKw: "30 kWp",
-    projectValue: "₹ 15,20,000",
-    assignedEpc: "Apex Solar Power Systems",
-    installerTeam: "Akash More Squad",
-    liaisoningTeam: "MSEDCL Grid Approval Team",
-    consultant: "Dr. Arvind Mehta",
-    progress: 100,
-    status: "Completed",
-    startDate: "2026-05-01",
-    completionDate: "2026-07-20"
-  }
-];
+const DUMMY_PROJECTS: any[] = [];
 
-const DUMMY_INSTALLERS = [
-  { id: "INS-1", name: "Rohit Sharma Squad", company: "SparkInstall Tech", phone: "+91 9822114455", location: "Nagpur", availability: "Busy", currentProject: "PRJ-2026-001", rating: 4.9 },
-  { id: "INS-2", name: "Sandeep Jadhav Squad", company: "GreenGrid Installers", phone: "+91 9833225566", location: "Pune", availability: "Busy", currentProject: "PRJ-2026-002", rating: 4.7 },
-  { id: "INS-3", name: "Akash More Squad", company: "PowerSolar Mechanics", phone: "+91 9844336677", location: "Mumbai", availability: "Available", currentProject: "None", rating: 4.8 },
-  { id: "INS-4", name: "Vikram Patil Team", company: "Elite Solar Technicians", phone: "+91 9855447788", location: "Nashik", availability: "On Leave", currentProject: "None", rating: 4.6 }
-];
+const DUMMY_INSTALLERS: any[] = [];
 
 const DUMMY_LIAISONING = [
   { id: "LIA-1", name: "MSEDCL Grid Approval Team", dept: "DISCOM Net Metering", phone: "+91 9822998877", status: "Operational" },
@@ -240,14 +190,37 @@ export default function ServiceExecutiveDashboard() {
     return saved ? JSON.parse(saved) : DUMMY_CONTRACTORS;
   });
 
-  const [projects, setProjects] = useState(() => {
-    const saved = localStorage.getItem("se_projects");
-    return saved ? JSON.parse(saved) : DUMMY_PROJECTS;
+  const [projects, setProjects] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem("se_projects");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((p: any) => !p.id?.startsWith("PRJ-2026-00"));
+        }
+      }
+    } catch (_) {}
+    return [];
   });
 
   const [installers, setInstallers] = useState(() => {
     const saved = localStorage.getItem("se_installers");
-    return saved ? JSON.parse(saved) : DUMMY_INSTALLERS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (i: any) =>
+              !["INS-1", "INS-2", "INS-3", "INS-4"].includes(i.id) &&
+              !i.name?.toLowerCase().includes("rohit sharma") &&
+              !i.name?.toLowerCase().includes("sandeep jadhav") &&
+              !i.name?.toLowerCase().includes("akash more") &&
+              !i.name?.toLowerCase().includes("vikram patil")
+          );
+        }
+      } catch (_) {}
+    }
+    return [];
   });
 
   const [liaisoning, setLiaisoning] = useState(() => {
@@ -290,10 +263,145 @@ export default function ServiceExecutiveDashboard() {
     return saved ? JSON.parse(saved) : DUMMY_TRAINEES;
   });
 
-  // Save to localstorage
+  // Real-time Storage Listener tick for cross-tab updates when EPC contractor accepts
+  const [storageTick, setStorageTick] = useState(0);
+  useEffect(() => {
+    const handleStorage = () => setStorageTick((t) => t + 1);
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  // Compute Projects accepted/approved by EPC contractors
+  const acceptedEpcProjects = useMemo(() => {
+    let localAssignments: Record<string, any> = {};
+    try {
+      const saved = localStorage.getItem("local_customer_epc_assignments");
+      if (saved) localAssignments = JSON.parse(saved);
+    } catch (_) {}
+
+    const acceptedList: any[] = [];
+
+    // Process local assignments where EPC accepted
+    Object.values(localAssignments).forEach((item: any) => {
+      if (item && item.epcAssignmentStatus === "ACCEPTED" && item.assignedEpc) {
+        const savedProgress = item.progress !== undefined ? Number(item.progress) : 30;
+        const savedStage = item.stage || "Accepted by EPC";
+
+        acceptedList.push({
+          id: item.customerCode || `PRJ-ACCEPTED-${item.id}`,
+          rawId: item.id,
+          customerName: item.name || item.customerName || item.customer || "Customer Lead",
+          city: item.city || item.location || "Nagpur",
+          capacityKw: typeof item.systemSizeKw === "number" ? `${item.systemSizeKw} kWp` : (item.capacity || item.systemSizeKw || "5 kWp"),
+          projectValue: `₹ ${((Number(item.systemSizeKw) || 5) * 45000).toLocaleString()}`,
+          assignedEpc: item.assignedEpc,
+          installerTeam: "Apex Install Squad Alpha",
+          progress: savedProgress,
+          stage: savedStage,
+          status: savedStage,
+          isAcceptedByEpc: true,
+          partnerName: item.partnerName || "Channel Partner",
+        });
+      }
+    });
+
+    return acceptedList;
+  }, [storageTick]);
+
+  // Compute Projects added directly by EPC contractors
+  const epcContractorCreatedProjects = useMemo(() => {
+    let epcProjects: any[] = [];
+    try {
+      const saved = localStorage.getItem("epc_projects");
+      if (saved) epcProjects = JSON.parse(saved);
+    } catch (_) {}
+
+    return epcProjects.map((p: any) => {
+      const epcName = p.assignedEpc || p.addedByEpc || "SunTech Solar Solutions";
+      return {
+        id: p.id,
+        rawId: p.id,
+        customerName: p.customer || "Customer Project",
+        city: p.location || "Nagpur",
+        capacityKw: p.capacity || "25 kWp",
+        projectValue: p.amount ? `₹ ${Number(p.amount).toLocaleString()}` : "₹ 1,200,000",
+        assignedEpc: epcName,
+        installerTeam: "EPC Contractor Squad",
+        progress: Number(p.progress) || 20,
+        stage: p.stage || "Site Survey Completed",
+        status: p.stage || "Site Survey Completed",
+        isCreatedByEpc: true,
+        addedByEpc: epcName,
+      };
+    });
+  }, [storageTick]);
+
+  // Combine manual project entries with EPC Contractor Approved & Created Projects
+  const combinedProjects = useMemo(() => {
+    const map = new Map<string, any>();
+    // 1. Add projects created directly by EPC Contractors first
+    epcContractorCreatedProjects.forEach(p => map.set(p.id, p));
+    // 2. Add accepted EPC projects from Isphere leads
+    acceptedEpcProjects.forEach(p => {
+      if (!map.has(p.id)) map.set(p.id, p);
+    });
+    // 3. Add non-static manual project entries
+    projects.forEach(p => {
+      if (p && !p.id?.startsWith("PRJ-2026-00") && !map.has(p.id)) {
+        map.set(p.id, p);
+      }
+    });
+    return Array.from(map.values());
+  }, [epcContractorCreatedProjects, acceptedEpcProjects, projects]);
+
+  // One-time cleanup for legacy static dummy projects in localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("se_projects");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter((p: any) => !p.id?.startsWith("PRJ-2026-00"));
+          localStorage.setItem("se_projects", JSON.stringify(cleaned));
+        }
+      }
+    } catch (_) {}
+  }, []);
+
+  // Save to localstorage & sync live installers
   useEffect(() => { localStorage.setItem("se_contractors", JSON.stringify(contractors)); }, [contractors]);
   useEffect(() => { localStorage.setItem("se_projects", JSON.stringify(projects)); }, [projects]);
   useEffect(() => { localStorage.setItem("se_installers", JSON.stringify(installers)); }, [installers]);
+
+  useEffect(() => {
+    const fetchLiveInstallers = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch("/api/v1/isphere-green?category=SERVICE_EXECUTIVE&subcategory=INSTALLER", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+            const mapped = data.data.map((item: any, idx: number) => ({
+              id: item.id || `INS-${idx + 1}`,
+              name: item.name,
+              company: item.details?.company || "Certified Squad",
+              phone: item.phone || "N/A",
+              location: item.place || "N/A",
+              availability: item.status === "ACTIVE" ? "Available" : "Busy",
+              currentProject: item.details?.currentProject || "Assigned",
+              rating: item.details?.rating || 4.8,
+            }));
+            setInstallers(mapped);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to sync live installer entries", e);
+      }
+    };
+    fetchLiveInstallers();
+  }, []);
   useEffect(() => { localStorage.setItem("se_liaisoning", JSON.stringify(liaisoning)); }, [liaisoning]);
   useEffect(() => { localStorage.setItem("se_consultants", JSON.stringify(consultants)); }, [consultants]);
   useEffect(() => { localStorage.setItem("se_manufacturers", JSON.stringify(manufacturers)); }, [manufacturers]);
@@ -336,7 +444,15 @@ export default function ServiceExecutiveDashboard() {
     assignedEpc: DUMMY_CONTRACTORS[0].companyName
   });
 
-  const [newInstaller, setNewInstaller] = useState({ name: "", company: "", phone: "", location: "Nagpur" });
+  const [newInstaller, setNewInstaller] = useState({
+    name: "",
+    company: "",
+    phone: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    location: "Nagpur"
+  });
   const [newLiaisoning, setNewLiaisoning] = useState({ name: "", dept: "", phone: "" });
   const [newMfg, setNewMfg] = useState({ companyName: "", category: "Solar PV Modules", gst: "", phone: "" });
 
@@ -436,23 +552,90 @@ export default function ServiceExecutiveDashboard() {
     toast({ title: "Solar Project Created", description: `${created.customerName} project initialized!` });
   };
 
-  const handleCreateInstaller = (e: React.FormEvent) => {
+  const handleCreateInstaller = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newInstaller.name) return;
+    if (!newInstaller.name || !newInstaller.email || !newInstaller.password) {
+      toast({ title: "Error", description: "Squad Lead Name, Email, and Password are required", variant: "destructive" });
+      return;
+    }
+    if (newInstaller.password.length < 8) {
+      toast({ title: "Password Error", description: "Password must be at least 8 characters", variant: "destructive" });
+      return;
+    }
+    if (newInstaller.password !== newInstaller.confirmPassword) {
+      toast({ title: "Password Error", description: "Passwords do not match", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      // 1. Create User account for the Installer so they can login via Partner login section
+      await fetch("/api/v1/users/internal", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({
+          fullName: newInstaller.name,
+          email: newInstaller.email.toLowerCase(),
+          loginId: newInstaller.email.toLowerCase(),
+          password: newInstaller.password,
+          role: "EMPLOYEE",
+          jobRole: "Installer",
+          phoneNumber: newInstaller.phone || undefined,
+          zone: newInstaller.location || "Nagpur",
+          businessName: newInstaller.company || "Certified Squad",
+        }),
+      });
+
+      // 2. Also register in Isphere Green entries
+      await fetch("/api/v1/isphere-green", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({
+          category: "SERVICE_EXECUTIVE",
+          subcategory: "INSTALLER",
+          name: newInstaller.name,
+          place: newInstaller.location || "Nagpur",
+          phone: newInstaller.phone || null,
+          email: newInstaller.email.toLowerCase(),
+          details: {
+            company: newInstaller.company || "Certified Squad",
+            dailyCapacity: "35 kW/day",
+            specialization: "Rooftop PV & Inverters",
+            password: newInstaller.password,
+          },
+          status: "ACTIVE",
+        }),
+      });
+    } catch (err) {
+      console.warn("Backend creation notice:", err);
+    }
+
     const created = {
-      id: `INS-${installers.length + 1}`,
+      id: `INS-${Date.now().toString().slice(-4)}`,
       name: newInstaller.name,
       company: newInstaller.company || "Independent Squad",
       phone: newInstaller.phone || "+91 9800001122",
+      email: newInstaller.email.toLowerCase(),
+      password: newInstaller.password,
       location: newInstaller.location,
       availability: "Available",
       currentProject: "None",
       rating: 5.0
     };
+
     setInstallers([created, ...installers]);
     setIsAddInstallerOpen(false);
-    setNewInstaller({ name: "", company: "", phone: "", location: "Nagpur" });
-    toast({ title: "Installer Added", description: `${created.name} added to database!` });
+    setNewInstaller({ name: "", company: "", phone: "", email: "", password: "", confirmPassword: "", location: "Nagpur" });
+    toast({
+      title: "Installer Squad & Login Created",
+      description: `${created.name} added. Login ID: ${created.email}`
+    });
   };
 
   const handleCreateLiaisoning = (e: React.FormEvent) => {
@@ -532,75 +715,13 @@ export default function ServiceExecutiveDashboard() {
           </div>
         </div>
 
-        {/* 16 Live KPI Cards Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-          <Card className="border shadow-xs bg-white">
-            <CardContent className="p-3.5 text-center space-y-1">
-              <div className="p-2 rounded-lg bg-blue-50 text-blue-600 w-fit mx-auto"><HardHat className="h-4 w-4" /></div>
-              <div className="text-lg font-black text-slate-900">{contractors.length}</div>
-              <div className="text-[10px] font-semibold text-slate-500 uppercase">Total EPC</div>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-xs bg-white">
-            <CardContent className="p-3.5 text-center space-y-1">
-              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600 w-fit mx-auto"><CheckCircle2 className="h-4 w-4" /></div>
-              <div className="text-lg font-black text-emerald-700">{contractors.filter(c => c.status === "Active").length}</div>
-              <div className="text-[10px] font-semibold text-slate-500 uppercase">Active EPC</div>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-xs bg-white">
-            <CardContent className="p-3.5 text-center space-y-1">
-              <div className="p-2 rounded-lg bg-amber-50 text-amber-600 w-fit mx-auto"><Clock className="h-4 w-4" /></div>
-              <div className="text-lg font-black text-amber-700">{projects.filter(p => p.status === "In Progress").length}</div>
-              <div className="text-[10px] font-semibold text-slate-500 uppercase">Running Projects</div>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-xs bg-white">
-            <CardContent className="p-3.5 text-center space-y-1">
-              <div className="p-2 rounded-lg bg-teal-50 text-teal-600 w-fit mx-auto"><ShieldCheck className="h-4 w-4" /></div>
-              <div className="text-lg font-black text-teal-700">{projects.filter(p => p.status === "Completed").length}</div>
-              <div className="text-[10px] font-semibold text-slate-500 uppercase">Completed</div>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-xs bg-white">
-            <CardContent className="p-3.5 text-center space-y-1">
-              <div className="p-2 rounded-lg bg-red-50 text-red-600 w-fit mx-auto"><AlertTriangle className="h-4 w-4" /></div>
-              <div className="text-lg font-black text-red-700">1</div>
-              <div className="text-[10px] font-semibold text-slate-500 uppercase">Delayed</div>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-xs bg-white">
-            <CardContent className="p-3.5 text-center space-y-1">
-              <div className="p-2 rounded-lg bg-purple-50 text-purple-600 w-fit mx-auto"><Wrench className="h-4 w-4" /></div>
-              <div className="text-lg font-black text-purple-700">{installers.filter(i => i.availability === "Available").length}</div>
-              <div className="text-[10px] font-semibold text-slate-500 uppercase">Avail Installers</div>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-xs bg-white">
-            <CardContent className="p-3.5 text-center space-y-1">
-              <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600 w-fit mx-auto"><Building2 className="h-4 w-4" /></div>
-              <div className="text-lg font-black text-indigo-700">{manufacturers.length}</div>
-              <div className="text-[10px] font-semibold text-slate-500 uppercase">Manufacturers</div>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-xs bg-white">
-            <CardContent className="p-3.5 text-center space-y-1">
-              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600 w-fit mx-auto"><Truck className="h-4 w-4" /></div>
-              <div className="text-lg font-black text-emerald-700">{suppliers.length}</div>
-              <div className="text-[10px] font-semibold text-slate-500 uppercase">Suppliers</div>
-            </CardContent>
-          </Card>
-        </div>
-
         {/* Dynamic Content Views Driven by Left Sidebar Links */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
+
+          {/* TAB 0: PARTNERS LEAD */}
+          <TabsContent value="partners-lead" className="space-y-6 m-0">
+            <PartnersLeadSection />
+          </TabsContent>
 
           {/* TAB 1: OVERVIEW & CHARTS */}
           <TabsContent value="overview" className="space-y-6 m-0">
@@ -614,17 +735,28 @@ export default function ServiceExecutiveDashboard() {
                   <CardDescription className="text-xs">Real-time status of ongoing solar projects across zones</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {projects.map((p) => (
+                  {combinedProjects.map((p) => (
                     <div key={p.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
                       <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="text-slate-900">{p.customerName} ({p.city}) — <span className="text-blue-600">{p.capacityKw}</span></span>
+                        <span className="text-slate-900 flex items-center gap-1.5 flex-wrap">
+                          {p.customerName} ({p.city}) — <span className="text-blue-600">{p.capacityKw}</span>
+                          {p.isCreatedByEpc ? (
+                            <Badge className="bg-purple-100 text-purple-800 border border-purple-300 text-[9px] font-extrabold px-1.5 py-0.5">
+                              Added by EPC ({p.assignedEpc})
+                            </Badge>
+                          ) : p.isAcceptedByEpc ? (
+                            <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-extrabold px-1.5 py-0.5">
+                              EPC Approved
+                            </Badge>
+                          ) : null}
+                        </span>
                         <span className="text-emerald-700 font-extrabold">{p.progress}% Complete</span>
                       </div>
                       <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
                         <div className="bg-gradient-to-r from-blue-500 to-emerald-500 h-full transition-all duration-500" style={{ width: `${p.progress}%` }}></div>
                       </div>
                       <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
-                        <span>Assigned EPC: {p.assignedEpc}</span>
+                        <span>Assigned EPC: <strong>{p.assignedEpc}</strong></span>
                         <span>Value: {p.projectValue}</span>
                       </div>
                     </div>
@@ -786,53 +918,74 @@ export default function ServiceExecutiveDashboard() {
                 </Button>
               </CardHeader>
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50">
-                      <TableHead className="text-xs font-bold">Project ID & Customer</TableHead>
-                      <TableHead className="text-xs font-bold">Capacity & Value</TableHead>
-                      <TableHead className="text-xs font-bold">Assigned EPC</TableHead>
-                      <TableHead className="text-xs font-bold">Installer Squad</TableHead>
-                      <TableHead className="text-xs font-bold">Progress</TableHead>
-                      <TableHead className="text-xs font-bold">Status</TableHead>
-                      <TableHead className="text-xs font-bold text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {projects.map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell>
-                          <div className="font-bold text-xs text-slate-900">{p.customerName}</div>
-                          <div className="text-[10px] text-slate-500">{p.id} • {p.city}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-bold text-xs text-blue-700">{p.capacityKw}</div>
-                          <div className="text-[10px] text-slate-500">{p.projectValue}</div>
-                        </TableCell>
-                        <TableCell className="text-xs font-medium text-slate-800">{p.assignedEpc}</TableCell>
-                        <TableCell className="text-xs font-medium text-slate-800">{p.installerTeam}</TableCell>
-                        <TableCell>
-                          <div className="space-y-1 w-28">
-                            <div className="text-[10px] font-bold text-slate-700">{p.progress}%</div>
-                            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                              <div className="bg-emerald-600 h-full" style={{ width: `${p.progress}%` }}></div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={p.status === "Completed" ? "bg-emerald-600" : "bg-amber-600"}>
-                            {p.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button size="sm" variant="outline" onClick={() => toast({ title: "Reassigned", description: "Project assignment updated!" })} className="h-7 text-[11px] gap-1">
-                            <UserCheck className="h-3 w-3" /> Reassign
-                          </Button>
-                        </TableCell>
+                {combinedProjects.length === 0 ? (
+                  <div className="p-12 text-center space-y-2 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 m-4">
+                    <Briefcase className="h-10 w-10 text-slate-300 mx-auto" />
+                    <p className="text-sm font-bold text-slate-700">No Approved Projects Yet</p>
+                    <p className="text-xs text-slate-500">
+                      Projects assigned to EPC contractors will appear here automatically as soon as the contractor accepts them.
+                    </p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50">
+                        <TableHead className="text-xs font-bold">Project ID & Customer</TableHead>
+                        <TableHead className="text-xs font-bold">Capacity & Value</TableHead>
+                        <TableHead className="text-xs font-bold">Assigned EPC</TableHead>
+                        <TableHead className="text-xs font-bold">Installer Squad</TableHead>
+                        <TableHead className="text-xs font-bold">Progress</TableHead>
+                        <TableHead className="text-xs font-bold">Status</TableHead>
+                        <TableHead className="text-xs font-bold text-right">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {combinedProjects.map((p) => (
+                        <TableRow key={p.id} className={p.isAcceptedByEpc ? "bg-emerald-50/30" : ""}>
+                          <TableCell>
+                            <div className="font-bold text-xs text-slate-900 flex items-center gap-1.5 flex-wrap">
+                              {p.customerName}
+                              {p.isCreatedByEpc ? (
+                                <Badge className="bg-purple-100 text-purple-800 border border-purple-300 text-[9px] font-extrabold px-1.5 py-0.5">
+                                  Added by EPC ({p.assignedEpc})
+                                </Badge>
+                              ) : p.isAcceptedByEpc ? (
+                                <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-extrabold px-1.5 py-0.5">
+                                  EPC Approved
+                                </Badge>
+                              ) : null}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">{p.id} • {p.city}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-bold text-xs text-blue-700">{p.capacityKw}</div>
+                            <div className="text-[10px] text-slate-500 font-semibold">{p.projectValue}</div>
+                          </TableCell>
+                          <TableCell className="text-xs font-bold text-emerald-800">{p.assignedEpc}</TableCell>
+                          <TableCell className="text-xs font-medium text-slate-800">{p.installerTeam}</TableCell>
+                          <TableCell>
+                            <div className="space-y-1 w-28">
+                              <div className="text-[10px] font-bold text-slate-700">{p.progress}%</div>
+                              <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                <div className="bg-emerald-600 h-full" style={{ width: `${p.progress}%` }}></div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={p.isAcceptedByEpc ? "bg-emerald-600 font-bold" : p.status === "Completed" ? "bg-emerald-600" : "bg-amber-600"}>
+                              {p.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button size="sm" variant="outline" onClick={() => toast({ title: "Reassigned", description: "Project assignment updated!" })} className="h-7 text-[11px] gap-1">
+                              <UserCheck className="h-3 w-3" /> Reassign
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1258,28 +1411,46 @@ export default function ServiceExecutiveDashboard() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="text-base font-bold">Add Installer Squad</DialogTitle>
+              <DialogDescription className="text-xs">
+                Register a certified solar installer squad and create sign-in credentials for Partner login access.
+              </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleCreateInstaller} className="space-y-4 text-xs">
+            <form onSubmit={handleCreateInstaller} className="space-y-3.5 text-xs">
               <div className="space-y-1">
                 <Label>Squad Lead Name *</Label>
-                <Input value={newInstaller.name} onChange={e => setNewInstaller({ ...newInstaller, name: e.target.value })} placeholder="Rohit Sharma Squad" />
+                <Input value={newInstaller.name} onChange={e => setNewInstaller({ ...newInstaller, name: e.target.value })} placeholder="e.g. Rahul Sharma Squad" required />
               </div>
               <div className="space-y-1">
-                <Label>Company</Label>
+                <Label>Email (Login ID) *</Label>
+                <Input type="email" value={newInstaller.email} onChange={e => setNewInstaller({ ...newInstaller, email: e.target.value })} placeholder="installer@company.com" required />
+                <p className="text-[10px] text-muted-foreground">The installer will use this email address as their Login ID in the Partner Login section.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Password *</Label>
+                  <Input type="password" value={newInstaller.password} onChange={e => setNewInstaller({ ...newInstaller, password: e.target.value })} placeholder="Min 8 chars" required />
+                </div>
+                <div className="space-y-1">
+                  <Label>Confirm Password *</Label>
+                  <Input type="password" value={newInstaller.confirmPassword} onChange={e => setNewInstaller({ ...newInstaller, confirmPassword: e.target.value })} placeholder="Re-enter" required />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label>Company / Agency Name</Label>
                 <Input value={newInstaller.company} onChange={e => setNewInstaller({ ...newInstaller, company: e.target.value })} placeholder="SparkInstall Tech" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>Phone</Label>
-                  <Input value={newInstaller.phone} onChange={e => setNewInstaller({ ...newInstaller, phone: e.target.value })} />
+                  <Input value={newInstaller.phone} onChange={e => setNewInstaller({ ...newInstaller, phone: e.target.value })} placeholder="+91 9800001122" />
                 </div>
                 <div className="space-y-1">
-                  <Label>Location</Label>
-                  <Input value={newInstaller.location} onChange={e => setNewInstaller({ ...newInstaller, location: e.target.value })} />
+                  <Label>Location / City</Label>
+                  <Input value={newInstaller.location} onChange={e => setNewInstaller({ ...newInstaller, location: e.target.value })} placeholder="Pune" />
                 </div>
               </div>
-              <DialogFooter>
-                <Button type="submit" className="bg-purple-600 text-white text-xs w-full">Add Installer Squad</Button>
+              <DialogFooter className="pt-2">
+                <Button type="submit" className="bg-purple-600 text-white text-xs w-full">Add Installer Squad & Create Login</Button>
               </DialogFooter>
             </form>
           </DialogContent>

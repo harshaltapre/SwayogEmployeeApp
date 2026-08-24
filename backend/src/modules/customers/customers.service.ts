@@ -72,7 +72,9 @@ function serializeCustomer(customer: any) {
     warrantyExpiry: customer.warrantyExpiry?.toISOString() ?? null,
     panelBrand: customer.panelBrand,
     inverterBrand: customer.inverterBrand,
+    inverterName: customer.inverterName,
     inverterModel: customer.inverterModel,
+    inverterUid: customer.inverterUid,
     inverterApiKey: customer.inverterApiKey,
     contractStartDate: customer.contractStartDate?.toISOString() ?? null,
     contractEndDate: customer.contractEndDate?.toISOString() ?? null,
@@ -87,8 +89,13 @@ function serializeCustomer(customer: any) {
     commissionStatus: customer.commissionStatus,
     commissionProofUrl: customer.commissionProofUrl,
     commissionPaidAt: customer.commissionPaidAt?.toISOString() ?? null,
+    partnerLeadStatus: customer.partnerLeadStatus || (customer.partnerId ? "PENDING" : null),
+    assignedEpc: customer.assignedEpc ?? null,
+    epcAssignmentStatus: (customer as any).epcAssignmentStatus ?? null,
     inverterLoginId: customer.inverterLoginId,
     inverterPassword: customer.inverterPassword,
+    dataLoggerSrNo: customer.dataLoggerSrNo ?? null,
+    inverterSrNo: customer.inverterSrNo ?? null,
     portalPassword: customer.portalPassword,
     latitude: customer.latitude,
     longitude: customer.longitude,
@@ -98,6 +105,15 @@ function serializeCustomer(customer: any) {
       name: customer.apartment.name,
       address: customer.apartment.address,
       city: customer.apartment.city,
+    } : null,
+    partner: customer.partner ? {
+      id: customer.partner.id,
+      businessName: customer.partner.businessName,
+      companyName: customer.partner.businessName || customer.partner.user?.fullName || "Partner",
+      name: customer.partner.user?.fullName || "Partner Representative",
+      email: customer.partner.user?.email || null,
+      phone: customer.partner.user?.phoneNumber || null,
+      zone: customer.partner.zone || null,
     } : null,
   };
 }
@@ -113,8 +129,7 @@ async function getPartnerScopeId(auth: AuthContext): Promise<string | null> {
   });
 
   if (!partnerProfile || !partnerProfile.isActive) {
-    console.warn(`[PARTNER] PartnerProfile missing or inactive for user ${auth.userId}`);
-    return null;
+    throw new ApiError(403, "Partner profile is not active");
   }
 
   return partnerProfile.id;
@@ -138,15 +153,14 @@ async function generateCustomerCode(): Promise<string> {
 export async function listCustomers(auth: AuthContext, query: ListCustomersQueryInput) {
   const partnerScopeId = await getPartnerScopeId(auth);
 
-  const where: any = {};
-
-  if (partnerScopeId) {
-    where.partnerId = partnerScopeId;
-  }
+  const where: any = {
+    ...(partnerScopeId ? { partnerId: partnerScopeId } : {}),
+  };
 
   if (query.search) {
     where.OR = [
       { fullName: { contains: query.search, mode: "insensitive" } },
+      { customerCode: { contains: query.search, mode: "insensitive" } },
       { email: { contains: query.search, mode: "insensitive" } },
       { phoneNumber: { contains: query.search, mode: "insensitive" } },
       { city: { contains: query.search, mode: "insensitive" } },
@@ -172,7 +186,14 @@ export async function listCustomers(auth: AuthContext, query: ListCustomersQuery
 
   const customers = await prisma.customer.findMany({
     where,
-    include: { apartment: true },
+    include: {
+      apartment: true,
+      partner: {
+        include: {
+          user: true,
+        },
+      },
+    },
     orderBy: { createdAt: "desc" },
     take: query.limit ?? 100,
   });
@@ -188,7 +209,14 @@ export async function getCustomerById(auth: AuthContext, id: number) {
       id,
       ...(partnerScopeId ? { partnerId: partnerScopeId } : {}),
     },
-    include: { apartment: true },
+    include: {
+      apartment: true,
+      partner: {
+        include: {
+          user: true,
+        },
+      },
+    },
   });
 
   if (!customer) {
@@ -299,10 +327,14 @@ export async function createCustomer(auth: AuthContext, input: CreateCustomerInp
           warrantyExpiry: toOptionalDate(input.warrantyExpiry ?? null),
           panelBrand: input.panelBrand,
           inverterBrand: input.inverterBrand,
+          inverterName: input.inverterName ?? null,
           inverterModel: input.inverterModel ?? null,
+          inverterUid: input.inverterUid ?? null,
           inverterLoginId: input.inverterLoginId ?? null,
           inverterPassword: input.inverterPassword ?? null,
           inverterApiKey: input.inverterApiKey ?? null,
+          dataLoggerSrNo: input.dataLoggerSrNo ?? null,
+          inverterSrNo: input.inverterSrNo ?? null,
           portalPassword: input.portalPassword ?? pwdToUse,
           amcStatus: amcStatusMap[input.amcStatus],
           amcExpiryDate: toOptionalDate(input.amcExpiryDate ?? null),
@@ -448,10 +480,14 @@ export async function updateCustomer(auth: AuthContext, id: number, input: Updat
           : undefined,
       panelBrand: input.panelBrand,
       inverterBrand: input.inverterBrand,
+      inverterName: input.inverterName,
       inverterModel: input.inverterModel,
+      inverterUid: input.inverterUid,
       inverterLoginId: input.inverterLoginId,
       inverterPassword: input.inverterPassword,
       inverterApiKey: input.inverterApiKey,
+      dataLoggerSrNo: input.dataLoggerSrNo !== undefined ? input.dataLoggerSrNo : undefined,
+      inverterSrNo: input.inverterSrNo !== undefined ? input.inverterSrNo : undefined,
       portalPassword: input.portalPassword ?? undefined,
       amcStatus: input.amcStatus ? amcStatusMap[input.amcStatus] : undefined,
       amcExpiryDate:
@@ -464,6 +500,9 @@ export async function updateCustomer(auth: AuthContext, id: number, input: Updat
       status: input.status ? customerStatusMap[input.status] : undefined,
       partnerId,
       projectStage: input.projectStage !== undefined ? input.projectStage : undefined,
+      assignedEpc: (input as any).assignedEpc !== undefined ? (input as any).assignedEpc : undefined,
+      // When EPC is reassigned, reset acceptance status back to PENDING (null)
+      ...((input as any).assignedEpc !== undefined ? { epcAssignmentStatus: null } : {}),
       commissionAmount: input.commissionAmount !== undefined ? input.commissionAmount : undefined,
       monthlyCleaningRate: input.monthlyCleaningRate !== undefined ? input.monthlyCleaningRate : undefined,
       paymentTerms: input.paymentTerms !== undefined ? input.paymentTerms : undefined,
@@ -512,3 +551,107 @@ export async function deleteCustomer(auth: AuthContext, id: number) {
 
   return { success: true };
 }
+
+export async function updatePartnerLeadStatus(auth: AuthContext, id: number, status: "APPROVED" | "REJECTED") {
+  const customer = await prisma.customer.findUnique({
+    where: { id },
+  });
+
+  if (!customer) {
+    throw new ApiError(404, "Customer lead not found");
+  }
+
+  const updated = await prisma.customer.update({
+    where: { id },
+    data: {
+      partnerLeadStatus: status,
+    },
+    include: {
+      apartment: true,
+      partner: {
+        include: {
+          user: true,
+        },
+      },
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: auth.userId || "system",
+      action: `PARTNER_LEAD_${status}`,
+      entity: "Customer",
+      entityId: String(id),
+      metadata: {
+        status,
+        partnerId: customer.partnerId,
+      },
+    },
+  });
+
+  return serializeCustomer(updated);
+}
+
+// ─── EPC CONTRACTOR: LIST THEIR ASSIGNED PARTNER LEADS ─────────────────────────────
+export async function listEpcAssignedLeads(auth: AuthContext, epcCompanyName: string) {
+  // Any authenticated user with EPC_CONTRACTOR role can call this
+  const leads = await prisma.customer.findMany({
+    where: {
+      assignedEpc: epcCompanyName,
+      partnerLeadStatus: "APPROVED",
+    },
+    include: {
+      apartment: true,
+      partner: {
+        include: { user: true },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return leads.map(serializeCustomer);
+}
+
+// ─── EPC CONTRACTOR: ACCEPT OR REJECT ASSIGNMENT ────────────────────────────────────
+export async function updateEpcAssignmentStatus(
+  auth: AuthContext,
+  id: number,
+  status: "ACCEPTED" | "REJECTED",
+  epcCompanyName: string,
+) {
+  const customer = await prisma.customer.findUnique({ where: { id } });
+
+  if (!customer) {
+    throw new ApiError(404, "Customer lead not found");
+  }
+
+  if (customer.assignedEpc !== epcCompanyName) {
+    throw new ApiError(403, "This lead is not assigned to your EPC firm");
+  }
+
+  const updated = await prisma.customer.update({
+    where: { id },
+    data: {
+      epcAssignmentStatus: status,
+      // When EPC rejects, clear the assignment so Isphere Green Head can reassign
+      ...(status === "REJECTED" ? { assignedEpc: null } : {}),
+    },
+    include: {
+      apartment: true,
+      partner: { include: { user: true } },
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: auth.userId || "system",
+      action: `EPC_ASSIGNMENT_${status}`,
+      entity: "Customer",
+      entityId: String(id),
+      metadata: { status, epcCompanyName },
+    },
+  });
+
+  return serializeCustomer(updated);
+}
+

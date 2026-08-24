@@ -858,9 +858,9 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                     </TabsList>
 
                     {[
-                      { value: "today", tasks: employeeTasks?.filter(t => (t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd")) || t.scheduledTime < format(new Date(), "yyyy-MM-dd")) && t.status !== "completed") ?? [] },
-                      { value: "upcoming", tasks: employeeTasks?.filter(t => t.scheduledTime > format(new Date(), "yyyy-MM-dd") && t.status !== "completed" && !t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd"))) ?? [] },
-                      { value: "completed", tasks: employeeTasks?.filter(t => t.status === "completed") ?? [] }
+                      { value: "today", tasks: employeeTasks?.filter(t => (t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd")) || t.scheduledTime < format(new Date(), "yyyy-MM-dd")) && String(t.status).toLowerCase() !== "completed") ?? [] },
+                      { value: "upcoming", tasks: employeeTasks?.filter(t => t.scheduledTime > format(new Date(), "yyyy-MM-dd") && String(t.status).toLowerCase() !== "completed" && !t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd"))) ?? [] },
+                      { value: "completed", tasks: employeeTasks?.filter(t => String(t.status).toLowerCase() === "completed") ?? [] }
                     ].map(({ value, tasks: groupTasks }) => (
                       <TabsContent key={value} value={value} className="mt-0">
                         {groupTasks.length > 0 ? (
@@ -909,25 +909,36 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                                   </div>
                                 )}
 
-                                {((Array.isArray(task.sitePhotos) && task.sitePhotos.length > 0) || task.beforeImageUrl || task.afterImageUrl) && (
-                                  <div className="mt-3 p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                                    <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                                      <Camera className="h-3.5 w-3.5 text-emerald-600" />
-                                      Site Visit & Work Photos ({(Array.isArray(task.sitePhotos) ? task.sitePhotos.length : 0) + (task.beforeImageUrl ? 1 : 0) + (task.afterImageUrl ? 1 : 0)} Uploaded)
-                                    </div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                      {Array.isArray(task.sitePhotos) && task.sitePhotos.map((photoUrl: string, pIdx: number) => {
-                                        const fullUrl = buildAssetUrlFromPath(photoUrl) || photoUrl;
-                                        return (
-                                          <a key={pIdx} href={fullUrl} target="_blank" rel="noreferrer" className="relative group aspect-video rounded-lg overflow-hidden border border-slate-200 bg-slate-900 shadow-2xs">
-                                            <img src={fullUrl} alt={`Site photo ${pIdx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                            <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1 py-0.5 rounded font-bold">
-                                              Photo #{pIdx + 1}
-                                            </span>
-                                          </a>
-                                        );
-                                      })}
-                                      {task.beforeImageUrl && (
+                                {(() => {
+                                  const rawSitePhotos: string[] = Array.isArray(task.sitePhotos)
+                                    ? task.sitePhotos.filter((url: any) => typeof url === "string" && url.trim().length > 0)
+                                    : [];
+                                  const cleanSitePhotos = Array.from(new Set(rawSitePhotos));
+                                  const totalCount = cleanSitePhotos.length > 0
+                                    ? cleanSitePhotos.length
+                                    : (task.beforeImageUrl ? 1 : 0) + (task.afterImageUrl ? 1 : 0);
+
+                                  if (totalCount === 0) return null;
+
+                                  return (
+                                    <div className="mt-3 p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                                      <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                                        <Camera className="h-3.5 w-3.5 text-emerald-600" />
+                                        Site Visit & Work Photos ({totalCount} Uploaded)
+                                      </div>
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        {cleanSitePhotos.map((photoUrl: string, pIdx: number) => {
+                                          const fullUrl = buildAssetUrlFromPath(photoUrl) || photoUrl;
+                                          return (
+                                            <a key={pIdx} href={fullUrl} target="_blank" rel="noreferrer" className="relative group aspect-video rounded-lg overflow-hidden border border-slate-200 bg-slate-900 shadow-2xs">
+                                              <img src={fullUrl} alt={`Site photo ${pIdx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1 py-0.5 rounded font-bold">
+                                                Photo #{pIdx + 1}
+                                              </span>
+                                            </a>
+                                          );
+                                        })}
+                                        {cleanSitePhotos.length === 0 && task.beforeImageUrl && (
                                         <a href={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} target="_blank" rel="noreferrer" className="relative group aspect-video rounded-lg overflow-hidden border border-slate-200 bg-slate-900 shadow-2xs">
                                           <img src={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} alt="Before work" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                                           <span className="absolute bottom-1 left-1 bg-blue-600 text-white text-[9px] px-1 py-0.5 rounded font-bold">Before</span>
@@ -941,7 +952,7 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                                       )}
                                     </div>
                                   </div>
-                                )}
+                                )})()}
 
                                 {!task.completionMessage && task.status !== "completed" && (
                                   <div className="mt-3 flex items-center gap-2">

@@ -9,58 +9,84 @@ import { getMockTasks, saveMockTask } from "../../lib/mockTasksDb.js";
 import { recalculateMonthlyPerformance } from "../../services/attendanceService.js";
 import type { CompleteTaskInput, CreateTaskInput, CreateBulkTaskInput, ListTasksQueryInput } from "./tasks.schemas.js";
 import { createAdminNotification, createCustomerNotification } from "../../services/notificationService.js";
+import { getTaskTypeConfig, resolveTaskType } from "./task-type.config.js";
+import {
+  uploadToR2,
+  generateObjectKey,
+  isR2Configured,
+  getExtensionFromMimeType,
+} from "../../services/r2StorageService.js";
 
-export function processAndSaveBase64Photos(sitePhotos: string[], taskId: number | string): string[] {
+export async function processAndSaveBase64Photos(
+  sitePhotos: string[],
+  taskId: number | string,
+  imageType: "site-visit" | "before" | "after" | string = "site-visit",
+  taskType?: string,
+  customerName?: string
+): Promise<string[]> {
   if (!Array.isArray(sitePhotos)) return [];
 
-  const uploadsDir = path.join(process.cwd(), "uploads", "task-images");
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+  // R2 is mandatory for cloud storage
+  if (!isR2Configured()) {
+    throw new ApiError(500, "Cloudflare R2 storage is not configured. Please set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, and R2_ENDPOINT.");
   }
 
-  return sitePhotos.map((item, index) => {
-    if (!item || typeof item !== "string") return "";
-    let formattedItem = item.trim();
-    if (!formattedItem) return "";
+  const results = await Promise.all(
+    sitePhotos.map(async (item, index) => {
+      if (!item || typeof item !== "string") return "";
+      let formattedItem = item.trim();
+      if (!formattedItem) return "";
 
-    // If it's already a saved file/web URL, return as-is
-    if (formattedItem.startsWith("/uploads/") || formattedItem.startsWith("http://") || formattedItem.startsWith("https://")) {
-      return formattedItem;
-    }
-
-    // Auto-prefix raw base64 if missing data URI header
-    if (!formattedItem.startsWith("data:image/")) {
-      if (formattedItem.startsWith("/9j/")) {
-        formattedItem = `data:image/jpeg;base64,${formattedItem}`;
-      } else if (formattedItem.startsWith("iVBORw")) {
-        formattedItem = `data:image/png;base64,${formattedItem}`;
-      } else if (formattedItem.startsWith("R0lGOD")) {
-        formattedItem = `data:image/gif;base64,${formattedItem}`;
-      } else if (formattedItem.startsWith("UklGR")) {
-        formattedItem = `data:image/webp;base64,${formattedItem}`;
-      } else {
-        formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+      // If it's already an R2 / web URL, return as-is
+      if (formattedItem.startsWith("http://") || formattedItem.startsWith("https://")) {
+        return formattedItem;
       }
-    }
 
-    try {
-      const matches = formattedItem.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/s);
-      if (!matches || matches.length !== 3) return formattedItem;
+      // Auto-prefix raw base64 if missing data URI header
+      if (!formattedItem.startsWith("data:image/")) {
+        if (formattedItem.startsWith("/9j/")) {
+          formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+        } else if (formattedItem.startsWith("iVBORw")) {
+          formattedItem = `data:image/png;base64,${formattedItem}`;
+        } else if (formattedItem.startsWith("R0lGOD")) {
+          formattedItem = `data:image/gif;base64,${formattedItem}`;
+        } else if (formattedItem.startsWith("UklGR")) {
+          formattedItem = `data:image/webp;base64,${formattedItem}`;
+        } else {
+          formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+        }
+      }
 
-      const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
-      const base64Data = matches[2].replace(/[\r\n\s]/g, "");
-      const buffer = Buffer.from(base64Data, "base64");
+      try {
+        const matches = formattedItem.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/s);
+        if (!matches || matches.length !== 3) return formattedItem;
 
-      const filename = `site_photo_${taskId}_${Date.now()}_${index}_${Math.floor(Math.random() * 10000)}.${ext}`;
-      const filePath = path.join(uploadsDir, filename);
-      fs.writeFileSync(filePath, buffer);
+        const rawType = matches[1].toLowerCase();
+        const mimeType = `image/${rawType === "jpg" ? "jpeg" : rawType}`;
+        const base64Data = matches[2].replace(/[\r\n\s]/g, "");
+        const buffer = Buffer.from(base64Data, "base64");
+        const ext = rawType === "jpeg" ? "jpg" : rawType;
+        const cleanTaskId = String(taskId).replace(/^TASK-amc_|^amc_visit_|^amc_/, "");
+        const fileName = `${imageType}_${cleanTaskId}_${Date.now()}_${index}.${ext}`;
 
-      return `/uploads/task-images/${filename}`;
-    } catch (err) {
-      console.error(`Error saving base64 photo for task ${taskId}:`, err);
-      return formattedItem;
-    }
-  }).filter((url) => typeof url === "string" && url.trim().length > 0);
+        // Upload to Cloudflare R2
+        const objectKey = generateObjectKey(
+          { taskId: cleanTaskId, type: imageType, taskType: taskType || "task", customerName: customerName || "unknown" },
+          fileName
+        );
+        
+        const uploadResult = await uploadToR2(buffer, objectKey, mimeType, fileName);
+        console.log(`[R2] Uploaded photo: ${objectKey}`);
+        
+        return uploadResult.url;
+      } catch (err) {
+        console.error(`Error saving base64 photo for task ${taskId}:`, err);
+        throw new ApiError(500, `Failed to upload photo to Cloudflare R2: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })
+  );
+
+  return results.filter((url) => typeof url === "string" && url.trim().length > 0);
 }
 
 async function getRecursiveReporteeIds(userId: string): Promise<string[]> {
@@ -81,6 +107,93 @@ function normalizeJobRole(jobRole?: string | null): string {
 
 function isServiceCoordinator(auth: AuthContext): boolean {
   return auth.role === UserRole.SUB_ADMIN || normalizeJobRole(auth.jobRole) === "servicecoordinator";
+}
+
+const adminTaskRoles = new Set<UserRole>([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUB_ADMIN]);
+
+function isAdminTaskActor(auth: AuthContext): boolean {
+  return adminTaskRoles.has(auth.role) || isServiceCoordinator(auth);
+}
+
+export function getAssignedTaskWhere(employeeUserId: string) {
+  return {
+    taskAssignments: {
+      some: {
+        employeeUserId,
+      },
+    },
+  };
+}
+
+export function isTaskAssignedToEmployee(
+  task: { taskAssignments?: Array<{ employeeUserId: string }> },
+  employeeUserId: string,
+): boolean {
+  return (task.taskAssignments ?? []).some((assignment) => assignment.employeeUserId === employeeUserId);
+}
+
+function getTaskScopedStatus(task: any, scopedEmployeeUserId?: string | null): TaskStatus | TaskAssignmentStatus | string {
+  if (!scopedEmployeeUserId) return task.status;
+  const assignment = (task.taskAssignments ?? []).find(
+    (item: { employeeUserId: string }) => item.employeeUserId === scopedEmployeeUserId,
+  );
+  return assignment?.status ?? task.status;
+}
+
+async function resolveCustomerForTaskInput(input: { customerPhone?: string | null; customerName?: string | null }) {
+  return findCustomerForTask(input);
+}
+
+function getInputSitePhotos(input: CompleteTaskInput): string[] {
+  if (Array.isArray(input.sitePhotos) && input.sitePhotos.length > 0) return input.sitePhotos;
+  if (Array.isArray((input as any).images) && (input as any).images.length > 0) return (input as any).images;
+  return [];
+}
+
+function getExistingTaskImageUrl(task: any, type: string): string | null {
+  const image = (task.taskImages ?? []).find((item: any) => String(item.type).toLowerCase() === type);
+  return image?.url ?? null;
+}
+
+function validateTaskCompletionImages(task: any, input: CompleteTaskInput): void {
+  const config = getTaskTypeConfig(task.taskType, task.jobType);
+  const existingSitePhotos = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
+  const submittedSitePhotos = getInputSitePhotos(input);
+  const combinedSitePhotoCount = Array.from(new Set([...existingSitePhotos, ...submittedSitePhotos]))
+    .filter((url) => typeof url === "string" && url.trim().length > 0)
+    .length;
+
+  if (config.sitePhotoMin !== null && combinedSitePhotoCount < config.sitePhotoMin) {
+    throw new ApiError(400, `${config.label} tasks require at least ${config.sitePhotoMin} photos`);
+  }
+
+  if (config.sitePhotoMax !== null && combinedSitePhotoCount > config.sitePhotoMax) {
+    throw new ApiError(400, `${config.label} tasks allow maximum ${config.sitePhotoMax} photos`);
+  }
+
+  if (config.requiresBeforeImage) {
+    const existingBefore = task.beforeImageUrl ?? getExistingTaskImageUrl(task, "before");
+    if (!input.beforeImageUrl && !existingBefore) {
+      throw new ApiError(400, `${config.label} tasks require a Before photo`);
+    }
+  }
+
+  if (config.requiresAfterImage) {
+    const existingAfter = task.afterImageUrl ?? getExistingTaskImageUrl(task, "after");
+    if (!input.afterImageUrl && !existingAfter) {
+      throw new ApiError(400, `${config.label} tasks require an After photo`);
+    }
+  }
+}
+
+
+function mockTaskHasAssignment(task: any, employeeUserId: string): boolean {
+  return (
+    (Array.isArray(task.taskAssignments) &&
+      task.taskAssignments.some((item: any) => String(item.employeeUserId ?? item.userId ?? "") === employeeUserId)) ||
+    (Array.isArray(task.assignedEmployees) &&
+      task.assignedEmployees.some((item: any) => String(item.userId ?? item.employeeUserId ?? "") === employeeUserId))
+  );
 }
 
 export function getTaskInclude() {
@@ -104,7 +217,6 @@ export function getTaskInclude() {
 
 function getAssignedEmployeeIds(task: any): string[] {
   const ids = new Set<string>();
-  if (task.employeeUserId) ids.add(String(task.employeeUserId));
   for (const assignment of task.taskAssignments ?? []) {
     if (assignment.employeeUserId) ids.add(String(assignment.employeeUserId));
   }
@@ -216,7 +328,7 @@ async function notifyTaskCompleted(auth: AuthContext, task: any, imageUrl?: stri
   await sendUserMessage(auth.userId, customer.userId, message);
 }
 
-export function serializeTask(task: any) {
+export function serializeTask(task: any, options: { scopedEmployeeUserId?: string | null } = {}) {
   const assignedEmployees = Array.isArray(task.taskAssignments)
     ? task.taskAssignments.map((assignment: any) => ({
       id: assignment.id,
@@ -229,18 +341,6 @@ export function serializeTask(task: any) {
       email: assignment.employee?.email ?? null,
     }))
     : [];
-
-  if (assignedEmployees.length === 0 && task.employeeUserId) {
-    assignedEmployees.push({
-      id: `legacy-${task.id}-${task.employeeUserId}`,
-      userId: task.employeeUserId,
-      assignedAt: typeof task.createdAt === "string" ? task.createdAt : task.createdAt?.toISOString?.() ?? null,
-      status: String(task.status ?? "ASSIGNED").toLowerCase(),
-      name: task.employee?.fullName ?? "Employee",
-      loginId: task.employee?.loginId ?? null,
-      email: task.employee?.email ?? null,
-    });
-  }
 
   const taskImages = Array.isArray(task.taskImages)
     ? task.taskImages.map((image: any) => ({
@@ -266,12 +366,15 @@ export function serializeTask(task: any) {
   const mergedSitePhotos = Array.from(new Set([...sitePhotosFromColumn, ...sitePhotosFromImages]))
     .filter((url: any) => typeof url === "string" && url.trim().length > 0);
 
-  const resolvedTaskType = task.taskType ?? (
-    task.jobType?.toLowerCase()?.includes("site") || mergedSitePhotos.length > 0 ? "SITE_VISIT" : "REGULAR"
-  );
+  const resolvedTaskType = resolveTaskType(task.taskType, task.jobType);
+  const config = getTaskTypeConfig(resolvedTaskType, task.jobType);
+  const beforeImageUrl = beforeImageObj?.url ?? task.beforeImageUrl ?? (config.requiresBeforeImage ? mergedSitePhotos[0] ?? null : null);
+  const afterImageUrl = afterImageObj?.url ?? task.afterImageUrl ?? (config.requiresAfterImage ? mergedSitePhotos[1] ?? null : null);
+  const scopedStatus = getTaskScopedStatus(task, options.scopedEmployeeUserId);
 
   return {
     id: task.id,
+    customerId: task.customerId ?? null,
     jobType: task.jobType,
     description: task.description,
     customerName: task.customerName,
@@ -279,12 +382,16 @@ export function serializeTask(task: any) {
     address: task.address,
     latitude: task.latitude,
     longitude: task.longitude,
-    status: task.status.toLowerCase(),
+    status: String(scopedStatus ?? task.status).toLowerCase(),
     scheduledTime: typeof task.scheduledTime === "string" ? task.scheduledTime : task.scheduledTime.toISOString(),
     employeeUserId: task.employeeUserId,
     assignedById: task.assignedById,
     completionMessage: task.completionMessage ?? null,
     completionDocumentUrl: task.completionDocumentUrl ?? null,
+    taskRate: task.taskRate ?? null,
+    customerRating: task.customerRating ?? null,
+    customerFeedback: task.customerFeedback ?? null,
+    fixCharges: task.fixCharges ?? null,
     completedAt: task.completedAt?.toISOString() ?? null,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
@@ -293,10 +400,10 @@ export function serializeTask(task: any) {
     taskImages,
     sitePhotos: mergedSitePhotos,
     images: mergedSitePhotos,
-    beforeImageUrl: beforeImageObj?.url ?? task.beforeImageUrl ?? null,
+    beforeImageUrl,
     beforeLatitude: beforeImageObj?.latitude ?? task.beforeLatitude ?? null,
     beforeLongitude: beforeImageObj?.longitude ?? task.beforeLongitude ?? null,
-    afterImageUrl: afterImageObj?.url ?? task.afterImageUrl ?? null,
+    afterImageUrl,
     afterLatitude: afterImageObj?.latitude ?? task.afterLatitude ?? null,
     afterLongitude: afterImageObj?.longitude ?? task.afterLongitude ?? null,
   };
@@ -315,12 +422,16 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
   if (auth.role === UserRole.CUSTOMER) {
     const customer = await prisma.customer.findUnique({
       where: { userId: auth.userId },
-      select: { id: true },
+      select: { id: true, fullName: true, phoneNumber: true },
     });
     if (customer) {
-      where.customerId = customer.id;
+      where.OR = [
+        { customerId: customer.id },
+        { customerPhone: customer.phoneNumber },
+        { customerName: customer.fullName },
+      ];
     } else {
-      where.customerId = -1; // Prevent leakage if profile is missing
+      where.id = -1; // Prevent leakage if profile is missing
     }
   } else if (isHierarchicalRole && !isCoordinator) {
     // Employee/TeamLead/DeptHead always scopes to self (or requested subordinate)
@@ -334,18 +445,11 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
       targetEmpId = auth.userId;
     }
     employeeScopeId = targetEmpId;
-    where.OR = [
-      { employeeUserId: targetEmpId },
-      { taskAssignments: { some: { employeeUserId: targetEmpId } } },
-      { assignedById: auth.userId }
-    ];
+    where.AND = [...(where.AND ?? []), getAssignedTaskWhere(targetEmpId)];
   } else if (query.employeeUserId) {
     const targetEmpId = String(query.employeeUserId);
     employeeScopeId = targetEmpId;
-    where.OR = [
-      { employeeUserId: targetEmpId },
-      { taskAssignments: { some: { employeeUserId: targetEmpId } } }
-    ];
+    where.AND = [...(where.AND ?? []), getAssignedTaskWhere(targetEmpId)];
   }
 
   if (query.status) {
@@ -366,7 +470,7 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
       take: query.limit,
     });
 
-    const serializedTasks = tasks.map(serializeTask);
+    const serializedTasks = tasks.map((task: any) => serializeTask(task, { scopedEmployeeUserId: employeeScopeId }));
 
     // Fetch AMC visits if filtering for a specific employee, or scope to customer
     const amcWhere: any = {};
@@ -416,6 +520,8 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
 
     const serializedAmc = amcVisits.map(visit => {
       const visitSitePhotos = Array.isArray((visit as any).sitePhotos) ? (visit as any).sitePhotos : [];
+      const visitBeforeImage = (visit as any).beforeImageUrl ?? visitSitePhotos[0] ?? null;
+      const visitAfterImage = (visit as any).afterImageUrl ?? visitSitePhotos[1] ?? null;
       return {
         id: `amc_${visit.id}`,
         jobType: "AMC",
@@ -429,10 +535,11 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
         scheduledTime: visit.scheduledDate.toISOString(),
         employeeUserId: visit.assignedEmployeeId,
         assignedById: "system",
+        taskType: "AMC_VISIT",
         completionMessage: visit.visitNotes ?? visit.notes ?? null,
         completionDocumentUrl: null,
-        beforeImageUrl: (visit as any).beforeImageUrl ?? null,
-        afterImageUrl: (visit as any).afterImageUrl ?? null,
+        beforeImageUrl: visitBeforeImage,
+        afterImageUrl: visitAfterImage,
         sitePhotos: visitSitePhotos,
         images: visitSitePhotos,
         completedAt: visit.completedAt?.toISOString() ?? null,
@@ -451,9 +558,9 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
     if (auth.role === UserRole.CUSTOMER) {
       all = all.filter((t: any) => t.customerName === auth.loginId || t.customerPhone === auth.loginId);
     } else if (auth.role === UserRole.EMPLOYEE) {
-      all = all.filter((t: any) => t.employeeUserId === auth.userId);
+      all = all.filter((t: any) => mockTaskHasAssignment(t, auth.userId));
     } else if (query.employeeUserId) {
-      all = all.filter((t: any) => t.employeeUserId === query.employeeUserId);
+      all = all.filter((t: any) => mockTaskHasAssignment(t, String(query.employeeUserId)));
     }
     if (query.status) {
       all = all.filter((t: any) => String(t.status).toLowerCase() === String(query.status).toLowerCase());
@@ -520,7 +627,7 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
   }
 
   try {
-    let employee = await prisma.user.findFirst({
+    const employee = await prisma.user.findFirst({
       where: {
         OR: [
           { id: input.employeeUserId },
@@ -531,29 +638,24 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
           { employeeProfile: { id: input.employeeUserId } },
         ]
       },
-      select: { id: true, role: true, isActive: true },
+      select: { id: true, role: true, isActive: true, fullName: true, loginId: true, phoneNumber: true },
     });
 
-    if (!employee) {
-      employee = await prisma.user.findFirst({
-        where: {
-          role: { in: [UserRole.EMPLOYEE, UserRole.SUB_ADMIN, UserRole.TEAM_LEAD, UserRole.DEPARTMENT_HEAD, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-          isActive: true,
-        },
-        select: { id: true, role: true, isActive: true },
-      });
-    }
-
-    if (!employee) {
+    const allowedEmployeeRoles: UserRole[] = [UserRole.EMPLOYEE, UserRole.TEAM_LEAD, UserRole.DEPARTMENT_HEAD, UserRole.SUB_ADMIN];
+    if (!employee || !employee.isActive || !allowedEmployeeRoles.includes(employee.role)) {
       throw new ApiError(400, "Target employee is invalid or inactive");
     }
 
     const actualEmployeeUserId = employee.id;
     const actualAssignedById = await getValidAssignedById(auth.userId);
+    const customer = await resolveCustomerForTaskInput(input);
+    const taskType = resolveTaskType(input.taskType, input.jobType);
 
     const task: any = await prisma.$transaction(async (tx) => {
       const createdTask = await tx.task.create({
         data: {
+          customerId: customer?.id ?? null,
+          taskType,
           employeeUserId: actualEmployeeUserId,
           assignedById: actualAssignedById,
           jobType: input.jobType,
@@ -564,6 +666,7 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
           latitude: (input.latitude !== undefined && input.latitude !== null) ? parseFloat(String(input.latitude)) : null,
           longitude: (input.longitude !== undefined && input.longitude !== null) ? parseFloat(String(input.longitude)) : null,
           scheduledTime: new Date(input.scheduledTime),
+          taskRate: input.taskRate !== undefined ? input.taskRate : null,
           status: TaskStatus.ASSIGNED,
           taskAssignments: {
             create: {
@@ -590,6 +693,10 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
       return createdTask;
     });
 
+    await notifyTaskScheduled(auth, task, [employee]).catch((error) => {
+      console.warn("Failed to send task assignment notifications:", error);
+    });
+
     return serializeTask(task);
   } catch (error) {
     if (error instanceof ApiError && error.statusCode !== 500) throw error;
@@ -611,6 +718,9 @@ export async function createTask(auth: AuthContext, input: CreateTaskInput) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       taskRate: input.taskRate !== undefined ? input.taskRate : null,
+      taskType: resolveTaskType(input.taskType, input.jobType),
+      taskAssignments: [{ employeeUserId: input.employeeUserId, status: "assigned" }],
+      assignedEmployees: [{ userId: input.employeeUserId }],
     };
     saveMockTask(newTask);
     return newTask;
@@ -656,9 +766,13 @@ export async function createBulkTasks(auth: AuthContext, input: CreateBulkTaskIn
 
     const primaryEmployeeId = input.employeeUserIds[0] ?? null;
     const actualAssignedById = await getValidAssignedById(auth.userId);
+    const customer = await resolveCustomerForTaskInput(input);
+    const taskType = resolveTaskType(input.taskType, input.jobType);
 
     const task: any = await prisma.task.create({
       data: {
+        customerId: customer?.id ?? null,
+        taskType,
         employeeUserId: primaryEmployeeId,
         assignedById: actualAssignedById,
         jobType: input.jobType,
@@ -669,6 +783,7 @@ export async function createBulkTasks(auth: AuthContext, input: CreateBulkTaskIn
         latitude: (input.latitude !== undefined && input.latitude !== null) ? parseFloat(String(input.latitude)) : null,
         longitude: (input.longitude !== undefined && input.longitude !== null) ? parseFloat(String(input.longitude)) : null,
         scheduledTime: new Date(input.scheduledTime),
+        taskRate: input.taskRate !== undefined ? input.taskRate : null,
         status: TaskStatus.ASSIGNED,
         taskAssignments: {
           create: input.employeeUserIds.map((employeeUserId) => ({
@@ -694,7 +809,9 @@ export async function createBulkTasks(auth: AuthContext, input: CreateBulkTaskIn
       },
     }).catch(() => { });
 
-    await notifyTaskScheduled(auth, task, employees);
+    await notifyTaskScheduled(auth, task, employees).catch((error) => {
+      console.warn("Failed to send bulk task assignment notifications:", error);
+    });
 
     return [serializeTask(task)];
   } catch (error) {
@@ -714,6 +831,7 @@ export async function createBulkTasks(auth: AuthContext, input: CreateBulkTaskIn
       status: TaskStatus.ASSIGNED,
       scheduledTime: new Date(input.scheduledTime).toISOString(),
       taskRate: input.taskRate,
+      taskType: resolveTaskType(input.taskType, input.jobType),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       assignedEmployees: input.employeeUserIds.map((employeeUserId) => ({ userId: employeeUserId })),
@@ -732,11 +850,18 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
     // Handle AMC visits
     const cleanAmcId = taskId.replace(/^TASK-amc_|^amc_visit_|^amc_/, "");
     if (taskId.includes("amc_") || taskId.includes("AMC")) {
-      const visit = await prisma.amcVisit.findUnique({ where: { id: cleanAmcId } }).catch(() => null);
+      const visit = await prisma.amcVisit.findUnique({
+        where: { id: cleanAmcId },
+        include: {
+          customer: {
+            select: { fullName: true, phoneNumber: true },
+          },
+        },
+      }).catch(() => null);
       if (!visit) {
         throw new ApiError(404, "AMC Visit not found — please refresh and try again");
       }
-      if (auth.role === UserRole.EMPLOYEE && visit.assignedEmployeeId !== auth.userId) {
+      if (!isAdminTaskActor(auth) && visit.assignedEmployeeId !== auth.userId) {
         throw new ApiError(403, "You cannot complete visits assigned to other employees");
       }
 
@@ -749,26 +874,22 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         completedByName = emp.fullName;
       }
 
-      const existingSitePhotos = Array.isArray((visit as any).sitePhotos) ? (visit as any).sitePhotos : [];
-      const inputPhotos = (Array.isArray(input.sitePhotos) && input.sitePhotos.length > 0)
-        ? input.sitePhotos
-        : (Array.isArray((input as any).images) && (input as any).images.length > 0
-          ? (input as any).images
-          : []);
-      const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, cleanAmcId);
-      const finalSitePhotos = savedInputPhotos.length > 0
-        ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
-        : existingSitePhotos;
+      // Validate mandatory photo uploads for AMC visits
+      const existingBefore = visit.beforeImageUrl;
+      const existingAfter = visit.afterImageUrl;
+      if ((!input.beforeImageUrl && !existingBefore) || (!input.afterImageUrl && !existingAfter)) {
+        throw new ApiError(400, "Before and After photos are mandatory to complete AMC visits");
+      }
 
-      let savedBeforeUrl = (visit as any).beforeImageUrl || null;
+      let savedBeforeUrl = existingBefore || null;
       if (input.beforeImageUrl) {
-        const saved = processAndSaveBase64Photos([input.beforeImageUrl], cleanAmcId);
+        const saved = await processAndSaveBase64Photos([input.beforeImageUrl], cleanAmcId, "before", "AMC", visit.customer.fullName);
         savedBeforeUrl = saved[0] || input.beforeImageUrl;
       }
 
-      let savedAfterUrl = (visit as any).afterImageUrl || null;
+      let savedAfterUrl = existingAfter || null;
       if (input.afterImageUrl) {
-        const saved = processAndSaveBase64Photos([input.afterImageUrl], cleanAmcId);
+        const saved = await processAndSaveBase64Photos([input.afterImageUrl], cleanAmcId, "after", "AMC", visit.customer.fullName);
         savedAfterUrl = saved[0] || input.afterImageUrl;
       }
 
@@ -783,8 +904,17 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
           completedByName: completedByName,
           beforeImageUrl: savedBeforeUrl,
           afterImageUrl: savedAfterUrl,
-          sitePhotos: finalSitePhotos,
         },
+      });
+
+      await notifyTaskCompleted(auth, {
+        id: cleanAmcId,
+        jobType: "AMC",
+        customerName: visit.customer.fullName,
+        customerPhone: visit.customer.phoneNumber,
+        fixCharges: 0,
+      }, savedAfterUrl ?? savedBeforeUrl).catch((error) => {
+        console.warn("Failed to send AMC completion notification:", error);
       });
 
       return {
@@ -792,10 +922,10 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         jobType: "AMC",
         status: "completed",
         completedAt: updated.completedAt?.toISOString(),
-        beforeImageUrl: (updated as any).beforeImageUrl ?? null,
-        afterImageUrl: (updated as any).afterImageUrl ?? null,
-        sitePhotos: (updated as any).sitePhotos ?? [],
-        images: (updated as any).sitePhotos ?? [],
+        beforeImageUrl: updated.beforeImageUrl ?? null,
+        afterImageUrl: updated.afterImageUrl ?? null,
+        sitePhotos: [],
+        images: [],
         completionMessage: updated.visitNotes ?? updated.notes ?? null,
       };
     }
@@ -803,10 +933,16 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
     // Handle regular tasks
     const numericId = parseInt(taskId, 10);
     const id = !isNaN(numericId) ? numericId : -1;
-    let task: any = id > 0 ? await prisma.task.findUnique({ where: { id } }).catch(() => null) : null;
+    let task: any = id > 0 ? await prisma.task.findUnique({
+      where: { id },
+      include: {
+        taskAssignments: { select: { employeeUserId: true, status: true } },
+        taskImages: true,
+      },
+    }).catch(() => null) : null;
 
     if (!task) {
-      // Fallback: check if task exists in mock database or first available task for employee
+      // Fallback: check if task exists in mock database
       const tasks = getMockTasks();
       const mockTask = tasks.find((t: any) => String(t.id) === String(taskId) || String(t.id) === String(id));
       if (mockTask) {
@@ -816,43 +952,62 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       }
     }
 
-
-    if (auth.role === UserRole.EMPLOYEE && task.employeeUserId !== auth.userId) {
+    const isAssignedEmployee = isTaskAssignedToEmployee(task, auth.userId);
+    if (!isAdminTaskActor(auth) && !isAssignedEmployee) {
       throw new ApiError(403, "You cannot complete tasks assigned to other employees");
     }
 
-    // Process site photos (base64 -> disk file URLs)
+    validateTaskCompletionImages(task, input);
+
+    // Process site photos to Cloudflare R2
     const existingSitePhotos = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
-    const inputPhotos = (Array.isArray(input.sitePhotos) && input.sitePhotos.length > 0)
-      ? input.sitePhotos
-      : (Array.isArray((input as any).images) && (input as any).images.length > 0
-        ? (input as any).images
-        : []);
-    const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, id);
+    const inputPhotos = getInputSitePhotos(input);
+    const savedInputPhotos = await processAndSaveBase64Photos(inputPhotos, id, "site-visit", task.jobType, task.customerName);
     const finalSitePhotos = savedInputPhotos.length > 0
       ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
       : existingSitePhotos;
 
-    // Process before/after images if passed as base64
+    // Process before/after images to Cloudflare R2
     let savedBeforeUrl = task.beforeImageUrl;
     if (input.beforeImageUrl) {
-      const saved = processAndSaveBase64Photos([input.beforeImageUrl], id);
+      const saved = await processAndSaveBase64Photos([input.beforeImageUrl], id, "before", task.jobType, task.customerName);
       savedBeforeUrl = saved[0] || input.beforeImageUrl;
     }
 
     let savedAfterUrl = task.afterImageUrl;
     if (input.afterImageUrl) {
-      const saved = processAndSaveBase64Photos([input.afterImageUrl], id);
+      const saved = await processAndSaveBase64Photos([input.afterImageUrl], id, "after", task.jobType, task.customerName);
       savedAfterUrl = saved[0] || input.afterImageUrl;
+    }
+
+    let nextTaskStatus: TaskStatus = TaskStatus.COMPLETED;
+    if (id > 0) {
+      const assignmentWhere = isAdminTaskActor(auth)
+        ? { taskId: id }
+        : { taskId: id, employeeUserId: auth.userId };
+
+      await prisma.taskAssignment.updateMany({
+        where: assignmentWhere,
+        data: { status: TaskAssignmentStatus.COMPLETED },
+      });
+
+      const remainingAssignments = await prisma.taskAssignment.count({
+        where: {
+          taskId: id,
+          status: { not: TaskAssignmentStatus.COMPLETED },
+        },
+      });
+      nextTaskStatus = remainingAssignments === 0 ? TaskStatus.COMPLETED : TaskStatus.IN_PROGRESS;
     }
 
     let updated: any;
     if (id > 0) {
-      try {
-        updated = await prisma.task.update({
+      // Use transaction to ensure atomicity
+      updated = await prisma.$transaction(async (tx) => {
+        const updatedTask = await tx.task.update({
           where: { id },
           data: {
-            status: TaskStatus.COMPLETED,
+            status: nextTaskStatus,
             completionMessage: input.message,
             completionDocumentUrl: input.documentUrl ?? null,
             beforeImageUrl: savedBeforeUrl,
@@ -862,21 +1017,60 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
             afterLatitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : undefined,
             afterLongitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : undefined,
             sitePhotos: finalSitePhotos,
-            completedAt: new Date(),
+            completedAt: nextTaskStatus === TaskStatus.COMPLETED ? new Date() : undefined,
           },
         });
-      } catch (err) {
-        console.warn(`Could not update task ${id} in Prisma database, using in-memory task:`, err);
-        updated = {
-          ...task,
-          status: "COMPLETED",
-          completionMessage: input.message,
-          beforeImageUrl: savedBeforeUrl,
-          afterImageUrl: savedAfterUrl,
-          sitePhotos: finalSitePhotos,
-          completedAt: new Date(),
-        };
-      }
+
+        // Create TaskImage records in Neon PostgreSQL for the uploaded images
+        const imageRecords: any[] = [];
+        if (savedBeforeUrl) {
+          imageRecords.push({
+            taskId: id,
+            employeeUserId: auth.userId,
+            type: "before",
+            url: savedBeforeUrl,
+            objectKey: savedBeforeUrl.includes(".r2.cloudflarestorage.com/") ? savedBeforeUrl.split("/").slice(-4).join("/") : null,
+            latitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : null,
+            longitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : null,
+          });
+        }
+        if (savedAfterUrl) {
+          imageRecords.push({
+            taskId: id,
+            employeeUserId: auth.userId,
+            type: "after",
+            url: savedAfterUrl,
+            objectKey: savedAfterUrl.includes(".r2.cloudflarestorage.com/") ? savedAfterUrl.split("/").slice(-4).join("/") : null,
+            latitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : null,
+            longitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : null,
+          });
+        }
+
+        if (savedInputPhotos.length > 0) {
+          savedInputPhotos.forEach((photoUrl: string, idx: number) => {
+            if (photoUrl) {
+              imageRecords.push({
+                taskId: id,
+                employeeUserId: auth.userId,
+                type: `site_photo_${idx + 1}`,
+                url: photoUrl,
+                objectKey: photoUrl.includes(".r2.cloudflarestorage.com/") ? photoUrl.split("/").slice(-4).join("/") : null,
+                latitude: null,
+                longitude: null,
+              });
+            }
+          });
+        }
+
+        if (imageRecords.length > 0) {
+          await tx.taskImage.deleteMany({
+            where: isAdminTaskActor(auth) ? { taskId: id } : { taskId: id, employeeUserId: auth.userId },
+          });
+          await tx.taskImage.createMany({ data: imageRecords });
+        }
+
+        return updatedTask;
+      });
     } else {
       updated = {
         ...task,
@@ -889,55 +1083,12 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       };
     }
 
-    await prisma.taskAssignment.updateMany({
-      where: { taskId: id },
-      data: { status: TaskAssignmentStatus.COMPLETED },
-    });
-
-    // Build taskImage records with clean disk file URLs (NOT raw base64)
-    const imageRecords: any[] = [];
-    if (savedBeforeUrl) {
-      imageRecords.push({
-        taskId: id,
-        employeeUserId: auth.userId,
-        type: "before",
-        url: savedBeforeUrl,
-        latitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : null,
-        longitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : null,
-      });
-    }
-    if (savedAfterUrl) {
-      imageRecords.push({
-        taskId: id,
-        employeeUserId: auth.userId,
-        type: "after",
-        url: savedAfterUrl,
-        latitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : null,
-        longitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : null,
+    if (nextTaskStatus === TaskStatus.COMPLETED) {
+      await notifyTaskCompleted(auth, updated, savedAfterUrl ?? savedBeforeUrl ?? savedInputPhotos[0] ?? null).catch((error) => {
+        console.warn("Failed to send task completion notifications:", error);
       });
     }
 
-    if (savedInputPhotos.length > 0) {
-      savedInputPhotos.forEach((photoUrl: string, idx: number) => {
-        if (photoUrl) {
-          imageRecords.push({
-            taskId: id,
-            employeeUserId: auth.userId,
-            type: `site_photo_${idx + 1}`,
-            url: photoUrl,
-            latitude: null,
-            longitude: null,
-          });
-        }
-      });
-    }
-
-    if (imageRecords.length > 0) {
-      await prisma.taskImage.deleteMany({
-        where: { taskId: id },
-      });
-      await prisma.taskImage.createMany({ data: imageRecords });
-    }
     await prisma.auditLog.create({
       data: {
         actorId: auth.userId,
@@ -948,40 +1099,17 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
           status: updated.status,
         },
       },
-    });
+    }).catch(() => {});
 
     const fullTask = await prisma.task.findUnique({
       where: { id },
       include: getTaskInclude(),
     });
-    return serializeTask(fullTask || updated);
+    return serializeTask(fullTask || updated, { scopedEmployeeUserId: isAdminTaskActor(auth) ? null : auth.userId });
   } catch (error) {
-    if (error instanceof ApiError && error.statusCode !== 500) throw error;
-    console.warn("DB offline: Return mocked completeTask success", error);
-    const tasks = getMockTasks();
-    const idx = tasks.findIndex((t: any) => String(t.id) === String(taskId));
-    if (idx === -1) throw new ApiError(404, "Task not found");
-
-    const t = tasks[idx];
-    if (auth.role === "EMPLOYEE" && t.employeeUserId !== auth.userId) {
-      throw new ApiError(403, "You cannot complete tasks assigned to other employees");
-    }
-
-    t.status = "completed";
-    t.completionMessage = input.message;
-    t.completionDocumentUrl = input.documentUrl ?? null;
-    t.completedAt = new Date().toISOString();
-    t.updatedAt = new Date().toISOString();
-    t.beforeImageUrl = input.beforeImageUrl ?? null;
-    t.afterImageUrl = input.afterImageUrl ?? null;
-    t.beforeLatitude = input.beforeLatitude ?? null;
-    t.beforeLongitude = input.beforeLongitude ?? null;
-    t.afterLatitude = input.afterLatitude ?? null;
-    t.afterLongitude = input.afterLongitude ?? null;
-    t.sitePhotos = input.sitePhotos || (input as any).images || undefined;
-    t.images = t.sitePhotos;
-    saveMockTask(t);
-    return serializeTask(t);
+    if (error instanceof ApiError) throw error;
+    console.error("Error in completeTask:", error);
+    throw new ApiError(500, `Failed to complete task: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -1246,7 +1374,23 @@ export async function updateTaskPhotos(auth: AuthContext, id: number | string, s
   try {
     if (isNaN(numericId)) throw new ApiError(400, "Invalid task ID");
 
-    const savedPhotos = processAndSaveBase64Photos(sitePhotos, numericId);
+    const task = await prisma.task.findUnique({
+      where: { id: numericId },
+      select: {
+        employeeUserId: true,
+        jobType: true,
+        customerName: true,
+        taskAssignments: { select: { employeeUserId: true } },
+      },
+    });
+    if (!task) throw new ApiError(404, "Task not found");
+    const isAssignedEmployee = task.employeeUserId === auth.userId ||
+      task.taskAssignments.some((assignment) => assignment.employeeUserId === auth.userId);
+    if (auth.role === UserRole.EMPLOYEE && !isAssignedEmployee) {
+      throw new ApiError(403, "You cannot update photos for tasks assigned to other employees");
+    }
+
+    const savedPhotos = await processAndSaveBase64Photos(sitePhotos, numericId, "site-visit", task.jobType, task.customerName);
 
     // Sync taskImage records with clean disk file URLs
     await prisma.taskImage.deleteMany({

@@ -13,16 +13,24 @@ export const SolarExpertSection: React.FC = () => {
   const [entries, setEntries] = useState<IsphereGreenItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<IsphereGreenItem | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const fetchEntries = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
       const url = `/api/v1/isphere-green?category=SOLAR_EXPERT&subcategory=SOLAR_EXPERT${
-        search ? `&search=${encodeURIComponent(search)}` : ""
+        debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ""
       }`;
       const res = await fetch(url, {
         headers: { Authorization: token ? `Bearer ${token}` : "" },
@@ -40,7 +48,7 @@ export const SolarExpertSection: React.FC = () => {
 
   useEffect(() => {
     fetchEntries();
-  }, [search]);
+  }, [debouncedSearch]);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this solar expert record?")) return;

@@ -24,4 +24,4 @@ financialsRoutes.get("/pnl", ...financialAuth, asyncHandler(getMonthlyPnL));
 financialsRoutes.get("/zones", ...financialAuth, asyncHandler(getZoneBreakdown));
 financialsRoutes.get("/amc", ...financialAuth, asyncHandler(getAmcContracts));
 financialsRoutes.get("/payouts", ...financialAuth, asyncHandler(getPartnerPayouts));
-financialsRoutes.post("/commissions/:customerId/confirm", authenticateAccessToken, requireMinRole(UserRole.ADMIN), upload.single("proof"), asyncHandler(confirmCommissionPayment));
+financialsRoutes.post("/commissions/:customerId/confirm", authenticateAccessToken, authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUB_ADMIN, UserRole.EMPLOYEE), upload.single("proof"), asyncHandler(confirmCommissionPayment));
