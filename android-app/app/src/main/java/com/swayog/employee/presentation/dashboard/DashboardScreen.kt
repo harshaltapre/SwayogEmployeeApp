@@ -48,6 +48,7 @@ fun DashboardScreen(
     onNavigateToSubAdminCalendar: () -> Unit,
     onNavigateToSubAdminEmployees: () -> Unit,
     onNavigateToSubAdminFinancials: () -> Unit,
+    onNavigateToInverterData: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val dashboardState by viewModel.dashboardState.collectAsState()
@@ -382,6 +383,19 @@ fun DashboardScreen(
                                     label = "Timesheets",
                                     color = Color(0xFFD1603D), // BrandOrange
                                     onClick = onNavigateToDailyCommit,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                QuickActionCard(
+                                    icon = Icons.Default.WbSunny,
+                                    label = "Solar Data",
+                                    color = Color(0xFFF59E0B), // Solar Yellow
+                                    onClick = onNavigateToInverterData,
                                     modifier = Modifier.weight(1f)
                                 )
                             }

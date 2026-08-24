@@ -43,6 +43,85 @@ import com.swayog.employee.presentation.common.components.SwayogCard
 import java.text.SimpleDateFormat
 import java.util.*
 
+// Brand options matching web implementation
+private val INVERTER_BRANDS = listOf(
+    "KSolar",
+    "PVBlink", 
+    "UTL Solar",
+    "Waaree",
+    "Vsole",
+    "Solarman",
+    "Growatt",
+    "Havells",
+    "Anchor"
+)
+
+// Connection type options per brand (matching web logic)
+private fun getConnectionTypesForBrand(brand: String): List<String> {
+    return when (brand) {
+        "KSolar" -> listOf("ShineMonitor", "Simulation")
+        "Growatt" -> listOf("GrowattPortal", "Simulation")
+        "UTL Solar" -> listOf("FoxESS", "Simulation")
+        "Solarman" -> listOf("Solarman", "Simulation")
+        "Waaree" -> listOf("Waaree", "Simulation")
+        else -> listOf("Simulation", "Solarman", "Solis", "ShineMonitor", "FoxESS")
+    }
+}
+
+// Parse brand and connection type from stored brand string (matching web logic)
+private fun parseBrandAndType(brandStr: String?): Pair<String, String> {
+    if (brandStr == null) return Pair("", "Simulation")
+    
+    val brandLower = brandStr.lowercase()
+    
+    // Extract brand
+    val brand = when {
+        brandLower.contains("anchor") || brandLower.contains("panasonic") -> "Anchor Panasonic"
+        brandLower.contains("pvblink") || brandLower.contains("pv blink") -> "PV Blink"
+        brandLower.contains("utl") || brandLower.contains("foxess") -> "UTL Solar"
+        brandLower.contains("solarman") || brandLower.contains("solar men") || brandLower.contains("solarmen") -> "Solar Men"
+        brandLower.contains("solus") -> "Solus Cloud"
+        brandLower.contains("havells") -> "Havells"
+        brandLower.contains("polycab") -> "Polycab"
+        brandLower.contains("waaree") || brandLower.contains("waree") -> "Waaree"
+        brandLower.contains("ksolar") || brandLower.contains("k-solar") -> "KSolar"
+        brandLower.contains("growatt") -> "Growatt"
+        brandLower.contains("vsole") -> "Vsole"
+        else -> brandStr
+    }
+    
+    // Extract connection type
+    val connectionType = when {
+        brandLower.contains("(solarman)") -> "Solarman"
+        brandLower.contains("(solis)") -> "Solis"
+        brandLower.contains("(shinemonitor)") -> "ShineMonitor"
+        brandLower.contains("(foxess)") -> "FoxESS"
+        brandLower.contains("(growattportal)") -> "GrowattPortal"
+        brandLower.contains("(growatt)") -> "GrowattPortal"
+        brandLower.contains("(waaree)") -> "Waaree"
+        brandLower.contains("solarman") || brandLower.contains("solar men") -> "Solarman"
+        brandLower.contains("ksolar") || brandLower.contains("k-solar") -> "ShineMonitor"
+        brandLower.contains("growatt") -> "GrowattPortal"
+        brandLower.contains("utl") -> "FoxESS"
+        brandLower.contains("waaree") -> "Waaree"
+        else -> "Simulation"
+    }
+    
+    return Pair(brand, connectionType)
+}
+
+// Build brand string with connection type (matching web logic)
+private fun buildBrandString(brand: String, connectionType: String): String {
+    return when {
+        brand == "KSolar" && connectionType == "ShineMonitor" -> "KSolar"
+        brand == "Growatt" && connectionType == "GrowattPortal" -> "Growatt (GrowattPortal)"
+        brand == "UTL Solar" && connectionType == "FoxESS" -> "UTL"
+        brand == "Solarman" && connectionType == "Solarman" -> "Solarman"
+        !listOf("KSolar", "Growatt", "UTL Solar", "Solarman").contains(brand) && connectionType == "Simulation" -> brand
+        else -> "$brand ($connectionType)"
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServiceCoordinatorDashboardContent(
@@ -1731,7 +1810,7 @@ fun CustomerSearchDialog(
     }
 }
 
-// UPDATE CUSTOMER CREDENTIALS DIALOG
+// UPDATE CUSTOMER CREDENTIALS DIALOG (matching web implementation)
 @Composable
 fun UpdateCredentialsDialog(
     customer: Customer,
@@ -1741,14 +1820,35 @@ fun UpdateCredentialsDialog(
     val isUpdating by viewModel.isUpdatingCredentials.collectAsState()
     val updateError by viewModel.updateError.collectAsState()
 
-    var brand by remember { mutableStateOf(customer.inverterBrand ?: "") }
-    var loginId by remember { mutableStateOf(customer.inverterLoginId ?: "") }
-    var passwordVal by remember { mutableStateOf(customer.inverterPassword ?: "") }
-    var apiKey by remember { mutableStateOf(customer.inverterApiKey ?: "") }
-    var deviceSn by remember { mutableStateOf(customer.inverterDeviceSn ?: "") }
+    // Inverter credential fields (matching web implementation)
+    var selectedBrand by remember { mutableStateOf("") }
+    var selectedConnectionType by remember { mutableStateOf("Simulation") }
+    var inverterLoginId by remember { mutableStateOf(customer.inverterLoginId ?: "") }
+    var inverterPassword by remember { mutableStateOf(customer.inverterPassword ?: "") }
+    var inverterApiKey by remember { mutableStateOf(customer.inverterApiKey ?: "") }
+    var inverterDeviceSn by remember { mutableStateOf(customer.inverterDeviceSn ?: "") }
     var city by remember { mutableStateOf(customer.city ?: "") }
     var address by remember { mutableStateOf(customer.address ?: "") }
-    var stageStr by remember { mutableStateOf(customer.projectStage?.toString() ?: "0") }
+    var stage by remember { mutableIntStateOf(customer.projectStage ?: 1) } // Changed default to 1 to match web range
+    
+    var brandDropdownExpanded by remember { mutableStateOf(false) }
+    var connectionTypeDropdownExpanded by remember { mutableStateOf(false) }
+    
+    // Initialize brand and connection type from existing customer data
+    LaunchedEffect(customer.inverterBrand) {
+        val (brand, connectionType) = parseBrandAndType(customer.inverterBrand)
+        selectedBrand = brand
+        selectedConnectionType = connectionType
+    }
+    
+    // Update connection type when brand changes (matching web logic)
+    val connectionTypes = remember(selectedBrand) { getConnectionTypesForBrand(selectedBrand) }
+    
+    LaunchedEffect(selectedBrand) {
+        if (selectedBrand.isNotEmpty() && !connectionTypes.contains(selectedConnectionType)) {
+            selectedConnectionType = connectionTypes.firstOrNull() ?: "Simulation"
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1765,7 +1865,7 @@ fun UpdateCredentialsDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Update Credentials",
+                    text = "Update Inverter Credentials",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -1774,51 +1874,184 @@ fun UpdateCredentialsDialog(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    // Inverter Brand Dropdown (matching web)
                     item {
-                        OutlinedTextField(
-                            value = brand,
-                            onValueChange = { brand = it },
-                            label = { Text("Inverter Brand (e.g. Growatt, KSolar)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
+                        ExposedDropdownMenuBox(
+                            expanded = brandDropdownExpanded,
+                            onExpandedChange = { brandDropdownExpanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = selectedBrand,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Inverter Brand") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = brandDropdownExpanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = brandDropdownExpanded,
+                                onDismissRequest = { brandDropdownExpanded = false }
+                            ) {
+                                INVERTER_BRANDS.forEach { brand ->
+                                    DropdownMenuItem(
+                                        text = { Text(brand) },
+                                        onClick = {
+                                            selectedBrand = brand
+                                            brandDropdownExpanded = false
+                                            // Auto-select appropriate connection type
+                                            val types = getConnectionTypesForBrand(brand)
+                                            selectedConnectionType = types.firstOrNull() ?: "Simulation"
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
-                    item {
-                        OutlinedTextField(
-                            value = loginId,
-                            onValueChange = { loginId = it },
-                            label = { Text("Inverter Login ID") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
+                    
+                    // API Connection Type Dropdown (conditional, matching web)
+                    if (selectedBrand.isNotEmpty()) {
+                        item {
+                            ExposedDropdownMenuBox(
+                                expanded = connectionTypeDropdownExpanded,
+                                onExpandedChange = { connectionTypeDropdownExpanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedConnectionType,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("API Connection Type") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = connectionTypeDropdownExpanded) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor()
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = connectionTypeDropdownExpanded,
+                                    onDismissRequest = { connectionTypeDropdownExpanded = false }
+                                ) {
+                                    connectionTypes.forEach { type ->
+                                        DropdownMenuItem(
+                                            text = { Text(type) },
+                                            onClick = {
+                                                selectedConnectionType = type
+                                                connectionTypeDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
-                    item {
-                        OutlinedTextField(
-                            value = passwordVal,
-                            onValueChange = { passwordVal = it },
-                            label = { Text("Inverter Password") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
+                    
+                    // Conditional credential fields (matching web logic)
+                    if (selectedConnectionType != "Simulation" && selectedBrand.isNotEmpty()) {
+                        if (selectedConnectionType != "Waaree") {
+                            // Non-Waaree brands: Username/Password
+                            item {
+                                OutlinedTextField(
+                                    value = inverterLoginId,
+                                    onValueChange = { inverterLoginId = it },
+                                    label = { Text("$selectedBrand Username / Login ID") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            }
+                            item {
+                                OutlinedTextField(
+                                    value = inverterPassword,
+                                    onValueChange = { inverterPassword = it },
+                                    label = { Text("$selectedBrand Password") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            }
+                        } else {
+                            // Waaree: Token ID and Serial Number
+                            item {
+                                OutlinedTextField(
+                                    value = inverterApiKey,
+                                    onValueChange = { inverterApiKey = it },
+                                    label = { Text("Waaree Token ID") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            }
+                            item {
+                                OutlinedTextField(
+                                    value = inverterDeviceSn,
+                                    onValueChange = { inverterDeviceSn = it },
+                                    label = { Text("Inverter Serial Number (SN)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            }
+                        }
+                        
+                        // Advanced API Settings for FoxESS/Solarman/Solis
+                        if (listOf("FoxESS", "Solarman", "Solis").contains(selectedConnectionType)) {
+                            item {
+                                Text(
+                                    text = "Advanced API Settings (Optional)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = inverterApiKey,
+                                        onValueChange = { inverterApiKey = it },
+                                        label = { Text("API Key / App ID") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = inverterDeviceSn,
+                                        onValueChange = { inverterDeviceSn = it },
+                                        label = { Text("Device SN / Station ID") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                }
+                            }
+                        }
                     }
-                    item {
-                        OutlinedTextField(
-                            value = apiKey,
-                            onValueChange = { apiKey = it },
-                            label = { Text("Inverter API Key (if any)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
+                    
+                    // Simulation notice
+                    if (selectedConnectionType == "Simulation" && selectedBrand.isNotEmpty()) {
+                        item {
+                            Surface(
+                                color = Color(0xFFFFF7ED),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Info,
+                                        contentDescription = null,
+                                        tint = Color(0xFFEA580C),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = "Telemetry Simulation Enabled - No API credentials required",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFF9A3412)
+                                    )
+                                }
+                            }
+                        }
                     }
-                    item {
-                        OutlinedTextField(
-                            value = deviceSn,
-                            onValueChange = { deviceSn = it },
-                            label = { Text("Device Serial Number (if any)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                    }
+                    
+                    // Location fields
                     item {
                         OutlinedTextField(
                             value = city,
@@ -1838,15 +2071,21 @@ fun UpdateCredentialsDialog(
                             maxLines = 3
                         )
                     }
+                    
+                    // Project Stage (matching web range 1-10)
                     item {
-                        OutlinedTextField(
-                            value = stageStr,
-                            onValueChange = { stageStr = it },
-                            label = { Text("Project Stage (Number 1-10)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
+                        Column {
+                            Text(
+                                text = "Project Stage: $stage", 
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            Slider(
+                                value = stage.toFloat(),
+                                onValueChange = { stage = it.toInt() },
+                                valueRange = 1f..10f, // Changed to match web range
+                                steps = 8
+                            )
+                        }
                     }
 
                     updateError?.let { err ->
@@ -1876,14 +2115,20 @@ fun UpdateCredentialsDialog(
                     } else {
                         Button(
                             onClick = {
-                                val stage = stageStr.toIntOrNull() ?: customer.projectStage
+                                // Build brand string with connection type (matching web logic)
+                                val finalBrandString = if (selectedBrand.isNotEmpty()) {
+                                    buildBrandString(selectedBrand, selectedConnectionType)
+                                } else {
+                                    null
+                                }
+                                
                                 viewModel.updateCredentials(
                                     customerId = customer.id,
-                                    brand = brand.trim().ifEmpty { null },
-                                    loginId = loginId.trim().ifEmpty { null },
-                                    passwordVal = passwordVal.trim().ifEmpty { null },
-                                    apiKey = apiKey.trim().ifEmpty { null },
-                                    deviceSn = deviceSn.trim().ifEmpty { null },
+                                    brand = finalBrandString,
+                                    loginId = inverterLoginId.trim().ifEmpty { null },
+                                    passwordVal = inverterPassword.trim().ifEmpty { null },
+                                    apiKey = inverterApiKey.trim().ifEmpty { null },
+                                    deviceSn = inverterDeviceSn.trim().ifEmpty { null },
                                     city = city.trim(),
                                     address = address.trim(),
                                     projectStage = stage,

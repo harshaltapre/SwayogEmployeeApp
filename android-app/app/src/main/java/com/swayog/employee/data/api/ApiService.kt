@@ -161,7 +161,7 @@ interface ApiService {
         @Query("period") period: String
     ): Response<ApiResponse<InverterGenerationHistoryResponse>>
     
-    @PATCH("customers/{customerId}")
+    @PATCH("subadmin/customers/{customerId}")
     suspend fun updateCustomer(
         @Path("customerId") customerId: Int,
         @Body request: UpdateCustomerRequest
@@ -354,6 +354,17 @@ interface ApiService {
     // Admin Dashboard endpoints
     @GET("admin/dashboard")
     suspend fun getAdminDashboard(): Response<ApiResponse<DashboardStats>>
+
+    // Solar Generation / Inverter Data endpoints
+    @GET("waaree/inverter-data")
+    suspend fun getWaareeInverterData(
+        @Query("customerId") customerId: Int? = null
+    ): Response<WaareeInverterDataResponse>
+
+    @GET("waaree/power-graph")
+    suspend fun getWaareePowerGraph(
+        @Query("period") period: String = "realtime"
+    ): Response<WaareePowerGraphResponse>
 
     // User Settings endpoints
     @GET("users/me/settings")

@@ -23,7 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, AlertCircle, Zap, MapPin, Phone, Award, Calendar, Wrench, User, CheckCircle2, Clock, ChevronsUpDown, Check } from "lucide-react";
+import { RefreshCw, AlertCircle, Zap, MapPin, Phone, Award, Calendar, Wrench, User, CheckCircle2, Clock, ChevronsUpDown, Check, X } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -46,15 +46,17 @@ export default function SubAdminDashboard() {
     const brandLower = (brandStr || "").toLowerCase();
     
     let brand = "";
-    if (brandLower.includes("ksolar") || brandLower.includes("k-solar")) brand = "KSolar";
-    else if (brandLower.includes("growatt")) brand = "Growatt";
-    else if (brandLower.includes("utl") || brandLower.includes("foxess")) brand = "UTL";
-    else if (brandLower.includes("pvblink")) brand = "PVBlink";
-    else if (brandLower.includes("waaree")) brand = "Waaree";
-    else if (brandLower.includes("vsole")) brand = "Vsole";
-    else if (brandLower.includes("solarman")) brand = "Solarman";
+    if (brandLower.includes("anchor") || brandLower.includes("panasonic")) brand = "Anchor Panasonic";
+    else if (brandLower.includes("pvblink") || brandLower.includes("pv blink")) brand = "PV Blink";
+    else if (brandLower.includes("utl") || brandLower.includes("foxess")) brand = "UTL Solar";
+    else if (brandLower.includes("solarman") || brandLower.includes("solar men") || brandLower.includes("solarmen")) brand = "Solar Men";
+    else if (brandLower.includes("solus")) brand = "Solus Cloud";
     else if (brandLower.includes("havells")) brand = "Havells";
-    else if (brandLower.includes("anchor")) brand = "Anchor";
+    else if (brandLower.includes("polycab")) brand = "Polycab";
+    else if (brandLower.includes("waaree") || brandLower.includes("waree")) brand = "Waaree";
+    else if (brandLower.includes("ksolar") || brandLower.includes("k-solar")) brand = "KSolar";
+    else if (brandLower.includes("growatt")) brand = "Growatt";
+    else if (brandLower.includes("vsole")) brand = "Vsole";
     else brand = brandStr || "";
 
     let connectionType = "Simulation";
@@ -65,11 +67,11 @@ export default function SubAdminDashboard() {
     else if (brandLower.includes("(growattportal)")) connectionType = "GrowattPortal";
     else if (brandLower.includes("(growatt)")) connectionType = "GrowattPortal";
     else if (brandLower.includes("(waaree)")) connectionType = "Waaree";
-    else if (brandLower.includes("solarman") && brand === "Solarman") connectionType = "Solarman";
-    else if ((brandLower.includes("ksolar") || brandLower.includes("k-solar")) && brand === "KSolar") connectionType = "ShineMonitor";
-    else if (brandLower.includes("growatt") && brand === "Growatt") connectionType = "GrowattPortal";
-    else if ((brandLower.includes("utl") || brandLower.includes("foxess")) && brand === "UTL") connectionType = "FoxESS";
-    else if (brandLower.includes("waaree") && brand === "Waaree") connectionType = "Waaree";
+    else if (brandLower.includes("solarman") || brandLower.includes("solar men")) connectionType = "Solarman";
+    else if (brandLower.includes("ksolar") || brandLower.includes("k-solar")) connectionType = "ShineMonitor";
+    else if (brandLower.includes("growatt")) connectionType = "GrowattPortal";
+    else if (brandLower.includes("utl")) connectionType = "FoxESS";
+    else if (brandLower.includes("waaree")) connectionType = "Waaree";
 
     return { brand, connectionType };
   };
@@ -115,12 +117,14 @@ export default function SubAdminDashboard() {
     retry: false,
   });
 
+  const [selectedHistoricalDate, setSelectedHistoricalDate] = useState("");
+
   const {
     data: inverterHistory = [],
     error: inverterHistoryError,
     isLoading: isLoadingInverterHistory,
     refetch: refetchInverterHistory,
-  } = useGetCustomerInverterGenerationHistory(selectedCustomerId ?? -1, selectedPeriod, {
+  } = useGetCustomerInverterGenerationHistory(selectedCustomerId ?? -1, selectedPeriod, selectedHistoricalDate, {
     enabled: selectedCustomerId !== null,
     retry: false,
   });
@@ -1184,30 +1188,54 @@ export default function SubAdminDashboard() {
             <Card className="border border-slate-200 shadow-sm">
               <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-100">
                 <div>
-                  <CardTitle className="text-lg font-semibold text-slate-800">Inverter Generation History</CardTitle>
+                  <CardTitle className="text-lg font-semibold text-slate-800">Inverter Generation History & Date Analytics</CardTitle>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    Historical solar generation yield chart over time.
+                    Historical solar generation yield chart. Select date or timeframe to inspect data.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {(["realtime", "daily", "monthly", "yearly"] as const).map((period) => (
-                    <Button
-                      key={period}
-                      variant={selectedPeriod === period ? "secondary" : "outline"}
-                      size="sm"
-                      className="min-w-[80px] capitalize text-xs font-bold"
-                      onClick={() => setSelectedPeriod(period)}
-                    >
-                      {period === "realtime" ? "Real-time" : period}
-                    </Button>
-                  ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+                    <Calendar className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                    <span className="text-xs font-bold text-slate-600">Select Date:</span>
+                    <Input
+                      type="date"
+                      value={selectedHistoricalDate}
+                      onChange={(e) => setSelectedHistoricalDate(e.target.value)}
+                      className="h-7 text-xs border-0 bg-transparent p-0 font-bold text-slate-800 focus-visible:ring-0 w-[125px]"
+                    />
+                    {selectedHistoricalDate && (
+                      <button
+                        onClick={() => setSelectedHistoricalDate("")}
+                        className="text-slate-400 hover:text-slate-600 p-0.5"
+                        title="Clear date"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-1">
+                    {(["realtime", "daily", "monthly", "yearly"] as const).map((period) => (
+                      <Button
+                        key={period}
+                        variant={selectedPeriod === period && !selectedHistoricalDate ? "secondary" : "outline"}
+                        size="sm"
+                        className="min-w-[70px] capitalize text-xs font-bold h-8"
+                        onClick={() => {
+                          setSelectedPeriod(period);
+                        }}
+                      >
+                        {period === "realtime" ? "Real-time" : period}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="pt-6">
                 {isLoadingInverterHistory ? (
                   <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-2">
                     <RefreshCw className="h-5 w-5 animate-spin text-primary" />
-                    <span className="text-sm font-medium">Loading generation history...</span>
+                    <span className="text-sm font-medium">Fetching historical generation data...</span>
                   </div>
                 ) : historyErrorMsg ? (
                   <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-xs text-red-700 flex items-start gap-2.5">
@@ -1221,33 +1249,36 @@ export default function SubAdminDashboard() {
                   <div className="space-y-4">
                     <div className="grid gap-3 sm:grid-cols-3">
                       <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Selected Interval</span>
-                        <span className="mt-1 text-sm font-bold text-slate-800 block capitalize">{selectedPeriod === "realtime" ? "Real-time Power" : selectedPeriod}</span>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                          {selectedHistoricalDate ? "Selected Date" : "Selected Interval"}
+                        </span>
+                        <span className="mt-1 text-sm font-bold text-slate-800 block capitalize">
+                          {selectedHistoricalDate ? selectedHistoricalDate : (selectedPeriod === "realtime" ? "Real-time Power" : selectedPeriod)}
+                        </span>
                       </div>
                       <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
                         <span className="text-[10px] font-bold text-slate-500 uppercase block">
-                          {selectedPeriod === "realtime" ? "Latest Output Power" : "Latest Period Yield"}
+                          {selectedHistoricalDate || selectedPeriod === "realtime" ? "Peak / Output Power" : "Latest Period Yield"}
                         </span>
                         <span className="mt-1 text-sm font-bold text-slate-800 block">
                           {(() => {
-                            if (selectedPeriod === "realtime") {
-                              const curHour = new Date().getHours();
-                              const curPower = (inverterHistory[curHour] as any)?.power ?? (inverterHistory as any[]).find(h => h.power > 0 && h.label === `${String(curHour).padStart(2, '0')}:00`)?.power ?? 0;
-                              return `${curPower.toFixed(2)} kW`;
+                            if (selectedHistoricalDate || selectedPeriod === "realtime") {
+                              const maxP = Math.max(...inverterHistory.map((h: any) => h.power ?? 0));
+                              return `${maxP.toFixed(2)} kW`;
                             }
                             return `${inverterHistory[inverterHistory.length - 1]?.generation?.toFixed(1) ?? 0} kWh`;
                           })()}
                         </span>
                       </div>
                       <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Yield Data Points</span>
-                        <span className="mt-1 text-sm font-bold text-slate-800 block">{inverterHistory.length} records</span>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Yield Records</span>
+                        <span className="mt-1 text-sm font-bold text-slate-800 block">{inverterHistory.length} data points</span>
                       </div>
                     </div>
 
                     <div className="h-[260px] pt-4">
                       <ResponsiveContainer width="100%" height="100%">
-                        {selectedPeriod === "realtime" ? (
+                        {selectedHistoricalDate || selectedPeriod === "realtime" ? (
                           <AreaChart data={inverterHistory} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                             <defs>
                               <linearGradient id="realtimeColor" x1="0" y1="0" x2="0" y2="1">
@@ -1274,8 +1305,18 @@ export default function SubAdminDashboard() {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-200 p-12 text-center text-sm text-slate-500">
-                    No historical yield records are available for this customer yet.
+                  <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/40 p-12 text-center space-y-2">
+                    <AlertCircle className="h-8 w-8 text-amber-500 mx-auto" />
+                    <p className="font-bold text-slate-800 text-sm">
+                      {selectedHistoricalDate 
+                        ? "No data available for the selected date." 
+                        : "No historical yield records are available for this customer yet."}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {selectedHistoricalDate 
+                        ? `No telemetry records found for ${selectedHistoricalDate}. Try picking another date.` 
+                        : "Select another interval or update inverter credentials."}
+                    </p>
                   </div>
                 )}
               </CardContent>
