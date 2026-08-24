@@ -1,7 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { SidebarLayout } from "@/components/SidebarLayout";
 import { PageHeader } from "@/components/PageHeader";
-import { useCompleteTask, useListTasks, getListTasksQueryKey, useListEmployees, useUpdateTaskPhotos } from "@/lib/api-client";
+import { useCompleteTask, useListTasks, getListTasksQueryKey, useListEmployees, useUpdateTaskPhotos, buildAssetUrlFromPath } from "@/lib/api-client";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,7 +11,9 @@ import {
   MapPin, Phone, User, Clock, CheckCircle, X,
   Calendar, Briefcase, ClipboardList, MessageSquare,
   Navigation, AlertCircle, ArrowLeft, Loader2, FileText, Camera, Image as ImageIcon,
+  Search, Filter, SlidersHorizontal, RotateCcw,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -77,7 +79,7 @@ function watermarkImage(file: File, label: string): Promise<string> {
         }
 
         // Standardize sizing
-        const maxDim = 1200;
+        const maxDim = 900;
         let w = img.width;
         let h = img.height;
         if (w > maxDim || h > maxDim) {
@@ -110,7 +112,7 @@ function watermarkImage(file: File, label: string): Promise<string> {
         ctx.fillStyle = "#ffffff";
         ctx.fillText(label, rectX + padding, rectY + padding + fontSize * 0.85);
 
-        resolve(canvas.toDataURL("image/jpeg", 0.85));
+        resolve(canvas.toDataURL("image/jpeg", 0.75));
       };
       img.onerror = (err) => reject(err);
     };
@@ -126,14 +128,17 @@ function TaskDetailDrawer({
 }: {
   task: any;
   onClose: () => void;
-  onMarkComplete: (id: number, payload: any) => void;
+  onMarkComplete: (id: number, payload: any) => Promise<void> | void;
 }) {
   const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [notes, setNotes] = useState<string[]>(taskNotes[task.id] ?? []);
   const [completionMessage, setCompletionMessage] = useState("");
   const [documentUrl, setDocumentUrl] = useState("");
-  const isSiteVisit = task.jobType === "Site Visit" || task.jobType?.toLowerCase().includes("site") || task.jobType?.toLowerCase().includes("visit");
+  const normalizedJobType = String(task.jobType ?? "").toLowerCase();
+  const isSiteVisit = normalizedJobType === "site visit" || (normalizedJobType.includes("site") && !normalizedJobType.includes("amc")) || normalizedJobType.includes("survey") || task.taskType === "SITE_VISIT";
+  const requiresPhotos = ["cleaning", "maintenance", "service", "amc", "visit", "installation", "complaint"].some(t => normalizedJobType.includes(t));
   const updateTaskPhotosMutation = useUpdateTaskPhotos();
   const [sitePhotos, setSitePhotos] = useState<string[]>(
     Array.isArray(task.sitePhotos) ? task.sitePhotos : []
@@ -142,6 +147,31 @@ function TaskDetailDrawer({
   const [photoSourceModalOpen, setPhotoSourceModalOpen] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [beforeImage, setBeforeImage] = useState<string | null>(task.beforeImageUrl ?? null);
+  const [afterImage, setAfterImage] = useState<string | null>(task.afterImageUrl ?? null);
+  const [beforeLat, setBeforeLat] = useState<number | null>(task.beforeLatitude ?? null);
+  const [beforeLng, setBeforeLng] = useState<number | null>(task.beforeLongitude ?? null);
+  const [afterLat, setAfterLat] = useState<number | null>(task.afterLatitude ?? null);
+  const [afterLng, setAfterLng] = useState<number | null>(task.afterLongitude ?? null);
+  const [isProcessingBefore, setIsProcessingBefore] = useState(false);
+  const [isProcessingAfter, setIsProcessingAfter] = useState(false);
+
+  const isSubmitDisabled = isSiteVisit
+    ? (sitePhotos.length < 4 || sitePhotos.length > 10)
+    : (requiresPhotos ? (!beforeImage || !afterImage) : false);
+
+  const requirementMessage = isSiteVisit
+    ? (sitePhotos.length < 4 ? `Upload at least ${4 - sitePhotos.length} more site photo(s) (4–10 required) to enable completion` : (sitePhotos.length > 10 ? "Maximum 10 site photos allowed" : ""))
+    : (requiresPhotos
+        ? (!beforeImage && !afterImage
+            ? "Upload both Before and After work photos with GPS stamps to enable completion"
+            : !beforeImage
+            ? "Upload Before work photo to enable completion"
+            : !afterImage
+            ? "Upload After work photo to enable completion"
+            : "")
+        : "");
 
   const handleSitePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -199,16 +229,6 @@ function TaskDetailDrawer({
     setSitePhotos(updatedList);
     updateTaskPhotosMutation.mutate({ taskId: task.id, sitePhotos: updatedList });
   };
-
-  const requiresPhotos = ["Cleaning", "Maintenance", "Visit", "Service"].includes(task.jobType);
-  const [beforeImage, setBeforeImage] = useState<string | null>(task.beforeImageUrl ?? null);
-  const [afterImage, setAfterImage] = useState<string | null>(task.afterImageUrl ?? null);
-  const [beforeLat, setBeforeLat] = useState<number | null>(task.beforeLatitude ?? null);
-  const [beforeLng, setBeforeLng] = useState<number | null>(task.beforeLongitude ?? null);
-  const [afterLat, setAfterLat] = useState<number | null>(task.afterLatitude ?? null);
-  const [afterLng, setAfterLng] = useState<number | null>(task.afterLongitude ?? null);
-  const [isProcessingBefore, setIsProcessingBefore] = useState(false);
-  const [isProcessingAfter, setIsProcessingAfter] = useState(false);
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>, type: "before" | "after") => {
     const file = e.target.files?.[0];
@@ -427,7 +447,7 @@ function TaskDetailDrawer({
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                 {sitePhotos.map((img, idx) => (
                   <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group shadow-sm bg-slate-100">
-                    <img src={img} alt={`Site Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                    <img src={buildAssetUrlFromPath(img) || img} alt={`Site Photo ${idx + 1}`} className="w-full h-full object-cover" />
                     <button
                       type="button"
                       onClick={() => removeSitePhoto(idx)}
@@ -550,7 +570,7 @@ function TaskDetailDrawer({
                   <span className="text-[10px] font-bold text-slate-550 uppercase">Before Work</span>
                   {beforeImage ? (
                     <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-slate-200">
-                      <img src={beforeImage} alt="Before" className="w-full h-full object-cover" />
+                      <img src={buildAssetUrlFromPath(beforeImage) || beforeImage} alt="Before" className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => { setBeforeImage(null); setBeforeLat(null); setBeforeLng(null); }}
@@ -587,7 +607,7 @@ function TaskDetailDrawer({
                   <span className="text-[10px] font-bold text-slate-555 uppercase">After Work</span>
                   {afterImage ? (
                     <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-slate-200">
-                      <img src={afterImage} alt="After" className="w-full h-full object-cover" />
+                      <img src={buildAssetUrlFromPath(afterImage) || afterImage} alt="After" className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => { setAfterImage(null); setAfterLat(null); setAfterLng(null); }}
@@ -630,20 +650,23 @@ function TaskDetailDrawer({
                 <Camera className="h-4 w-4 text-emerald-600" /> Site Visit Photos ({sitePhotos.length} Uploaded)
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {sitePhotos.map((photo, i) => (
-                  <a
-                    key={i}
-                    href={photo}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 hover:opacity-95 transition-all shadow-sm group"
-                  >
-                    <img src={photo} alt={`Site Photo ${i + 1}`} className="w-full h-full object-cover" />
-                    <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm">
-                      Photo #{i + 1}
-                    </span>
-                  </a>
-                ))}
+                {sitePhotos.map((photo, i) => {
+                  const resolvedUrl = buildAssetUrlFromPath(photo) || photo;
+                  return (
+                    <a
+                      key={i}
+                      href={resolvedUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 hover:opacity-95 transition-all shadow-sm group"
+                    >
+                      <img src={resolvedUrl} alt={`Site Photo ${i + 1}`} className="w-full h-full object-cover" />
+                      <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm">
+                        Photo #{i + 1}
+                      </span>
+                    </a>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -659,8 +682,16 @@ function TaskDetailDrawer({
                 {task.beforeImageUrl && (
                   <div className="flex flex-col items-center gap-2 border rounded-xl p-3 bg-slate-50">
                     <span className="text-[10px] font-bold text-slate-500 uppercase">Before Work</span>
-                    <a href={task.beforeImageUrl} target="_blank" rel="noreferrer" className="w-full aspect-video rounded-lg overflow-hidden border border-slate-250">
-                      <img src={task.beforeImageUrl} alt="Before" className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
+                    <a href={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} target="_blank" rel="noreferrer" className="w-full aspect-video rounded-lg overflow-hidden border border-slate-250 bg-slate-100 flex items-center justify-center">
+                      <img
+                        src={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl}
+                        alt="Before"
+                        loading="lazy"
+                        className="w-full h-full object-cover hover:opacity-90 transition-opacity"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://placehold.co/600x400/e2e8f0/475569?text=Before+Image`;
+                        }}
+                      />
                     </a>
                     {task.beforeLatitude && task.beforeLongitude && (
                       <a
@@ -678,8 +709,16 @@ function TaskDetailDrawer({
                 {task.afterImageUrl && (
                   <div className="flex flex-col items-center gap-2 border rounded-xl p-3 bg-slate-50">
                     <span className="text-[10px] font-bold text-slate-500 uppercase">After Work</span>
-                    <a href={task.afterImageUrl} target="_blank" rel="noreferrer" className="w-full aspect-video rounded-lg overflow-hidden border border-slate-250">
-                      <img src={task.afterImageUrl} alt="After" className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
+                    <a href={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl} target="_blank" rel="noreferrer" className="w-full aspect-video rounded-lg overflow-hidden border border-slate-250 bg-slate-100 flex items-center justify-center">
+                      <img
+                        src={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl}
+                        alt="After"
+                        loading="lazy"
+                        className="w-full h-full object-cover hover:opacity-90 transition-opacity"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://placehold.co/600x400/e2e8f0/475569?text=After+Image`;
+                        }}
+                      />
                     </a>
                     {task.afterLatitude && task.afterLongitude && (
                       <a
@@ -727,45 +766,58 @@ function TaskDetailDrawer({
         {/* Footer action */}
         <div className="border-t bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] sm:px-6">
           {task.status !== "completed" ? (
-            <Button
-              id={`btn-complete-task-${task.id}`}
-              className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2"
-              onClick={() => {
-                if (isSiteVisit && (sitePhotos.length < 4 || sitePhotos.length > 10)) {
-                  toast({
-                    title: sitePhotos.length < 4 ? "Min 4 Site Photos Required" : "Max 10 Site Photos Allowed",
-                    description: sitePhotos.length < 4
-                      ? "Please upload at least 4 photos of the site before completing this Site Visit task."
-                      : "Maximum 10 site photos allowed for this task.",
-                    variant: "destructive"
-                  });
-                  return;
-                }
-                if (!isSiteVisit && requiresPhotos && (!beforeImage || !afterImage)) {
-                  toast({
-                    title: "Photos Required",
-                    description: "Please upload both Before and After work photos with GPS stamp before completing.",
-                    variant: "destructive"
-                  });
-                  return;
-                }
-                onMarkComplete(task.id, {
-                  message: completionMessage.trim().length >= 3 ? completionMessage.trim() : "Task completed successfully.",
-                  documentUrl: documentUrl.trim() || undefined,
-                  beforeImageUrl: beforeImage,
-                  afterImageUrl: afterImage,
-                  beforeLatitude: beforeLat,
-                  beforeLongitude: beforeLng,
-                  afterLatitude: afterLat,
-                  afterLongitude: afterLng,
-                  sitePhotos: sitePhotos.length > 0 ? sitePhotos : undefined,
-                });
-                onClose();
-              }}
-            >
-              <CheckCircle className="h-5 w-5" />
-              Mark as Completed
-            </Button>
+            <div className="space-y-2">
+              <Button
+                id={`btn-complete-task-${task.id}`}
+                disabled={isSubmitDisabled || isSubmitting}
+                className={cn(
+                  "w-full h-11 text-white font-semibold gap-2 transition-all",
+                  isSubmitDisabled
+                    ? "bg-slate-300 hover:bg-slate-300 cursor-not-allowed opacity-60"
+                    : "bg-emerald-600 hover:bg-emerald-500 shadow-md hover:shadow-lg"
+                )}
+                onClick={async () => {
+                  if (isSubmitDisabled || isSubmitting) return;
+                  setIsSubmitting(true);
+                  try {
+                    await onMarkComplete(task.id, {
+                      message: completionMessage.trim().length >= 3 ? completionMessage.trim() : "Task completed successfully.",
+                      documentUrl: documentUrl.trim() || undefined,
+                      beforeImageUrl: beforeImage,
+                      afterImageUrl: afterImage,
+                      beforeLatitude: beforeLat,
+                      beforeLongitude: beforeLng,
+                      afterLatitude: afterLat,
+                      afterLongitude: afterLng,
+                      sitePhotos: sitePhotos.length > 0 ? sitePhotos : undefined,
+                    });
+                    // Only close drawer after successful backend confirmation
+                    onClose();
+                  } catch (error) {
+                    // Keep drawer open on error so user can retry
+                    console.error("Task completion failed:", error);
+                    throw error;
+                  } finally {
+                    setIsSubmitting(false);
+                  }
+                }}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" /> Submitting Completion...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-5 w-5" /> Mark as Completed
+                  </>
+                )}
+              </Button>
+              {isSubmitDisabled && requirementMessage && (
+                <p className="text-[11px] text-amber-600 font-medium text-center flex items-center justify-center gap-1">
+                  <AlertCircle className="h-3 w-3 shrink-0" /> {requirementMessage}
+                </p>
+              )}
+            </div>
           ) : (
             <div className="flex items-center justify-center gap-2 py-2 text-emerald-600 font-semibold">
               <CheckCircle className="h-5 w-5" />
@@ -813,8 +865,6 @@ export default function EmployeeTasks() {
   const [submissionHours, setSubmissionHours] = useState<number>(0);
   const [submissionProofNotes, setSubmissionProofNotes] = useState("");
 
-  const [viewingTaskPhotos, setViewingTaskPhotos] = useState<any | null>(null);
-
   const { data: allEmployees } = useListEmployees({ limit: 300 });
   const currentUserRecord = allEmployees?.find(e => e.userId === user?.id);
   const reportsToSomeone = Boolean(user?.reportingManagerId || currentUserRecord?.reportingManagerId);
@@ -858,253 +908,194 @@ export default function EmployeeTasks() {
     });
   };
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedJobType, setSelectedJobType] = useState<string>("all");
+
   const today = format(new Date(), "yyyy-MM-dd");
 
-  const enriched = tasks ?? [];
+  const availableJobTypes = useMemo(() => {
+    const types = new Set<string>();
+    (tasks ?? []).forEach((t) => {
+      if (t.jobType) types.add(t.jobType);
+    });
+    return Array.from(types).sort();
+  }, [tasks]);
 
-  const todayTasks = enriched.filter((t) =>
+  const filteredTasks = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return (tasks ?? []).filter((task) => {
+      // Search filter by customer name, phone, address, description, id, jobType
+      if (query) {
+        const matchesName = String(task.customerName ?? "").toLowerCase().includes(query);
+        const matchesPhone = String(task.customerPhone ?? "").toLowerCase().includes(query);
+        const matchesAddress = String(task.address ?? "").toLowerCase().includes(query);
+        const matchesDesc = String(task.description ?? "").toLowerCase().includes(query);
+        const matchesJobType = String(task.jobType ?? "").toLowerCase().includes(query);
+        const matchesId = String(task.id ?? "").includes(query);
+        if (!matchesName && !matchesPhone && !matchesAddress && !matchesDesc && !matchesJobType && !matchesId) {
+          return false;
+        }
+      }
+
+      // Filter by Task/Job Type
+      if (selectedJobType !== "all" && task.jobType !== selectedJobType) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [tasks, searchQuery, selectedJobType]);
+
+  const todayTasks = filteredTasks.filter((t) =>
     t.status !== "completed" && t.scheduledTime.slice(0, 10) <= today
   );
-  const upcomingTasks = enriched.filter((t) =>
+  const upcomingTasks = filteredTasks.filter((t) =>
     t.status !== "completed" && t.scheduledTime.slice(0, 10) > today
   );
-  const completedTasks = enriched.filter((t) => t.status === "completed");
+  const completedTasks = filteredTasks.filter((t) => t.status === "completed");
 
-  // Combine completed tasks and daily task submissions chronologically
-  const combinedCompletedFeed = [
-    ...(completedTasks.map(t => ({
-      id: `task-${t.id}`,
-      type: "task",
-      badge: t.jobType,
-      badgeColor: "bg-blue-50 text-blue-700 border-blue-200",
-      description: t.description,
-      remarks: t.completionMessage,
-      proofUrl: t.completionDocumentUrl,
-      date: t.completedAt ? new Date(t.completedAt) : new Date(t.scheduledTime),
-      rawTask: t
-    }))),
-    ...((submissions ?? []).map((s: any) => ({
-      id: `submission-${s.id}`,
-      type: "submission",
-      badge: "Daily Task Update",
-      badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      description: s.description,
-      remarks: s.proofNotes,
-      hoursSpent: s.hoursSpent,
-      proofUrl: s.proofUrl,
-      date: new Date(s.submittedAt),
-    })))
-  ].sort((a, b) => b.date.getTime() - a.date.getTime());
+  const isFiltered = Boolean(searchQuery.trim() || selectedJobType !== "all");
 
-  const handleMarkComplete = (id: number, payload?: any) => {
-    completeTaskMutation.mutate({
-      taskId: id,
-      data: {
-        message: payload?.message || "Task mechanically marked as complete.",
-        documentUrl: payload?.documentUrl,
-        beforeImageUrl: payload?.beforeImageUrl,
-        afterImageUrl: payload?.afterImageUrl,
-        beforeLatitude: payload?.beforeLatitude,
-        beforeLongitude: payload?.beforeLongitude,
-        afterLatitude: payload?.afterLatitude,
-        afterLongitude: payload?.afterLongitude,
-        sitePhotos: payload?.sitePhotos,
-      }
-    }, {
-      onError: (err: any) => {
-        toast({
-          title: "Submission Error",
-          description: err?.error || err?.message || "Please upload all required photos before submitting this task.",
-          variant: "destructive",
-        });
-      }
-    });
+  const handleResetFilters = () => {
+    setSearchQuery("");
+    setSelectedJobType("all");
   };
 
-  const TaskCard = ({ task }: { task: any }) => {
-    const isSiteVisit = task.jobType === "Site Visit" || task.jobType?.toLowerCase().includes("site") || task.jobType?.toLowerCase().includes("visit");
-    const requiresPhotos = isSiteVisit || ["Cleaning", "Maintenance", "Service", "Survey", "Installation"].includes(task.jobType);
-    const sitePhotosList = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
-    const sitePhotosCount = sitePhotosList.length;
-    const hasBefore = Boolean(task.beforeImageUrl);
-    const hasAfter = Boolean(task.afterImageUrl);
-    const uploadedPhotosCount = sitePhotosCount + (hasBefore ? 1 : 0) + (hasAfter ? 1 : 0);
-    const targetCount = isSiteVisit ? 4 : 2;
+  // Combine completed tasks and daily task submissions chronologically
+  const combinedCompletedFeed = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const allCompleted = [
+      ...(completedTasks.map((t) => ({
+        id: `task-${t.id}`,
+        type: "task",
+        badge: t.jobType,
+        badgeColor: "bg-blue-50 text-blue-700 border-blue-200",
+        description: t.description,
+        remarks: t.completionMessage,
+        proofUrl: t.completionDocumentUrl,
+        date: t.completedAt ? new Date(t.completedAt) : new Date(t.scheduledTime),
+        rawTask: t,
+      }))),
+      ...((submissions ?? []).map((s: any) => ({
+        id: `submission-${s.id}`,
+        type: "submission",
+        badge: "Daily Task Update",
+        badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+        description: s.description,
+        remarks: s.proofNotes,
+        hoursSpent: s.hoursSpent,
+        proofUrl: s.proofUrl,
+        date: new Date(s.submittedAt),
+        rawTask: null,
+      }))),
+    ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
-    const handleDirectComplete = () => {
-      if (requiresPhotos && uploadedPhotosCount < (isSiteVisit ? 1 : 2) && !hasBefore && !hasAfter) {
-        toast({
-          title: "Photos Required",
-          description: "Please upload all required photos before submitting this task.",
-          variant: "destructive",
-        });
-        setSelectedTask(task);
-        return;
+    if (!query && selectedJobType === "all") return allCompleted;
+
+    return allCompleted.filter((item) => {
+      if (query) {
+        const descMatch = String(item.description ?? "").toLowerCase().includes(query);
+        const remarksMatch = String(item.remarks ?? "").toLowerCase().includes(query);
+        const customerNameMatch = item.rawTask ? String(item.rawTask.customerName ?? "").toLowerCase().includes(query) : false;
+        const customerPhoneMatch = item.rawTask ? String(item.rawTask.customerPhone ?? "").toLowerCase().includes(query) : false;
+        const addressMatch = item.rawTask ? String(item.rawTask.address ?? "").toLowerCase().includes(query) : false;
+        if (!descMatch && !remarksMatch && !customerNameMatch && !customerPhoneMatch && !addressMatch) return false;
       }
-      handleMarkComplete(task.id);
-    };
+      if (selectedJobType !== "all") {
+        if (item.type === "task" && item.badge !== selectedJobType) return false;
+        if (item.type === "submission" && selectedJobType !== "Daily Task Update") return false;
+      }
+      return true;
+    });
+  }, [completedTasks, submissions, searchQuery, selectedJobType]);
 
-    return (
-      <Card className="mb-4 shadow-sm border-slate-200 hover:shadow-md transition-shadow">
-        <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <StatusBadge status={task.status} />
-                <span className="text-sm font-medium text-slate-500">
-                  {jobTypeIcon[task.jobType] ?? ""} {task.jobType}
-                </span>
-              </div>
-              <h3 className="text-lg font-semibold text-slate-900">{task.description}</h3>
-            </div>
-            <div className="flex items-center gap-2 text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg shrink-0">
-              <Clock className="h-4 w-4" />
-              <span className="text-sm font-medium">
-                {format(new Date(task.scheduledTime), "MMM d, h:mm a")}
+  const handleMarkComplete = async (id: number, payload?: any) => {
+    try {
+      await completeTaskMutation.mutateAsync({
+        taskId: id,
+        data: {
+          message: payload?.message || "Task completed successfully.",
+          documentUrl: payload?.documentUrl,
+          beforeImageUrl: payload?.beforeImageUrl,
+          afterImageUrl: payload?.afterImageUrl,
+          beforeLatitude: payload?.beforeLatitude,
+          beforeLongitude: payload?.beforeLongitude,
+          afterLatitude: payload?.afterLatitude,
+          afterLongitude: payload?.afterLongitude,
+          sitePhotos: payload?.sitePhotos,
+        }
+      });
+      toast({
+        title: "Task Completed 🎉",
+        description: "Task has been completed and photos uploaded to cloud storage successfully.",
+      });
+    } catch (err: any) {
+      const errMsg = err?.message || err?.error || "Failed to complete task. Please try again.";
+      toast({
+        title: "Submission Failed",
+        description: errMsg,
+        variant: "destructive",
+      });
+      throw err;
+    }
+  };
+
+  const TaskCard = ({ task }: { task: any }) => (
+    <Card className="mb-4 shadow-sm border-slate-200 hover:shadow-md transition-shadow">
+      <CardContent className="p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <StatusBadge status={task.status} />
+              <span className="text-sm font-medium text-slate-500">
+                {jobTypeIcon[task.jobType] ?? ""} {task.jobType}
               </span>
             </div>
+            <h3 className="text-lg font-semibold text-slate-900">{task.description}</h3>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 text-sm text-slate-600">
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-slate-400" /> {task.customerName}
-            </div>
-            <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4 text-slate-400" /> {task.customerPhone}
-            </div>
-            <div className="flex items-start gap-2 sm:col-span-2">
-              <MapPin className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
-              <span>{task.address}</span>
-            </div>
+          <div className="flex items-center gap-2 text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg shrink-0">
+            <Clock className="h-4 w-4" />
+            <span className="text-sm font-medium">
+              {format(new Date(task.scheduledTime), "MMM d, h:mm a")}
+            </span>
           </div>
+        </div>
 
-          <div className="flex flex-wrap gap-2 border-t pt-4">
-            <Button
-              id={`btn-view-task-${task.id}`}
-              className="w-full sm:w-auto"
-              onClick={() => setSelectedTask(task)}
-            >
-              View Details
-            </Button>
-            
-            {requiresPhotos && (
-              <Button
-                variant="outline"
-                className={`w-full sm:w-auto font-semibold text-xs h-10 gap-1.5 ${
-                  uploadedPhotosCount >= targetCount
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                    : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
-                }`}
-                onClick={() => setSelectedTask(task)}
-              >
-                <Camera className="h-4 w-4" />
-                Photos: {uploadedPhotosCount}/{targetCount} uploaded
-              </Button>
-            )}
-
-            {task.status !== "completed" && (
-              <>
-                <Button
-                  variant="outline"
-                  className="w-full sm:w-auto text-green-600 border-green-200 hover:bg-green-50"
-                  onClick={handleDirectComplete}
-                >
-                  <CheckCircle className="mr-2 h-4 w-4" /> Mark Complete
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full sm:w-auto text-blue-600 border-blue-200 hover:bg-blue-50"
-                  onClick={() => {
-                    setSubmissionTaskId(task.id);
-                    setSubmissionTitle(`Work update for ${task.jobType}`);
-                    setSubmissionDescription(task.description || "");
-                    setSubmissionHours(0);
-                    setSubmissionProofNotes("");
-                  }}
-                >
-                  <ClipboardList className="mr-2 h-4 w-4" /> Submit Work
-                </Button>
-              </>
-            )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 text-sm text-slate-600">
+          <div className="flex items-center gap-2">
+            <User className="h-4 w-4 text-slate-400" /> {task.customerName}
           </div>
-        {submissionTaskId === task.id && (
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-            <div className="text-sm font-semibold text-slate-700">Submit work proof for task</div>
-            <input
-              value={submissionTitle}
-              onChange={(event) => setSubmissionTitle(event.target.value)}
-              placeholder="Submission title"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-            <Textarea
-              value={submissionDescription}
-              onChange={(event) => setSubmissionDescription(event.target.value)}
-              placeholder="Describe what you completed and evidence details"
-              className="min-h-[120px] border-slate-200 bg-white"
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input
-                value={submissionHours}
-                onChange={(event) => setSubmissionHours(Number(event.target.value))}
-                type="number"
-                min={0}
-                step={0.25}
-                placeholder="Hours spent"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                value={submissionProofNotes}
-                onChange={(event) => setSubmissionProofNotes(event.target.value)}
-                placeholder="Proof notes (optional)"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button
-                className="w-full"
-                onClick={async () => {
-                  if (!submissionTitle.trim() || !submissionDescription.trim()) {
-                    toast({ title: "Missing details", description: "Provide a title and description before submitting.", variant: "destructive" });
-                    return;
-                  }
-
-                  try {
-                    await submitWorkMutation.mutateAsync({
-                      title: submissionTitle,
-                      description: submissionDescription,
-                      hoursSpent: submissionHours,
-                      proofNotes: submissionProofNotes,
-                      taskId: String(task.id),
-                    });
-                    toast({ title: "Work submitted", description: "Your submission has been recorded." });
-                    setSubmissionTaskId(null);
-                  } catch (error) {
-                    toast({ title: "Submission failed", description: "Unable to submit work. Try again.", variant: "destructive" });
-                  }
-                }}
-                disabled={submitWorkMutation.isPending}
-              >
-                {submitWorkMutation.isPending ? "Submitting…" : "Submit Work"}
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setSubmissionTaskId(null)}
-              >
-                Cancel
-              </Button>
-            </div>
+          <div className="flex items-center gap-2">
+            <Phone className="h-4 w-4 text-slate-400" /> {task.customerPhone}
           </div>
-        )}
+          <div className="flex items-start gap-2 sm:col-span-2">
+            <MapPin className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+            <span>{task.address}</span>
+          </div>
+        </div>
+
+        <div className="flex gap-2 border-t pt-4">
+          <Button
+            id={`btn-view-task-${task.id}`}
+            className="w-full sm:w-auto font-semibold bg-slate-900 text-white hover:bg-slate-800"
+            onClick={() => setSelectedTask(task)}
+          >
+            {task.status === "completed" ? "View Details" : "Open & Complete Task"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
-};
 
   const emptyState = (msg: string) => (
     <div className="text-center py-12 text-slate-500 bg-white border rounded-xl shadow-sm flex flex-col items-center gap-2">
       <Calendar className="h-10 w-10 text-slate-300" />
-      {msg}
+      <p className="text-sm font-medium text-slate-600">{msg}</p>
+      {isFiltered && (
+        <Button variant="outline" size="sm" onClick={handleResetFilters} className="mt-2 text-xs font-semibold">
+          <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reset Filters
+        </Button>
+      )}
     </div>
   );
 
@@ -1125,6 +1116,57 @@ export default function EmployeeTasks() {
         }
       />
 
+      {/* Search & Filter Controls */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 mb-6 shadow-sm flex flex-col sm:flex-row items-center gap-3">
+        <div className="relative w-full sm:flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Input
+            placeholder="Search by customer name, phone, address, or task details..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-8 h-10 rounded-xl border-slate-200 bg-slate-50/60 focus:bg-white text-sm"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full"
+              title="Clear search"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+          <div className="relative flex-1 sm:w-52">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <select
+              value={selectedJobType}
+              onChange={(e) => setSelectedJobType(e.target.value)}
+              className="w-full h-10 pl-8 pr-7 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-slate-100/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900 appearance-none text-slate-700 cursor-pointer"
+            >
+              <option value="all">All Task Types ({availableJobTypes.length})</option>
+              {availableJobTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {isFiltered && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResetFilters}
+              className="h-10 text-xs font-semibold text-slate-500 hover:text-slate-900 gap-1.5 px-3 rounded-xl hover:bg-slate-100"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Reset
+            </Button>
+          )}
+        </div>
+      </div>
+
       <Tabs defaultValue="today" className="w-full">
         <div className="overflow-x-auto pb-1 mb-4">
           <TabsList className="inline-flex w-max min-w-full sm:w-auto">
@@ -1142,7 +1184,7 @@ export default function EmployeeTasks() {
               ))}
             </div>
           ) : todayTasks.length === 0 ? (
-            emptyState("No tasks scheduled for today.")
+            emptyState(isFiltered ? "No tasks match your search or filter for today." : "No tasks scheduled for today.")
           ) : (
             todayTasks.map((task) => <TaskCard key={task.id} task={task} />)
           )}
@@ -1150,7 +1192,7 @@ export default function EmployeeTasks() {
 
         <TabsContent value="upcoming">
           {upcomingTasks.map((task) => <TaskCard key={task.id} task={task} />)}
-          {upcomingTasks.length === 0 && !isLoading && emptyState("No upcoming tasks.")}
+          {upcomingTasks.length === 0 && !isLoading && emptyState(isFiltered ? "No upcoming tasks match your filter." : "No upcoming tasks.")}
         </TabsContent>
 
         <TabsContent value="completed">
@@ -1160,7 +1202,7 @@ export default function EmployeeTasks() {
               <p className="text-sm font-bold text-slate-600">Retrieving completed history...</p>
             </div>
           ) : combinedCompletedFeed.length === 0 ? (
-            emptyState("No completed tasks or daily updates yet.")
+            emptyState(isFiltered ? "No completed tasks match your search or filter." : "No completed tasks or daily updates yet.")
           ) : (
             <div className="relative pl-6 border-l border-dashed border-slate-200 space-y-6 mt-4 max-w-3xl">
               {combinedCompletedFeed.map((item) => {
@@ -1233,16 +1275,6 @@ export default function EmployeeTasks() {
                             >
                               View Details
                             </Button>
-                            {((item.rawTask?.sitePhotos && item.rawTask.sitePhotos.length > 0) || item.rawTask?.beforeImageUrl || item.rawTask?.afterImageUrl) && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-xs font-bold rounded-xl h-8 px-3 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 gap-1.5"
-                                onClick={() => setViewingTaskPhotos(item.rawTask)}
-                              >
-                                <Camera className="h-3.5 w-3.5 text-emerald-600" /> View Photos
-                              </Button>
-                            )}
                           </div>
                         </CardContent>
                       </Card>
@@ -1306,74 +1338,11 @@ export default function EmployeeTasks() {
       {/* Task detail drawer */}
       {selectedTask && (
         <TaskDetailDrawer
-          task={enriched.find((t) => t.id === selectedTask.id) ?? selectedTask}
+          task={(tasks ?? []).find((t) => t.id === selectedTask.id) ?? selectedTask}
           onClose={() => setSelectedTask(null)}
           onMarkComplete={handleMarkComplete}
         />
       )}
-
-      {/* Task Photo Gallery Modal */}
-      <Dialog open={!!viewingTaskPhotos} onOpenChange={(open) => !open && setViewingTaskPhotos(null)}>
-        <DialogContent className="sm:max-w-xl p-6">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <Camera className="h-5 w-5 text-emerald-600" /> Task Photos & Site Evidence
-            </DialogTitle>
-            <DialogDescription>
-              Uploaded evidence for <span className="font-bold text-slate-800">{viewingTaskPhotos?.jobType}</span> — Customer: <span className="font-bold text-slate-800">{viewingTaskPhotos?.customerName}</span>
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs grid grid-cols-2 gap-2">
-              <div>
-                <span className="text-slate-400 font-bold uppercase text-[9px] block">Task Description</span>
-                <span className="font-semibold text-slate-800 block mt-0.5">{viewingTaskPhotos?.description}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-bold uppercase text-[9px] block">Location</span>
-                <span className="font-semibold text-slate-800 block mt-0.5">{viewingTaskPhotos?.address}</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Uploaded Photos Gallery</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[350px] overflow-y-auto pr-1">
-                {viewingTaskPhotos?.beforeImageUrl && (
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Before Work</span>
-                    <a href={viewingTaskPhotos.beforeImageUrl} target="_blank" rel="noreferrer" className="block aspect-video rounded-xl overflow-hidden border border-slate-200 shadow-sm hover:opacity-90">
-                      <img src={viewingTaskPhotos.beforeImageUrl} alt="Before Work" className="w-full h-full object-cover" />
-                    </a>
-                  </div>
-                )}
-                {viewingTaskPhotos?.afterImageUrl && (
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">After Work</span>
-                    <a href={viewingTaskPhotos.afterImageUrl} target="_blank" rel="noreferrer" className="block aspect-video rounded-xl overflow-hidden border border-slate-200 shadow-sm hover:opacity-90">
-                      <img src={viewingTaskPhotos.afterImageUrl} alt="After Work" className="w-full h-full object-cover" />
-                    </a>
-                  </div>
-                )}
-                {Array.isArray(viewingTaskPhotos?.sitePhotos) && viewingTaskPhotos.sitePhotos.map((photo: string, idx: number) => (
-                  <div key={idx} className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Site Photo #{idx + 1}</span>
-                    <a href={photo} target="_blank" rel="noreferrer" className="block aspect-video rounded-xl overflow-hidden border border-slate-200 shadow-sm hover:opacity-90">
-                      <img src={photo} alt={`Site Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                    </a>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewingTaskPhotos(null)} className="font-bold rounded-xl">
-              Close Gallery
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Daily Task Submission Dialog */}
       <Dialog open={isDailyTaskOpen} onOpenChange={setIsDailyTaskOpen}>
