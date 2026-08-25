@@ -27,6 +27,48 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.data.model.*
 import com.swayog.employee.presentation.common.components.*
 
+// Helper function to parse brand and connection type for display (matching web logic)
+private fun parseBrandAndTypeForDisplay(brandStr: String?): Pair<String, String> {
+    if (brandStr == null) return Pair("", "Simulation")
+    
+    val brandLower = brandStr.lowercase()
+    
+    // Extract brand
+    val brand = when {
+        brandLower.contains("anchor") || brandLower.contains("panasonic") -> "Anchor Panasonic"
+        brandLower.contains("pvblink") || brandLower.contains("pv blink") -> "PV Blink"
+        brandLower.contains("utl") || brandLower.contains("foxess") -> "UTL Solar"
+        brandLower.contains("solarman") || brandLower.contains("solar men") || brandLower.contains("solarmen") -> "Solar Men"
+        brandLower.contains("solus") -> "Solus Cloud"
+        brandLower.contains("havells") -> "Havells"
+        brandLower.contains("polycab") -> "Polycab"
+        brandLower.contains("waaree") || brandLower.contains("waree") -> "Waaree"
+        brandLower.contains("ksolar") || brandLower.contains("k-solar") -> "KSolar"
+        brandLower.contains("growatt") -> "Growatt"
+        brandLower.contains("vsole") -> "Vsole"
+        else -> brandStr
+    }
+    
+    // Extract connection type
+    val connectionType = when {
+        brandLower.contains("(solarman)") -> "Solarman"
+        brandLower.contains("(solis)") -> "Solis"
+        brandLower.contains("(shinemonitor)") -> "ShineMonitor"
+        brandLower.contains("(foxess)") -> "FoxESS"
+        brandLower.contains("(growattportal)") -> "GrowattPortal"
+        brandLower.contains("(growatt)") -> "GrowattPortal"
+        brandLower.contains("(waaree)") -> "Waaree"
+        brandLower.contains("solarman") || brandLower.contains("solar men") -> "Solarman"
+        brandLower.contains("ksolar") || brandLower.contains("k-solar") -> "ShineMonitor"
+        brandLower.contains("growatt") -> "GrowattPortal"
+        brandLower.contains("utl") -> "FoxESS"
+        brandLower.contains("waaree") -> "Waaree"
+        else -> "Simulation"
+    }
+    
+    return Pair(brand, connectionType)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubAdminCustomerDetailsScreen(
@@ -362,11 +404,16 @@ fun OverviewTabContent(
             }
             Spacer(modifier = Modifier.height(12.dp))
 
-            DetailRow(icon = Icons.Default.Settings, label = "Brand", value = customer.inverterBrand ?: "Not Specified")
+            // Parse and display brand info (matching web logic)
+            val (displayBrand, connectionType) = parseBrandAndTypeForDisplay(customer.inverterBrand)
+            DetailRow(icon = Icons.Default.Settings, label = "Brand", value = displayBrand.ifEmpty { "Not Specified" })
+            if (connectionType.isNotEmpty() && connectionType != "Simulation") {
+                DetailRow(icon = Icons.Default.Cloud, label = "Connection Type", value = connectionType)
+            }
             DetailRow(icon = Icons.Default.QrCode, label = "Device SN", value = customer.inverterDeviceSn ?: "Not Linked")
             DetailRow(icon = Icons.Default.VpnKey, label = "API Key", value = customer.inverterApiKey ?: "Not Configured")
             DetailRow(icon = Icons.Default.AccountCircle, label = "Login ID", value = customer.inverterLoginId ?: "Not Configured")
-            DetailRow(icon = Icons.Default.Lock, label = "Portal Password", value = customer.portalPassword ?: "Not Configured")
+            // Removed Portal Password as it's not used in the new implementation
             if (customer.commissionAmount != null) {
                 DetailRow(icon = Icons.Default.MonetizationOn, label = "Commission", value = "₹${customer.commissionAmount}")
             }

@@ -60,12 +60,27 @@ export function AmcVisitTracker({
     return emp ? emp.name : "Unassigned";
   };
 
+  const [beforeImage, setBeforeImage] = useState<string | null>(null);
+  const [afterImage, setAfterImage] = useState<string | null>(null);
+
   const handleMarkDoneSubmit = () => {
     if (!completingVisit) return;
     
+    const existingPhotos = (Array.isArray(completingVisit.sitePhotos) && completingVisit.sitePhotos.length > 0) || completingVisit.beforeImageUrl || completingVisit.afterImageUrl;
+    if (!existingPhotos && !beforeImage && !afterImage) {
+      toast({
+        title: "Photos Required",
+        description: "Please upload all required photos before submitting this task.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     markDoneMutation.mutate({ 
       id: completingVisit.id, 
-      notes: visitNotes.trim() || undefined 
+      notes: visitNotes.trim() || undefined,
+      beforeImageUrl: beforeImage || undefined,
+      afterImageUrl: afterImage || undefined,
     }, {
       onSuccess: () => {
         toast({ 
@@ -76,11 +91,13 @@ export function AmcVisitTracker({
         queryClient.invalidateQueries({ queryKey: ["amc-visits"] });
         setCompletingVisit(null);
         setVisitNotes("");
+        setBeforeImage(null);
+        setAfterImage(null);
       },
       onError: (error) => {
         toast({
           title: "Error Completing Visit",
-          description: error instanceof Error ? error.message : "Failed to mark visit completed.",
+          description: error instanceof Error ? error.message : "Please upload all required photos before submitting this task.",
           variant: "destructive"
         });
       }
@@ -557,8 +574,69 @@ export function AmcVisitTracker({
                 placeholder="Enter details about panel cleanliness, any issues spotted, etc." 
                 value={visitNotes} 
                 onChange={(e) => setVisitNotes(e.target.value)} 
-                className="min-h-[100px] border-slate-200 focus-visible:ring-emerald-500"
+                className="min-h-[80px] border-slate-200 focus-visible:ring-emerald-500 text-xs"
               />
+            </div>
+
+            <div className="space-y-2 border-t border-slate-100 pt-3">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Camera className="h-4 w-4 text-emerald-600" /> Mandatory Site Visit Photos
+              </label>
+              <p className="text-[11px] text-slate-500">Upload site photos before marking visit as completed.</p>
+              
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Before Cleaning Photo</span>
+                  {beforeImage ? (
+                    <div className="relative aspect-video rounded-lg overflow-hidden border border-slate-200">
+                      <img src={beforeImage} alt="Before" className="w-full h-full object-cover" />
+                      <button onClick={() => setBeforeImage(null)} className="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-0.5">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      className="text-xs h-9 cursor-pointer"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => setBeforeImage(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">After Cleaning Photo</span>
+                  {afterImage ? (
+                    <div className="relative aspect-video rounded-lg overflow-hidden border border-slate-200">
+                      <img src={afterImage} alt="After" className="w-full h-full object-cover" />
+                      <button onClick={() => setAfterImage(null)} className="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-0.5">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      className="text-xs h-9 cursor-pointer"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => setAfterImage(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>

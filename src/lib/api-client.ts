@@ -1626,17 +1626,18 @@ export function useGetSubadminCustomerSummary(customerId: number, opts?: any) {
   });
 }
 
-export function useGetCustomerInverterGenerationHistory(customerId: number, period: string, opts?: any) {
+export function useGetCustomerInverterGenerationHistory(customerId: number, period: string, date?: string, opts?: any) {
   return useQuery<CustomerGenerationHistoryPoint[]>({
-    queryKey: getGetCustomerInverterGenerationHistoryQueryKey(customerId, period),
+    queryKey: [...getGetCustomerInverterGenerationHistoryQueryKey(customerId, period), date],
     queryFn: async () => {
       const apiBaseUrl = getApiBaseUrl();
       if (!apiBaseUrl) {
         throw { error: "Backend API URL is required for inverter history." };
       }
 
+      const dateParam = date ? `&date=${encodeURIComponent(date)}` : "";
       const response = await requestApi<{ period: string; history: CustomerGenerationHistoryPoint[]; dataUnavailable?: boolean; unavailableReason?: string }>(
-        `/subadmin/customers/${customerId}/inverter-generation-history?period=${encodeURIComponent(period)}`,
+        `/subadmin/customers/${customerId}/inverter-generation-history?period=${encodeURIComponent(period)}${dateParam}`,
       );
 
       // If backend signals data is unavailable (e.g. Growatt auth failed), surface a clear error

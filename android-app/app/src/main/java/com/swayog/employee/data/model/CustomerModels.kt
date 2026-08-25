@@ -87,7 +87,15 @@ data class InverterGeneration(
     val totalGeneration: Double,
     val currentPower: Double,
     val status: String,
-    val lastUpdated: String
+    val lastUpdated: String,
+    val inverterBrand: String? = null,
+    val inverterModel: String? = null,
+    val deviceSn: String? = null,
+    val isSimulated: Boolean = false,
+    val dataSource: String? = null, // foxess_openapi, solax_api, waaree_generic, etc.
+    val alerts: List<String> = emptyList(),
+    val isOnline: Boolean = true,
+    val minutesAgo: Int = 0
 )
 
 data class CustomerSummaryResponse(
@@ -167,4 +175,52 @@ data class UpdateServiceRequestRequest(
 data class ServiceRequestsResponse(
     val requests: List<ServiceRequest>,
     val pagination: Pagination? = null
+)
+
+// Waaree Inverter Data Models
+data class WaareeInverterDataResponse(
+    val success: Boolean,
+    val data: WaareeInverterData,
+    val history: List<WaareeHistoryPoint>,
+    val status: WaareeStatus,
+    val alerts: List<String>,
+    val customerName: String,
+    val deviceSn: String
+)
+
+data class WaareeInverterData(
+    val acpower: Double,
+    val yieldtoday: Double,
+    val yieldtotal: Double,
+    val feedInPower: Double,
+    val powerdc1: Double,
+    val powerdc2: Double,
+    val batPower: Double,
+    val soc: Int,
+    val uploadTime: String
+)
+
+data class WaareeHistoryPoint(
+    val time: String,
+    val value: Double
+)
+
+data class WaareeStatus(
+    val isOnline: Boolean,
+    val lastUpdatedTime: Long,
+    val minutesAgo: Int,
+    val apiCallsUsed: Int,
+    val apiCallsTotal: Int,
+    val stale: Boolean,
+    val isSimulated: Boolean,
+    val fromCache: Boolean,
+    val fetchError: String?,
+    val customerResolved: Boolean
+)
+
+data class WaareePowerGraphResponse(
+    val plantId: String,
+    val period: String,
+    val timestamps: List<String>,
+    val values: List<Double>
 )
