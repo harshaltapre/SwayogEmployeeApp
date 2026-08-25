@@ -362,9 +362,26 @@ export function serializeTask(task: any, options: { scopedEmployeeUserId?: strin
     .filter((img: any) => img.type === "site_photo" || String(img.type).startsWith("site_photo"))
     .map((img: any) => img.url);
 
-  // Merge and filter out any empty strings
-  const mergedSitePhotos = Array.from(new Set([...sitePhotosFromColumn, ...sitePhotosFromImages]))
+  // Normalize URLs for deduplication (remove trailing slashes, query params for comparison)
+  const normalizeUrl = (url: string) => {
+    if (typeof url !== "string") return "";
+    return url.trim().replace(/\/$/, "").split("?")[0];
+  };
+
+  // Merge and filter out any empty strings with robust deduplication
+  const allPhotos = [...sitePhotosFromColumn, ...sitePhotosFromImages]
     .filter((url: any) => typeof url === "string" && url.trim().length > 0);
+  
+  const seenUrls = new Set<string>();
+  const mergedSitePhotos: string[] = [];
+  
+  for (const url of allPhotos) {
+    const normalized = normalizeUrl(url);
+    if (normalized && !seenUrls.has(normalized)) {
+      seenUrls.add(normalized);
+      mergedSitePhotos.push(url); // Keep original URL
+    }
+  }
 
   const resolvedTaskType = resolveTaskType(task.taskType, task.jobType);
   const config = getTaskTypeConfig(resolvedTaskType, task.jobType);

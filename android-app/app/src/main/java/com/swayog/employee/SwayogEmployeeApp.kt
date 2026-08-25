@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.os.Build
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.swayog.employee.data.sync.WorkManagerScheduler
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -31,6 +32,8 @@ class SwayogEmployeeApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Schedule periodic task refresh for dashboard synchronization
+        WorkManagerScheduler.schedulePeriodicTaskRefresh(this)
     }
     
     private fun createNotificationChannel() {

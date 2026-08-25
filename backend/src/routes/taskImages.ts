@@ -212,6 +212,13 @@ router.get(
           return;
         } catch (streamErr) {
           console.error("[R2] Direct stream failed:", streamErr);
+          // Fallback: return 404 with proper error message instead of SVG placeholder
+          res.status(404).json({
+            error: "Image not found in storage",
+            objectKey: objectKey,
+            message: "Unable to retrieve image from R2 storage"
+          });
+          return;
         }
       }
     }

@@ -1160,20 +1160,39 @@ class TaskRepository @Inject constructor(
                                             // 📸 PHOTO TRANSFER FIX: After task is successfully completed via outbox sync,
                                             // upload the site photos via the dedicated /photos endpoint so they are stored
                                             // as file-path URLs (not raw base64) in task.sitePhotos — visible in dashboard.
+                                            // Implements retry logic for robust photo submission.
                                             if (sitePhotosList.isNotEmpty()) {
-                                                try {
-                                                    android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Uploading ${sitePhotosList.size} site photos via /photos endpoint for task $taskId (outbox sync)")
-                                                    val photosResp = apiService.updateTaskPhotos(
-                                                        taskId,
-                                                        mapOf("sitePhotos" to sitePhotosList)
-                                                    )
-                                                    if (photosResp.isSuccessful) {
-                                                        android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Photos uploaded successfully for task $taskId via /photos endpoint")
-                                                    } else {
-                                                        android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos /photos endpoint returned HTTP ${photosResp.code()} for task $taskId — photos may appear via taskImages fallback")
+                                                var photoUploadSuccess = false
+                                                var retryCount = 0
+                                                val maxRetries = 3
+                        
+                                                while (retryCount < maxRetries && !photoUploadSuccess) {
+                                                    try {
+                                                        android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Uploading ${sitePhotosList.size} site photos via /photos endpoint for task $taskId (outbox sync, attempt ${retryCount + 1}/$maxRetries)")
+                                                        val photosResp = apiService.updateTaskPhotos(
+                                                            taskId,
+                                                            mapOf("sitePhotos" to sitePhotosList)
+                                                        )
+                                                        if (photosResp.isSuccessful) {
+                                                            android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Photos uploaded successfully for task $taskId via /photos endpoint")
+                                                            photoUploadSuccess = true
+                                                        } else {
+                                                            android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos /photos endpoint returned HTTP ${photosResp.code()} for task $taskId (attempt ${retryCount + 1}/$maxRetries)")
+                                                            if (retryCount < maxRetries - 1) {
+                                                                kotlinx.coroutines.delay(1000L * (retryCount + 1)) // Exponential backoff
+                                                            }
+                                                        }
+                                                    } catch (photoEx: Exception) {
+                                                        android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos /photos endpoint failed for task $taskId (attempt ${retryCount + 1}/$maxRetries): ${photoEx.message}")
+                                                        if (retryCount < maxRetries - 1) {
+                                                            kotlinx.coroutines.delay(1000L * (retryCount + 1)) // Exponential backoff
+                                                        }
                                                     }
-                                                } catch (photoEx: Exception) {
-                                                    android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos /photos endpoint failed for task $taskId: ${photoEx.message}")
+                                                    retryCount++
+                                                }
+                        
+                                                if (!photoUploadSuccess) {
+                                                    android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos /photos endpoint failed after $maxRetries attempts for task $taskId — photos will appear via taskImages fallback")
                                                 }
                                             }
 
