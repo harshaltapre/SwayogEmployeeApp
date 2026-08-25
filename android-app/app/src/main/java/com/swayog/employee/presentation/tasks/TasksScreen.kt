@@ -873,6 +873,7 @@ fun TaskDetailDialog(
     
     // Processing flag
     var isProcessing by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
     // Which photo we're currently capturing ("before", "after", or index for multiple images)
     var pendingPhotoType by remember { mutableStateOf<String?>(null) }
 
@@ -1348,14 +1349,15 @@ fun TaskDetailDialog(
                             )
 
                             SwayogButton(
-                                text = if (isProcessing) "Processing..." else "Submit Site Visit",
-                                enabled = uploadedImages.size >= 4 && completionMessage.trim().length >= 3 && !isProcessing,
+                                text = if (isSubmitting) "Submitting..." else if (isProcessing) "Processing..." else "Submit Site Visit",
+                                enabled = uploadedImages.size >= 4 && completionMessage.trim().length >= 3 && !isProcessing && !isSubmitting,
                                 onClick = {
                                     if (uploadedImages.size < 4) {
                                         Toast.makeText(context, "Minimum 4 site photos required", Toast.LENGTH_SHORT).show()
                                     } else if (completionMessage.trim().length < 3) {
                                         Toast.makeText(context, "Observations description must be at least 3 characters", Toast.LENGTH_SHORT).show()
                                     } else {
+                                        isSubmitting = true
                                         val finalMessage = completionMessage.trim()
                                         val firstPhoto = uploadedImages.firstOrNull()
                                         val lastPhoto = if (uploadedImages.size > 1) uploadedImages.last() else firstPhoto
@@ -1466,9 +1468,10 @@ fun TaskDetailDialog(
                             )
 
                             SwayogButton(
-                                text = if (isProcessing) "Processing..." else "Submit AMC Visit",
-                                enabled = beforeImages.isNotEmpty() && afterImages.isNotEmpty() && completionMessage.trim().length >= 3 && !isProcessing,
+                                text = if (isSubmitting) "Submitting..." else if (isProcessing) "Processing..." else "Submit AMC Visit",
+                                enabled = beforeImages.isNotEmpty() && afterImages.isNotEmpty() && completionMessage.trim().length >= 3 && !isProcessing && !isSubmitting,
                                 onClick = {
+                                    isSubmitting = true
                                     val finalMessage = completionMessage.trim()
                                     onCompleteTask(
                                         finalMessage,
@@ -1620,8 +1623,8 @@ fun TaskDetailDialog(
                             }
 
                             SwayogButton(
-                                text = if (isProcessing) "Processing..." else "Mark Task Completed",
-                                enabled = beforeImageUrl != null && afterImageUrl != null && completionMessage.trim().length >= 3 && !isProcessing,
+                                text = if (isSubmitting) "Submitting..." else if (isProcessing) "Processing..." else "Mark Task Completed",
+                                enabled = beforeImageUrl != null && afterImageUrl != null && completionMessage.trim().length >= 3 && !isProcessing && !isSubmitting,
                                 onClick = {
                                     if (completionMessage.trim().length < 3) {
                                         Toast.makeText(context, "Completion description must be at least 3 characters", Toast.LENGTH_SHORT).show()
@@ -1630,6 +1633,7 @@ fun TaskDetailDialog(
                                     } else if (afterImageUrl == null) {
                                         Toast.makeText(context, "After Image is required", Toast.LENGTH_SHORT).show()
                                     } else {
+                                        isSubmitting = true
                                         val finalMessage = completionMessage.trim()
                                         onCompleteTask(
                                             finalMessage,

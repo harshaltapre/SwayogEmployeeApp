@@ -36,7 +36,16 @@ fun EditCustomerDialog(
     var amcExpiryDate by remember { mutableStateOf(customer.amcExpiryDate ?: "") }
     var commissionAmount by remember { mutableStateOf(customer.commissionAmount?.toString() ?: "") }
     
-    var inverterBrand by remember { mutableStateOf(customer.inverterBrand ?: "") }
+    val inverterBrands = listOf(
+        "K-Solar", "Growatt", "FoxESS", "UTL", "Solarman", "Solis", "Waaree",
+        "PV Blink", "Panasonic", "Anchor", "UPS Solar", "Havells", "Vsole",
+        "Wari", "Solace", "Heaven", "Qualicap", "One", "Generic REST", "Manual Entry"
+    )
+    var inverterBrandExpanded by remember { mutableStateOf(false) }
+    var inverterBrand by remember { mutableStateOf(customer.inverterBrand ?: "K-Solar") }
+    var inverterModel by remember { mutableStateOf(customer.inverterModel ?: "") }
+    var inverterApiKey by remember { mutableStateOf(customer.inverterApiKey ?: "") }
+    var inverterDeviceSn by remember { mutableStateOf(customer.inverterDeviceSn ?: "") }
     var loginId by remember { mutableStateOf(customer.inverterLoginId ?: "") }
     var password by remember { mutableStateOf(customer.inverterPassword ?: "") }
     var portalPassword by remember { mutableStateOf(customer.portalPassword ?: "") }
@@ -86,11 +95,45 @@ fun EditCustomerDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Text(text = "Inverter Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-                OutlinedTextField(value = inverterBrand, onValueChange = { inverterBrand = it }, label = { Text("Inverter Brand") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = loginId, onValueChange = { loginId = it }, label = { Text("Login ID") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = portalPassword, onValueChange = { portalPassword = it }, label = { Text("Portal Password") }, modifier = Modifier.fillMaxWidth())
+                Text(text = "Inverter & Portal Credentials", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                
+                // Controlled Dropdown for Inverter Brand
+                ExposedDropdownMenuBox(
+                    expanded = inverterBrandExpanded,
+                    onExpandedChange = { inverterBrandExpanded = !inverterBrandExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = inverterBrand,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Inverter Brand") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = inverterBrandExpanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = inverterBrandExpanded,
+                        onDismissRequest = { inverterBrandExpanded = false }
+                    ) {
+                        inverterBrands.forEach { brand ->
+                            DropdownMenuItem(
+                                text = { Text(brand) },
+                                onClick = {
+                                    inverterBrand = brand
+                                    inverterBrandExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(value = inverterModel, onValueChange = { inverterModel = it }, label = { Text("Inverter Model") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = inverterDeviceSn, onValueChange = { inverterDeviceSn = it }, label = { Text("Device Serial Number (SN)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = inverterApiKey, onValueChange = { inverterApiKey = it }, label = { Text("API Key / Data Logger SN") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = loginId, onValueChange = { loginId = it }, label = { Text("Portal / Inverter Login ID") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Inverter Password") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = portalPassword, onValueChange = { portalPassword = it }, label = { Text("Customer Portal Password") }, modifier = Modifier.fillMaxWidth())
                 
                 Column {
                     Text(text = "Project Stage: $stage", style = MaterialTheme.typography.labelMedium)
@@ -129,9 +172,12 @@ fun EditCustomerDialog(
                                     cleaningsPerMonth = null,
                                     status = customer.status,
                                     commissionAmount = commissionAmount.toDoubleOrNull(),
+                                    inverterBrand = inverterBrand.ifBlank { null },
                                     inverterLoginId = loginId.ifBlank { null },
                                     inverterPassword = password.ifBlank { null },
                                     portalPassword = portalPassword.ifBlank { null },
+                                    inverterApiKey = inverterApiKey.ifBlank { null },
+                                    inverterDeviceSn = inverterDeviceSn.ifBlank { null },
                                     projectStage = stage
                                 )
                             )
