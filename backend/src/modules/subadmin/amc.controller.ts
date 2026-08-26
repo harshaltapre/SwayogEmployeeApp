@@ -423,20 +423,15 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
     ? sitePhotos
     : (Array.isArray(images) && images.length > 0 ? images : []);
 
-  const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, visitId);
-  const finalSitePhotos = savedInputPhotos.length > 0
-    ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
-    : existingSitePhotos;
-
   let savedBeforeUrl = existingVisit?.beforeImageUrl || null;
   if (beforeImageUrl) {
-    const saved = processAndSaveBase64Photos([beforeImageUrl], visitId);
+    const saved = await processAndSaveBase64Photos([beforeImageUrl], visitId, "before");
     savedBeforeUrl = saved[0] || beforeImageUrl;
   }
 
   let savedAfterUrl = existingVisit?.afterImageUrl || null;
   if (afterImageUrl) {
-    const saved = processAndSaveBase64Photos([afterImageUrl], visitId);
+    const saved = await processAndSaveBase64Photos([afterImageUrl], visitId, "after");
     savedAfterUrl = saved[0] || afterImageUrl;
   }
 
@@ -451,7 +446,6 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
       notes: notes || null,
       beforeImageUrl: savedBeforeUrl,
       afterImageUrl: savedAfterUrl,
-      sitePhotos: finalSitePhotos,
     },
     include: {
       assignedEmployee: {

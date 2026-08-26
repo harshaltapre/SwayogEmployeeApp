@@ -123,7 +123,8 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
         : "/api/v1/isphere-green";
       const method = editItem?.id ? "PUT" : "POST";
 
-      const updatedDetails = { ...details, password };
+      const finalPassword = password || editItem?.details?.password || "";
+      const updatedDetails = { ...details, password: finalPassword };
 
       const response = await fetch(url, {
         method,
@@ -134,42 +135,77 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
         body: JSON.stringify({
           category,
           subcategory,
-          name,
-          place,
-          phone,
-          email,
-          address,
-          status,
+          name: name.trim(),
+          place: place.trim(),
+          phone: phone ? phone.trim() : null,
+          email: email ? email.trim() : null,
+          address: address ? address.trim() : null,
+          status: status || "ACTIVE",
           details: updatedDetails,
         }),
       });
 
       const resData = await response.json().catch(() => null);
 
-      // Save account credentials locally so Partner Login can authenticate immediately
-      if (email && password) {
-        try {
-          const existingAccounts = JSON.parse(localStorage.getItem("epc_contractor_accounts") || "[]");
-          const filtered = existingAccounts.filter((a: any) => a.email?.toLowerCase() !== email.toLowerCase());
-          filtered.push({
-            id: editItem?.id || `epc_${Date.now()}`,
-            name,
-            email,
-            phone,
-            password,
-            subcategory,
-            category,
-            createdAt: new Date().toISOString(),
-          });
-          localStorage.setItem("epc_contractor_accounts", JSON.stringify(filtered));
-        } catch (e) {
-          console.warn("Failed to store local EPC credentials", e);
+      if (!response.ok || (resData && resData.success === false)) {
+        throw new Error(resData?.message || "Failed to save record");
+      }
+
+      // Sync account credentials locally so Partner / EPC / Installer Logins authenticate immediately
+      if (email && (finalPassword || subcategory === "EPC_CONTRACTOR" || subcategory === "INSTALLER")) {
+        if (subcategory === "EPC_CONTRACTOR") {
+          try {
+            const existingAccounts = JSON.parse(localStorage.getItem("epc_contractor_logins") || "[]");
+            const filtered = existingAccounts.filter(
+              (a: any) => a.email?.toLowerCase() !== email.toLowerCase() && a.id !== editItem?.id
+            );
+            const entryRecord = {
+              id: editItem?.id || resData?.data?.id || `epc_${Date.now()}`,
+              name,
+              companyName: name,
+              email,
+              loginId: email,
+              phone,
+              password: finalPassword,
+              status: status || "ACTIVE",
+              subcategory,
+              category,
+              createdAt: new Date().toISOString(),
+            };
+            filtered.push(entryRecord);
+            localStorage.setItem("epc_contractor_logins", JSON.stringify(filtered));
+            localStorage.setItem("epc_contractor_accounts", JSON.stringify(filtered));
+          } catch (e) {
+            console.warn("Failed to store local EPC credentials", e);
+          }
+        } else if (subcategory === "INSTALLER") {
+          try {
+            const existingInstallers = JSON.parse(localStorage.getItem("se_installers") || "[]");
+            const filtered = existingInstallers.filter(
+              (a: any) => a.email?.toLowerCase() !== email.toLowerCase() && a.id !== editItem?.id
+            );
+            const entryRecord = {
+              id: editItem?.id || resData?.data?.id || `installer_${Date.now()}`,
+              name,
+              email,
+              phone,
+              password: finalPassword,
+              location: place,
+              company: details.company || name,
+              status: status || "ACTIVE",
+              createdAt: new Date().toISOString(),
+            };
+            filtered.push(entryRecord);
+            localStorage.setItem("se_installers", JSON.stringify(filtered));
+          } catch (e) {
+            console.warn("Failed to store local Installer credentials", e);
+          }
         }
       }
 
       toast({
         title: "Success",
-        description: editItem ? "Record updated successfully" : "Record added to database & portal account created successfully",
+        description: editItem ? "Record updated successfully" : "Record saved to database & portal account created successfully",
       });
 
       onSuccess();
@@ -255,17 +291,17 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
               <Label className="text-sm font-semibold flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-slate-900 dark:text-white">
                   <Lock className="w-3.5 h-3.5 text-emerald-600" />
-                  Portal Login Password {(subcategory === "EPC_CONTRACTOR" || subcategory === "INSTALLER") && <span className="text-red-500">*</span>}
+                  Portal Login Password {!editItem && (subcategory === "EPC_CONTRACTOR" || subcategory === "INSTALLER") && <span className="text-red-500">*</span>}
                 </span>
               </Label>
               <div className="relative">
                 <Input
                   type={showPassword ? "text" : "password"}
-                  placeholder="Set password for Partner login"
+                  placeholder={editItem ? "Leave blank to keep existing password" : "Set password for Partner login"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pr-10 bg-white dark:bg-slate-900 border-emerald-300 focus:border-emerald-500 font-mono text-sm"
-                  required={subcategory === "EPC_CONTRACTOR" || subcategory === "INSTALLER"}
+                  required={!editItem && (subcategory === "EPC_CONTRACTOR" || subcategory === "INSTALLER")}
                 />
                 <button
                   type="button"
@@ -275,7 +311,7 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-[10px] text-emerald-700 font-medium">Required for Partner section login access</p>
+              <p className="text-[10px] text-emerald-700 font-medium">Used for Partner section login access</p>
             </div>
 
             <div className="space-y-1.5">
@@ -393,43 +429,15 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
 
             {/* SERVICE & EXECUTIVE SPECIFIC */}
             {subcategory === "EPC_CONTRACTOR" && (
-              <div className="space-y-4">
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl dark:bg-emerald-950/40 dark:border-emerald-800">
-                  <Label className="text-sm font-semibold flex items-center justify-between text-emerald-900 dark:text-emerald-300 mb-1.5">
-                    <span className="flex items-center gap-1.5">
-                      <Key className="w-4 h-4 text-emerald-600" />
-                      Partner Portal Login Password <span className="text-red-500">*</span>
-                    </span>
-                    <span className="text-[11px] font-normal text-emerald-700 dark:text-emerald-400">Used for Partner section login</span>
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter password for EPC Contractor login"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pr-10 bg-white dark:bg-slate-900 border-emerald-300 font-mono text-sm"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Total Capacity Executed (MW/kW)</Label>
+                  <Input
+                    placeholder="e.g. 25 MW Rooftop & Ground"
+                    value={details.executedCapacity || ""}
+                    onChange={(e) => handleDetailChange("executedCapacity", e.target.value)}
+                  />
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">Total Capacity Executed (MW/kW)</Label>
-                    <Input
-                      placeholder="e.g. 25 MW Rooftop & Ground"
-                      value={details.executedCapacity || ""}
-                      onChange={(e) => handleDetailChange("executedCapacity", e.target.value)}
-                    />
-                  </div>
                   <div className="space-y-1.5">
                     <Label className="text-sm">License / Reg Number</Label>
                     <Input
@@ -447,7 +455,6 @@ export const SphereGreenFormModal: React.FC<SphereGreenFormModalProps> = ({
                     />
                   </div>
                 </div>
-              </div>
             )}
 
             {subcategory === "INSTALLER" && (

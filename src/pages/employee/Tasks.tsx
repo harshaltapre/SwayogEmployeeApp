@@ -205,7 +205,16 @@ function TaskDetailDrawer({
       setSitePhotos(updatedList);
 
       // Immediately sync with database for real-time visibility to coordinators
-      updateTaskPhotosMutation.mutate({ taskId: task.id, sitePhotos: updatedList });
+      updateTaskPhotosMutation.mutate(
+        { taskId: task.id, sitePhotos: updatedList },
+        {
+          onSuccess: (data: any) => {
+            if (data && Array.isArray(data.sitePhotos) && data.sitePhotos.length > 0) {
+              setSitePhotos(data.sitePhotos);
+            }
+          },
+        }
+      );
 
       toast({
         title: "Site Photos Added 📸",
@@ -227,7 +236,16 @@ function TaskDetailDrawer({
   const removeSitePhoto = (index: number) => {
     const updatedList = sitePhotos.filter((_, i) => i !== index);
     setSitePhotos(updatedList);
-    updateTaskPhotosMutation.mutate({ taskId: task.id, sitePhotos: updatedList });
+    updateTaskPhotosMutation.mutate(
+      { taskId: task.id, sitePhotos: updatedList },
+      {
+        onSuccess: (data: any) => {
+          if (data && Array.isArray(data.sitePhotos)) {
+            setSitePhotos(data.sitePhotos);
+          }
+        },
+      }
+    );
   };
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>, type: "before" | "after") => {
@@ -682,8 +700,16 @@ function TaskDetailDrawer({
                 {task.beforeImageUrl && (
                   <div className="flex flex-col items-center gap-2 border rounded-xl p-3 bg-slate-50">
                     <span className="text-[10px] font-bold text-slate-500 uppercase">Before Work</span>
-                    <a href={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} target="_blank" rel="noreferrer" className="w-full aspect-video rounded-lg overflow-hidden border border-slate-250">
-                      <img src={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} alt="Before" className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
+                    <a href={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl} target="_blank" rel="noreferrer" className="w-full aspect-video rounded-lg overflow-hidden border border-slate-250 bg-slate-100 flex items-center justify-center">
+                      <img
+                        src={buildAssetUrlFromPath(task.beforeImageUrl) || task.beforeImageUrl}
+                        alt="Before"
+                        loading="lazy"
+                        className="w-full h-full object-cover hover:opacity-90 transition-opacity"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://placehold.co/600x400/e2e8f0/475569?text=Before+Image`;
+                        }}
+                      />
                     </a>
                     {task.beforeLatitude && task.beforeLongitude && (
                       <a
@@ -701,8 +727,16 @@ function TaskDetailDrawer({
                 {task.afterImageUrl && (
                   <div className="flex flex-col items-center gap-2 border rounded-xl p-3 bg-slate-50">
                     <span className="text-[10px] font-bold text-slate-500 uppercase">After Work</span>
-                    <a href={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl} target="_blank" rel="noreferrer" className="w-full aspect-video rounded-lg overflow-hidden border border-slate-250">
-                      <img src={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl} alt="After" className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
+                    <a href={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl} target="_blank" rel="noreferrer" className="w-full aspect-video rounded-lg overflow-hidden border border-slate-250 bg-slate-100 flex items-center justify-center">
+                      <img
+                        src={buildAssetUrlFromPath(task.afterImageUrl) || task.afterImageUrl}
+                        alt="After"
+                        loading="lazy"
+                        className="w-full h-full object-cover hover:opacity-90 transition-opacity"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://placehold.co/600x400/e2e8f0/475569?text=After+Image`;
+                        }}
+                      />
                     </a>
                     {task.afterLatitude && task.afterLongitude && (
                       <a
@@ -775,7 +809,12 @@ function TaskDetailDrawer({
                       afterLongitude: afterLng,
                       sitePhotos: sitePhotos.length > 0 ? sitePhotos : undefined,
                     });
+                    // Only close drawer after successful backend confirmation
                     onClose();
+                  } catch (error) {
+                    // Keep drawer open on error so user can retry
+                    console.error("Task completion failed:", error);
+                    throw error;
                   } finally {
                     setIsSubmitting(false);
                   }
@@ -988,21 +1027,35 @@ export default function EmployeeTasks() {
     });
   }, [completedTasks, submissions, searchQuery, selectedJobType]);
 
-  const handleMarkComplete = (id: number, payload?: any) => {
-    completeTaskMutation.mutate({
-      taskId: id,
-      data: {
-        message: payload?.message || "Task mechanically marked as complete.",
-        documentUrl: payload?.documentUrl,
-        beforeImageUrl: payload?.beforeImageUrl,
-        afterImageUrl: payload?.afterImageUrl,
-        beforeLatitude: payload?.beforeLatitude,
-        beforeLongitude: payload?.beforeLongitude,
-        afterLatitude: payload?.afterLatitude,
-        afterLongitude: payload?.afterLongitude,
-        sitePhotos: payload?.sitePhotos,
-      }
-    });
+  const handleMarkComplete = async (id: number, payload?: any) => {
+    try {
+      await completeTaskMutation.mutateAsync({
+        taskId: id,
+        data: {
+          message: payload?.message || "Task completed successfully.",
+          documentUrl: payload?.documentUrl,
+          beforeImageUrl: payload?.beforeImageUrl,
+          afterImageUrl: payload?.afterImageUrl,
+          beforeLatitude: payload?.beforeLatitude,
+          beforeLongitude: payload?.beforeLongitude,
+          afterLatitude: payload?.afterLatitude,
+          afterLongitude: payload?.afterLongitude,
+          sitePhotos: payload?.sitePhotos,
+        }
+      });
+      toast({
+        title: "Task Completed 🎉",
+        description: "Task has been completed and photos uploaded to cloud storage successfully.",
+      });
+    } catch (err: any) {
+      const errMsg = err?.message || err?.error || "Failed to complete task. Please try again.";
+      toast({
+        title: "Submission Failed",
+        description: errMsg,
+        variant: "destructive",
+      });
+      throw err;
+    }
   };
 
   const TaskCard = ({ task }: { task: any }) => (

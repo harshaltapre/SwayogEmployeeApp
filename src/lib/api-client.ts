@@ -807,12 +807,36 @@ export function buildAssetUrlFromPath(assetPath?: string | null): string | null 
     return null;
   }
 
-  if (/^(https?|data):/i.test(assetPath)) {
+  // If already a presigned R2 URL (has X-Amz-Signature) or base64 Data URL, return directly
+  if (assetPath.startsWith("data:") || (assetPath.includes(".r2.cloudflarestorage.com/") && assetPath.includes("X-Amz-Signature"))) {
+    return assetPath;
+  }
+
+  const apiBaseUrl = getApiBaseUrl();
+
+  // If unsigned raw R2 URL, route through backend presigned view resolver
+  if (assetPath.includes(".r2.cloudflarestorage.com/")) {
+    if (apiBaseUrl) {
+      const base = apiBaseUrl.replace(/\/api\/v\d+$/i, "").replace(/\/$/, "");
+      return `${base}/api/v1/tasks/images/view?url=${encodeURIComponent(assetPath)}`;
+    }
+    return `/api/v1/tasks/images/view?url=${encodeURIComponent(assetPath)}`;
+  }
+
+  // If an R2 object key directly (e.g. tasks/123/before/...)
+  if (assetPath.startsWith("tasks/")) {
+    if (apiBaseUrl) {
+      const base = apiBaseUrl.replace(/\/api\/v\d+$/i, "").replace(/\/$/, "");
+      return `${base}/api/v1/tasks/images/view?key=${encodeURIComponent(assetPath)}`;
+    }
+    return `/api/v1/tasks/images/view?key=${encodeURIComponent(assetPath)}`;
+  }
+
+  if (/^(https?):/i.test(assetPath)) {
     return assetPath;
   }
 
   const normalizedPath = assetPath.startsWith("/") ? assetPath : `/${assetPath}`;
-  const apiBaseUrl = getApiBaseUrl();
   if (apiBaseUrl) {
     const base = apiBaseUrl.replace(/\/api\/v\d+$/i, "").replace(/\/$/, "");
     return `${base}${normalizedPath}`;
@@ -3130,6 +3154,10 @@ export function useCompleteTask(opts?: any) {
     },
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["amc-visits"] });
+      queryClient.invalidateQueries({ queryKey: ["amc"] });
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      queryClient.invalidateQueries({ queryKey: ["task", String(variables.taskId)] });
       onSuccess?.(data, variables, context);
     },
     ...restMutationOptions,
@@ -3224,6 +3252,8 @@ export function useUpdateTaskPhotos(opts?: any) {
     },
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      // Also invalidate specific task queries to ensure cache consistency
+      queryClient.invalidateQueries({ queryKey: ["task", String(variables.taskId)] });
       onSuccess?.(data, variables, context);
     },
     ...restMutationOptions,

@@ -217,6 +217,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const navItems = getNavItems();
 
   const getRoleLabel = () => {
+    if (user.designation && user.designation.trim()) return user.designation.trim().toUpperCase();
     if (isInstallationTeamJobRole(user.jobRole) || (user.role as string) === "installer") return "CERTIFIED INSTALLER";
     if (user.role === "super_admin") return "SUPER ADMIN";
     if (user.role === "admin") return "ADMIN";
@@ -291,7 +292,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           </Avatar>
           <div className="flex flex-col overflow-hidden">
             <span className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</span>
-            <span className="text-xs text-sidebar-foreground/65 capitalize">{user.role}</span>
+            <span className="text-xs text-sidebar-foreground/65 capitalize">{user.designation || (user.jobRole ? user.jobRole.replace(/_/g, " ") : user.role)}</span>
           </div>
         </div>
         <Button

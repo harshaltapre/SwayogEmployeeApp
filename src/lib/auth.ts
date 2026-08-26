@@ -84,6 +84,37 @@ function getSafeStoredValue(key: string): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+export function resolveUserDesignation(user: Partial<User> | null | undefined): string {
+  if (!user) return 'Employee';
+  if (user.designation && typeof user.designation === 'string' && user.designation.trim().length > 0) {
+    return user.designation.trim();
+  }
+  if (user.jobRole && typeof user.jobRole === 'string' && user.jobRole.trim().length > 0) {
+    const jr = user.jobRole.trim();
+    if (jr.toLowerCase() === 'intern') return 'Intern';
+    if (jr.toLowerCase() === 'inventory_executive') return 'Inventory Executive';
+    if (jr.toLowerCase() === 'sub_admin' || jr.toLowerCase() === 'service_coordinator') return 'Service Coordinator';
+    return jr
+      .replace(/_/g, ' ')
+      .replace(/-/g, ' ')
+      .split(' ')
+      .map((w) => (w.length > 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
+      .join(' ');
+  }
+  if (user.role && typeof user.role === 'string' && user.role.trim().length > 0) {
+    if (user.role === 'super_admin') return 'Super Admin';
+    if (user.role === 'admin') return 'Admin';
+    if (user.role === 'sub_admin') return 'Service Coordinator';
+    return user.role
+      .replace(/_/g, ' ')
+      .replace(/-/g, ' ')
+      .split(' ')
+      .map((w) => (w.length > 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
+      .join(' ');
+  }
+  return 'Employee';
+}
+
 export function isServiceCoordinator(jobRole?: string): boolean {
   if (!jobRole) return false;
   const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");

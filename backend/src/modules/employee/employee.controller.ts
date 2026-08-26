@@ -239,25 +239,25 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
     throw new ApiError(403, "You do not have permission to complete this task");
   }
 
-  // Process photos
+  // Process photos to Cloudflare R2
   const existingSitePhotos = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
   const inputPhotos = (Array.isArray(sitePhotos) && sitePhotos.length > 0)
     ? sitePhotos
     : (Array.isArray(images) && images.length > 0 ? images : []);
-  const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, numericTaskId);
+  const savedInputPhotos = await processAndSaveBase64Photos(inputPhotos, numericTaskId, "site-visit");
   const finalSitePhotos = savedInputPhotos.length > 0
     ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
     : existingSitePhotos;
 
   let savedBeforeUrl = task.beforeImageUrl;
   if (beforeImageUrl) {
-    const saved = processAndSaveBase64Photos([beforeImageUrl], numericTaskId);
+    const saved = await processAndSaveBase64Photos([beforeImageUrl], numericTaskId, "before");
     savedBeforeUrl = saved[0] || beforeImageUrl;
   }
 
   let savedAfterUrl = task.afterImageUrl;
   if (afterImageUrl) {
-    const saved = processAndSaveBase64Photos([afterImageUrl], numericTaskId);
+    const saved = await processAndSaveBase64Photos([afterImageUrl], numericTaskId, "after");
     savedAfterUrl = saved[0] || afterImageUrl;
   }
 
@@ -267,6 +267,8 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
       status: TaskStatus.COMPLETED,
       completionMessage,
       completionDocumentUrl: completionDocumentUrl ?? null,
+      beforeImageUrl: savedBeforeUrl,
+      afterImageUrl: savedAfterUrl,
       sitePhotos: finalSitePhotos,
       completedAt: new Date(),
     },
@@ -280,6 +282,7 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
       employeeUserId: auth.userId,
       type: "before",
       url: savedBeforeUrl,
+      objectKey: savedBeforeUrl.includes(".r2.cloudflarestorage.com/") ? savedBeforeUrl.split("/").slice(-4).join("/") : null,
       latitude: (beforeLatitude !== undefined && beforeLatitude !== null) ? parseFloat(String(beforeLatitude)) : null,
       longitude: (beforeLongitude !== undefined && beforeLongitude !== null) ? parseFloat(String(beforeLongitude)) : null,
     });
@@ -290,6 +293,7 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
       employeeUserId: auth.userId,
       type: "after",
       url: savedAfterUrl,
+      objectKey: savedAfterUrl.includes(".r2.cloudflarestorage.com/") ? savedAfterUrl.split("/").slice(-4).join("/") : null,
       latitude: (afterLatitude !== undefined && afterLatitude !== null) ? parseFloat(String(afterLatitude)) : null,
       longitude: (afterLongitude !== undefined && afterLongitude !== null) ? parseFloat(String(afterLongitude)) : null,
     });
@@ -302,8 +306,7 @@ export async function markTaskCompleted(req: Request, res: Response): Promise<vo
           employeeUserId: auth.userId,
           type: `site_photo_${idx + 1}`,
           url: photoUrl,
-          latitude: null,
-          longitude: null,
+          objectKey: photoUrl.includes(".r2.cloudflarestorage.com/") ? photoUrl.split("/").slice(-4).join("/") : null,
         });
       }
     });

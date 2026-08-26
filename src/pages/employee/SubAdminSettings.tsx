@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { SubAdminLayout } from '@/components/subadmin/SubAdminLayout';
-import { useAuth } from '@/lib/auth';
+import { useAuth, resolveUserDesignation } from '@/lib/auth';
 import { useLocation } from 'wouter';
 import {
   Settings as SettingsIcon,
@@ -104,9 +104,17 @@ export default function SubAdminSettings() {
 
   // Editable fields in state
   const [fullName, setFullName] = useState(user?.name || '');
-  const [designation, setDesignation] = useState(user?.designation || 'Service Coordinator');
+  const [designation, setDesignation] = useState(() => resolveUserDesignation(user));
   const [department, setDepartment] = useState(user?.department || 'Operations');
   const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    if (user) {
+      if (user.name) setFullName(user.name);
+      setDesignation(resolveUserDesignation(user));
+      if (user.department) setDepartment(user.department);
+    }
+  }, [user]);
 
   // Initialize theme from localStorage
   useEffect(() => {
@@ -218,6 +226,18 @@ export default function SubAdminSettings() {
         variant: "destructive",
       });
       return;
+    }
+
+    if (user) {
+      const updatedUser = {
+        ...user,
+        name: fullName.trim() || user.name,
+        designation: designation.trim() || user.designation,
+        jobRole: designation.trim() || user.jobRole,
+        department: department.trim() || user.department,
+      };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      useAuth.setState({ user: updatedUser });
     }
 
     setSaveMessage('Settings saved successfully!');

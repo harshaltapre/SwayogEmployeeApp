@@ -798,8 +798,12 @@ model TaskImage {
   id           String   @id @default(uuid())
   taskId       Int
   employeeUserId String
-  type         String   // before, after
-  url          String
+  type         String   // before, after, site-visit
+  url          String   // R2 public URL or local path (for backward compatibility)
+  objectKey    String?  // R2 object key: tasks/{taskId}/{type}/{uuid}.jpg
+  fileName     String?  // Original filename
+  mimeType     String?  // image/jpeg, image/png, etc.
+  fileSize     Int?     // File size in bytes
   latitude     Float?
   longitude    Float?
   watermarkText String?
@@ -810,6 +814,7 @@ model TaskImage {
   @@index([taskId])
   @@index([employeeUserId])
   @@index([type])
+  @@index([objectKey])
 }
 
 // ---------------------------------------------------------------------------

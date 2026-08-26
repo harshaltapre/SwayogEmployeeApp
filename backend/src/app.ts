@@ -131,6 +131,22 @@ app.get('/api/v1/debug/env', (req, res) => {
     nodeEnv: process.env.NODE_ENV,
     databaseUrlPrefix: process.env.DATABASE_URL?.split('@')[0],
     corsOrigin: process.env.CORS_ORIGIN,
+    r2: {
+      hasAccountId: !!process.env.R2_ACCOUNT_ID,
+      hasAccessKeyId: !!process.env.R2_ACCESS_KEY_ID,
+      hasSecretAccessKey: !!process.env.R2_SECRET_ACCESS_KEY,
+      hasBucketName: !!process.env.R2_BUCKET_NAME,
+      hasEndpoint: !!process.env.R2_ENDPOINT,
+      bucketName: process.env.R2_BUCKET_NAME,
+      endpoint: process.env.R2_ENDPOINT,
+      configured: !!(
+        process.env.R2_ACCOUNT_ID &&
+        process.env.R2_ACCESS_KEY_ID &&
+        process.env.R2_SECRET_ACCESS_KEY &&
+        process.env.R2_BUCKET_NAME &&
+        process.env.R2_ENDPOINT
+      ),
+    },
   };
   
   res.json({ envCheck });

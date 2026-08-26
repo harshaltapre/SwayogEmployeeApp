@@ -8,18 +8,16 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Handle both ESM and CJS environments
+// Handle both ESM and CJS environments safely
 let mockDbDir: string;
 try {
-  // Try ESM approach first
-  mockDbDir = path.dirname(fileURLToPath(import.meta.url));
+  if (typeof import.meta !== "undefined" && import.meta.url) {
+    mockDbDir = path.dirname(fileURLToPath(import.meta.url));
+  } else {
+    mockDbDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
+  }
 } catch {
-  // Fallback for CJS environment: use global __dirname if defined, or process.cwd()
-  mockDbDir = typeof __dirname !== "undefined"
-    ? __dirname
-    : (typeof globalThis !== "undefined" && (globalThis as any).__dirname
-        ? (globalThis as any).__dirname
-        : process.cwd());
+  mockDbDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 }
 
 interface MockUser {

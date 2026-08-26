@@ -10,58 +10,83 @@ import { recalculateMonthlyPerformance } from "../../services/attendanceService.
 import type { CompleteTaskInput, CreateTaskInput, CreateBulkTaskInput, ListTasksQueryInput } from "./tasks.schemas.js";
 import { createAdminNotification, createCustomerNotification } from "../../services/notificationService.js";
 import { getTaskTypeConfig, resolveTaskType } from "./task-type.config.js";
+import {
+  uploadToR2,
+  generateObjectKey,
+  isR2Configured,
+  getExtensionFromMimeType,
+} from "../../services/r2StorageService.js";
 
-export function processAndSaveBase64Photos(sitePhotos: string[], taskId: number | string): string[] {
+export async function processAndSaveBase64Photos(
+  sitePhotos: string[],
+  taskId: number | string,
+  imageType: "site-visit" | "before" | "after" | string = "site-visit",
+  taskType?: string,
+  customerName?: string
+): Promise<string[]> {
   if (!Array.isArray(sitePhotos)) return [];
 
-  const uploadsDir = path.join(process.cwd(), "uploads", "task-images");
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+  // R2 is mandatory for cloud storage
+  if (!isR2Configured()) {
+    throw new ApiError(500, "Cloudflare R2 storage is not configured. Please set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, and R2_ENDPOINT.");
   }
 
-  return sitePhotos.map((item, index) => {
-    if (!item || typeof item !== "string") return "";
-    let formattedItem = item.trim();
-    if (!formattedItem) return "";
+  const results = await Promise.all(
+    sitePhotos.map(async (item, index) => {
+      if (!item || typeof item !== "string") return "";
+      let formattedItem = item.trim();
+      if (!formattedItem) return "";
 
-    // If it's already a saved file/web URL, return as-is
-    if (formattedItem.startsWith("/uploads/") || formattedItem.startsWith("http://") || formattedItem.startsWith("https://")) {
-      return formattedItem;
-    }
-
-    // Auto-prefix raw base64 if missing data URI header
-    if (!formattedItem.startsWith("data:image/")) {
-      if (formattedItem.startsWith("/9j/")) {
-        formattedItem = `data:image/jpeg;base64,${formattedItem}`;
-      } else if (formattedItem.startsWith("iVBORw")) {
-        formattedItem = `data:image/png;base64,${formattedItem}`;
-      } else if (formattedItem.startsWith("R0lGOD")) {
-        formattedItem = `data:image/gif;base64,${formattedItem}`;
-      } else if (formattedItem.startsWith("UklGR")) {
-        formattedItem = `data:image/webp;base64,${formattedItem}`;
-      } else {
-        formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+      // If it's already an R2 / web URL, return as-is
+      if (formattedItem.startsWith("http://") || formattedItem.startsWith("https://")) {
+        return formattedItem;
       }
-    }
 
-    try {
-      const matches = formattedItem.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/s);
-      if (!matches || matches.length !== 3) return formattedItem;
+      // Auto-prefix raw base64 if missing data URI header
+      if (!formattedItem.startsWith("data:image/")) {
+        if (formattedItem.startsWith("/9j/")) {
+          formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+        } else if (formattedItem.startsWith("iVBORw")) {
+          formattedItem = `data:image/png;base64,${formattedItem}`;
+        } else if (formattedItem.startsWith("R0lGOD")) {
+          formattedItem = `data:image/gif;base64,${formattedItem}`;
+        } else if (formattedItem.startsWith("UklGR")) {
+          formattedItem = `data:image/webp;base64,${formattedItem}`;
+        } else {
+          formattedItem = `data:image/jpeg;base64,${formattedItem}`;
+        }
+      }
 
-      const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
-      const base64Data = matches[2].replace(/[\r\n\s]/g, "");
-      const buffer = Buffer.from(base64Data, "base64");
+      try {
+        const matches = formattedItem.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/s);
+        if (!matches || matches.length !== 3) return formattedItem;
 
-      const filename = `site_photo_${taskId}_${Date.now()}_${index}_${Math.floor(Math.random() * 10000)}.${ext}`;
-      const filePath = path.join(uploadsDir, filename);
-      fs.writeFileSync(filePath, buffer);
+        const rawType = matches[1].toLowerCase();
+        const mimeType = `image/${rawType === "jpg" ? "jpeg" : rawType}`;
+        const base64Data = matches[2].replace(/[\r\n\s]/g, "");
+        const buffer = Buffer.from(base64Data, "base64");
+        const ext = rawType === "jpeg" ? "jpg" : rawType;
+        const cleanTaskId = String(taskId).replace(/^TASK-amc_|^amc_visit_|^amc_/, "");
+        const fileName = `${imageType}_${cleanTaskId}_${Date.now()}_${index}.${ext}`;
 
-      return `/uploads/task-images/${filename}`;
-    } catch (err) {
-      console.error(`Error saving base64 photo for task ${taskId}:`, err);
-      return formattedItem;
-    }
-  }).filter((url) => typeof url === "string" && url.trim().length > 0);
+        // Upload to Cloudflare R2
+        const objectKey = generateObjectKey(
+          { taskId: cleanTaskId, type: imageType, taskType: taskType || "task", customerName: customerName || "unknown" },
+          fileName
+        );
+        
+        const uploadResult = await uploadToR2(buffer, objectKey, mimeType, fileName);
+        console.log(`[R2] Uploaded photo: ${objectKey}`);
+        
+        return uploadResult.url;
+      } catch (err) {
+        console.error(`Error saving base64 photo for task ${taskId}:`, err);
+        throw new ApiError(500, `Failed to upload photo to Cloudflare R2: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })
+  );
+
+  return results.filter((url) => typeof url === "string" && url.trim().length > 0);
 }
 
 async function getRecursiveReporteeIds(userId: string): Promise<string[]> {
@@ -160,6 +185,7 @@ function validateTaskCompletionImages(task: any, input: CompleteTaskInput): void
     }
   }
 }
+
 
 function mockTaskHasAssignment(task: any, employeeUserId: string): boolean {
   return (
@@ -331,14 +357,15 @@ export function serializeTask(task: any, options: { scopedEmployeeUserId?: strin
 
   const beforeImageObj = taskImages.find((img: any) => img.type === "before" || img.type === "Before");
   const afterImageObj = taskImages.find((img: any) => img.type === "after" || img.type === "After");
-  const sitePhotosFromColumn = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
+  const sitePhotosFromColumn = Array.isArray(task.sitePhotos) ? task.sitePhotos.filter((url: any) => typeof url === "string" && url.trim().length > 0) : [];
   const sitePhotosFromImages = taskImages
     .filter((img: any) => img.type === "site_photo" || String(img.type).startsWith("site_photo"))
-    .map((img: any) => img.url);
-
-  // Merge and filter out any empty strings
-  const mergedSitePhotos = Array.from(new Set([...sitePhotosFromColumn, ...sitePhotosFromImages]))
+    .map((img: any) => img.url)
     .filter((url: any) => typeof url === "string" && url.trim().length > 0);
+
+  // Use primary sitePhotos column if available; fallback to taskImages table records only if column is empty
+  const rawSitePhotosList = sitePhotosFromColumn.length > 0 ? sitePhotosFromColumn : sitePhotosFromImages;
+  const mergedSitePhotos = Array.from(new Set(rawSitePhotosList));
 
   const resolvedTaskType = resolveTaskType(task.taskType, task.jobType);
   const config = getTaskTypeConfig(resolvedTaskType, task.jobType);
@@ -849,26 +876,21 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       }
 
       // Validate mandatory photo uploads for AMC visits
-      if (!input.beforeImageUrl || !input.afterImageUrl) {
+      const existingBefore = visit.beforeImageUrl;
+      const existingAfter = visit.afterImageUrl;
+      if ((!input.beforeImageUrl && !existingBefore) || (!input.afterImageUrl && !existingAfter)) {
         throw new ApiError(400, "Before and After photos are mandatory to complete AMC visits");
       }
 
-      const existingSitePhotos = Array.isArray((visit as any).sitePhotos) ? (visit as any).sitePhotos : [];
-      const inputPhotos = getInputSitePhotos(input);
-      const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, cleanAmcId);
-      const finalSitePhotos = savedInputPhotos.length > 0
-        ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
-        : existingSitePhotos;
-
-      let savedBeforeUrl = (visit as any).beforeImageUrl || null;
+      let savedBeforeUrl = existingBefore || null;
       if (input.beforeImageUrl) {
-        const saved = processAndSaveBase64Photos([input.beforeImageUrl], cleanAmcId);
+        const saved = await processAndSaveBase64Photos([input.beforeImageUrl], cleanAmcId, "before", "AMC", visit.customer.fullName);
         savedBeforeUrl = saved[0] || input.beforeImageUrl;
       }
 
-      let savedAfterUrl = (visit as any).afterImageUrl || null;
+      let savedAfterUrl = existingAfter || null;
       if (input.afterImageUrl) {
-        const saved = processAndSaveBase64Photos([input.afterImageUrl], cleanAmcId);
+        const saved = await processAndSaveBase64Photos([input.afterImageUrl], cleanAmcId, "after", "AMC", visit.customer.fullName);
         savedAfterUrl = saved[0] || input.afterImageUrl;
       }
 
@@ -883,7 +905,6 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
           completedByName: completedByName,
           beforeImageUrl: savedBeforeUrl,
           afterImageUrl: savedAfterUrl,
-          sitePhotos: finalSitePhotos,
         },
       });
 
@@ -902,10 +923,10 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         jobType: "AMC",
         status: "completed",
         completedAt: updated.completedAt?.toISOString(),
-        beforeImageUrl: (updated as any).beforeImageUrl ?? null,
-        afterImageUrl: (updated as any).afterImageUrl ?? null,
-        sitePhotos: (updated as any).sitePhotos ?? [],
-        images: (updated as any).sitePhotos ?? [],
+        beforeImageUrl: updated.beforeImageUrl ?? null,
+        afterImageUrl: updated.afterImageUrl ?? null,
+        sitePhotos: [],
+        images: [],
         completionMessage: updated.visitNotes ?? updated.notes ?? null,
       };
     }
@@ -922,7 +943,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
     }).catch(() => null) : null;
 
     if (!task) {
-      // Fallback: check if task exists in mock database or first available task for employee
+      // Fallback: check if task exists in mock database
       const tasks = getMockTasks();
       const mockTask = tasks.find((t: any) => String(t.id) === String(taskId) || String(t.id) === String(id));
       if (mockTask) {
@@ -932,7 +953,6 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       }
     }
 
-
     const isAssignedEmployee = isTaskAssignedToEmployee(task, auth.userId);
     if (!isAdminTaskActor(auth) && !isAssignedEmployee) {
       throw new ApiError(403, "You cannot complete tasks assigned to other employees");
@@ -940,24 +960,24 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
 
     validateTaskCompletionImages(task, input);
 
-    // Process site photos (base64 -> disk file URLs)
+    // Process site photos to Cloudflare R2
     const existingSitePhotos = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
     const inputPhotos = getInputSitePhotos(input);
-    const savedInputPhotos = processAndSaveBase64Photos(inputPhotos, id);
+    const savedInputPhotos = await processAndSaveBase64Photos(inputPhotos, id, "site-visit", task.jobType, task.customerName);
     const finalSitePhotos = savedInputPhotos.length > 0
-      ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
+      ? Array.from(new Set(savedInputPhotos))
       : existingSitePhotos;
 
-    // Process before/after images if passed as base64
+    // Process before/after images to Cloudflare R2
     let savedBeforeUrl = task.beforeImageUrl;
     if (input.beforeImageUrl) {
-      const saved = processAndSaveBase64Photos([input.beforeImageUrl], id);
+      const saved = await processAndSaveBase64Photos([input.beforeImageUrl], id, "before", task.jobType, task.customerName);
       savedBeforeUrl = saved[0] || input.beforeImageUrl;
     }
 
     let savedAfterUrl = task.afterImageUrl;
     if (input.afterImageUrl) {
-      const saved = processAndSaveBase64Photos([input.afterImageUrl], id);
+      const saved = await processAndSaveBase64Photos([input.afterImageUrl], id, "after", task.jobType, task.customerName);
       savedAfterUrl = saved[0] || input.afterImageUrl;
     }
 
@@ -983,8 +1003,9 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
 
     let updated: any;
     if (id > 0) {
-      try {
-        updated = await prisma.task.update({
+      // Use transaction to ensure atomicity
+      updated = await prisma.$transaction(async (tx) => {
+        const updatedTask = await tx.task.update({
           where: { id },
           data: {
             status: nextTaskStatus,
@@ -1000,18 +1021,57 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
             completedAt: nextTaskStatus === TaskStatus.COMPLETED ? new Date() : undefined,
           },
         });
-      } catch (err) {
-        console.warn(`Could not update task ${id} in Prisma database, using in-memory task:`, err);
-        updated = {
-          ...task,
-          status: "COMPLETED",
-          completionMessage: input.message,
-          beforeImageUrl: savedBeforeUrl,
-          afterImageUrl: savedAfterUrl,
-          sitePhotos: finalSitePhotos,
-          completedAt: new Date(),
-        };
-      }
+
+        // Create TaskImage records in Neon PostgreSQL for the uploaded images
+        const imageRecords: any[] = [];
+        if (savedBeforeUrl) {
+          imageRecords.push({
+            taskId: id,
+            employeeUserId: auth.userId,
+            type: "before",
+            url: savedBeforeUrl,
+            objectKey: savedBeforeUrl.includes(".r2.cloudflarestorage.com/") ? savedBeforeUrl.split("/").slice(-4).join("/") : null,
+            latitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : null,
+            longitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : null,
+          });
+        }
+        if (savedAfterUrl) {
+          imageRecords.push({
+            taskId: id,
+            employeeUserId: auth.userId,
+            type: "after",
+            url: savedAfterUrl,
+            objectKey: savedAfterUrl.includes(".r2.cloudflarestorage.com/") ? savedAfterUrl.split("/").slice(-4).join("/") : null,
+            latitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : null,
+            longitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : null,
+          });
+        }
+
+        if (savedInputPhotos.length > 0) {
+          savedInputPhotos.forEach((photoUrl: string, idx: number) => {
+            if (photoUrl) {
+              imageRecords.push({
+                taskId: id,
+                employeeUserId: auth.userId,
+                type: `site_photo_${idx + 1}`,
+                url: photoUrl,
+                objectKey: photoUrl.includes(".r2.cloudflarestorage.com/") ? photoUrl.split("/").slice(-4).join("/") : null,
+                latitude: null,
+                longitude: null,
+              });
+            }
+          });
+        }
+
+        if (imageRecords.length > 0) {
+          await tx.taskImage.deleteMany({
+            where: { taskId: id },
+          });
+          await tx.taskImage.createMany({ data: imageRecords });
+        }
+
+        return updatedTask;
+      });
     } else {
       updated = {
         ...task,
@@ -1022,51 +1082,6 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         sitePhotos: finalSitePhotos,
         completedAt: new Date(),
       };
-    }
-
-    // Build taskImage records with clean disk file URLs (NOT raw base64)
-    const imageRecords: any[] = [];
-    if (savedBeforeUrl) {
-      imageRecords.push({
-        taskId: id,
-        employeeUserId: auth.userId,
-        type: "before",
-        url: savedBeforeUrl,
-        latitude: (input.beforeLatitude !== undefined && input.beforeLatitude !== null) ? parseFloat(String(input.beforeLatitude)) : null,
-        longitude: (input.beforeLongitude !== undefined && input.beforeLongitude !== null) ? parseFloat(String(input.beforeLongitude)) : null,
-      });
-    }
-    if (savedAfterUrl) {
-      imageRecords.push({
-        taskId: id,
-        employeeUserId: auth.userId,
-        type: "after",
-        url: savedAfterUrl,
-        latitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : null,
-        longitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : null,
-      });
-    }
-
-    if (savedInputPhotos.length > 0) {
-      savedInputPhotos.forEach((photoUrl: string, idx: number) => {
-        if (photoUrl) {
-          imageRecords.push({
-            taskId: id,
-            employeeUserId: auth.userId,
-            type: `site_photo_${idx + 1}`,
-            url: photoUrl,
-            latitude: null,
-            longitude: null,
-          });
-        }
-      });
-    }
-
-    if (id > 0 && imageRecords.length > 0) {
-      await prisma.taskImage.deleteMany({
-        where: isAdminTaskActor(auth) ? { taskId: id } : { taskId: id, employeeUserId: auth.userId },
-      });
-      await prisma.taskImage.createMany({ data: imageRecords });
     }
 
     if (nextTaskStatus === TaskStatus.COMPLETED) {
@@ -1085,7 +1100,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
           status: updated.status,
         },
       },
-    });
+    }).catch(() => {});
 
     const fullTask = await prisma.task.findUnique({
       where: { id },
@@ -1093,32 +1108,9 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
     });
     return serializeTask(fullTask || updated, { scopedEmployeeUserId: isAdminTaskActor(auth) ? null : auth.userId });
   } catch (error) {
-    if (error instanceof ApiError && error.statusCode !== 500) throw error;
-    console.warn("DB offline: Return mocked completeTask success", error);
-    const tasks = getMockTasks();
-    const idx = tasks.findIndex((t: any) => String(t.id) === String(taskId));
-    if (idx === -1) throw new ApiError(404, "Task not found");
-
-    const t = tasks[idx];
-    if (auth.role === "EMPLOYEE" && t.employeeUserId !== auth.userId) {
-      throw new ApiError(403, "You cannot complete tasks assigned to other employees");
-    }
-
-    t.status = "completed";
-    t.completionMessage = input.message;
-    t.completionDocumentUrl = input.documentUrl ?? null;
-    t.completedAt = new Date().toISOString();
-    t.updatedAt = new Date().toISOString();
-    t.beforeImageUrl = input.beforeImageUrl ?? null;
-    t.afterImageUrl = input.afterImageUrl ?? null;
-    t.beforeLatitude = input.beforeLatitude ?? null;
-    t.beforeLongitude = input.beforeLongitude ?? null;
-    t.afterLatitude = input.afterLatitude ?? null;
-    t.afterLongitude = input.afterLongitude ?? null;
-    t.sitePhotos = input.sitePhotos || (input as any).images || undefined;
-    t.images = t.sitePhotos;
-    saveMockTask(t);
-    return serializeTask(t);
+    if (error instanceof ApiError) throw error;
+    console.error("Error in completeTask:", error);
+    throw new ApiError(500, `Failed to complete task: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -1387,6 +1379,8 @@ export async function updateTaskPhotos(auth: AuthContext, id: number | string, s
       where: { id: numericId },
       select: {
         employeeUserId: true,
+        jobType: true,
+        customerName: true,
         taskAssignments: { select: { employeeUserId: true } },
       },
     });
@@ -1397,7 +1391,7 @@ export async function updateTaskPhotos(auth: AuthContext, id: number | string, s
       throw new ApiError(403, "You cannot update photos for tasks assigned to other employees");
     }
 
-    const savedPhotos = processAndSaveBase64Photos(sitePhotos, numericId);
+    const savedPhotos = await processAndSaveBase64Photos(sitePhotos, numericId, "site-visit", task.jobType, task.customerName);
 
     // Sync taskImage records with clean disk file URLs
     await prisma.taskImage.deleteMany({
