@@ -37,6 +37,9 @@ interface TaskDao {
     @Query("DELETE FROM tasks")
     suspend fun deleteAllTasks()
     
+    @Query("DELETE FROM tasks WHERE employeeUserId = :employeeUserId AND isSynced = 1")
+    suspend fun deleteSyncedTasksByEmployeeId(employeeUserId: String)
+    
     @Query("SELECT * FROM tasks WHERE isSynced = 0")
     suspend fun getUnsyncedTasks(): List<TaskEntity>
 }

@@ -12,7 +12,7 @@ import { GenericRestProvider } from "./generic-provider.js";
 import { ManualEntryProvider } from "./manual-provider.js";
 
 export class InverterProviderRegistry {
-  private static readonly providers = new Map<InverterProviderType, typeof BaseInverterProvider>();
+  private static readonly providers = new Map<InverterProviderType, new (config: ProviderConfig) => BaseInverterProvider>();
 
   static {
     // Register all available providers

@@ -261,8 +261,9 @@ class ServiceCoordinatorViewModel @Inject constructor(
                 cleaningsPerMonth = null,
                 status = "Active", // fallback
                 commissionAmount = null,
-                portalPassword = null
+                portalPassword = null // Not used in new implementation
             )
+            // Use the same endpoint as web implementation
             customerRepository.updateCustomer(customerId, request)
                 .onSuccess {
                     _isUpdatingCredentials.value = false

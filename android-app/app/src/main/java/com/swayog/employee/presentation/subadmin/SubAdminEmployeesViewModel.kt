@@ -47,7 +47,7 @@ data class SubAdminEmployeesUiState(
 class SubAdminEmployeesViewModel @Inject constructor(
     private val employeeRepository: EmployeeRepository,
     private val taskRepository: TaskRepository,
-    private val dataStoreManager: DataStoreManager
+    val dataStoreManager: DataStoreManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SubAdminEmployeesUiState())
@@ -64,11 +64,9 @@ class SubAdminEmployeesViewModel @Inject constructor(
                 _uiState.update { it.copy(employees = employees) }
             }
         }
-        viewModelScope.launch {
-            taskRepository.getAllTasksFlow().collect { tasks ->
-                _uiState.update { it.copy(tasks = tasks) }
-            }
-        }
+        // Tasks are loaded from the API via loadData(), not from Room DB.
+        // getAllTasks() intentionally does NOT write to Room to prevent polluting
+        // employee-specific task queries with tasks from all employees.
     }
 
     fun loadData() {
@@ -95,11 +93,29 @@ class SubAdminEmployeesViewModel @Inject constructor(
                 null
             }
 
+            // Populate tasks directly from API response (not Room)
+            taskResult.onSuccess { tasks ->
+                _uiState.update { it.copy(tasks = tasks) }
+            }
+
             _uiState.update { 
                 it.copy(
                     isLoading = false,
                     error = error
                 )
+            }
+        }
+    }
+
+
+    fun assignTask(taskId: String, employeeUserId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            val result = taskRepository.assignTask(taskId, employeeUserId)
+            result.onSuccess {
+                loadData()
+                onSuccess()
+            }.onFailure {
+                onError(it.message ?: "Failed to assign task")
             }
         }
     }

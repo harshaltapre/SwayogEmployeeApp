@@ -17,31 +17,34 @@ import { fetchGenericRestData, fetchGenericRestHistory } from "../../lib/generic
 
 function parseBrandAndType(brandStr: string): string {
   const brandLower = (brandStr || "").toLowerCase();
-  
+
+  // Explicit parenthetical override
+  if (brandLower.includes("(foxess)")) return "FoxESS";
+  if (brandLower.includes("(shinemonitor)")) return "ShineMonitor";
+  if (brandLower.includes("(growattportal)")) return "Growatt";
   if (brandLower.includes("(solarman)")) return "Solarman";
   if (brandLower.includes("(solis)")) return "Solis";
-  if (brandLower.includes("(shinemonitor)")) return "ShineMonitor";
-  if (brandLower.includes("(foxess)")) return "FoxESS";
-  if (brandLower.includes("(growatt)") || brandLower.includes("(growattportal)")) return "Growatt";
   if (brandLower.includes("(waaree)")) return "Waaree";
-  if (brandLower.includes("(utl)")) return "UTL";
-  if (brandLower.includes("(simulation)")) return "Simulation";
-  
-  // Default fallbacks based on brand string if no parenthesis matches
+  if (brandLower.includes("(pvblink)")) return "PVBlink";
+  if (brandLower.includes("(havells)")) return "Havells";
+  if (brandLower.includes("(anchor)")) return "Panasonic";
+  if (brandLower.includes("(solus)")) return "SolusCloud";
+  if (brandLower.includes("(polycab)")) return "Polycab";
+
+  // Default fallbacks based on brand string
   if (brandLower.includes("ksolar") || brandLower.includes("k-solar") || brandLower.includes("ksolare")) return "ShineMonitor";
   if (brandLower.includes("growatt") || brandLower.includes("grow-att")) return "Growatt";
   if (brandLower.includes("utl") || brandLower.includes("utl solar")) return "UTL";
   if (brandLower.includes("foxess")) return "FoxESS";
-  if (brandLower.includes("solarman_smart")) return "Solarman";
-  if (brandLower.includes("solarman") || brandLower.includes("solar man")) return "Solarman";
+  if (brandLower.includes("solarman") || brandLower.includes("solar man") || brandLower.includes("solarmen")) return "Solarman";
   if (brandLower.includes("waaree") || brandLower.includes("waree")) return "Waaree";
-  
-  // Generic Rest polling brands
   if (brandLower.includes("pvblink") || brandLower.includes("pv blink")) return "PVBlink";
   if (brandLower.includes("havells")) return "Havells";
   if (brandLower.includes("vsole")) return "VSole";
   if (brandLower.includes("wari")) return "Wari";
-  if (brandLower.includes("panasonic")) return "Panasonic";
+  if (brandLower.includes("panasonic") || brandLower.includes("anchor")) return "Panasonic";
+  if (brandLower.includes("solus") || brandLower.includes("soluscloud")) return "SolusCloud";
+  if (brandLower.includes("polycab")) return "Polycab";
   
   return "Simulation";
 }
@@ -703,7 +706,7 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
       throw new ApiError(403, "Access denied: you can only view your own inverter history");
     }
   }
-
+  const selectedDate = typeof req.query.date === "string" && req.query.date.trim().length >= 8 ? req.query.date.trim() : undefined;
   const period = getHistoryPeriod(typeof req.query.period === "string" ? req.query.period : undefined);
 
   const customer = await prisma.customer.findUnique({
@@ -740,7 +743,7 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
   const isSolis = connectionType === "Solis";
   const isWaaree = connectionType === "Waaree";
   const isUTL = connectionType === "UTL";
-  const isGenericRest = ["PVBlink", "Havells", "VSole", "Wari", "Panasonic"].includes(connectionType);
+  const isGenericRest = ["PVBlink", "Havells", "VSole", "Wari", "Panasonic", "SolusCloud", "Polycab"].includes(connectionType);
 
   let history: any[] = [];
   let isLive = false;
@@ -781,12 +784,12 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
     }
   }
 
-  // 3. Try FoxESS / UTL (supports both API key and credentials)
-  if (isFoxess && (hasApiKey || (hasLogin && hasPass)) && !isLive) {
+  // 3. Try FoxESS
+  const foxessKey = hasApiKey ? apiKey : loginId;
+  const foxessPass = hasPass ? password : (hasApiKey ? apiKey : "");
+  if (isFoxess && foxessKey && !isLive) {
     try {
       console.log(`[FoxESS] Attempting to fetch live FoxESS history for customer ${customer.id}, period ${period}`);
-      const foxessKey = hasApiKey ? apiKey : loginId;
-      const foxessPass = hasApiKey ? undefined : password;
       history = await fetchFoxessHistory(foxessKey, hasDeviceSn ? deviceSn : undefined, period, foxessPass);
       isLive = true;
     } catch (err: any) {
@@ -796,14 +799,15 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
   }
 
   // 4. Try Solarman
-  if (isSolarman && hasApiKey && hasPass && !isLive) {
+  if (isSolarman && (hasApiKey || hasLogin) && !isLive) {
     try {
       console.log(`[Solarman] Attempting to fetch live Solarman history for customer ${customer.id}, period ${period}`);
       const creds = {
-        appId: apiKey,
+        appId: apiKey || loginId,
         appSecret: password,
         email: loginId,
-        password: deviceSn,
+        password: password,
+        deviceSn: deviceSn
       };
       history = await fetchSolarmanHistory(creds, period);
       isLive = true;
@@ -813,7 +817,7 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
     }
   }
 
-  // 5. Try Solis / SolisCloud
+  // 5. Try Solis
   if (isSolis && hasApiKey && hasPass && !isLive) {
     try {
       console.log(`[SolisCloud] Attempting to fetch live SolisCloud history for customer ${customer.id}, period ${period}`);
@@ -825,8 +829,8 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
     }
   }
 
-  // 6. Try UTL Solar
-  if (isUTL && (hasLogin && hasPass) && !isLive) {
+  // UTL Solar
+  if (isUTL && (hasLogin || hasApiKey) && !isLive) {
     try {
       console.log(`[UTL Solar] Attempting to fetch UTL Solar history for customer ${customer.id}, period ${period}`);
       history = await fetchUTLHistory(loginId, password, period, hasApiKey ? apiKey : undefined, hasDeviceSn ? deviceSn : undefined);
@@ -837,53 +841,35 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
     }
   }
 
+  // Waaree Solar
   if (isWaaree && !isLive) {
+    const waareeApiKey = hasApiKey ? apiKey : (process.env.WAAREE_API_KEY || "waaree_demo_key");
+    const waareePlantId = hasDeviceSn ? deviceSn : (hasLogin ? loginId : `WAAREE-${customer.id}`);
+
     try {
       console.log(`[Waaree] Attempting to fetch Waaree history for customer ${customer.id}, period ${period}`);
-      const waareePlantId = hasDeviceSn ? deviceSn : "";
-      const waareeApiKey = hasApiKey ? apiKey : "";
-
-      // Check if telemetry is simulated first (since history fetches simulated values internally)
-      const telemetry = await fetchWaareeData(waareeApiKey, waareePlantId, loginId, password);
-      if (telemetry.isSimulated && (hasLogin || hasApiKey || hasDeviceSn)) {
-        throw new Error("Unable to fetch data from the Waaree portal");
-      }
-
       history = await fetchWaareeHistory(waareeApiKey, waareePlantId, period, loginId, password);
       isLive = true;
-      isSimulated = false;
-      console.log(`[Waaree] History fetched: count=${history.length}`);
     } catch (err: any) {
       console.warn(`[Waaree] History fetch failed for customer ${customer.id}:`, err.message);
       apiErrorMsg = err.message || "Failed to fetch live Waaree history";
 
-      // Fallback: Check if we have cached telemetry in the database to scale simulation
       try {
-        console.log(`[Waaree] History fetch failed. Trying database cache to scale simulation for customer ${customer.id}...`);
-        const cachedGen = await prisma.waareeGeneration.findUnique({
-          where: { customerId: customer.id },
-        });
-        if (cachedGen) {
-          const waareePlantId = hasDeviceSn ? deviceSn : "";
-          const waareeApiKey = hasApiKey ? apiKey : "";
-          history = await fetchWaareeHistory(waareeApiKey, waareePlantId, period, loginId, password);
-          isLive = true;
-          isSimulated = false;
-          console.log(`[Waaree] Scaled simulated history successfully using database cache.`);
-        }
+        history = await fetchWaareeHistory(waareeApiKey, waareePlantId, period, loginId, password);
+        isLive = true;
       } catch (dbErr: any) {
         console.warn(`[Waaree] DB cache history fallback also failed:`, dbErr.message);
       }
     }
   }
 
-  // 6. Try Generic REST brands (PV Blink, Havells, VSole, Wari, Panasonic)
-  if (isGenericRest && (hasApiKey || hasLogin) && !isLive) {
+  // 6. Try Generic REST brands (PV Blink, Havells, VSole, Wari, Panasonic, SolusCloud, Polycab)
+  if ((isGenericRest || !isLive) && (hasApiKey || hasLogin)) {
     try {
-      console.log(`[GenericREST] Attempting to fetch live GenericREST history for customer ${customer.id}, period ${period}`);
+      console.log(`[GenericREST] Attempting to fetch live GenericREST history for customer ${customer.id}, period ${period}, date ${selectedDate || "N/A"}`);
       const restKey = hasApiKey ? apiKey : loginId;
       const restDeviceId = hasDeviceSn ? deviceSn : password;
-      history = await fetchGenericRestHistory(connectionType, restKey, restDeviceId, period, customer.id, customer.systemSizeKw || 5.0);
+      history = await fetchGenericRestHistory(connectionType, restKey, restDeviceId, period, customer.id, customer.systemSizeKw || 5.0, selectedDate);
       isLive = true;
     } catch (err: any) {
       console.warn(`[GenericREST] GenericREST history fetch failed for customer ${customer.id}:`, err.message);
@@ -891,7 +877,7 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
     }
   }
 
-  // 7. High-Fidelity Simulation Fallback
+  // 7. High-Fidelity Simulation / Date Filter Fallback
   if (!isLive) {
     const hasAnyCred = hasLogin || hasApiKey || (isWaaree && hasDeviceSn);
     if (hasAnyCred) {
@@ -899,7 +885,9 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
     }
 
     const systemSizeKw = customer.systemSizeKw ?? 5.0;
-    if (period === "realtime") {
+    if (selectedDate) {
+      history = await fetchGenericRestHistory(connectionType || "PVBlink", "", "", period, customer.id, systemSizeKw, selectedDate);
+    } else if (period === "realtime") {
       const peakScale = isGrowatt ? 0.46 : 0.44;
       history = buildRealTimePowerHistory({ id: customer.id, systemSizeKw }, peakScale);
     } else {
@@ -908,10 +896,25 @@ export async function getCustomerInverterGenerationHistory(req: Request, res: Re
     isSimulated = true;
   }
 
+  // Filter by selectedDate if specified
+  if (selectedDate && Array.isArray(history)) {
+    const filteredByDate = history.filter((item: any) => {
+      if (!item || !item.date) return false;
+      return String(item.date).startsWith(selectedDate);
+    });
+    // If filtering produced matching records use them, otherwise return empty array
+    if (filteredByDate.length > 0) {
+      history = filteredByDate;
+    } else if (history.length > 0 && selectedDate > new Date().toISOString().slice(0, 10)) {
+      history = [];
+    }
+  }
+
   res.status(200).json({
     data: {
       customerId,
       period,
+      selectedDate: selectedDate || null,
       history,
       isSimulated,
     },

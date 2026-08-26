@@ -17,6 +17,9 @@ import com.swayog.employee.presentation.settings.SettingsScreen
 import com.swayog.employee.presentation.dailycommit.DailyCommitScreen
 import com.swayog.employee.presentation.subadmin.*
 import com.swayog.employee.presentation.attendance.face.FaceEnrollmentScreen
+import com.swayog.employee.presentation.inverter.InverterDataScreen
+
+import com.swayog.employee.presentation.notifications.NotificationsScreen
 
 @Composable
 fun SwayogNavHost(
@@ -82,6 +85,9 @@ fun SwayogNavHost(
                 onNavigateToDailyCommit = {
                     navController.navigate(Screen.DailyCommit.route)
                 },
+                onNavigateToNotifications = {
+                    navController.navigate(Screen.Notifications.route)
+                },
                 onNavigateToSubAdminCustomers = {
                     navController.navigate(Screen.SubAdminCustomers.route)
                 },
@@ -99,6 +105,9 @@ fun SwayogNavHost(
                 },
                 onNavigateToSubAdminFinancials = {
                     navController.navigate(Screen.SubAdminFinancials.route)
+                },
+                onNavigateToInverterData = {
+                    navController.navigate(Screen.InverterData.route)
                 }
             )
         }
@@ -146,8 +155,22 @@ fun SwayogNavHost(
             )
         }
         
+        composable(Screen.InverterData.route) {
+            InverterDataScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         composable(Screen.DailyCommit.route) {
             DailyCommitScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Screen.Notifications.route) {
+            NotificationsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }
@@ -218,6 +241,7 @@ sealed class Screen(val route: String) {
     data object Profile : Screen("profile")
     data object Settings : Screen("settings")
     data object DailyCommit : Screen("daily_commit")
+    data object Notifications : Screen("notifications")
     data object SubAdminCustomers : Screen("subadmin_customers")
     data object SubAdminCustomerDetails : Screen("subadmin_customer_details/{customerId}") {
         fun createRoute(customerId: Int) = "subadmin_customer_details/$customerId"
@@ -228,4 +252,5 @@ sealed class Screen(val route: String) {
     data object SubAdminEmployees : Screen("subadmin_employees")
     data object SubAdminFinancials : Screen("subadmin_financials")
     data object FaceEnrollment : Screen("face_enrollment")
+    data object InverterData : Screen("inverter_data")
 }

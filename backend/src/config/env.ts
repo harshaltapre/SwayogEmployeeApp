@@ -4,39 +4,15 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 
-// Safely get module directory across ESM, CJS, and Vercel bundles
-let currentDir: string = process.cwd();
-try {
-  if (typeof import.meta !== "undefined" && import.meta.url) {
-    currentDir = path.dirname(fileURLToPath(import.meta.url));
-  } else if (typeof __dirname !== "undefined") {
-    currentDir = __dirname;
-  }
-} catch {
-  currentDir = process.cwd();
-}
+// Get the directory of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// Find and load .env file from all candidate locations
-const candidateEnvPaths = [
-  path.join(process.cwd(), ".env"),
-  path.join(process.cwd(), "backend", ".env"),
-  path.join(currentDir, ".env"),
-  path.join(currentDir, "..", ".env"),
-  path.join(currentDir, "..", "..", ".env"),
-];
+// Load .env from the backend directory (go up two levels from src/config)
+const envPath = path.join(__dirname, "..", "..", ".env");
 
-let loadedEnv = false;
-for (const envPath of candidateEnvPaths) {
-  if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath, override: true });
-    loadedEnv = true;
-    break;
-  }
-}
-
-if (!loadedEnv) {
-  dotenv.config();
-}
+// Ensure local backend/.env values are used even if machine-level env vars exist.
+dotenv.config({ path: envPath, override: true });
 
 // Strip surrounding quotes from process.env keys (e.g. Vercel dashboard copy-pastes)
 for (const key of Object.keys(process.env)) {
@@ -55,7 +31,6 @@ const envSchema = z.object({
   DIRECT_URL: z.string().default(""),
   JWT_ACCESS_SECRET: z.string().min(32, "JWT_ACCESS_SECRET must be at least 32 chars"),
   JWT_REFRESH_SECRET: z.string().min(32, "JWT_REFRESH_SECRET must be at least 32 chars"),
-  ENCRYPTION_KEY: z.string().min(32, "ENCRYPTION_KEY must be at least 32 chars").optional(),
   JWT_ACCESS_TTL: z.string().default("15m"),
   JWT_REFRESH_TTL: z.string().default("7d"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),

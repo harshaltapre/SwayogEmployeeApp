@@ -184,7 +184,8 @@ fun AmcVisitDetailsModal(
                         beforeImageUrl = event.beforeImageUrl,
                         afterImageUrl = event.afterImageUrl,
                         sitePhotos = event.sitePhotos ?: event.images,
-                        isSiteVisit = true
+                        taskType = "AMC_VISIT",
+                        isSiteVisit = false
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))

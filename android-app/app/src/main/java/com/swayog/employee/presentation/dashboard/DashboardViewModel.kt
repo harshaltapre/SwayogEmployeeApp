@@ -58,9 +58,7 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             dataStoreManager.userId.filterNotNull().collect { id ->
                 taskRepository.getTasksByEmployeeId(id).collect { localTasks ->
-                    if (localTasks.isNotEmpty()) {
-                        _tasks.value = localTasks
-                    }
+                    _tasks.value = localTasks
                 }
             }
         }
@@ -132,9 +130,7 @@ class DashboardViewModel @Inject constructor(
                     }
 
                     taskRes.onSuccess { taskList ->
-                        if (taskList.isNotEmpty()) {
-                            _tasks.value = taskList
-                        }
+                        _tasks.value = taskList
                     }
 
                     attendanceRes.onSuccess { attendance ->

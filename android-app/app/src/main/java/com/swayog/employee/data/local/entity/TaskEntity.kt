@@ -62,12 +62,17 @@ data class TaskEntity(
             }
         }
 
-        val inferredTaskType = taskType ?: when {
-            !sitePhotosList.isNullOrEmpty() -> "SITE_VISIT"
-            jobType?.lowercase()?.contains("amc") == true || id.startsWith("amc_") -> "AMC_VISIT"
-            jobType == "Site Visit" || jobType?.lowercase()?.contains("site") == true || jobType?.lowercase()?.contains("visit") == true -> "SITE_VISIT"
+        val normalizedJobType = jobType?.lowercase().orEmpty()
+        val inferredTaskType = when {
+            normalizedJobType.contains("amc") || id.startsWith("amc_") -> "AMC_VISIT"
+            !taskType.isNullOrBlank() -> taskType
+            normalizedJobType.contains("site") || normalizedJobType.contains("survey") -> "SITE_VISIT"
             else -> "REGULAR"
         }
+        val resolvedBeforeImageUrl = beforeImageUrl
+            ?: if (inferredTaskType == "AMC_VISIT") sitePhotosList?.getOrNull(0) else null
+        val resolvedAfterImageUrl = afterImageUrl
+            ?: if (inferredTaskType == "AMC_VISIT") sitePhotosList?.getOrNull(1) else null
 
         return Task(
             id = id,
@@ -84,8 +89,8 @@ data class TaskEntity(
             assignedById = assignedById,
             completionMessage = completionMessage,
             completionDocumentUrl = completionDocumentUrl,
-            beforeImageUrl = beforeImageUrl,
-            afterImageUrl = afterImageUrl,
+            beforeImageUrl = resolvedBeforeImageUrl,
+            afterImageUrl = resolvedAfterImageUrl,
             beforeLatitude = beforeLatitude,
             beforeLongitude = beforeLongitude,
             afterLatitude = afterLatitude,

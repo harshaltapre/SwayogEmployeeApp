@@ -10,8 +10,6 @@ import com.swayog.employee.data.local.entity.OutboxQueueEntity
 import com.swayog.employee.data.model.*
 import com.swayog.employee.core.util.ErrorUtils
 import com.swayog.employee.core.util.OfflinePendingException
-import com.swayog.employee.core.util.OnlineSubmissionFailedException
-import java.io.IOException
 import com.swayog.employee.core.util.LocalFileHelper
 import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.data.sync.SyncWorker
@@ -82,13 +80,19 @@ class TaskRepository @Inject constructor(
 
                     val entities = tasks.map { task ->
                         val existingLocal = taskDao.getTaskById(task.id)
+                        val isAssignedToRequestedEmployee = task.employeeUserId == employeeUserId ||
+                            task.assignedEmployees?.any { it.userId == employeeUserId } == true
                         val mergedSitePhotos = (task.sitePhotos ?: task.images)?.filter { it.isNotBlank() }
                             ?: existingLocal?.sitePhotosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
                             ?: existingLocal?.imagesJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
 
-                        val mergedTaskType = task.taskType 
-                            ?: existingLocal?.taskType 
-                            ?: if (!mergedSitePhotos.isNullOrEmpty()) "SITE_VISIT" else null
+                        val normalizedJobType = task.jobType?.lowercase().orEmpty()
+                        val mergedTaskType = when {
+                            normalizedJobType.contains("amc") -> "AMC_VISIT"
+                            !task.taskType.isNullOrBlank() -> task.taskType
+                            normalizedJobType.contains("site") || normalizedJobType.contains("survey") -> "SITE_VISIT"
+                            else -> existingLocal?.taskType ?: "REGULAR"
+                        }
 
                         TaskEntity(
                             id = task.id,
@@ -101,7 +105,7 @@ class TaskRepository @Inject constructor(
                             longitude = task.longitude,
                             status = task.status,
                             scheduledTime = task.scheduledTime,
-                            employeeUserId = task.employeeUserId,
+                            employeeUserId = if (isAssignedToRequestedEmployee) employeeUserId else task.employeeUserId,
                             assignedById = task.assignedById,
                             completionMessage = task.completionMessage ?: existingLocal?.completionMessage,
                             completionDocumentUrl = task.completionDocumentUrl ?: existingLocal?.completionDocumentUrl,
@@ -123,6 +127,11 @@ class TaskRepository @Inject constructor(
                             assignedEmployeePhone = task.assignedEmployeePhone
                         )
                     }
+                    // ── Purge stale tasks: delete all SYNCED tasks for this employee
+                    // before inserting fresh API data. This ensures tasks that were
+                    // removed/reassigned on the backend are cleaned from the local DB.
+                    // Unsynced tasks (pending local completions) are preserved.
+                    taskDao.deleteSyncedTasksByEmployeeId(employeeUserId)
                     taskDao.insertTasks(entities)
 
                     // Re-queue completions for tasks the backend still shows as not-completed
@@ -203,52 +212,11 @@ class TaskRepository @Inject constructor(
             val response = apiService.getTasks(employeeUserId, status)
             if (response.isSuccessful && response.body()?.data != null) {
                 val tasks = response.body()!!.data!!
-                withContext(Dispatchers.IO) {
-                    val entities = tasks.map { task ->
-                        val existingLocal = taskDao.getTaskById(task.id)
-                        val mergedSitePhotos = (task.sitePhotos ?: task.images)?.filter { it.isNotBlank() }
-                            ?: existingLocal?.sitePhotosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
-                            ?: existingLocal?.imagesJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
-
-                        val mergedTaskType = task.taskType 
-                            ?: existingLocal?.taskType 
-                            ?: if (!mergedSitePhotos.isNullOrEmpty()) "SITE_VISIT" else null
-
-                        TaskEntity(
-                            id = task.id,
-                            jobType = task.jobType,
-                            description = task.description,
-                            customerName = task.customerName,
-                            customerPhone = task.customerPhone,
-                            address = task.address,
-                            latitude = task.latitude,
-                            longitude = task.longitude,
-                            status = task.status,
-                            scheduledTime = task.scheduledTime,
-                            employeeUserId = task.employeeUserId,
-                            assignedById = task.assignedById,
-                            completionMessage = task.completionMessage ?: existingLocal?.completionMessage,
-                            completionDocumentUrl = task.completionDocumentUrl ?: existingLocal?.completionDocumentUrl,
-                            beforeImageUrl = task.beforeImageUrl ?: existingLocal?.beforeImageUrl,
-                            afterImageUrl = task.afterImageUrl ?: existingLocal?.afterImageUrl,
-                            beforeLatitude = task.beforeLatitude ?: existingLocal?.beforeLatitude,
-                            beforeLongitude = task.beforeLongitude ?: existingLocal?.beforeLongitude,
-                            afterLatitude = task.afterLatitude ?: existingLocal?.afterLatitude,
-                            afterLongitude = task.afterLongitude ?: existingLocal?.afterLongitude,
-                            completedAt = task.completedAt ?: existingLocal?.completedAt,
-                            createdAt = task.createdAt,
-                            updatedAt = task.updatedAt,
-                            isSynced = existingLocal?.isSynced ?: true,
-                            invoiceJson = task.invoice?.let { gson.toJson(it) } ?: existingLocal?.invoiceJson,
-                            taskType = mergedTaskType,
-                            imagesJson = mergedSitePhotos?.let { gson.toJson(it) },
-                            sitePhotosJson = mergedSitePhotos?.let { gson.toJson(it) },
-                            assignedEmployeeName = task.assignedEmployeeName,
-                            assignedEmployeePhone = task.assignedEmployeePhone
-                        )
-                    }
-                    taskDao.insertTasks(entities)
-                }
+                // ── DO NOT write these tasks to Room DB! ──
+                // This method fetches ALL tasks (across all employees) for SubAdmin views.
+                // Writing them to the shared Room `tasks` table would pollute
+                // employee-specific queries (getTasksByEmployeeId), causing stale
+                // task counts for individual employee dashboards.
                 Result.success(tasks)
             } else {
                 Result.failure(Exception("Failed to fetch all tasks: ${ErrorUtils.formatResponseError(response)}"))
@@ -257,7 +225,23 @@ class TaskRepository @Inject constructor(
             Result.failure(Exception("Failed to fetch all tasks: ${ErrorUtils.formatException(e)}"))
         }
     }
+
     
+    suspend fun assignTask(taskId: String, employeeUserId: String): Result<Task> {
+        return try {
+            val response = apiService.assignTask(taskId, com.swayog.employee.data.model.AssignTaskRequest(employeeUserId, null))
+            if (response.isSuccessful && response.body()?.success == true) {
+                val updatedTask = response.body()!!.data!!
+                saveTaskLocally(updatedTask)
+                Result.success(updatedTask)
+            } else {
+                Result.failure(Exception(ErrorUtils.formatResponseError(response)))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun updateTaskStatus(taskId: String, status: String): Result<Task> {
         val cleanTaskId = sanitizeTaskId(taskId)
         if (cleanTaskId.startsWith("amc_")) {
@@ -514,21 +498,29 @@ class TaskRepository @Inject constructor(
         taskType: String? = null,
         images: List<String>? = null,
         beforeImages: List<String>? = null,
-        afterImages: List<String>? = null
+        afterImages: List<String>? = null,
+        sitePhotos: List<String>? = null
     ): Result<Task> {
         val cleanTaskId = sanitizeTaskId(taskId)
+        val photosToSubmit = (sitePhotos ?: images)?.filter { it.isNotBlank() }
         if (cleanTaskId.startsWith("amc_")) {
             val visitId = cleanTaskId.replace("amc_", "")
-            val body = mapOf(
+            val body: Map<String, Any?> = mutableMapOf<String, Any?>(
                 "notes" to completionMessage,
                 "visitNotes" to completionMessage,
                 "beforeImageUrl" to beforeImageUrl,
                 "afterImageUrl" to afterImageUrl
-            )
+            ).apply {
+                if (!photosToSubmit.isNullOrEmpty()) {
+                    put("sitePhotos", photosToSubmit)
+                    put("images", photosToSubmit)
+                }
+            }
             return try {
                 val response = apiService.markAmcVisitDone(visitId, body)
                 if (response.isSuccessful && response.body()?.data != null) {
                     val visit = response.body()!!.data!!
+                    val visitSitePhotos = photosToSubmit
                     val completedTask = Task(
                         id = cleanTaskId,
                         jobType = "AMC",
@@ -541,8 +533,10 @@ class TaskRepository @Inject constructor(
                         employeeUserId = visit.assignedEmployeeId,
                         assignedById = "system",
                         completionMessage = completionMessage,
-                        beforeImageUrl = beforeImageUrl,
-                        afterImageUrl = afterImageUrl,
+                        beforeImageUrl = visit.beforeImageUrl ?: beforeImageUrl,
+                        afterImageUrl = visit.afterImageUrl ?: afterImageUrl,
+                        sitePhotos = visitSitePhotos,
+                        images = visitSitePhotos,
                         completedAt = visit.completedAt,
                         createdAt = visit.createdAt,
                         updatedAt = visit.updatedAt
@@ -559,8 +553,10 @@ class TaskRepository @Inject constructor(
                         employeeUserId = completedTask.employeeUserId,
                         assignedById = completedTask.assignedById,
                         completionMessage = completionMessage,
-                        beforeImageUrl = beforeImageUrl,
-                        afterImageUrl = afterImageUrl,
+                        beforeImageUrl = completedTask.beforeImageUrl,
+                        afterImageUrl = completedTask.afterImageUrl,
+                        sitePhotosJson = visitSitePhotos?.let { gson.toJson(it) },
+                        imagesJson = visitSitePhotos?.let { gson.toJson(it) },
                         completedAt = completedTask.completedAt,
                         createdAt = completedTask.createdAt,
                         updatedAt = completedTask.updatedAt,
@@ -569,202 +565,240 @@ class TaskRepository @Inject constructor(
                     taskDao.updateTask(entity)
                     Result.success(completedTask)
                 } else {
-                    Result.failure(OnlineSubmissionFailedException("AMC Visit submission failed (HTTP ${response.code()}). Please try again."))
+                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
+                    saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
+                    Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
                 }
             } catch (e: Exception) {
-                Result.failure(OnlineSubmissionFailedException("AMC Visit submission error: ${e.message}. Please check connection and try again."))
+                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
+                saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
+                Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
             }
         }
-
         val isOnline = NetworkUtils.isNetworkAvailable(context)
+
         return if (isOnline) {
             try {
-                var updatedTaskWithPhotos: Task? = null
-                val isSiteTask = taskType == "SITE_VISIT" || !images.isNullOrEmpty()
-
-                // 📸 1. UPLOAD PHOTOS FIRST FOR SITE VISITS (IF PHOTOS ENDPOINT AVAILABLE)
-                if (isSiteTask && !images.isNullOrEmpty()) {
-                    android.util.Log.d("SiteVisitSync", "LOG 3.1 - Site Visit Photo Upload Start: TaskId=$cleanTaskId, PhotoCount=${images.size}")
-                    images.forEachIndexed { idx, b64 ->
-                        val len = b64.length
-                        val header = b64.take(30)
-                        android.util.Log.d("SiteVisitSync", "  Photo #${idx + 1}: length=$len chars, header='$header...'")
-                    }
-
-                    val photosResponse = try {
-                        apiService.updateTaskPhotos(
-                            cleanTaskId,
-                            UpdateTaskPhotosRequest(sitePhotos = images)
-                        )
-                    } catch (e: Exception) {
-                        android.util.Log.w("SiteVisitSync", "LOG 3.2 Exception calling updateTaskPhotos: ${e.message}")
-                        null
-                    }
-
-                    if (photosResponse != null && photosResponse.isSuccessful && photosResponse.body()?.data != null) {
-                        updatedTaskWithPhotos = photosResponse.body()!!.data
-                        val returnedUrls = updatedTaskWithPhotos?.sitePhotos ?: emptyList()
-                        android.util.Log.d("SiteVisitSync", "LOG 3.3 - Photo Upload Success! Server stored ${returnedUrls.size} photos: $returnedUrls")
-                    } else {
-                        var retrySuccess = false
-                        if (taskId != cleanTaskId) {
-                            val retryResp = try {
-                                apiService.updateTaskPhotos(
-                                    taskId,
-                                    UpdateTaskPhotosRequest(sitePhotos = images)
-                                )
-                            } catch (_: Exception) { null }
-                            if (retryResp != null && retryResp.isSuccessful && retryResp.body()?.data != null) {
-                                updatedTaskWithPhotos = retryResp.body()!!.data
-                                retrySuccess = true
-                            }
-                        }
-                        if (!retrySuccess) {
-                            android.util.Log.w("SiteVisitSync", "LOG 3.3 WARNING - Photo Upload endpoint failed (HTTP ${photosResponse?.code()}). Proceeding directly with completeTask payload.")
-                        }
-                    }
-                }
-
-                // 📸 2. COMPLETE TASK WITH SERVER PHOTO REFERENCES
-                val uploadedPhotoUrls = updatedTaskWithPhotos?.sitePhotos?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
-                    ?: updatedTaskWithPhotos?.images?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
-                    ?: images
-                val isSiteVisitType = taskType == "SITE_VISIT" || isSiteTask
-                val finalBeforeImg = if (isSiteVisitType) null else beforeImageUrl
-                val finalAfterImg = if (isSiteVisitType) null else afterImageUrl
-
                 val req = CompleteTaskRequest(
                     message = completionMessage,
                     documentUrl = completionDocumentUrl,
-                    beforeImageUrl = finalBeforeImg,
-                    afterImageUrl = finalAfterImg,
+                    beforeImageUrl = beforeImageUrl,
+                    afterImageUrl = afterImageUrl,
                     beforeLatitude = beforeLatitude,
                     beforeLongitude = beforeLongitude,
                     afterLatitude = afterLatitude,
                     afterLongitude = afterLongitude,
                     taskType = taskType,
-                    images = uploadedPhotoUrls,
-                    sitePhotos = uploadedPhotoUrls,
+                    images = images,
+                    sitePhotos = sitePhotos ?: images,
                     beforeImages = beforeImages,
                     afterImages = afterImages
                 )
+                android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: RawTaskId=$taskId, CleanTaskId=$cleanTaskId, Endpoint=PATCH tasks/$cleanTaskId/complete, sitePhotosCount=${req.sitePhotos?.size}, message=${req.message}")
+                val response = apiService.completeTask(cleanTaskId, req)
+                android.util.Log.d("TaskSubmissionChain", "LOG 4 - API Call Returned: statusCode=${response.code()}, isSuccessful=${response.isSuccessful}, cleanTaskId=$cleanTaskId")
+                
+                var successTask: Task? = if (response.isSuccessful && response.body()?.data != null) response.body()!!.data else null
 
-                android.util.Log.d("TaskSubmissionChain", "LOG 4 - Submitting Task Completion: CleanTaskId=$cleanTaskId, RawTaskId=$taskId, sitePhotosCount=${req.sitePhotos?.size}")
-                var response = try { apiService.completeTask(cleanTaskId, req) } catch (_: Exception) { null }
-                var successTask: Task? = if (response != null && response.isSuccessful && response.body()?.data != null) response.body()!!.data else null
-
+                // Fallback 1: Retrying with raw taskId if cleanTaskId returned error
                 if (successTask == null && taskId != cleanTaskId) {
-                    android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] cleanTaskId $cleanTaskId failed. Retrying with raw taskId $taskId")
-                    val respRaw = try { apiService.completeTask(taskId, req) } catch (_: Exception) { null }
-                    if (respRaw != null && respRaw.isSuccessful && respRaw.body()?.data != null) {
+                    android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] cleanTaskId $cleanTaskId failed (${response.code()}). Retrying with raw taskId $taskId")
+                    val respRaw = apiService.completeTask(taskId, req)
+                    if (respRaw.isSuccessful && respRaw.body()?.data != null) {
                         successTask = respRaw.body()!!.data
                     }
                 }
 
+                // Fallback 2: Call status update endpoint (employee/tasks/:taskId/status) to guarantee DB completion
                 if (successTask == null) {
-                    android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] Retrying with completeEmployeeTask endpoint for cleanTaskId $cleanTaskId")
-                    val respEmpClean = try { apiService.completeEmployeeTask(cleanTaskId, req) } catch (_: Exception) { null }
-                    if (respEmpClean != null && respEmpClean.isSuccessful && respEmpClean.body()?.data != null) {
-                        successTask = respEmpClean.body()!!.data
-                    }
-                }
-
-                if (successTask == null && taskId != cleanTaskId) {
-                    android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] Retrying with completeEmployeeTask endpoint for raw taskId $taskId")
-                    val respEmpRaw = try { apiService.completeEmployeeTask(taskId, req) } catch (_: Exception) { null }
-                    if (respEmpRaw != null && respEmpRaw.isSuccessful && respEmpRaw.body()?.data != null) {
-                        successTask = respEmpRaw.body()!!.data
+                    android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] completeTask endpoint failed. Falling back to status update endpoint employee/tasks/$cleanTaskId/status")
+                    val respStatus = apiService.updateTask(cleanTaskId, UpdateTaskRequest(status = "COMPLETED"))
+                    if (respStatus.isSuccessful && respStatus.body()?.data != null) {
+                        successTask = respStatus.body()!!.data
                     }
                 }
 
                 if (successTask != null) {
-                    val finalPhotos = updatedTaskWithPhotos?.sitePhotos?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
-                        ?: successTask.sitePhotos?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
-                        ?: successTask.images?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
-                        ?: uploadedPhotoUrls
+                    // ✅ SUCCESS: Save to local DB and return
+                    val task = successTask
+
+                    // 📸 PHOTO TRANSFER FIX: If this is a site visit with photos, also call the
+                    // dedicated PATCH /tasks/:id/photos endpoint. This is the same endpoint the
+                    // web app uses (updateTaskPhotos). It processes base64 → disk files and stores
+                    // proper file paths in task.sitePhotos, making them visible in the dashboard.
+                    // Without this, photos only go to taskImages.url as raw base64 strings which
+                    // can cause issues when the coordinator dashboard tries to display them.
+                    val isSiteTask = taskType == "SITE_VISIT" || task.isSiteVisit || task.jobType?.lowercase()?.contains("site") == true || task.jobType?.lowercase()?.contains("visit") == true || !images.isNullOrEmpty()
+                    val finalSitePhotos: List<String>? = if (!images.isNullOrEmpty() && isSiteTask) {
+                        try {
+                            android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Uploading ${images.size} site photos via dedicated /photos endpoint for task $cleanTaskId")
+                            val photosResponse = apiService.updateTaskPhotos(
+                                cleanTaskId,
+                                mapOf("sitePhotos" to images)
+                            )
+                            if (photosResponse.isSuccessful && photosResponse.body()?.data != null) {
+                                val updatedTask = photosResponse.body()!!.data!!
+                                android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Photos endpoint returned ${updatedTask.sitePhotos?.size ?: 0} file-path URLs")
+                                updatedTask.sitePhotos ?: task.sitePhotos ?: images
+                            } else {
+                                android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos endpoint returned HTTP ${photosResponse.code()} — falling back to base64 from local")
+                                task.sitePhotos ?: task.images ?: images
+                            }
+                        } catch (photoEx: Exception) {
+                            android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos endpoint threw exception: ${photoEx.message} — using local images")
+                            task.sitePhotos ?: task.images ?: images
+                        }
+                    } else {
+                        task.sitePhotos ?: task.images ?: images
+                    }
                     val entity = TaskEntity(
-                        id = successTask.id,
-                        jobType = successTask.jobType,
-                        description = successTask.description,
-                        customerName = successTask.customerName,
-                        customerPhone = successTask.customerPhone,
-                        address = successTask.address,
-                        latitude = successTask.latitude,
-                        longitude = successTask.longitude,
+                        id = task.id,
+                        jobType = task.jobType,
+                        description = task.description,
+                        customerName = task.customerName,
+                        customerPhone = task.customerPhone,
+                        address = task.address,
+                        latitude = task.latitude,
+                        longitude = task.longitude,
                         status = "completed",
-                        scheduledTime = successTask.scheduledTime,
-                        employeeUserId = successTask.employeeUserId,
-                        assignedById = successTask.assignedById,
-                        completionMessage = successTask.completionMessage ?: completionMessage,
-                        completionDocumentUrl = successTask.completionDocumentUrl ?: completionDocumentUrl,
-                        beforeImageUrl = successTask.beforeImageUrl ?: beforeImageUrl,
-                        afterImageUrl = successTask.afterImageUrl ?: afterImageUrl,
-                        beforeLatitude = successTask.beforeLatitude ?: beforeLatitude,
-                        beforeLongitude = successTask.beforeLongitude ?: beforeLongitude,
-                        afterLatitude = successTask.afterLatitude ?: afterLatitude,
-                        afterLongitude = successTask.afterLongitude ?: afterLongitude,
-                        completedAt = successTask.completedAt ?: java.time.LocalDateTime.now().toString(),
-                        createdAt = successTask.createdAt,
-                        updatedAt = successTask.updatedAt,
+                        scheduledTime = task.scheduledTime,
+                        employeeUserId = task.employeeUserId,
+                        assignedById = task.assignedById,
+                        completionMessage = task.completionMessage ?: completionMessage,
+                        completionDocumentUrl = task.completionDocumentUrl ?: completionDocumentUrl,
+                        beforeImageUrl = task.beforeImageUrl ?: beforeImageUrl,
+                        afterImageUrl = task.afterImageUrl ?: afterImageUrl,
+                        beforeLatitude = task.beforeLatitude ?: beforeLatitude,
+                        beforeLongitude = task.beforeLongitude ?: beforeLongitude,
+                        afterLatitude = task.afterLatitude ?: afterLatitude,
+                        afterLongitude = task.afterLongitude ?: afterLongitude,
+                        completedAt = task.completedAt ?: java.time.LocalDateTime.now().toString(),
+                        createdAt = task.createdAt,
+                        updatedAt = task.updatedAt,
                         isSynced = true,
-                        taskType = taskType ?: successTask.taskType,
-                        imagesJson = finalPhotos?.let { gson.toJson(it) },
-                        sitePhotosJson = finalPhotos?.let { gson.toJson(it) }
+                        invoiceJson = task.invoice?.let { gson.toJson(it) },
+                        taskType = task.taskType ?: taskType,
+                        imagesJson = finalSitePhotos?.let { gson.toJson(it) },
+                        sitePhotosJson = finalSitePhotos?.let { gson.toJson(it) },
+                        beforeImagesJson = beforeImages?.let { gson.toJson(it) },
+                        afterImagesJson = afterImages?.let { gson.toJson(it) },
+                        assignedEmployeeName = task.assignedEmployeeName,
+                        assignedEmployeePhone = task.assignedEmployeePhone
                     )
-                    taskDao.insertTask(entity)
-                    android.util.Log.d("SiteVisitSync", "LOG 6 - Site Visit Complete Success! Task ID=${successTask.id}, sitePhotosCount=${finalPhotos?.size}")
-                    Result.success(successTask.copy(sitePhotos = finalPhotos, images = finalPhotos))
+                    val finalTask = task.copy(
+                        sitePhotos = finalSitePhotos,
+                        images = finalSitePhotos,
+                        beforeImageUrl = task.beforeImageUrl ?: beforeImageUrl,
+                        afterImageUrl = task.afterImageUrl ?: afterImageUrl
+                    )
+                    taskDao.updateTask(entity)
+                    Result.success(finalTask)
                 } else {
-                    android.util.Log.w("TaskSubmissionChain", "LOG 6 WARN - Server task completion returned HTTP ${response?.code() ?: 404}. Saving completion locally and queuing in outbox.")
-                    saveCompletionLocally(
-                        taskId = taskId,
-                        completionMessage = completionMessage,
-                        completionDocumentUrl = completionDocumentUrl,
-                        beforeImageUrl = finalBeforeImg,
-                        afterImageUrl = finalAfterImg,
-                        beforeLatitude = beforeLatitude,
-                        beforeLongitude = beforeLongitude,
-                        afterLatitude = afterLatitude,
-                        afterLongitude = afterLongitude,
-                        taskType = taskType,
-                        images = uploadedPhotoUrls,
-                        beforeImages = beforeImages,
-                        afterImages = afterImages
-                    )
+                    // ⚠️ Server returned HTTP error (404, 403, 500, etc.).
+                    // Save locally as completed so the employee is not blocked, and queue to outbox for background sync!
+                    val errorDetail = ErrorUtils.formatResponseError(response)
+                    android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] Server error for task $taskId ($errorDetail) — saving locally & queuing to outbox")
                     saveTaskCompletionToOutbox(
                         taskId = taskId,
                         completionMessage = completionMessage,
                         completionDocumentUrl = completionDocumentUrl,
-                        beforeImageUrl = finalBeforeImg,
-                        afterImageUrl = finalAfterImg,
+                        beforeImageUrl = beforeImageUrl,
+                        afterImageUrl = afterImageUrl,
                         beforeLatitude = beforeLatitude,
                         beforeLongitude = beforeLongitude,
                         afterLatitude = afterLatitude,
                         afterLongitude = afterLongitude,
                         taskType = taskType,
-                        images = uploadedPhotoUrls,
+                        images = images,
                         beforeImages = beforeImages,
                         afterImages = afterImages
                     )
-                    val localTask = taskDao.getTaskById(taskId)?.toTask() ?: Task(
-                        id = taskId,
-                        jobType = "Site Visit",
-                        description = completionMessage,
-                        status = "completed",
-                        scheduledTime = java.time.LocalDateTime.now().toString(),
+                    saveCompletionLocally(
+                        taskId = taskId,
                         completionMessage = completionMessage,
-                        sitePhotos = uploadedPhotoUrls,
-                        images = uploadedPhotoUrls
+                        completionDocumentUrl = completionDocumentUrl,
+                        beforeImageUrl = beforeImageUrl,
+                        afterImageUrl = afterImageUrl,
+                        beforeLatitude = beforeLatitude,
+                        beforeLongitude = beforeLongitude,
+                        afterLatitude = afterLatitude,
+                        afterLongitude = afterLongitude,
+                        taskType = taskType,
+                        images = images,
+                        beforeImages = beforeImages,
+                        afterImages = afterImages
                     )
-                    Result.success(localTask)
+                    Result.failure(OfflinePendingException("Task completed & saved locally on app! Syncing with server..."))
                 }
             } catch (e: Exception) {
-                android.util.Log.e("TaskSubmissionChain", "LOG 6 EXCEPTION - Exception during task submission: ${e.message}", e)
-                Result.failure(OnlineSubmissionFailedException("Server submission failed: ${e.message ?: "Network error"}. Please check your connection and try again."))
+                // 🌐 Network exception or unexpected exception — queue to outbox & save locally.
+                android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] Exception for task $taskId — saving to outbox: ${e.message}")
+                saveTaskCompletionToOutbox(
+                    taskId = taskId,
+                    completionMessage = completionMessage,
+                    completionDocumentUrl = completionDocumentUrl,
+                    beforeImageUrl = beforeImageUrl,
+                    afterImageUrl = afterImageUrl,
+                    beforeLatitude = beforeLatitude,
+                    beforeLongitude = beforeLongitude,
+                    afterLatitude = afterLatitude,
+                    afterLongitude = afterLongitude,
+                    taskType = taskType,
+                    images = images,
+                    beforeImages = beforeImages,
+                    afterImages = afterImages
+                )
+                saveCompletionLocally(
+                    taskId = taskId,
+                    completionMessage = completionMessage,
+                    completionDocumentUrl = completionDocumentUrl,
+                    beforeImageUrl = beforeImageUrl,
+                    afterImageUrl = afterImageUrl,
+                    beforeLatitude = beforeLatitude,
+                    beforeLongitude = beforeLongitude,
+                    afterLatitude = afterLatitude,
+                    afterLongitude = afterLongitude,
+                    taskType = taskType,
+                    images = images,
+                    beforeImages = beforeImages,
+                    afterImages = afterImages
+                )
+                Result.failure(OfflinePendingException("Task completed & saved locally on app! Syncing with server..."))
             }
         } else {
-            android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] Device offline — aborting task submission.")
-            Result.failure(OnlineSubmissionFailedException("Internet connection required to submit Site Visit. Please check your network connection and try again."))
+            // 📴 OFFLINE — save to outbox queue and update local DB
+            android.util.Log.d("TaskSubmissionChain", "[TaskSubmission] Device offline — saving task $taskId to outbox.")
+            saveTaskCompletionToOutbox(
+                taskId = taskId,
+                completionMessage = completionMessage,
+                completionDocumentUrl = completionDocumentUrl,
+                beforeImageUrl = beforeImageUrl,
+                afterImageUrl = afterImageUrl,
+                beforeLatitude = beforeLatitude,
+                beforeLongitude = beforeLongitude,
+                afterLatitude = afterLatitude,
+                afterLongitude = afterLongitude,
+                taskType = taskType,
+                images = images,
+                beforeImages = beforeImages,
+                afterImages = afterImages
+            )
+            saveCompletionLocally(
+                taskId = taskId,
+                completionMessage = completionMessage,
+                completionDocumentUrl = completionDocumentUrl,
+                beforeImageUrl = beforeImageUrl,
+                afterImageUrl = afterImageUrl,
+                beforeLatitude = beforeLatitude,
+                beforeLongitude = beforeLongitude,
+                afterLatitude = afterLatitude,
+                afterLongitude = afterLongitude,
+                taskType = taskType,
+                images = images,
+                beforeImages = beforeImages,
+                afterImages = afterImages
+            )
+            Result.failure(OfflinePendingException())
         }
     }
 
@@ -788,42 +822,28 @@ class TaskRepository @Inject constructor(
         afterImages: List<String>? = null
     ) {
         val localTask = taskDao.getTaskById(taskId)
-        val finalTaskType = taskType ?: localTask?.taskType ?: if (!images.isNullOrEmpty()) "SITE_VISIT" else null
-        val finalPhotos = images?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
-            ?: localTask?.sitePhotosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList().filter { p -> p.isNotBlank() } } catch(_: Exception) { null } }
-
-        val entity = TaskEntity(
-            id = taskId,
-            jobType = localTask?.jobType ?: "Site Visit",
-            description = localTask?.description,
-            customerName = localTask?.customerName,
-            customerPhone = localTask?.customerPhone,
-            address = localTask?.address,
-            latitude = localTask?.latitude,
-            longitude = localTask?.longitude,
-            status = "completed",
-            scheduledTime = localTask?.scheduledTime ?: java.time.LocalDateTime.now().toString(),
-            employeeUserId = localTask?.employeeUserId,
-            assignedById = localTask?.assignedById,
-            completionMessage = completionMessage,
-            completionDocumentUrl = completionDocumentUrl,
-            beforeImageUrl = beforeImageUrl ?: localTask?.beforeImageUrl,
-            afterImageUrl = afterImageUrl ?: localTask?.afterImageUrl,
-            beforeLatitude = beforeLatitude ?: localTask?.beforeLatitude,
-            beforeLongitude = beforeLongitude ?: localTask?.beforeLongitude,
-            afterLatitude = afterLatitude ?: localTask?.afterLatitude,
-            afterLongitude = afterLongitude ?: localTask?.afterLongitude,
-            completedAt = java.time.LocalDateTime.now().toString(),
-            createdAt = localTask?.createdAt ?: java.time.LocalDateTime.now().toString(),
-            updatedAt = java.time.LocalDateTime.now().toString(),
-            isSynced = false,
-            taskType = finalTaskType,
-            imagesJson = finalPhotos?.let { gson.toJson(it) } ?: localTask?.imagesJson,
-            sitePhotosJson = finalPhotos?.let { gson.toJson(it) } ?: localTask?.sitePhotosJson,
-            beforeImagesJson = beforeImages?.let { gson.toJson(it) } ?: localTask?.beforeImagesJson,
-            afterImagesJson = afterImages?.let { gson.toJson(it) } ?: localTask?.afterImagesJson
-        )
-        taskDao.insertTask(entity)
+        if (localTask != null) {
+            val finalTaskType = taskType ?: localTask.taskType ?: if (!images.isNullOrEmpty()) "SITE_VISIT" else null
+            val finalPhotos = images ?: localTask.sitePhotosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList() } catch(_: Exception) { null } }
+            taskDao.updateTask(localTask.copy(
+                status = "completed",
+                completionMessage = completionMessage,
+                completionDocumentUrl = completionDocumentUrl,
+                beforeImageUrl = beforeImageUrl ?: localTask.beforeImageUrl,
+                afterImageUrl = afterImageUrl ?: localTask.afterImageUrl,
+                beforeLatitude = beforeLatitude ?: localTask.beforeLatitude,
+                beforeLongitude = beforeLongitude ?: localTask.beforeLongitude,
+                afterLatitude = afterLatitude ?: localTask.afterLatitude,
+                afterLongitude = afterLongitude ?: localTask.afterLongitude,
+                completedAt = java.time.LocalDateTime.now().toString(),
+                isSynced = false,
+                taskType = finalTaskType,
+                imagesJson = finalPhotos?.let { gson.toJson(it) } ?: localTask.imagesJson,
+                sitePhotosJson = finalPhotos?.let { gson.toJson(it) } ?: localTask.sitePhotosJson,
+                beforeImagesJson = beforeImages?.let { gson.toJson(it) } ?: localTask.beforeImagesJson,
+                afterImagesJson = afterImages?.let { gson.toJson(it) } ?: localTask.afterImagesJson
+            ))
+        }
     }
     
     private suspend fun saveTaskCompletionToOutbox(
@@ -844,7 +864,7 @@ class TaskRepository @Inject constructor(
         val cleanTaskId = sanitizeTaskId(taskId)
         val beforeImageFilePath = beforeImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_before") }
         val afterImageFilePath = afterImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_after") }
-
+        
         val sitePhotoFilePaths = images?.mapNotNull { base64 ->
             if (base64.isNotBlank()) LocalFileHelper.saveBase64ToFile(context, base64, "task_site_photo") else null
         }
@@ -883,6 +903,28 @@ class TaskRepository @Inject constructor(
             createdAt = System.currentTimeMillis().toString()
         )
         outboxQueueDao.insertItem(outboxItem)
+
+        // Update local entity in Room immediately so it shows as completed in UI
+        val localTask = taskDao.getTaskById(taskId)
+        if (localTask != null) {
+            taskDao.updateTask(localTask.copy(
+                status = "completed",
+                completionMessage = completionMessage,
+                completionDocumentUrl = completionDocumentUrl,
+                beforeImageUrl = beforeImageUrl,
+                afterImageUrl = afterImageUrl,
+                beforeLatitude = beforeLatitude,
+                beforeLongitude = beforeLongitude,
+                afterLatitude = afterLatitude,
+                afterLongitude = afterLongitude,
+                completedAt = java.time.LocalDateTime.now().toString(),
+                isSynced = false,
+                taskType = taskType ?: localTask.taskType,
+                imagesJson = images?.let { gson.toJson(it) } ?: localTask.imagesJson,
+                sitePhotosJson = (images ?: beforeImages)?.let { gson.toJson(it) } ?: localTask.sitePhotosJson
+            ))
+        }
+
         scheduleSync()
         android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Enqueued offline completion for task $taskId with ${sitePhotoFilePaths?.size ?: 0} site photos saved locally.")
     }
@@ -971,6 +1013,7 @@ class TaskRepository @Inject constructor(
 
             try {
                 val pendingItems = outboxQueueDao.getPendingItems()
+                android.util.Log.d("TASK_SYNC", "Manual syncPendingActions() started with ${pendingItems.size} pending outbox item(s)")
                 if (pendingItems.isEmpty()) {
                     android.util.Log.d("SiteVisitSync", "[SiteVisitSync] No pending outbox items to sync.")
                     return@withContext SyncResultSummary(total = 0, synced = 0, failed = 0)
@@ -991,7 +1034,6 @@ class TaskRepository @Inject constructor(
                     var isPermanentFailure = false
 
                     android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Processing outbox item: ID=${item.id}, endpoint=${item.endpoint}, retryCount=${item.retryCount}")
-
                     val success = try {
                         when {
                             item.endpoint.contains("complete") -> {
@@ -1004,12 +1046,13 @@ class TaskRepository @Inject constructor(
                                 if (taskId.startsWith("amc_")) {
                                     val visitId = taskId.removePrefix("amc_")
                                     val msg = json.optString("message", "")
-                                    val response = apiService.updateAmcVisit(visitId, UpdateAmcVisitRequest(status = "COMPLETED", notes = msg))
+                                    val body = mapOf("notes" to msg, "visitNotes" to msg, "status" to "COMPLETED")
+                                    val response = apiService.markAmcVisitDone(visitId, body)
                                     if (response.code() == 401) isAuthErrorForItem = true
                                     response.isSuccessful
                                 } else {
-                                    val beforeImageFilePath = json.optString("beforeImageFilePath", null)
-                                    val afterImageFilePath = json.optString("afterImageFilePath", null)
+                                    val beforeImageFilePath = if (json.isNull("beforeImageFilePath")) null else json.optString("beforeImageFilePath")
+                                    val afterImageFilePath = if (json.isNull("afterImageFilePath")) null else json.optString("afterImageFilePath")
 
                                     val beforeImageUrl = beforeImageFilePath?.takeIf { it.isNotBlank() }?.let { path ->
                                         filesToDelete.add(path)
@@ -1063,53 +1106,37 @@ class TaskRepository @Inject constructor(
                                             }
                                         }
                                     }
+
                                     if (isPhotoErrorForItem && sitePhotosList.isEmpty() && beforeImageUrl == null && afterImageUrl == null) {
                                         android.util.Log.e("SiteVisitSync", "[SiteVisitSync] Photo retrieval failed for task $taskId")
                                         false
                                     } else {
-                                        android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Preparing photos: ${sitePhotosList.size} site photos loaded for outbox sync")
-                                        
-                                        var uploadedSitePhotoUrls: List<String>? = null
-                                        if (sitePhotosList.isNotEmpty()) {
-                                            try {
-                                                android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Uploading ${sitePhotosList.size} photos via /photos endpoint (outbox sync)")
-                                                val photosResp = apiService.updateTaskPhotos(
-                                                    taskId,
-                                                    UpdateTaskPhotosRequest(sitePhotos = sitePhotosList)
-                                                )
-                                                if (photosResp.isSuccessful && photosResp.body()?.data != null) {
-                                                    uploadedSitePhotoUrls = photosResp.body()?.data?.sitePhotos
-                                                    android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Outbox photos uploaded successfully: ${uploadedSitePhotoUrls?.size} URLs returned")
-                                                } else {
-                                                    android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Outbox photos upload failed with HTTP ${photosResp.code()}")
-                                                }
-                                            } catch (photoEx: Exception) {
-                                                android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Outbox photos upload exception: ${photoEx.message}")
-                                            }
-                                        }
-
-                                        val requestPhotos = uploadedSitePhotoUrls?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() } ?: sitePhotosList
-                                        val isOutboxSiteVisit = json.optString("taskType") == "SITE_VISIT" || sitePhotosList.isNotEmpty()
-                                        val finalOutboxBefore = if (isOutboxSiteVisit) null else beforeImageUrl
-                                        val finalOutboxAfter = if (isOutboxSiteVisit) null else afterImageUrl
-
+                                        android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Preparing photos: ${sitePhotosList.size} site photos loaded")
                                         val request = CompleteTaskRequest(
                                             message = json.optString("message"),
                                             documentUrl = json.optString("documentUrl").takeIf { it.isNotEmpty() },
-                                            beforeImageUrl = finalOutboxBefore,
-                                            afterImageUrl = finalOutboxAfter,
+                                            beforeImageUrl = beforeImageUrl,
+                                            afterImageUrl = afterImageUrl,
                                             beforeLatitude = json.optDouble("beforeLatitude").takeIf { !json.isNull("beforeLatitude") },
                                             beforeLongitude = json.optDouble("beforeLongitude").takeIf { !json.isNull("beforeLongitude") },
                                             afterLatitude = json.optDouble("afterLatitude").takeIf { !json.isNull("afterLatitude") },
                                             afterLongitude = json.optDouble("afterLongitude").takeIf { !json.isNull("afterLongitude") },
                                             taskType = json.optString("taskType").takeIf { it.isNotEmpty() },
-                                            images = requestPhotos.takeIf { it.isNotEmpty() },
-                                            sitePhotos = requestPhotos.takeIf { it.isNotEmpty() }
+                                            images = sitePhotosList.takeIf { it.isNotEmpty() },
+                                            sitePhotos = sitePhotosList.takeIf { it.isNotEmpty() }
                                         )
 
                                         android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Submitting Site Visit for task ID: $taskId...")
                                         var response = apiService.completeTask(taskId, request)
                                         android.util.Log.d("SiteVisitSync", "[SiteVisitSync] HTTP status for completeTask: ${response.code()}")
+
+                                        if (!response.isSuccessful) {
+                                            android.util.Log.w("SiteVisitSync", "[SiteVisitSync] completeTask endpoint failed (${response.code()}). Trying status fallback endpoint for task $taskId")
+                                            val statusResponse = apiService.updateTask(taskId, UpdateTaskRequest(status = "COMPLETED"))
+                                            if (statusResponse.isSuccessful && statusResponse.body()?.data != null) {
+                                                response = statusResponse
+                                            }
+                                        }
 
                                         if (response.code() == 401) {
                                             isAuthErrorForItem = true
@@ -1120,6 +1147,8 @@ class TaskRepository @Inject constructor(
                                         if (httpCode == 404) {
                                             android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Task $taskId not found on server (404). Will re-queue on next refresh.")
                                             isPermanentFailure = true
+                                            // DO NOT mark isSynced=true - the task was NOT synced.
+                                            // refreshTasks will detect isSynced=false + status=completed and re-queue.
                                         } else if (httpCode == 403) {
                                             android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Task $taskId access denied (403). Employee not authorized to complete this task. Removing from outbox.")
                                             isPermanentFailure = true
@@ -1127,7 +1156,45 @@ class TaskRepository @Inject constructor(
 
                                         if (response.isSuccessful && response.body()?.data != null) {
                                             val task = response.body()!!.data!!
-                                            val finalSitePhotosList = uploadedSitePhotoUrls ?: task.sitePhotos ?: task.images ?: sitePhotosList
+
+                                            // 📸 PHOTO TRANSFER FIX: After task is successfully completed via outbox sync,
+                                            // upload the site photos via the dedicated /photos endpoint so they are stored
+                                            // as file-path URLs (not raw base64) in task.sitePhotos — visible in dashboard.
+                                            // Implements retry logic for robust photo submission.
+                                            if (sitePhotosList.isNotEmpty()) {
+                                                var photoUploadSuccess = false
+                                                var retryCount = 0
+                                                val maxRetries = 3
+                        
+                                                while (retryCount < maxRetries && !photoUploadSuccess) {
+                                                    try {
+                                                        android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Uploading ${sitePhotosList.size} site photos via /photos endpoint for task $taskId (outbox sync, attempt ${retryCount + 1}/$maxRetries)")
+                                                        val photosResp = apiService.updateTaskPhotos(
+                                                            taskId,
+                                                            mapOf("sitePhotos" to sitePhotosList)
+                                                        )
+                                                        if (photosResp.isSuccessful) {
+                                                            android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Photos uploaded successfully for task $taskId via /photos endpoint")
+                                                            photoUploadSuccess = true
+                                                        } else {
+                                                            android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos /photos endpoint returned HTTP ${photosResp.code()} for task $taskId (attempt ${retryCount + 1}/$maxRetries)")
+                                                            if (retryCount < maxRetries - 1) {
+                                                                kotlinx.coroutines.delay(1000L * (retryCount + 1)) // Exponential backoff
+                                                            }
+                                                        }
+                                                    } catch (photoEx: Exception) {
+                                                        android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos /photos endpoint failed for task $taskId (attempt ${retryCount + 1}/$maxRetries): ${photoEx.message}")
+                                                        if (retryCount < maxRetries - 1) {
+                                                            kotlinx.coroutines.delay(1000L * (retryCount + 1)) // Exponential backoff
+                                                        }
+                                                    }
+                                                    retryCount++
+                                                }
+                        
+                                                if (!photoUploadSuccess) {
+                                                    android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos /photos endpoint failed after $maxRetries attempts for task $taskId — photos will appear via taskImages fallback")
+                                                }
+                                            }
 
                                             val entity = TaskEntity(
                                                 id = task.id,
@@ -1156,8 +1223,8 @@ class TaskRepository @Inject constructor(
                                                 isSynced = true,
                                                 invoiceJson = task.invoice?.let { gson.toJson(it) },
                                                 taskType = task.taskType ?: json.optString("taskType").takeIf { it.isNotEmpty() } ?: if (sitePhotosList.isNotEmpty()) "SITE_VISIT" else null,
-                                                imagesJson = finalSitePhotosList?.let { gson.toJson(it) },
-                                                sitePhotosJson = finalSitePhotosList?.let { gson.toJson(it) },
+                                                imagesJson = (task.sitePhotos ?: task.images ?: sitePhotosList)?.let { gson.toJson(it) },
+                                                sitePhotosJson = (task.sitePhotos ?: task.images ?: sitePhotosList)?.let { gson.toJson(it) },
                                                 assignedEmployeeName = task.assignedEmployeeName,
                                                 assignedEmployeePhone = task.assignedEmployeePhone
                                             )
@@ -1181,13 +1248,19 @@ class TaskRepository @Inject constructor(
                                     response.isSuccessful
                                 } else {
                                     val response = apiService.updateTask(taskId, UpdateTaskRequest(status = status))
+                                    if (response.isSuccessful) {
+                                        val localTask = taskDao.getTaskById(taskId)
+                                        if (localTask != null) {
+                                            taskDao.updateTask(localTask.copy(status = status, isSynced = true))
+                                        }
+                                    }
                                     if (response.code() == 401) isAuthErrorForItem = true
                                     response.isSuccessful
                                 }
                             }
                             item.endpoint.contains("check-in") -> {
                                 val json = JSONObject(item.payload)
-                                val selfieFilePath = json.optString("selfieFilePath", null)
+                                val selfieFilePath = if (json.isNull("selfieFilePath")) null else json.optString("selfieFilePath")
                                 val selfie = selfieFilePath?.takeIf { it.isNotBlank() }?.let {
                                     filesToDelete.add(it)
                                     LocalFileHelper.readFileToBase64(it)
@@ -1268,6 +1341,52 @@ class TaskRepository @Inject constructor(
         }
     }
 
+    suspend fun updateTaskPhotos(taskId: String, sitePhotos: List<String>): Result<Task> {
+        val cleanTaskId = taskId.removePrefix("temp_")
+        return try {
+            val response = apiService.updateTaskPhotos(cleanTaskId, mapOf("sitePhotos" to sitePhotos))
+            if (response.isSuccessful && response.body()?.data != null) {
+                val updatedTask = response.body()!!.data!!
+                saveTaskLocally(updatedTask)
+                Result.success(updatedTask)
+            } else {
+                Result.failure(Exception("Failed to update photos: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to update photos: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    private suspend fun saveTaskLocally(task: Task) {
+        val entity = TaskEntity(
+            id = task.id,
+            jobType = task.jobType,
+            description = task.description,
+            customerName = task.customerName,
+            customerPhone = task.customerPhone,
+            address = task.address,
+            latitude = task.latitude,
+            longitude = task.longitude,
+            status = task.status,
+            scheduledTime = task.scheduledTime,
+            employeeUserId = task.employeeUserId,
+            assignedById = task.assignedById,
+            completionMessage = task.completionMessage,
+            completionDocumentUrl = task.completionDocumentUrl,
+            beforeImageUrl = task.beforeImageUrl,
+            afterImageUrl = task.afterImageUrl,
+            beforeLatitude = task.beforeLatitude,
+            beforeLongitude = task.beforeLongitude,
+            afterLatitude = task.afterLatitude,
+            afterLongitude = task.afterLongitude,
+            completedAt = task.completedAt,
+            createdAt = task.createdAt,
+            updatedAt = task.updatedAt,
+            isSynced = true
+        )
+        taskDao.insertTask(entity)
+    }
+
     private fun scheduleSync() {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -1282,5 +1401,6 @@ class TaskRepository @Inject constructor(
             ExistingWorkPolicy.REPLACE,
             syncRequest
         )
+        android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work after task queue update")
     }
 }

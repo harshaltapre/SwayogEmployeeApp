@@ -30,6 +30,7 @@ data class Task(
     val taskType: String? = null, // "SITE_VISIT", "AMC_VISIT", "REGULAR"
     val images: List<String>? = null, // Multiple images for site visits
     val sitePhotos: List<String>? = null, // Site visit photo gallery (4-5 photos)
+    val assignedEmployees: List<TaskAssigneeSummary>? = null,
     val assignedEmployeeName: String? = null, // Employee name for customer notifications
     val assignedEmployeePhone: String? = null // Employee phone for customer notifications
 ) {
@@ -37,17 +38,12 @@ data class Task(
     val isAmcVisit: Boolean
         get() = taskType == "AMC_VISIT" || jobType?.lowercase()?.contains("amc") == true || id.startsWith("amc_") || id.startsWith("TASK-amc_")
 
-    // Helper to check if this is a site visit / site survey / AMC multi-photo task
+    // Site visits are the only task type that uses the 4-10 photo workflow.
     val isSiteVisit: Boolean
         get() = taskType == "SITE_VISIT" || 
-            taskType == "AMC_VISIT" ||
             jobType == "Site Visit" || 
             jobType?.lowercase()?.contains("site") == true || 
-            jobType?.lowercase()?.contains("survey") == true ||
-            jobType?.lowercase()?.contains("visit") == true ||
-            isAmcVisit ||
-            !sitePhotos.isNullOrEmpty() ||
-            !images.isNullOrEmpty()
+            jobType?.lowercase()?.contains("survey") == true
 
     // Helper to check if this is a regular task
     val isRegularTask: Boolean
@@ -56,14 +52,20 @@ data class Task(
     // Get required image count based on task type
     val requiredImageCount: Int
         get() = when {
-            isSiteVisit || isAmcVisit || jobType?.lowercase()?.contains("survey") == true -> 4 // Minimum 4 photos for site visits, surveys & AMC visits
-            else -> 2 // 1 before + 1 after for regular tasks
+            isSiteVisit -> 4
+            else -> 2 // 1 before + 1 after for maintenance, cleaning, and regular tasks
         }
 
     // Extract the actual visit ID if this is an AMC visit
     val amcVisitId: String?
         get() = if (isAmcVisit) id.removePrefix("TASK-amc_").removePrefix("amc_") else null
 }
+
+data class TaskAssigneeSummary(
+    val userId: String,
+    val name: String? = null,
+    val status: String? = null
+)
 
 data class CreateTaskRequest(
     val jobType: String,
