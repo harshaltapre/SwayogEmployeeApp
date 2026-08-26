@@ -1389,7 +1389,7 @@ fun TaskDetailDialog(
                                     itemsIndexed(beforeImages) { idx, img ->
                                         Box(modifier = Modifier.size(80.dp)) {
                                             AsyncImage(
-                                                model = ImageUtils.resolveImageModel(context, img, serverUrl),
+                                                model = ImageUtils.rememberImageRequest(context, img, serverUrl),
                                                 contentDescription = "Before $idx",
                                                 modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
                                                 contentScale = ContentScale.Crop
@@ -1421,7 +1421,7 @@ fun TaskDetailDialog(
                                     itemsIndexed(afterImages) { idx, img ->
                                         Box(modifier = Modifier.size(80.dp)) {
                                             AsyncImage(
-                                                model = ImageUtils.resolveImageModel(context, img, serverUrl),
+                                                model = ImageUtils.rememberImageRequest(context, img, serverUrl),
                                                 contentDescription = "After $idx",
                                                 modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
                                                 contentScale = ContentScale.Crop

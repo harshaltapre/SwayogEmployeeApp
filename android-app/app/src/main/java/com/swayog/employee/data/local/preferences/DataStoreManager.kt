@@ -44,6 +44,27 @@ class DataStoreManager @Inject constructor(
         val FACE_DESCRIPTOR_1 = stringPreferencesKey("face_descriptor_1")
         val FACE_DESCRIPTOR_2 = stringPreferencesKey("face_descriptor_2")
         val FACE_DESCRIPTOR_3 = stringPreferencesKey("face_descriptor_3")
+
+        // Attendance Rules
+        val RULE_SHIFT_START = stringPreferencesKey("rule_shift_start")
+        val RULE_FACE_REQUIRED = booleanPreferencesKey("rule_face_required")
+        val RULE_GEOFENCE_ENABLED = booleanPreferencesKey("rule_geofence_enabled")
+        val RULE_OFFICE_LAT = stringPreferencesKey("rule_office_lat")
+        val RULE_OFFICE_LNG = stringPreferencesKey("rule_office_lng")
+        val RULE_OFFICE_RADIUS = stringPreferencesKey("rule_office_radius")
+        val RULE_FACE_MATCH_THRESHOLD = stringPreferencesKey("rule_face_match_threshold")
+    }
+
+    val attendanceRule: Flow<com.swayog.employee.data.model.AttendanceRule> = context.dataStore.data.map { preferences ->
+        com.swayog.employee.data.model.AttendanceRule(
+            shiftStart = preferences[PreferencesKeys.RULE_SHIFT_START] ?: "09:15",
+            faceRequired = preferences[PreferencesKeys.RULE_FACE_REQUIRED] ?: true,
+            geofenceEnabled = preferences[PreferencesKeys.RULE_GEOFENCE_ENABLED] ?: false,
+            officeLat = preferences[PreferencesKeys.RULE_OFFICE_LAT]?.toDoubleOrNull() ?: 18.5204,
+            officeLng = preferences[PreferencesKeys.RULE_OFFICE_LNG]?.toDoubleOrNull() ?: 73.8567,
+            officeRadius = preferences[PreferencesKeys.RULE_OFFICE_RADIUS]?.toDoubleOrNull() ?: 150.0,
+            faceMatchThreshold = preferences[PreferencesKeys.RULE_FACE_MATCH_THRESHOLD]?.toFloatOrNull() ?: 0.55f
+        )
     }
     
     val authToken: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -339,6 +360,22 @@ class DataStoreManager @Inject constructor(
         }
     }
     
+    suspend fun saveAttendanceRule(rule: com.swayog.employee.data.model.AttendanceRule) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.RULE_SHIFT_START] = rule.shiftStart
+                preferences[PreferencesKeys.RULE_FACE_REQUIRED] = rule.faceRequired
+                preferences[PreferencesKeys.RULE_GEOFENCE_ENABLED] = rule.geofenceEnabled
+                preferences[PreferencesKeys.RULE_OFFICE_LAT] = rule.officeLat.toString()
+                preferences[PreferencesKeys.RULE_OFFICE_LNG] = rule.officeLng.toString()
+                preferences[PreferencesKeys.RULE_OFFICE_RADIUS] = rule.officeRadius.toString()
+                preferences[PreferencesKeys.RULE_FACE_MATCH_THRESHOLD] = rule.faceMatchThreshold.toString()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     suspend fun updateSettingsFromServer(settings: com.swayog.employee.data.model.UserSettingsDto) {
         try {
             context.dataStore.edit { preferences ->

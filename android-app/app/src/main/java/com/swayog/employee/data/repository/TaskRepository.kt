@@ -634,7 +634,7 @@ class TaskRepository @Inject constructor(
                             android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Uploading ${images.size} site photos via dedicated /photos endpoint for task $cleanTaskId")
                             val photosResponse = apiService.updateTaskPhotos(
                                 cleanTaskId,
-                                mapOf("sitePhotos" to images)
+                                UpdateTaskPhotosRequest(sitePhotos = images)
                             )
                             if (photosResponse.isSuccessful && photosResponse.body()?.data != null) {
                                 val updatedTask = photosResponse.body()!!.data!!
@@ -1171,7 +1171,7 @@ class TaskRepository @Inject constructor(
                                                         android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Uploading ${sitePhotosList.size} site photos via /photos endpoint for task $taskId (outbox sync, attempt ${retryCount + 1}/$maxRetries)")
                                                         val photosResp = apiService.updateTaskPhotos(
                                                             taskId,
-                                                            mapOf("sitePhotos" to sitePhotosList)
+                                                            UpdateTaskPhotosRequest(sitePhotos = sitePhotosList)
                                                         )
                                                         if (photosResp.isSuccessful) {
                                                             android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Photos uploaded successfully for task $taskId via /photos endpoint")
@@ -1344,7 +1344,7 @@ class TaskRepository @Inject constructor(
     suspend fun updateTaskPhotos(taskId: String, sitePhotos: List<String>): Result<Task> {
         val cleanTaskId = taskId.removePrefix("temp_")
         return try {
-            val response = apiService.updateTaskPhotos(cleanTaskId, mapOf("sitePhotos" to sitePhotos))
+            val response = apiService.updateTaskPhotos(cleanTaskId, UpdateTaskPhotosRequest(sitePhotos = sitePhotos))
             if (response.isSuccessful && response.body()?.data != null) {
                 val updatedTask = response.body()!!.data!!
                 saveTaskLocally(updatedTask)

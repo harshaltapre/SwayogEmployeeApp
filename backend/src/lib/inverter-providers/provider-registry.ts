@@ -62,7 +62,7 @@ export class InverterProviderRegistry {
    */
   static registerProvider(
     brand: InverterProviderType,
-    ProviderClass: typeof BaseInverterProvider,
+    ProviderClass: new (config: ProviderConfig) => BaseInverterProvider,
   ): void {
     this.providers.set(brand, ProviderClass);
   }

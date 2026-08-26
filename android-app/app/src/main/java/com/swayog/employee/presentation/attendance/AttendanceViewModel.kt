@@ -50,11 +50,24 @@ class AttendanceViewModel @Inject constructor(
     private val _currentTask = MutableStateFlow<Task?>(null)
     val currentTask: StateFlow<Task?> = _currentTask.asStateFlow()
 
+    val isFaceEnrolled: StateFlow<Boolean> = dataStoreManager.isFaceEnrolled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
     val faceDescriptors: StateFlow<List<List<Float>>> = dataStoreManager.faceDescriptors.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+
+    val attendanceRules: StateFlow<com.swayog.employee.data.model.AttendanceRule> = attendanceRepository.attendanceRuleFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = com.swayog.employee.data.model.AttendanceRule()
+        )
 
     init {
         loadData()
@@ -79,6 +92,10 @@ class AttendanceViewModel @Inject constructor(
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Loading
             
+            // Sync Face Enrollment status & Attendance Rules from server
+            attendanceRepository.syncFaceEnrollment()
+            attendanceRepository.getAttendanceRules()
+
             // 1. Fetch today's record (saves to Room DB, which automatically updates getTodayAttendanceFlow)
             attendanceRepository.getTodayAttendance()
                 

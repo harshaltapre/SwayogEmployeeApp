@@ -9,6 +9,7 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.util.Log
+import kotlinx.coroutines.flow.first
 import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.swayog.employee.data.repository.TaskRepository
 
@@ -29,7 +30,7 @@ class PeriodicTaskRefreshWorker @AssistedInject constructor(
         try {
             Log.d("PeriodicSync", "PeriodicTaskRefreshWorker started")
             
-            val userId = dataStoreManager.getUserId()
+            val userId = dataStoreManager.userId.first()
             if (userId == null) {
                 Log.w("PeriodicSync", "No user ID found, skipping periodic refresh")
                 return@withContext Result.success()

@@ -342,4 +342,75 @@ class AttendanceRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    val attendanceRuleFlow: Flow<AttendanceRule> = dataStoreManager.attendanceRule
+
+    suspend fun syncFaceEnrollment(employeeId: String? = null): Result<Boolean> {
+        return try {
+            val response = apiService.getFaceEnrollmentStatus(employeeId)
+            if (response.isSuccessful && response.body() != null) {
+                val status = response.body()!!
+                if (status.enrolled && status.enrollment != null) {
+                    val e = status.enrollment
+                    if (e.descriptor1.isNotEmpty() && e.descriptor2.isNotEmpty() && e.descriptor3.isNotEmpty()) {
+                        dataStoreManager.saveFaceEnrollment(e.descriptor1, e.descriptor2, e.descriptor3)
+                    }
+                    Result.success(true)
+                } else {
+                    dataStoreManager.clearFaceEnrollment()
+                    Result.success(false)
+                }
+            } else {
+                Result.failure(Exception("Failed to fetch face enrollment status: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAttendanceRules(): Result<AttendanceRule> {
+        return try {
+            val response = apiService.getAttendanceRules()
+            if (response.isSuccessful && response.body() != null) {
+                val rules = response.body()!!
+                dataStoreManager.saveAttendanceRule(rules)
+                Result.success(rules)
+            } else {
+                val cachedRule = dataStoreManager.attendanceRule.first()
+                Result.success(cachedRule)
+            }
+        } catch (e: Exception) {
+            val cachedRule = try { dataStoreManager.attendanceRule.first() } catch (_: Exception) { AttendanceRule() }
+            Result.success(cachedRule)
+        }
+    }
+
+    suspend fun updateAttendanceRules(rules: AttendanceRule): Result<AttendanceRule> {
+        return try {
+            val response = apiService.updateAttendanceRules(rules)
+            if (response.isSuccessful && response.body()?.success == true && response.body()?.rules != null) {
+                val updated = response.body()!!.rules!!
+                dataStoreManager.saveAttendanceRule(updated)
+                Result.success(updated)
+            } else {
+                Result.failure(Exception("Failed to update attendance rules"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAllFaceEnrollments(): Result<List<EmployeeFaceEnrollmentItem>> {
+        return try {
+            val response = apiService.getAllFaceEnrollments()
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!.enrollments)
+            } else {
+                Result.failure(Exception("Failed to fetch face enrollments list"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
+

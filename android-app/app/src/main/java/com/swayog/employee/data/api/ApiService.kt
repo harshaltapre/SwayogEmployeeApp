@@ -66,15 +66,29 @@ interface ApiService {
         @Body request: WorkDescriptionRequest
     ): Response<ApiResponse<Unit>>
     
+    // Attendance Rules Endpoints
+    @GET("attendance/rules")
+    suspend fun getAttendanceRules(): Response<AttendanceRule>
+
+    @POST("attendance/rules")
+    suspend fun updateAttendanceRules(
+        @Body rules: AttendanceRule
+    ): Response<UpdateAttendanceRulesResponse>
+
     // Face Recognition Endpoints
     @POST("attendance/face/enroll")
     suspend fun enrollFace(
         @Body request: FaceEnrollRequest
-    ): Response<ApiResponse<Unit>>
+    ): Response<FaceEnrollResponse>
 
     @GET("attendance/face/enrollment")
-    suspend fun getFaceEnrollmentStatus(): Response<FaceEnrollmentStatusResponse>
-    
+    suspend fun getFaceEnrollmentStatus(
+        @Query("employeeId") employeeId: String? = null
+    ): Response<FaceEnrollmentStatusResponse>
+
+    @GET("attendance/face/enrollments")
+    suspend fun getAllFaceEnrollments(): Response<FaceEnrollmentListResponse>
+
     @DELETE("attendance/face/enrollment/{employeeId}")
     suspend fun deleteFaceEnrollment(
         @Path("employeeId") employeeId: String
@@ -277,8 +291,8 @@ interface ApiService {
     
     @POST("subadmin/amc-visits")
     suspend fun createAmcVisit(
-        @Body request: @JvmSuppressWildcards Map<String, String?>
-    ): Response<ApiResponse<Unit>>
+        @Body request: CreateAmcVisitRequest
+    ): Response<ApiResponse<AmcVisit>>
     
     @PATCH("subadmin/amc-visits/{visitId}")
     suspend fun updateAmcVisit(
@@ -289,7 +303,7 @@ interface ApiService {
     @POST("subadmin/amc-visits/{visitId}/complete")
     suspend fun markAmcVisitDone(
         @Path("visitId") visitId: String,
-        @Body request: @JvmSuppressWildcards Map<String, String?>
+        @Body request: @JvmSuppressWildcards Map<String, Any?>
     ): Response<ApiResponse<AmcVisit>>
     
     // Inventory endpoints

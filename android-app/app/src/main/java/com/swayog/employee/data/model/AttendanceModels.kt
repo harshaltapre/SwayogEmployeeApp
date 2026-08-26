@@ -102,3 +102,40 @@ data class MonthlyAttendanceResponse(
     val workingDays: Int,
     val attendancePercent: Double
 )
+
+data class AttendanceRule(
+    val id: String = "default",
+    val shiftStart: String = "09:15",
+    val faceRequired: Boolean = true,
+    val geofenceEnabled: Boolean = false,
+    val officeLat: Double = 18.5204,
+    val officeLng: Double = 73.8567,
+    val officeRadius: Double = 150.0,
+    val faceMatchThreshold: Float = 0.55f
+)
+
+data class UpdateAttendanceRulesResponse(
+    val success: Boolean,
+    val rules: AttendanceRule?
+)
+
+data class FaceEnrollResponse(
+    val success: Boolean,
+    val enrolledAt: String?
+)
+
+data class EmployeeFaceEnrollmentItem(
+    val id: String,
+    val fullName: String,
+    val email: String,
+    val employeeCode: String?,
+    val department: String,
+    val enrolled: Boolean,
+    val enrolledAt: String?,
+    val modelVersion: String?
+)
+
+data class FaceEnrollmentListResponse(
+    val enrollments: List<EmployeeFaceEnrollmentItem>
+)
+

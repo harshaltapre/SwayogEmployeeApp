@@ -147,10 +147,12 @@ class SettingsViewModel @Inject constructor(
             val response = apiService.getFaceEnrollmentStatus()
             if (response.isSuccessful) {
                 val status = response.body()
-                if (status != null && status.enrolled && status.enrollment != null) {
+                if (status != null && status.enrolled) {
                     val e = status.enrollment
-                    if (e.descriptor1.isNotEmpty() && e.descriptor2.isNotEmpty() && e.descriptor3.isNotEmpty()) {
+                    if (e != null && e.descriptor1.isNotEmpty() && e.descriptor2.isNotEmpty() && e.descriptor3.isNotEmpty()) {
                         dataStoreManager.saveFaceEnrollment(e.descriptor1, e.descriptor2, e.descriptor3)
+                    } else {
+                        dataStoreManager.saveFaceEnrollment(emptyList(), emptyList(), emptyList())
                     }
                 } else if (status != null && !status.enrolled) {
                     dataStoreManager.clearFaceEnrollment()

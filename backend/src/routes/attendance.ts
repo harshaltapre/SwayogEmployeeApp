@@ -401,13 +401,13 @@ router.post(
       descriptor3: number[];
     };
 
-    // Validate — each descriptor must be a 128-length float array
+    // Validate — each descriptor must be a valid float array (e.g. 128 or 192 floats)
     const isValidDescriptor = (d: any) =>
-      Array.isArray(d) && d.length === 128 && d.every((v: any) => typeof v === "number");
+      Array.isArray(d) && d.length >= 64 && d.length <= 512 && d.every((v: any) => typeof v === "number");
 
     if (!isValidDescriptor(descriptor1) || !isValidDescriptor(descriptor2) || !isValidDescriptor(descriptor3)) {
       res.status(400).json({
-        error: "Invalid face descriptors. Each descriptor must be a 128-element float array.",
+        error: "Invalid face descriptors. Each descriptor must be a float array of length between 64 and 512 elements.",
       });
       return;
     }

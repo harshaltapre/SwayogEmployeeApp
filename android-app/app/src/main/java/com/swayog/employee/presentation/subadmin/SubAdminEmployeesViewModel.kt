@@ -2,10 +2,13 @@ package com.swayog.employee.presentation.subadmin
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.swayog.employee.data.model.AttendanceRule
 import com.swayog.employee.data.model.CreateEmployeeRequest
 import com.swayog.employee.data.model.Employee
+import com.swayog.employee.data.model.EmployeeFaceEnrollmentItem
 import com.swayog.employee.data.model.Task
 import com.swayog.employee.data.model.UpdateEmployeeRequest
+import com.swayog.employee.data.repository.AttendanceRepository
 import com.swayog.employee.data.repository.EmployeeRepository
 import com.swayog.employee.data.repository.TaskRepository
 import com.swayog.employee.core.util.ErrorUtils
@@ -21,6 +24,8 @@ import javax.inject.Inject
 data class SubAdminEmployeesUiState(
     val isLoading: Boolean = true,
     val employees: List<Employee> = emptyList(),
+    val faceEnrollments: List<EmployeeFaceEnrollmentItem> = emptyList(),
+    val attendanceRules: AttendanceRule = AttendanceRule(),
     val tasks: List<Task> = emptyList(),
     val error: String? = null
 ) {
@@ -47,6 +52,7 @@ data class SubAdminEmployeesUiState(
 class SubAdminEmployeesViewModel @Inject constructor(
     private val employeeRepository: EmployeeRepository,
     private val taskRepository: TaskRepository,
+    private val attendanceRepository: AttendanceRepository,
     val dataStoreManager: DataStoreManager
 ) : ViewModel() {
 
@@ -64,9 +70,11 @@ class SubAdminEmployeesViewModel @Inject constructor(
                 _uiState.update { it.copy(employees = employees) }
             }
         }
-        // Tasks are loaded from the API via loadData(), not from Room DB.
-        // getAllTasks() intentionally does NOT write to Room to prevent polluting
-        // employee-specific task queries with tasks from all employees.
+        viewModelScope.launch {
+            attendanceRepository.attendanceRuleFlow.collect { rules ->
+                _uiState.update { it.copy(attendanceRules = rules) }
+            }
+        }
     }
 
     fun loadData() {
@@ -76,6 +84,8 @@ class SubAdminEmployeesViewModel @Inject constructor(
             // Trigger background refreshes
             val employeeResult = employeeRepository.getInternalUsers(null)
             val taskResult = taskRepository.getAllTasks()
+            val faceResult = attendanceRepository.getAllFaceEnrollments()
+            val ruleResult = attendanceRepository.getAttendanceRules()
             
             val error = if (employeeResult.isFailure || taskResult.isFailure) {
                 val empExc = employeeResult.exceptionOrNull()
@@ -93,9 +103,17 @@ class SubAdminEmployeesViewModel @Inject constructor(
                 null
             }
 
-            // Populate tasks directly from API response (not Room)
+            // Populate tasks directly from API response
             taskResult.onSuccess { tasks ->
                 _uiState.update { it.copy(tasks = tasks) }
+            }
+
+            faceResult.onSuccess { enrollments ->
+                _uiState.update { it.copy(faceEnrollments = enrollments) }
+            }
+
+            ruleResult.onSuccess { rules ->
+                _uiState.update { it.copy(attendanceRules = rules) }
             }
 
             _uiState.update { 
@@ -103,6 +121,18 @@ class SubAdminEmployeesViewModel @Inject constructor(
                     isLoading = false,
                     error = error
                 )
+            }
+        }
+    }
+
+    fun saveAttendanceRules(rules: AttendanceRule, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val result = attendanceRepository.updateAttendanceRules(rules)
+            if (result.isSuccess) {
+                _uiState.update { it.copy(attendanceRules = result.getOrNull() ?: rules) }
+                onResult(true)
+            } else {
+                onResult(false)
             }
         }
     }
