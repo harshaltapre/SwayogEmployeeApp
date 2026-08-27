@@ -29,6 +29,7 @@ import taskImagesRoutes from "./routes/taskImages.js";
 import waareeRoutes from "./routes/waaree.js";
 import { paymentsRoutes } from "./routes/payments.js";
 import { isphereGreenRoutes } from "./modules/isphere-green/isphere-green.routes.js";
+import { userMeRoutes } from "./modules/users/user-me.routes.js";
 
 export const app = express();
 
@@ -156,6 +157,7 @@ app.use("/api/v1/health", healthRoutes);
 app.use("/api/v1/auth", authRoutes);
 
 // Legacy routes (kept for backward compatibility)
+app.use("/api/v1/users/me", userMeRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/customers", customerRoutes);
 app.use("/api/v1/tasks", taskRoutes);

@@ -41,6 +41,18 @@ class MainViewModel @Inject constructor(
         initialValue = false
     )
 
+    val compactViewEnabled: StateFlow<Boolean> = dataStoreManager.compactViewEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = false
+    )
+
+    val animationsEnabled: StateFlow<Boolean> = dataStoreManager.animationsEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = true
+    )
+
     fun logout() {
         viewModelScope.launch {
             authRepository.logout()

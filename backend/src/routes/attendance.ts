@@ -53,9 +53,9 @@ router.post("/rules", adminAuth, asyncHandler(async (req, res) => {
   }
 }));
 
-// ── Profile Photo (syncs across devices) ─────────────────────────────────────
+// ── Profile Photo (syncs across devices & Cloudflare R2) ─────────────────────
 // GET  /profile-photo        → returns the current user's photo
-// POST /profile-photo        → saves/updates the current user's photo
+// POST /profile-photo        → saves/updates the current user's photo (R2 backed)
 router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
   const userId = req.auth!.userId;
   const user = await prisma.user.findUnique({

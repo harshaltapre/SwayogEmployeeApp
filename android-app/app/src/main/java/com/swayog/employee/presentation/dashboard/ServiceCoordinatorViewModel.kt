@@ -70,6 +70,16 @@ class ServiceCoordinatorViewModel @Inject constructor(
     private val _updateError = MutableStateFlow<String?>(null)
     val updateError: StateFlow<String?> = _updateError.asStateFlow()
 
+    // Current User Info
+    val userRole: StateFlow<String?> = dataStoreManager.userRole
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val jobRole: StateFlow<String?> = dataStoreManager.jobRole
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val userId: StateFlow<String?> = dataStoreManager.userId
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     // Local DB customers source
     val customers: StateFlow<List<Customer>> = customerRepository.getAllCustomers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

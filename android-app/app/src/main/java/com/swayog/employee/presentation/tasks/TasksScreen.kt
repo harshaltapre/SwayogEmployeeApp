@@ -265,11 +265,12 @@ fun TasksScreen(
                         }
                     }
                 } else {
+                    val isCompact = com.swayog.employee.presentation.common.LocalCompactViewEnabled.current
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                            .padding(if (isCompact) 8.dp else 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (isCompact) 6.dp else 12.dp)
                     ) {
                         items(filteredTasks, key = { it.id }) { task ->
                             TaskCard(

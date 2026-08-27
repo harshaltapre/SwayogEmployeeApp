@@ -170,7 +170,11 @@ class SettingsViewModel @Inject constructor(
 
     private suspend fun syncUserSettingsWithServer() {
         try {
-            val response = apiService.getUserSettings()
+            val response = try {
+                apiService.getUserPreferences()
+            } catch (e: Exception) {
+                apiService.getUserSettings()
+            }
             if (response.isSuccessful) {
                 val settings = response.body()?.data
                 if (settings != null) {
@@ -206,7 +210,11 @@ class SettingsViewModel @Inject constructor(
                     activitySharingEnabled = activitySharingEnabled,
                     language = language
                 )
-                apiService.updateUserSettings(dto)
+                try {
+                    apiService.updatePreferences(dto)
+                } catch (e: Exception) {
+                    apiService.updateUserSettings(dto)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }

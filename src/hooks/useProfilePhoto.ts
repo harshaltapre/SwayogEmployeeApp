@@ -22,23 +22,35 @@ export function useProfilePhoto(userId: string | number | undefined) {
   useEffect(() => {
     if (!userId) return;
     apiClient
-      .get("/attendance/profile-photo")
+      .get("/users/me")
       .then((res) => {
-        const serverPhoto: string | null = res.data?.photo || null;
+        const serverUser = res.data?.data;
+        const serverPhoto: string | null = serverUser?.profileImageUrl || null;
         if (serverPhoto) {
-          // Server is authoritative – update local cache too
-          setPhoto(serverPhoto);
-          localStorage.setItem(LS_KEY(userId), serverPhoto);
+          const photoUrl = serverPhoto.startsWith("http")
+            ? `${serverPhoto}${serverPhoto.includes("?") ? "&" : "?"}v=${Date.now()}`
+            : serverPhoto;
+          setPhoto(photoUrl);
+          localStorage.setItem(LS_KEY(userId), photoUrl);
         }
       })
       .catch(() => {
-        // Server unreachable – fall back silently to whatever is in localStorage
+        apiClient
+          .get("/attendance/profile-photo")
+          .then((res) => {
+            const serverPhoto: string | null = res.data?.photo || null;
+            if (serverPhoto) {
+              setPhoto(serverPhoto);
+              localStorage.setItem(LS_KEY(userId), serverPhoto);
+            }
+          })
+          .catch(() => {});
       });
   }, [userId]);
 
   /**
    * Upload a new photo (File object).
-   * Normalizes it to a 240×240 square, saves to server, and updates localStorage.
+   * Normalizes it to a square, uploads to Cloudflare R2 via backend API, and updates localStorage.
    */
   const uploadPhoto = useCallback(
     async (file: File): Promise<{ success: boolean; error?: string }> => {
@@ -49,24 +61,41 @@ export function useProfilePhoto(userId: string | number | undefined) {
 
       try {
         // Validate
-        if (file.size > 2 * 1024 * 1024) {
-          throw new Error("File too large. Max size is 2 MB.");
+        if (file.size > 10 * 1024 * 1024) {
+          throw new Error("File too large. Max size is 10 MB.");
         }
         if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.type)) {
           throw new Error("Invalid format. Only JPG, PNG, GIF, or WEBP are supported.");
         }
 
-        // Normalize: crop to square, resize to 240×240
+        // Normalize: crop to square, resize to 480x480 for crisp R2 storage
         const dataUrl = await readFileAsDataUrl(file);
-        const normalized = await normalizeToSquare(dataUrl, 240);
+        const normalized = await normalizeToSquare(dataUrl, 480);
 
-        // 1. Save to server (cross-device sync)
-        await apiClient.post("/attendance/profile-photo", { photo: normalized });
+        // 1. Save to server via R2 backed profile-image API
+        let serverPhotoUrl = normalized;
+        try {
+          const res = await apiClient.post("/users/me/profile-image", { photo: normalized });
+          if (res.data?.data?.profileImageUrl) {
+            serverPhotoUrl = res.data.data.profileImageUrl;
+          } else if (res.data?.photo) {
+            serverPhotoUrl = res.data.photo;
+          }
+        } catch {
+          const res = await apiClient.post("/attendance/profile-photo", { photo: normalized });
+          if (res.data?.photo) {
+            serverPhotoUrl = res.data.photo;
+          }
+        }
+
+        const cacheBustedUrl = serverPhotoUrl.startsWith("http")
+          ? `${serverPhotoUrl}${serverPhotoUrl.includes("?") ? "&" : "?"}v=${Date.now()}`
+          : serverPhotoUrl;
 
         // 2. Save to localStorage as cache
-        localStorage.setItem(LS_KEY(userId), normalized);
+        localStorage.setItem(LS_KEY(userId), cacheBustedUrl);
 
-        setPhoto(normalized);
+        setPhoto(cacheBustedUrl);
         return { success: true };
       } catch (err: any) {
         const msg =
