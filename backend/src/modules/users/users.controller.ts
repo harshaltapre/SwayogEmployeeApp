@@ -43,7 +43,7 @@ export async function createInternalUserHandler(
 ): Promise<void> {
   const auth = getAuth(req);
 
-  const user = await createInternalUser(auth.userId, auth.role, req.body as CreateInternalUserInput);
+  const user = await createInternalUser(auth.userId, auth.role as any, req.body as CreateInternalUserInput);
   res.status(201).json({ data: user });
 }
 
@@ -52,7 +52,7 @@ export async function listInternalUsersHandler(
   res: Response,
 ): Promise<void> {
   const auth = getAuth(req);
-  const users = await listInternalUsers(auth.role, req.query as unknown as ListInternalUsersQueryInput);
+  const users = await listInternalUsers(auth.role as any, req.query as unknown as ListInternalUsersQueryInput);
   res.status(200).json({ data: users });
 }
 
@@ -62,7 +62,7 @@ export async function getInternalUserHandler(
 ): Promise<void> {
   const auth = getAuth(req);
   const params = req.params as unknown as InternalUserParamsInput;
-  const user = await getInternalUser(auth.role, params.userId);
+  const user = await getInternalUser(auth.role as any, params.userId);
   res.status(200).json({ data: user });
 }
 
@@ -72,7 +72,7 @@ export async function updateInternalUserHandler(
 ): Promise<void> {
   const auth = getAuth(req);
   const params = req.params as unknown as InternalUserParamsInput;
-  const user = await updateInternalUser(auth.userId, auth.role, params.userId, req.body as UpdateInternalUserInput);
+  const user = await updateInternalUser(auth.userId, auth.role as any, params.userId, req.body as UpdateInternalUserInput);
   res.status(200).json({ data: user });
 }
 
@@ -84,7 +84,7 @@ export async function transferInternalUserTeamHandler(
   const params = req.params as unknown as InternalUserParamsInput;
   const user = await transferInternalUserTeam(
     auth.userId,
-    auth.role,
+    auth.role as any,
     params.userId,
     req.body as TransferInternalUserTeamInput,
   );
@@ -97,6 +97,6 @@ export async function deleteInternalUserHandler(
 ): Promise<void> {
   const auth = getAuth(req);
   const params = req.params as unknown as InternalUserParamsInput;
-  const data = await deleteInternalUser(auth.userId, auth.role, params.userId);
+  const data = await deleteInternalUser(auth.userId, auth.role as any, params.userId);
   res.status(200).json({ data });
 }

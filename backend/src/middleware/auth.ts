@@ -129,6 +129,7 @@ export function requireMinRole(minRole: UserRole): RequestHandler {
     [UserRole.DEPARTMENT_HEAD]: 5,
     [UserRole.TEAM_LEAD]: 4,
     [UserRole.EMPLOYEE]: 3,
+    [UserRole.ELECTRICAL_ENGINEER]: 3,
     [UserRole.PARTNER]: 2,
     [UserRole.CUSTOMER]: 1,
   };

@@ -197,12 +197,22 @@ class AuthRepository @Inject constructor(
     suspend fun getCurrentUser(): Result<User> {
         val TAG = "PROFILE_FETCH"
         return try {
-            val response = apiService.getCurrentUser()
+            val response = try {
+                apiService.getMyProfile()
+            } catch (e: Exception) {
+                apiService.getCurrentUser()
+            }
             if (response.isSuccessful && response.body()?.data != null) {
                 val user = response.body()!!.data!!
                 android.util.Log.d(TAG, "Profile fetch response SUCCESS: user=${user.fullName}, profilePhotoUrl=${user.profileImageUrl}")
                 if (!user.profileImageUrl.isNullOrEmpty()) {
-                    dataStoreManager.saveProfilePhoto(user.profileImageUrl)
+                    val photoUrlWithCacheBuster = if (user.profileImageUrl.startsWith("http")) {
+                        val separator = if (user.profileImageUrl.contains("?")) "&" else "?"
+                        "${user.profileImageUrl}${separator}v=${System.currentTimeMillis()}"
+                    } else {
+                        user.profileImageUrl
+                    }
+                    dataStoreManager.saveProfilePhoto(photoUrlWithCacheBuster)
                 }
                 val existingUser = userDao.getUserById(user.id)
                 val userEntity = UserEntity(
@@ -275,19 +285,29 @@ class AuthRepository @Inject constructor(
             android.util.Log.d(TAG, "[STEP 2] Upload request payload prepared (length=${base64Data.length})")
 
             val token = dataStoreManager.authToken.first()
-            android.util.Log.d(TAG, "[STEP 2] Target endpoint: POST /api/v1/attendance/profile-photo")
+            android.util.Log.d(TAG, "[STEP 2] Target endpoint: POST /api/v1/users/me/profile-image")
             android.util.Log.d(TAG, "[STEP 2] Headers: Authorization = Bearer ${token?.take(15)}...")
 
             val request = com.swayog.employee.data.model.UpdateProfilePhotoRequest(photoDataUrl = base64Data, photo = base64Data)
-            val uploadResponse = apiService.uploadProfilePhotoJson(request)
+            val uploadResponse = try {
+                apiService.uploadProfileImageJson(request)
+            } catch (e: Exception) {
+                apiService.uploadProfilePhotoJson(request)
+            }
             android.util.Log.d(TAG, "[STEP 3] Upload response received: HTTP status code = ${uploadResponse.code()}, message = ${uploadResponse.message()}")
 
             if (uploadResponse.isSuccessful && uploadResponse.body() != null) {
                 val apiBody = uploadResponse.body()!!
                 val serverUser = apiBody.data
-                val returnedPhoto = serverUser?.profileImageUrl ?: apiBody.photo ?: base64Data
+                val rawPhoto = serverUser?.profileImageUrl ?: apiBody.photo ?: base64Data
+                val returnedPhoto = if (rawPhoto.startsWith("http")) {
+                    val sep = if (rawPhoto.contains("?")) "&" else "?"
+                    "${rawPhoto}${sep}v=${System.currentTimeMillis()}"
+                } else {
+                    rawPhoto
+                }
                 android.util.Log.d(TAG, "[STEP 4] Returned image URL/Data = ${returnedPhoto.take(60)}...")
-                android.util.Log.d(TAG, "[STEP 5] Database update result: SUCCESS - PostgreSQL user profileImageUrl updated!")
+                android.util.Log.d(TAG, "[STEP 5] Database update result: SUCCESS - PostgreSQL user profileImageUrl updated via R2!")
 
                 if (!returnedPhoto.isNullOrEmpty()) {
                     dataStoreManager.saveProfilePhoto(returnedPhoto)

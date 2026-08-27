@@ -1008,13 +1008,24 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         data: { status: TaskAssignmentStatus.COMPLETED },
       });
 
-      const remainingAssignments = await prisma.taskAssignment.count({
-        where: {
-          taskId: id,
-          status: { not: TaskAssignmentStatus.COMPLETED },
-        },
+      // Simplify single-employee task completion logic
+      const totalAssignments = await prisma.taskAssignment.count({
+        where: { taskId: id },
       });
-      nextTaskStatus = remainingAssignments === 0 ? TaskStatus.COMPLETED : TaskStatus.IN_PROGRESS;
+
+      if (totalAssignments <= 1) {
+        // Single-employee task: mark as completed immediately
+        nextTaskStatus = TaskStatus.COMPLETED;
+      } else {
+        // Multi-employee task: check remaining assignments
+        const remainingAssignments = await prisma.taskAssignment.count({
+          where: {
+            taskId: id,
+            status: { not: TaskAssignmentStatus.COMPLETED },
+          },
+        });
+        nextTaskStatus = remainingAssignments === 0 ? TaskStatus.COMPLETED : TaskStatus.IN_PROGRESS;
+      }
     }
 
     let updated: any;
@@ -1394,6 +1405,7 @@ export async function updateTaskPhotos(auth: AuthContext, id: number | string, s
     const task = await prisma.task.findUnique({
       where: { id: numericId },
       select: {
+        status: true,
         employeeUserId: true,
         jobType: true,
         customerName: true,
@@ -1401,6 +1413,12 @@ export async function updateTaskPhotos(auth: AuthContext, id: number | string, s
       },
     });
     if (!task) throw new ApiError(404, "Task not found");
+    
+    // Prevent photo uploads after task completion
+    if (task.status === TaskStatus.COMPLETED) {
+      throw new ApiError(400, "Cannot add photos to a completed task");
+    }
+    
     const isAssignedEmployee = task.employeeUserId === auth.userId ||
       task.taskAssignments.some((assignment) => assignment.employeeUserId === auth.userId);
     if (auth.role === UserRole.EMPLOYEE && !isAssignedEmployee) {

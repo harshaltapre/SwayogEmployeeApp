@@ -385,7 +385,43 @@ interface ApiService {
         @Query("period") period: String = "realtime"
     ): Response<WaareePowerGraphResponse>
 
-    // User Settings endpoints
+    // User Profile, Preferences & Security endpoints
+    @GET("users/me")
+    suspend fun getMyProfile(): Response<ApiResponse<User>>
+
+    @PATCH("users/me/profile")
+    suspend fun updateMyProfile(
+        @Body request: Map<String, String>
+    ): Response<ApiResponse<User>>
+
+    @Multipart
+    @POST("users/me/profile-image")
+    suspend fun uploadProfileImageMultipart(
+        @Part file: okhttp3.MultipartBody.Part
+    ): Response<ApiResponse<User>>
+
+    @POST("users/me/profile-image")
+    suspend fun uploadProfileImageJson(
+        @Body request: UpdateProfilePhotoRequest
+    ): Response<ApiResponse<User>>
+
+    @GET("users/me/preferences")
+    suspend fun getUserPreferences(): Response<ApiResponse<UserSettingsDto>>
+
+    @PATCH("users/me/preferences")
+    suspend fun updatePreferences(
+        @Body settings: UserSettingsDto
+    ): Response<ApiResponse<UserSettingsDto>>
+
+    @POST("users/me/preferences")
+    suspend fun updatePreferencesPost(
+        @Body settings: UserSettingsDto
+    ): Response<ApiResponse<UserSettingsDto>>
+
+    @GET("users/me/security")
+    suspend fun getSecurityStatus(): Response<ApiResponse<Map<String, Any>>>
+
+    // Legacy compatibility aliases
     @GET("users/me/settings")
     suspend fun getUserSettings(): Response<ApiResponse<UserSettingsDto>>
 

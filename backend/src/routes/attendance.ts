@@ -53,9 +53,11 @@ router.post("/rules", adminAuth, asyncHandler(async (req, res) => {
   }
 }));
 
-// ── Profile Photo (syncs across devices) ─────────────────────────────────────
+import { uploadMyProfileImageHandler } from "../modules/users/user-me.controller.js";
+
+// ── Profile Photo (syncs across devices & Cloudflare R2) ─────────────────────
 // GET  /profile-photo        → returns the current user's photo
-// POST /profile-photo        → saves/updates the current user's photo
+// POST /profile-photo        → saves/updates the current user's photo (R2 backed)
 router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
   const userId = req.auth!.userId;
   const user = await prisma.user.findUnique({
@@ -65,24 +67,7 @@ router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, r
   res.json({ photo: user?.profileImageUrl || null });
 }));
 
-router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
-  const userId = req.auth!.userId;
-  const { photo } = req.body as { photo: string };
-  if (!photo || !photo.startsWith("data:image/")) {
-    res.status(400).json({ error: "Invalid image data. Must be a base64 data URL." });
-    return;
-  }
-  // Rough size check – base64 of a 2 MB image ≈ 2.7 MB string
-  if (photo.length > 4 * 1024 * 1024) {
-    res.status(413).json({ error: "Image too large. Please upload a photo under 2 MB." });
-    return;
-  }
-  await prisma.user.update({
-    where: { id: userId },
-    data: { profileImageUrl: photo },
-  });
-  res.json({ success: true });
-}));
+router.post("/profile-photo", authenticateAccessToken, asyncHandler(uploadMyProfileImageHandler));
 
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {

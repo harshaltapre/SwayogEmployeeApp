@@ -14,6 +14,8 @@ import androidx.compose.ui.unit.dp
 
 import androidx.compose.material3.ExperimentalMaterial3Api
 
+import com.swayog.employee.presentation.common.LocalCompactViewEnabled
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwayogCard(
@@ -23,11 +25,15 @@ fun SwayogCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val isCompact = LocalCompactViewEnabled.current
+    val paddingValue = if (isCompact) 8.dp else 16.dp
+    val cornerRadius = if (isCompact) 10.dp else 16.dp
+
     if (onClick != null) {
         Card(
             onClick = onClick,
             modifier = modifier,
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(cornerRadius),
             colors = CardDefaults.cardColors(
                 containerColor = backgroundColor
             ),
@@ -36,14 +42,14 @@ fun SwayogCard(
             )
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(paddingValue),
                 content = content
             )
         }
     } else {
         Card(
             modifier = modifier,
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(cornerRadius),
             colors = CardDefaults.cardColors(
                 containerColor = backgroundColor
             ),
@@ -52,7 +58,7 @@ fun SwayogCard(
             )
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(paddingValue),
                 content = content
             )
         }
@@ -67,11 +73,15 @@ fun SwayogStatCard(
     backgroundColor: Color = MaterialTheme.colorScheme.primary,
     contentColor: Color = Color.White
 ) {
+    val isCompact = LocalCompactViewEnabled.current
+    val paddingValue = if (isCompact) 8.dp else 16.dp
+    val cornerRadius = if (isCompact) 10.dp else 16.dp
+
     Card(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(cornerRadius),
         colors = CardDefaults.cardColors(
             containerColor = backgroundColor
         )
@@ -79,15 +89,15 @@ fun SwayogStatCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(paddingValue),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
         ) {
             Text(
                 text = value,
-                style = MaterialTheme.typography.headlineMedium,
+                style = if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
                 color = contentColor
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 8.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,

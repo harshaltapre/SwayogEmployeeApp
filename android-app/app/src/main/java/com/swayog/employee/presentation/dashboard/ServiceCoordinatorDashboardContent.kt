@@ -160,6 +160,21 @@ fun ServiceCoordinatorDashboardContent(
     val telemetryError by viewModel.inverterSummaryError.collectAsState()
     val historyError by viewModel.inverterHistoryError.collectAsState()
 
+    // Auth & Permission states
+    val userRole by viewModel.userRole.collectAsState()
+    val jobRole by viewModel.jobRole.collectAsState()
+    val currentUserId by viewModel.userId.collectAsState()
+
+    val isAmcCoordinator = remember(userRole, jobRole) {
+        userRole == "AMC_COORDINATOR" || jobRole == "AMC_COORDINATOR" || jobRole == "AMC Coordinator"
+    }
+    
+    val isSelfCustomer = remember(currentUserId, selectedCustomerId) {
+        currentUserId != null && selectedCustomerId != null && currentUserId == selectedCustomerId.toString()
+    }
+
+    val canViewTelemetry = isAmcCoordinator || isSelfCustomer
+
     // UI Dialog States
     var showCustomerSearchDialog by remember { mutableStateOf(false) }
     var showCredentialsDialog by remember { mutableStateOf(false) }
@@ -677,228 +692,232 @@ fun ServiceCoordinatorDashboardContent(
                 }
 
                 // Inverter Generation Summary Telemetry Card
-                item {
-                    SwayogCard(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                if (canViewTelemetry) {
+                    item {
+                        SwayogCard(
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Text(
-                                    text = "Inverter Telemetry",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-
-                                inverterSummary?.let {
-                                    val isSim = it.status.contains("Simulation", ignoreCase = true)
-                                    Surface(
-                                        color = (if (isSim) Color(0xFFFFC857) else Color(0xFF0B6E4F)).copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(20.dp)
-                                    ) {
-                                        Text(
-                                            text = if (isSim) "Simulated Sync" else "Live API",
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (isSim) Color(0xFFB58900) else Color(0xFF0B6E4F),
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (isLoadingTelemetry) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(80.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator()
-                                }
-                            } else if (telemetryError != null) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFFD1603D).copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                        .border(1.dp, Color(0xFFD1603D).copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                                        .padding(12.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.Top) {
-                                        Icon(
-                                            imageVector = Icons.Default.Error,
-                                            contentDescription = null,
-                                            tint = Color(0xFFD1603D),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column {
-                                            Text(
-                                                text = "Telemetry Connection Failed",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color(0xFFD1603D)
-                                            )
-                                            Text(
-                                                text = telemetryError ?: "",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                            )
-                                        }
-                                    }
-                                }
-                            } else if (inverterSummary != null) {
-                                val summaryData = inverterSummary!!
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    TelemetryMetric(
-                                        label = "Today's Yield",
-                                        value = "${summaryData.todayGeneration}",
-                                        unit = "kWh",
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    TelemetryMetric(
-                                        label = "Current Power",
-                                        value = "${summaryData.currentPower}",
-                                        unit = "kW",
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    TelemetryMetric(
-                                        label = "Total Lifetime",
-                                        value = "${summaryData.totalGeneration}",
-                                        unit = "kWh",
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Last synchronized:",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                    )
-                                    Text(
-                                        text = try {
-                                            val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-                                            val date = isoFormat.parse(summaryData.lastUpdated.substringBefore("."))
-                                            SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault()).format(date!!)
-                                        } catch (_: Exception) {
-                                            summaryData.lastUpdated
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
+                                        text = "Inverter Telemetry",
+                                        style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold
                                     )
+
+                                    inverterSummary?.let {
+                                        val isSim = it.status.contains("Simulation", ignoreCase = true)
+                                        Surface(
+                                            color = (if (isSim) Color(0xFFFFC857) else Color(0xFF0B6E4F)).copy(alpha = 0.12f),
+                                            shape = RoundedCornerShape(20.dp)
+                                        ) {
+                                            Text(
+                                                text = if (isSim) "Simulated Sync" else "Live API",
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (isSim) Color(0xFFB58900) else Color(0xFF0B6E4F),
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
                                 }
-                            } else {
-                                Text(
-                                    text = "No inverter telemetry available for this customer.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
-                                )
+
+                                if (isLoadingTelemetry) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(80.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator()
+                                    }
+                                } else if (telemetryError != null) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFFD1603D).copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                            .border(1.dp, Color(0xFFD1603D).copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                            .padding(12.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.Top) {
+                                            Icon(
+                                                imageVector = Icons.Default.Error,
+                                                contentDescription = null,
+                                                tint = Color(0xFFD1603D),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = "Telemetry Connection Failed",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFFD1603D)
+                                                )
+                                                Text(
+                                                    text = telemetryError ?: "",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else if (inverterSummary != null) {
+                                    val summaryData = inverterSummary!!
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        TelemetryMetric(
+                                            label = "Today's Yield",
+                                            value = "${summaryData.todayGeneration}",
+                                            unit = "kWh",
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TelemetryMetric(
+                                            label = "Current Power",
+                                            value = "${summaryData.currentPower}",
+                                            unit = "kW",
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TelemetryMetric(
+                                            label = "Total Lifetime",
+                                            value = "${summaryData.totalGeneration}",
+                                            unit = "kWh",
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Last synchronized:",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        )
+                                        Text(
+                                            text = try {
+                                                val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+                                                val date = isoFormat.parse(summaryData.lastUpdated.substringBefore("."))
+                                                SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault()).format(date!!)
+                                            } catch (_: Exception) {
+                                                summaryData.lastUpdated
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = "No inverter telemetry available for this customer.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
                 // Custom Area Chart Card
-                item {
-                    SwayogCard(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                if (canViewTelemetry) {
+                    item {
+                        SwayogCard(
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            // Row 1: Heading (full width, left-aligned)
-                            Text(
-                                text = "Generation History",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            if (isLoadingHistory) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(150.dp),
-                                        contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator()
-                                }
-                            } else if (historyError != null) {
-                                Text(
-                                    text = "Failed to load generation chart: $historyError",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
-                                )
-                            } else if (inverterHistory.isNotEmpty()) {
-                                GenerationChart(
-                                    history = inverterHistory,
-                                    selectedPeriod = selectedPeriod,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(160.dp)
-                                        .padding(vertical = 8.dp)
-                                )
-                            } else {
-                                Text(
-                                    text = "No history data available for selected period.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp)
-                                )
-                            }
-
-                            // Row 2: Period filters (full width, below the graph)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                listOf("realtime", "daily", "monthly", "yearly").forEach { p ->
-                                    val isSelected = selectedPeriod == p
+                                // Row 1: Heading (full width, left-aligned)
+                                Text(
+                                    text = "Generation History",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                if (isLoadingHistory) {
                                     Box(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(
-                                                if (isSelected) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.surfaceVariant
-                                            )
-                                            .clickable { viewModel.setPeriod(p) }
-                                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                                            .fillMaxWidth()
+                                            .height(150.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(
-                                            text = p.replaceFirstChar { it.uppercase() },
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                                            else MaterialTheme.colorScheme.onSurface,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                        CircularProgressIndicator()
+                                    }
+                                } else if (historyError != null) {
+                                    Text(
+                                        text = "Failed to load generation chart: $historyError",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                                    )
+                                } else if (inverterHistory.isNotEmpty()) {
+                                    GenerationChart(
+                                        history = inverterHistory,
+                                        selectedPeriod = selectedPeriod,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(160.dp)
+                                            .padding(vertical = 8.dp)
+                                    )
+                                } else {
+                                    Text(
+                                        text = "No history data available for selected period.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp)
+                                    )
+                                }
+
+                                // Row 2: Period filters (full width, below the graph)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    listOf("realtime", "daily", "monthly", "yearly").forEach { p ->
+                                        val isSelected = selectedPeriod == p
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(
+                                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.surfaceVariant
+                                                )
+                                                .clickable { viewModel.setPeriod(p) }
+                                                .padding(horizontal = 4.dp, vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = p.replaceFirstChar { it.uppercase() },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                                else MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
                                 }
                             }
