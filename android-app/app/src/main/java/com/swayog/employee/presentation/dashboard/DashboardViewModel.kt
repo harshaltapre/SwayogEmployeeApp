@@ -44,6 +44,16 @@ class DashboardViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = null
     )
+    val profilePhotoUrl: StateFlow<String?> = dataStoreManager.profilePhotoUrl.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+    val serverUrl: StateFlow<String?> = dataStoreManager.serverUrl.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
     
     private val _tasks = MutableStateFlow<List<com.swayog.employee.data.model.Task>>(emptyList())
     val tasks: StateFlow<List<com.swayog.employee.data.model.Task>> = _tasks.asStateFlow()

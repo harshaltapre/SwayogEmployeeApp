@@ -1,6 +1,14 @@
 package com.swayog.employee.presentation.profile
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.launch
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -10,19 +18,150 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.swayog.employee.presentation.common.components.*
-
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.SubcomposeAsyncImage
+import com.swayog.employee.presentation.common.components.*
+import com.swayog.employee.presentation.common.utils.ImageUtils
 
 @Composable
 fun ProfileScreen(
     onNavigateBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val user by viewModel.currentUser.collectAsState()
-    
+    val serverUrl by viewModel.serverUrl.collectAsState()
+    val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
+    val profilePhotoCacheKey by viewModel.profilePhotoCacheKey.collectAsState()
+    val uploadingPhoto by viewModel.uploadingPhoto.collectAsState()
+    val uploadError by viewModel.uploadError.collectAsState()
+
+    var showPhotoPickerChoice by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uploadError) {
+        if (uploadError != null) {
+            Toast.makeText(context, uploadError, Toast.LENGTH_SHORT).show()
+            viewModel.clearUploadError()
+        }
+    }
+
+    val processBitmapAndUpload = { bitmap: Bitmap ->
+        try {
+            val scaled = Bitmap.createScaledBitmap(bitmap, 480, 480, true)
+            val tempFile = java.io.File(context.cacheDir, "profile_upload_${System.currentTimeMillis()}.jpg")
+            java.io.FileOutputStream(tempFile).use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            }
+            android.util.Log.d("PROFILE_UPLOAD", "Image file saved to: ${tempFile.absolutePath}, size: ${tempFile.length()} bytes")
+            viewModel.uploadProfilePhotoFile(tempFile)
+        } catch (e: Exception) {
+            android.util.Log.e("PROFILE_UPLOAD", "Error saving bitmap for upload: ${e.message}", e)
+            Toast.makeText(context, "Error saving photo for upload: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        bitmap?.let { processBitmapAndUpload(it) }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            try {
+                cameraLauncher.launch()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to launch camera: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Camera permission is required to take a photo", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(it)?.use { stream ->
+                    BitmapFactory.decodeStream(stream, null, options)
+                }
+
+                var inSampleSize = 1
+                val reqWidth = 480
+                val reqHeight = 480
+                val height = options.outHeight
+                val width = options.outWidth
+                if (height > reqHeight || width > reqWidth) {
+                    val halfHeight = height / 2
+                    val halfWidth = width / 2
+                    while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                        inSampleSize *= 2
+                    }
+                }
+
+                options.inSampleSize = inSampleSize
+                options.inJustDecodeBounds = false
+                context.contentResolver.openInputStream(it)?.use { stream ->
+                    val bitmap = BitmapFactory.decodeStream(stream, null, options)
+                    if (bitmap != null) {
+                        processBitmapAndUpload(bitmap)
+                    } else {
+                        Toast.makeText(context, "Failed to read image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error loading image: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    if (showPhotoPickerChoice) {
+        AlertDialog(
+            onDismissRequest = { showPhotoPickerChoice = false },
+            title = { Text("Update Profile Photo") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Choose an option to update your photo:")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Button(onClick = {
+                            showPhotoPickerChoice = false
+                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                        }) {
+                            Icon(Icons.Default.CameraAlt, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Camera")
+                        }
+                        Button(onClick = {
+                            showPhotoPickerChoice = false
+                            galleryLauncher.launch("image/*")
+                        }) {
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Gallery")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPhotoPickerChoice = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             SwayogTopBar(
@@ -58,39 +197,79 @@ fun ProfileScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            val context = androidx.compose.ui.platform.LocalContext.current
-                            val serverUrl by viewModel.serverUrl.collectAsState()
-                            val photoUrl = currentUser?.profilePhotoUrl
-                            val imageRequest = com.swayog.employee.presentation.common.utils.ImageUtils.rememberImageRequest(
+                            val activePhotoUrl = profilePhotoUrl ?: currentUser?.profilePhotoUrl
+                            val imageRequest = ImageUtils.rememberImageRequest(
                                 context = context,
-                                photoUrl = photoUrl,
-                                serverUrl = serverUrl
+                                photoUrl = activePhotoUrl,
+                                serverUrl = serverUrl,
+                                cacheKey = profilePhotoCacheKey
                             )
+
+                            val initials = currentUser?.fullName?.split(" ")
+                                ?.mapNotNull { it.firstOrNull()?.toString() }
+                                ?.take(2)
+                                ?.joinToString("")?.uppercase() ?: "EM"
 
                             Box(
                                 modifier = Modifier
                                     .size(100.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                                    .clickable { showPhotoPickerChoice = true },
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (imageRequest != null) {
-                                    coil.compose.AsyncImage(
+                                    SubcomposeAsyncImage(
                                         model = imageRequest,
                                         contentDescription = "Profile Photo",
                                         modifier = Modifier.fillMaxSize(),
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                        contentScale = ContentScale.Crop,
+                                        loading = {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(32.dp),
+                                                color = MaterialTheme.colorScheme.primary,
+                                                strokeWidth = 2.dp
+                                            )
+                                        },
+                                        error = {
+                                            Text(
+                                                text = initials,
+                                                style = MaterialTheme.typography.headlineMedium,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     )
                                 } else {
-                                    val initials = currentUser?.fullName?.split(" ")
-                                        ?.mapNotNull { it.firstOrNull()?.toString() }
-                                        ?.take(2)
-                                        ?.joinToString("") ?: "JD"
                                     Text(
-                                        text = initials.uppercase(),
+                                        text = initials,
                                         style = MaterialTheme.typography.headlineMedium,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                                         fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                // Edit overlay icon
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit Photo",
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+
+                                if (uploadingPhoto) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(36.dp),
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }

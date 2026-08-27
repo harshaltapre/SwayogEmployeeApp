@@ -67,21 +67,39 @@ router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, r
 
 router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
   const userId = req.auth!.userId;
-  const { photo } = req.body as { photo: string };
-  if (!photo || !photo.startsWith("data:image/")) {
+  const { photo, photoDataUrl } = req.body as { photo?: string; photoDataUrl?: string };
+  // Accept either `photo` (web app) or `photoDataUrl` (mobile app) field
+  const imageData = photo || photoDataUrl;
+  if (!imageData || !imageData.startsWith("data:image/")) {
     res.status(400).json({ error: "Invalid image data. Must be a base64 data URL." });
     return;
   }
   // Rough size check – base64 of a 2 MB image ≈ 2.7 MB string
-  if (photo.length > 4 * 1024 * 1024) {
+  if (imageData.length > 4 * 1024 * 1024) {
     res.status(413).json({ error: "Image too large. Please upload a photo under 2 MB." });
     return;
   }
-  await prisma.user.update({
+  const updatedUser = await prisma.user.update({
     where: { id: userId },
-    data: { profileImageUrl: photo },
+    data: { profileImageUrl: imageData },
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      role: true,
+      isActive: true,
+      profileImageUrl: true,
+      loginId: true,
+      employeeCode: true,
+      phoneNumber: true,
+      designationTitle: true,
+      departmentId: true,
+      reportingManagerId: true,
+      createdAt: true,
+    },
   });
-  res.json({ success: true });
+  // Return the saved photo AND user object so mobile/web clients can update state immediately
+  res.json({ success: true, photo: imageData, data: updatedUser });
 }));
 
 

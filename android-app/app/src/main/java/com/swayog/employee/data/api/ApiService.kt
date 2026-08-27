@@ -30,6 +30,9 @@ interface ApiService {
         @Body request: UpdateProfilePhotoRequest
     ): Response<ApiResponse<User>>
 
+    @GET("attendance/profile-photo")
+    suspend fun getProfilePhoto(): Response<ProfilePhotoResponse>
+
     @POST("attendance/profile-photo")
     suspend fun uploadProfilePhotoJson(
         @Body request: UpdateProfilePhotoRequest

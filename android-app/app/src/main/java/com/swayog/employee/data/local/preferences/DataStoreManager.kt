@@ -181,8 +181,14 @@ class DataStoreManager @Inject constructor(
                 preferences[PreferencesKeys.USER_EMAIL] = email
                 preferences[PreferencesKeys.USER_NAME] = name
                 preferences[PreferencesKeys.USER_ROLE] = role
-                jobRole?.let { preferences[PreferencesKeys.JOB_ROLE] = it }
-                profilePhotoUrl?.let { preferences[PreferencesKeys.PROFILE_PHOTO_URL] = it }
+                if (jobRole != null) {
+                    preferences[PreferencesKeys.JOB_ROLE] = jobRole
+                }
+                if (!profilePhotoUrl.isNullOrEmpty()) {
+                    preferences[PreferencesKeys.PROFILE_PHOTO_URL] = profilePhotoUrl
+                } else {
+                    preferences.remove(PreferencesKeys.PROFILE_PHOTO_URL)
+                }
                 preferences[PreferencesKeys.IS_LOGGED_IN] = true
             }
         } catch (e: Exception) {

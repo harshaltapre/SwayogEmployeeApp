@@ -31,6 +31,7 @@ import android.net.Uri
 import android.util.Base64
 import java.io.ByteArrayOutputStream
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import androidx.compose.ui.layout.ContentScale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,7 +70,10 @@ fun SettingsScreen(
     val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
     val uploadingPhoto by viewModel.uploadingPhoto.collectAsState()
     val uploadError by viewModel.uploadError.collectAsState()
-    
+    // Cache-busting key: bumped by ViewModel on every successful upload.
+    // Passing it to rememberImageRequest forces Coil to discard the stale cached image.
+    val profilePhotoCacheKey by viewModel.profilePhotoCacheKey.collectAsState()
+
     LaunchedEffect(uploadError) {
         if (uploadError != null) {
             Toast.makeText(context, uploadError, Toast.LENGTH_SHORT).show()
@@ -227,7 +231,8 @@ fun SettingsScreen(
                         val imageRequest = com.swayog.employee.presentation.common.utils.ImageUtils.rememberImageRequest(
                             context = context,
                             photoUrl = profilePhotoUrl,
-                            serverUrl = serverUrl
+                            serverUrl = serverUrl,
+                            cacheKey = profilePhotoCacheKey
                         )
 
                         Box(
@@ -239,11 +244,26 @@ fun SettingsScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             if (imageRequest != null) {
-                                AsyncImage(
+                                SubcomposeAsyncImage(
                                     model = imageRequest,
                                     contentDescription = "Profile Photo",
                                     modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
+                                    contentScale = ContentScale.Crop,
+                                    loading = {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            strokeWidth = 2.dp
+                                        )
+                                    },
+                                    error = {
+                                        Text(
+                                            text = initials,
+                                            style = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
                                 )
                             } else {
                                 Text(

@@ -130,6 +130,11 @@ class SettingsViewModel @Inject constructor(
     private val _uploadError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val uploadError: StateFlow<String?> = _uploadError
 
+    // Cache-busting key: incremented (as current timestamp) after every successful photo upload.
+    // The UI passes this to Coil's ImageRequest so stale cached images are discarded immediately.
+    private val _profilePhotoCacheKey = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val profilePhotoCacheKey: StateFlow<Long> = _profilePhotoCacheKey
+
     fun syncWithServer() {
         viewModelScope.launch {
             try {
@@ -212,12 +217,17 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _uploadingPhoto.value = true
             _uploadError.value = null
-            
+
             val result = authRepository.updateProfilePhoto(base64Image)
-            if (result.isFailure) {
+            if (result.isSuccess) {
+                // Bump cache key so Coil discards its cached (stale) image immediately
+                _profilePhotoCacheKey.value = System.currentTimeMillis()
+                android.util.Log.d("SETTINGS_VM", "Photo upload succeeded — bumping cache key to ${_profilePhotoCacheKey.value}")
+            } else {
                 _uploadError.value = result.exceptionOrNull()?.message ?: "Failed to upload photo"
+                android.util.Log.e("SETTINGS_VM", "Photo upload failed: ${result.exceptionOrNull()?.message}")
             }
-            
+
             _uploadingPhoto.value = false
         }
     }
@@ -226,12 +236,17 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _uploadingPhoto.value = true
             _uploadError.value = null
-            
+
             val result = authRepository.uploadProfilePhotoFile(file)
-            if (result.isFailure) {
+            if (result.isSuccess) {
+                // Bump cache key so Coil discards its cached (stale) image immediately
+                _profilePhotoCacheKey.value = System.currentTimeMillis()
+                android.util.Log.d("SETTINGS_VM", "Photo file upload succeeded — bumping cache key to ${_profilePhotoCacheKey.value}")
+            } else {
                 _uploadError.value = result.exceptionOrNull()?.message ?: "Failed to upload photo"
+                android.util.Log.e("SETTINGS_VM", "Photo file upload failed: ${result.exceptionOrNull()?.message}")
             }
-            
+
             _uploadingPhoto.value = false
         }
     }

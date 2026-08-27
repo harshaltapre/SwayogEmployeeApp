@@ -29,6 +29,9 @@ import com.swayog.employee.presentation.subadmin.SubAdminComplaintsScreen
 import com.swayog.employee.presentation.subadmin.SubAdminCalendarScreen
 import com.swayog.employee.presentation.subadmin.SubAdminCustomersScreen
 import com.swayog.employee.presentation.subadmin.SubAdminMapScreen
+import coil.compose.SubcomposeAsyncImage
+import androidx.compose.ui.layout.ContentScale
+import com.swayog.employee.presentation.common.utils.ImageUtils
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -58,6 +61,8 @@ fun DashboardScreen(
     val tasks by viewModel.tasks.collectAsState()
     val todayAttendance by viewModel.todayAttendance.collectAsState()
     val performance by viewModel.performance.collectAsState()
+    val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
+    val serverUrl by viewModel.serverUrl.collectAsState()
 
     val isServiceCoordinator = remember(userRole, jobRole) {
         userRole?.uppercase() == "SUB_ADMIN" || jobRole?.replace(" ", "")?.lowercase() == "servicecoordinator"
@@ -237,34 +242,93 @@ fun DashboardScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Welcome Section with Live Clock
+                        // Welcome Section with Live Clock & Profile Avatar
                         item {
-                            Column {
-                                Text(
-                                    text = "$greeting, ${userName?.split(" ")?.firstOrNull() ?: "User"} 👋",
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                val displayRole = jobRole ?: when (userRole?.uppercase()) {
-                                    "SUPER_ADMIN" -> "Super Admin"
-                                    "ADMIN" -> "Admin"
-                                    "SUB_ADMIN" -> "Service Coordinator"
-                                    "TEAM_LEAD" -> "Team Lead"
-                                    "DEPARTMENT_HEAD" -> "Department Head"
-                                    else -> "Employee"
+                            val context = LocalContext.current
+                            val imageRequest = ImageUtils.rememberImageRequest(
+                                context = context,
+                                photoUrl = profilePhotoUrl,
+                                serverUrl = serverUrl
+                            )
+                            val initials = userName?.split(" ")
+                                ?.mapNotNull { it.firstOrNull()?.toString() }
+                                ?.take(2)
+                                ?.joinToString("")?.uppercase() ?: "EM"
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "$greeting, ${userName?.split(" ")?.firstOrNull() ?: "User"} 👋",
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    val displayRole = jobRole ?: when (userRole?.uppercase()) {
+                                        "SUPER_ADMIN" -> "Super Admin"
+                                        "ADMIN" -> "Admin"
+                                        "SUB_ADMIN" -> "Service Coordinator"
+                                        "TEAM_LEAD" -> "Team Lead"
+                                        "DEPARTMENT_HEAD" -> "Department Head"
+                                        else -> "Employee"
+                                    }
+                                    Text(
+                                        text = displayRole,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = formattedDate,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
                                 }
-                                Text(
-                                    text = displayRole,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = formattedDate,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                )
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer)
+                                        .clickable { onNavigateToProfile() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (imageRequest != null) {
+                                        SubcomposeAsyncImage(
+                                            model = imageRequest,
+                                            contentDescription = "Profile Photo",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop,
+                                            loading = {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(20.dp),
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    strokeWidth = 2.dp
+                                                )
+                                            },
+                                            error = {
+                                                Text(
+                                                    text = initials,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        )
+                                    } else {
+                                        Text(
+                                            text = initials,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
                         }
 

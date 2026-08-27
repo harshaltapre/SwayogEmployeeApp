@@ -28,6 +28,25 @@ class ProfileViewModel @Inject constructor(
         initialValue = null
     )
 
+    val profilePhotoUrl: StateFlow<String?> = dataStoreManager.profilePhotoUrl.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    private val _profilePhotoCacheKey = MutableStateFlow(0L)
+    val profilePhotoCacheKey: StateFlow<Long> = _profilePhotoCacheKey.asStateFlow()
+
+    private val _uploadingPhoto = MutableStateFlow(false)
+    val uploadingPhoto: StateFlow<Boolean> = _uploadingPhoto.asStateFlow()
+
+    private val _uploadError = MutableStateFlow<String?>(null)
+    val uploadError: StateFlow<String?> = _uploadError.asStateFlow()
+
+    fun clearUploadError() {
+        _uploadError.value = null
+    }
+
     init {
         viewModelScope.launch {
             dataStoreManager.userId.filterNotNull().collectLatest { id ->
@@ -44,6 +63,23 @@ class ProfileViewModel @Inject constructor(
     fun loadProfile() {
         viewModelScope.launch {
             authRepository.getCurrentUser()
+        }
+    }
+
+    fun uploadProfilePhotoFile(file: java.io.File) {
+        viewModelScope.launch {
+            _uploadingPhoto.value = true
+            _uploadError.value = null
+
+            val result = authRepository.uploadProfilePhotoFile(file)
+            if (result.isSuccess) {
+                _profilePhotoCacheKey.value = System.currentTimeMillis()
+                authRepository.getCurrentUser()
+            } else {
+                _uploadError.value = result.exceptionOrNull()?.message ?: "Failed to upload photo"
+            }
+
+            _uploadingPhoto.value = false
         }
     }
 }

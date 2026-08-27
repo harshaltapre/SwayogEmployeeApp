@@ -54,6 +54,11 @@ data class UpdateProfilePhotoRequest(
     val photo: String? = null
 )
 
+data class ProfilePhotoResponse(
+    val photo: String? = null,
+    val success: Boolean? = true
+)
+
 data class AuthResponse(
     val user: User,
     @SerializedName("accessToken")

@@ -194,6 +194,31 @@ class AuthRepository @Inject constructor(
         }
     }
     
+    suspend fun fetchProfilePhoto(): Result<String?> {
+        val TAG = "PROFILE_FETCH"
+        return try {
+            val response = apiService.getProfilePhoto()
+            if (response.isSuccessful && response.body() != null) {
+                val photo = response.body()?.photo
+                android.util.Log.d(TAG, "getProfilePhoto response SUCCESS: photo len=${photo?.length}")
+                if (!photo.isNullOrEmpty()) {
+                    dataStoreManager.saveProfilePhoto(photo)
+                    val userId = dataStoreManager.userId.first()
+                    if (!userId.isNullOrEmpty()) {
+                        userDao.updateProfilePhotoUrl(userId, photo)
+                    }
+                }
+                Result.success(photo)
+            } else {
+                android.util.Log.e(TAG, "getProfilePhoto failed: HTTP ${response.code()}")
+                Result.failure(Exception("Failed to fetch profile photo"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "getProfilePhoto exception: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
     suspend fun getCurrentUser(): Result<User> {
         val TAG = "PROFILE_FETCH"
         return try {
@@ -201,9 +226,17 @@ class AuthRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 val user = response.body()!!.data!!
                 android.util.Log.d(TAG, "Profile fetch response SUCCESS: user=${user.fullName}, profilePhotoUrl=${user.profileImageUrl}")
-                if (!user.profileImageUrl.isNullOrEmpty()) {
-                    dataStoreManager.saveProfilePhoto(user.profileImageUrl)
+                
+                var finalPhoto = user.profileImageUrl
+                if (finalPhoto.isNullOrEmpty()) {
+                    val photoResult = fetchProfilePhoto()
+                    if (photoResult.isSuccess && !photoResult.getOrNull().isNullOrEmpty()) {
+                        finalPhoto = photoResult.getOrNull()
+                    }
+                } else {
+                    dataStoreManager.saveProfilePhoto(finalPhoto)
                 }
+
                 val existingUser = userDao.getUserById(user.id)
                 val userEntity = UserEntity(
                     id = user.id,
@@ -221,11 +254,11 @@ class AuthRepository @Inject constructor(
                     jobRole = user.employeeProfile?.jobRole ?: existingUser?.jobRole,
                     zone = user.employeeProfile?.zone ?: existingUser?.zone,
                     monthlySalaryInr = user.employeeProfile?.monthlySalaryInr ?: existingUser?.monthlySalaryInr,
-                    profilePhotoUrl = user.profileImageUrl ?: existingUser?.profilePhotoUrl,
+                    profilePhotoUrl = finalPhoto ?: existingUser?.profilePhotoUrl,
                     rating = existingUser?.rating
                 )
                 userDao.insertUser(userEntity)
-                Result.success(user)
+                Result.success(user.copy(profileImageUrl = finalPhoto ?: existingUser?.profilePhotoUrl))
             } else {
                 android.util.Log.e(TAG, "Profile fetch failed: ${response.message()}")
                 Result.failure(Exception("Failed to get user"))
@@ -280,60 +313,84 @@ class AuthRepository @Inject constructor(
 
             val request = com.swayog.employee.data.model.UpdateProfilePhotoRequest(photoDataUrl = base64Data, photo = base64Data)
             val uploadResponse = apiService.uploadProfilePhotoJson(request)
-            android.util.Log.d(TAG, "[STEP 3] Upload response received: HTTP status code = ${uploadResponse.code()}, message = ${uploadResponse.message()}")
+            android.util.Log.d(TAG, "[STEP 3] Upload response received: HTTP ${uploadResponse.code()} ${uploadResponse.message()}")
 
             if (uploadResponse.isSuccessful && uploadResponse.body() != null) {
                 val apiBody = uploadResponse.body()!!
-                val serverUser = apiBody.data
-                val returnedPhoto = serverUser?.profileImageUrl ?: apiBody.photo ?: base64Data
-                android.util.Log.d(TAG, "[STEP 4] Returned image URL/Data = ${returnedPhoto.take(60)}...")
-                android.util.Log.d(TAG, "[STEP 5] Database update result: SUCCESS - PostgreSQL user profileImageUrl updated!")
+                android.util.Log.d(TAG, "[STEP 3] Raw response body: success=${apiBody.success}, hasData=${apiBody.data != null}, hasPhoto=${apiBody.photo != null}")
 
-                if (!returnedPhoto.isNullOrEmpty()) {
-                    dataStoreManager.saveProfilePhoto(returnedPhoto)
-                    val userIdToUse = serverUser?.id ?: dataStoreManager.userId.first() ?: ""
-                    if (userIdToUse.isNotEmpty()) {
-                        val existingUser = userDao.getUserById(userIdToUse)
-                        userDao.insertUser(
-                            UserEntity(
-                                id = userIdToUse,
-                                loginId = serverUser?.loginId ?: existingUser?.loginId ?: userIdToUse,
-                                employeeCode = serverUser?.employeeCode ?: existingUser?.employeeCode,
-                                email = serverUser?.email ?: existingUser?.email ?: "",
-                                phoneNumber = serverUser?.phoneNumber ?: existingUser?.phoneNumber,
-                                fullName = serverUser?.fullName ?: existingUser?.fullName ?: "",
-                                role = serverUser?.role ?: existingUser?.role ?: "EMPLOYEE",
-                                designationTitle = serverUser?.designationTitle ?: existingUser?.designationTitle,
-                                departmentId = serverUser?.departmentId ?: existingUser?.departmentId,
-                                reportingManagerId = serverUser?.reportingManagerId ?: existingUser?.reportingManagerId,
-                                isActive = serverUser?.isActive ?: existingUser?.isActive ?: true,
-                                createdAt = serverUser?.createdAt ?: existingUser?.createdAt ?: "",
-                                jobRole = serverUser?.employeeProfile?.jobRole ?: existingUser?.jobRole,
-                                zone = serverUser?.employeeProfile?.zone ?: existingUser?.zone,
-                                monthlySalaryInr = serverUser?.employeeProfile?.monthlySalaryInr ?: existingUser?.monthlySalaryInr,
-                                profilePhotoUrl = returnedPhoto,
-                                rating = existingUser?.rating
-                            )
-                        )
+                val serverUser = apiBody.data
+                // Priority: server-echoed photo > server user profileImageUrl > locally-prepared base64
+                // The backend now returns `photo` field with the saved image data URL.
+                val returnedPhoto: String = when {
+                    !apiBody.photo.isNullOrEmpty() -> {
+                        android.util.Log.d(TAG, "[STEP 4] Using photo from apiBody.photo (len=${apiBody.photo!!.length})")
+                        apiBody.photo!!
                     }
-                    android.util.Log.d(TAG, "[STEP 6] Local DataStore & Room DB saved profile photo successfully!")
+                    !serverUser?.profileImageUrl.isNullOrEmpty() -> {
+                        android.util.Log.d(TAG, "[STEP 4] Using photo from serverUser.profileImageUrl (len=${serverUser!!.profileImageUrl!!.length})")
+                        serverUser!!.profileImageUrl!!
+                    }
+                    else -> {
+                        android.util.Log.w(TAG, "[STEP 4] Backend returned no photo/data, using locally-prepared base64 as fallback (len=${base64Data.length})")
+                        base64Data
+                    }
+                }
+                android.util.Log.d(TAG, "[STEP 4] returnedPhoto starts with: ${returnedPhoto.take(40)}...")
+                android.util.Log.d(TAG, "[STEP 5] PostgreSQL update confirmed (backend returned updated user record).")
+
+                // CRITICAL: Save to DataStore IMMEDIATELY — do NOT wait for getCurrentUser()
+                dataStoreManager.saveProfilePhoto(returnedPhoto)
+                android.util.Log.d(TAG, "[STEP 6] DataStore saved profile photo URL immediately after upload.")
+
+                // Also update Room DB so the photo persists on next cold-start
+                val userIdToUse = serverUser?.id ?: dataStoreManager.userId.first() ?: ""
+                if (userIdToUse.isNotEmpty()) {
+                    val existingUser = userDao.getUserById(userIdToUse)
+                    userDao.insertUser(
+                        UserEntity(
+                            id = userIdToUse,
+                            loginId = serverUser?.loginId ?: existingUser?.loginId ?: userIdToUse,
+                            employeeCode = serverUser?.employeeCode ?: existingUser?.employeeCode,
+                            email = serverUser?.email ?: existingUser?.email ?: "",
+                            phoneNumber = serverUser?.phoneNumber ?: existingUser?.phoneNumber,
+                            fullName = serverUser?.fullName ?: existingUser?.fullName ?: "",
+                            role = serverUser?.role ?: existingUser?.role ?: "EMPLOYEE",
+                            designationTitle = serverUser?.designationTitle ?: existingUser?.designationTitle,
+                            departmentId = serverUser?.departmentId ?: existingUser?.departmentId,
+                            reportingManagerId = serverUser?.reportingManagerId ?: existingUser?.reportingManagerId,
+                            isActive = serverUser?.isActive ?: existingUser?.isActive ?: true,
+                            createdAt = serverUser?.createdAt ?: existingUser?.createdAt ?: "",
+                            jobRole = serverUser?.employeeProfile?.jobRole ?: existingUser?.jobRole,
+                            zone = serverUser?.employeeProfile?.zone ?: existingUser?.zone,
+                            monthlySalaryInr = serverUser?.employeeProfile?.monthlySalaryInr ?: existingUser?.monthlySalaryInr,
+                            profilePhotoUrl = returnedPhoto,
+                            rating = existingUser?.rating
+                        )
+                    )
+                    android.util.Log.d(TAG, "[STEP 6] Room DB updated with new profile photo for userId=$userIdToUse")
                 }
 
-                // Force fetch current user profile to verify synchronization
+                // Secondary sync: fetch /auth/me to keep other user fields in sync.
+                // Crucially, we do NOT let this overwrite the photo we just saved above —
+                // getCurrentUser() only writes to DataStore if profileImageUrl is non-empty,
+                // which will be the same value we just saved. This is safe.
                 val meResult = getCurrentUser()
-                android.util.Log.d(TAG, "[STEP 7] Profile fetch response status: isSuccess=${meResult.isSuccess}")
+                android.util.Log.d(TAG, "[STEP 7] Background profile sync status: isSuccess=${meResult.isSuccess}")
 
-                Result.success(serverUser ?: User(
+                val resultUser = serverUser ?: User(
                     id = dataStoreManager.userId.first() ?: "",
                     fullName = dataStoreManager.userName.first() ?: "",
                     email = dataStoreManager.userEmail.first() ?: "",
                     role = dataStoreManager.userRole.first() ?: "EMPLOYEE",
                     isActive = true,
                     profileImageUrl = returnedPhoto
-                ))
+                )
+                android.util.Log.d(TAG, "[STEP 8] Returning success. profileImageUrl starts with: ${resultUser.profileImageUrl?.take(40)}...")
+                Result.success(resultUser)
             } else {
                 val errorMsg = parseErrorMessage(uploadResponse)
-                android.util.Log.e(TAG, "[STEP 3 ERROR] Backend upload failed = $errorMsg")
+                android.util.Log.e(TAG, "[STEP 3 ERROR] Backend upload failed: HTTP ${uploadResponse.code()} — $errorMsg")
                 Result.failure(Exception("Failed to upload profile photo: $errorMsg"))
             }
         } catch (e: Exception) {
@@ -341,6 +398,7 @@ class AuthRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
 
     suspend fun checkHealth(): Result<Unit> {
         return try {
