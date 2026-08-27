@@ -105,9 +105,6 @@ fun SwayogNavHost(
                 },
                 onNavigateToSubAdminFinancials = {
                     navController.navigate(Screen.SubAdminFinancials.route)
-                },
-                onNavigateToInverterData = {
-                    navController.navigate(Screen.InverterData.route)
                 }
             )
         }

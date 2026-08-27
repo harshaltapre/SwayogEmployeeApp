@@ -8,6 +8,7 @@ import coil.request.ImageRequest
 
 object ImageUtils {
 
+    @Suppress("UNUSED_PARAMETER")
     fun resolveImageModel(
         context: Context,
         photoUrl: String?,
