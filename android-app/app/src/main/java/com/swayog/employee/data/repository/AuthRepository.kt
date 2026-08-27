@@ -244,7 +244,14 @@ class AuthRepository @Inject constructor(
                     }
                     dataStoreManager.saveProfilePhoto(photoUrlWithCacheBuster)
                 }
-
+                dataStoreManager.saveUserInfo(
+                    userId = user.id,
+                    email = user.email ?: "",
+                    name = user.fullName ?: "",
+                    role = user.role ?: "EMPLOYEE",
+                    jobRole = user.employeeProfile?.jobRole,
+                    profilePhotoUrl = dataStoreManager.profilePhotoUrl.first() // Keep existing photo url if not updated
+                )
                 val existingUser = userDao.getUserById(user.id)
                 val userEntity = UserEntity(
                     id = user.id,
@@ -298,11 +305,85 @@ class AuthRepository @Inject constructor(
             }
             android.util.Log.d(TAG, "[STEP 1] Image MIME type detected = $mimeType")
 
-            val bytes = file.readBytes()
-            val base64Str = "data:$mimeType;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            android.util.Log.d(TAG, "[STEP 1] Base64 image created successfully, total string length = ${base64Str.length}")
+            val requestBody = file.asRequestBody(mimeType.toMediaTypeOrNull())
+            val multipartBody = okhttp3.MultipartBody.Part.createFormData("file", file.name, requestBody)
 
-            updateProfilePhoto(base64Str)
+            android.util.Log.d(TAG, "[STEP 2] Target endpoint: MULTIPART POST /api/v1/users/me/profile-image")
+            
+            var uploadResponse = try {
+                apiService.uploadProfileImageMultipart(multipartBody)
+            } catch (e: Exception) {
+                android.util.Log.d(TAG, "[STEP 2.5] Primary endpoint failed, attempting fallback...")
+                apiService.uploadProfilePhotoMultipart(multipartBody)
+            }
+
+            if (!uploadResponse.isSuccessful && uploadResponse.code() == 404) {
+                android.util.Log.d(TAG, "[STEP 2.5] Primary endpoint returned 404, attempting fallback...")
+                try {
+                    uploadResponse = apiService.uploadProfilePhotoMultipart(multipartBody)
+                } catch (e: Exception) {
+                    android.util.Log.e(TAG, "[STEP 2.5 ERROR] Fallback also failed: ${e.message}")
+                }
+            }
+            android.util.Log.d(TAG, "[STEP 3] Upload response received: HTTP status code = ${uploadResponse.code()}, message = ${uploadResponse.message()}")
+
+            if (uploadResponse.isSuccessful && uploadResponse.body() != null) {
+                val apiBody = uploadResponse.body()!!
+                val serverUser = apiBody.data
+                val rawPhoto = serverUser?.profileImageUrl ?: apiBody.photo ?: ""
+                val returnedPhoto = if (rawPhoto.startsWith("http")) {
+                    val sep = if (rawPhoto.contains("?")) "&" else "?"
+                    "${rawPhoto}${sep}v=${System.currentTimeMillis()}"
+                } else {
+                    rawPhoto
+                }
+                android.util.Log.d(TAG, "[STEP 4] Returned image URL = ${returnedPhoto.take(60)}...")
+
+                if (returnedPhoto.isNotEmpty()) {
+                    dataStoreManager.saveProfilePhoto(returnedPhoto)
+                    val userIdToUse = serverUser?.id ?: dataStoreManager.userId.first() ?: ""
+                    if (userIdToUse.isNotEmpty()) {
+                        val existingUser = userDao.getUserById(userIdToUse)
+                        userDao.insertUser(
+                            UserEntity(
+                                id = userIdToUse,
+                                loginId = serverUser?.loginId ?: existingUser?.loginId ?: userIdToUse,
+                                employeeCode = serverUser?.employeeCode ?: existingUser?.employeeCode,
+                                email = serverUser?.email ?: existingUser?.email ?: "",
+                                phoneNumber = serverUser?.phoneNumber ?: existingUser?.phoneNumber,
+                                fullName = serverUser?.fullName ?: existingUser?.fullName ?: "",
+                                role = serverUser?.role ?: existingUser?.role ?: "EMPLOYEE",
+                                designationTitle = serverUser?.designationTitle ?: existingUser?.designationTitle,
+                                departmentId = serverUser?.departmentId ?: existingUser?.departmentId,
+                                reportingManagerId = serverUser?.reportingManagerId ?: existingUser?.reportingManagerId,
+                                isActive = serverUser?.isActive ?: existingUser?.isActive ?: true,
+                                createdAt = serverUser?.createdAt ?: existingUser?.createdAt ?: "",
+                                jobRole = serverUser?.employeeProfile?.jobRole ?: existingUser?.jobRole,
+                                zone = serverUser?.employeeProfile?.zone ?: existingUser?.zone,
+                                monthlySalaryInr = serverUser?.employeeProfile?.monthlySalaryInr ?: existingUser?.monthlySalaryInr,
+                                profilePhotoUrl = returnedPhoto,
+                                rating = existingUser?.rating
+                            )
+                        )
+                    }
+                    android.util.Log.d(TAG, "[STEP 6] Local DataStore & Room DB saved profile photo successfully!")
+                }
+
+                getCurrentUser()
+                
+                Result.success(serverUser ?: User(
+                    id = dataStoreManager.userId.first() ?: "",
+                    fullName = dataStoreManager.userName.first() ?: "",
+                    email = dataStoreManager.userEmail.first() ?: "",
+                    role = dataStoreManager.userRole.first() ?: "EMPLOYEE",
+                    isActive = true,
+                    profileImageUrl = returnedPhoto
+                ))
+            } else {
+                val errorMsg = parseErrorMessage(uploadResponse)
+                android.util.Log.e(TAG, "[STEP 3 ERROR] Backend upload failed = $errorMsg")
+                Result.failure(Exception("Failed to upload profile photo: $errorMsg"))
+            }
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Profile photo file upload failed: ${e.message}", e)
             Result.failure(e)
@@ -320,14 +401,6 @@ class AuthRepository @Inject constructor(
             android.util.Log.d(TAG, "[STEP 2] Headers: Authorization = Bearer ${token?.take(15)}...")
 
             val request = com.swayog.employee.data.model.UpdateProfilePhotoRequest(photoDataUrl = base64Data, photo = base64Data)
-<<<<<<< HEAD
-            val uploadResponse = apiService.uploadProfilePhotoJson(request)
-            android.util.Log.d(TAG, "[STEP 3] Upload response received: HTTP ${uploadResponse.code()} ${uploadResponse.message()}")
-
-            if (uploadResponse.isSuccessful && uploadResponse.body() != null) {
-                val apiBody = uploadResponse.body()!!
-                android.util.Log.d(TAG, "[STEP 3] Raw response body: success=${apiBody.success}, hasData=${apiBody.data != null}, hasPhoto=${apiBody.photo != null}")
-=======
             val uploadResponse = try {
                 apiService.uploadProfileImageJson(request)
             } catch (e: Exception) {
@@ -337,17 +410,8 @@ class AuthRepository @Inject constructor(
 
             if (uploadResponse.isSuccessful && uploadResponse.body() != null) {
                 val apiBody = uploadResponse.body()!!
-                val serverUser = apiBody.data
-                val rawPhoto = serverUser?.profileImageUrl ?: apiBody.photo ?: base64Data
-                val returnedPhoto = if (rawPhoto.startsWith("http")) {
-                    val sep = if (rawPhoto.contains("?")) "&" else "?"
-                    "${rawPhoto}${sep}v=${System.currentTimeMillis()}"
-                } else {
-                    rawPhoto
-                }
-                android.util.Log.d(TAG, "[STEP 4] Returned image URL/Data = ${returnedPhoto.take(60)}...")
-                android.util.Log.d(TAG, "[STEP 5] Database update result: SUCCESS - PostgreSQL user profileImageUrl updated via R2!")
->>>>>>> 621bfeda70d33f898765c51cd5b55546fdf73e00
+                android.util.Log.d(TAG, "[STEP 3] Raw response body: success=${apiBody.success}, hasData=${apiBody.data != null}, hasPhoto=${apiBody.photo != null}")
+
 
                 val serverUser = apiBody.data
                 // Priority: server-echoed photo > server user profileImageUrl > locally-prepared base64
