@@ -108,6 +108,7 @@ class SyncWorker @AssistedInject constructor(
                                     LocalFileHelper.readFileToBase64(it) 
                                 }
 
+                                val clientUploadId = item.clientUploadId ?: json.optString("clientUploadId").takeIf { it.isNotEmpty() }
                                 val request = CompleteTaskRequest(
                                     message = json.optString("message"),
                                     documentUrl = json.optString("documentUrl").takeIf { it.isNotEmpty() },
@@ -121,7 +122,8 @@ class SyncWorker @AssistedInject constructor(
                                     images = images,
                                     sitePhotos = images,
                                     beforeImages = beforeImages,
-                                    afterImages = afterImages
+                                    afterImages = afterImages,
+                                    clientUploadId = clientUploadId
                                 )
                                 val response = apiService.completeTask(taskId, request)
                                 if (response.isSuccessful) {

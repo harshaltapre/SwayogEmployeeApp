@@ -134,6 +134,7 @@ fun ServiceCoordinatorDashboardContent(
     onNavigateToFinancials: () -> Unit,
     onNavigateToAttendance: () -> Unit,
     onNavigateToDailyCommits: () -> Unit,
+    onNavigateToAmcManagement: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -316,7 +317,13 @@ fun ServiceCoordinatorDashboardContent(
                             onClick = onNavigateToDailyCommits,
                             modifier = Modifier.weight(1f)
                         )
-                        Spacer(modifier = Modifier.weight(1f)) // Empty spacer for alignment
+                        QuickActionCard(
+                            icon = Icons.Default.CalendarMonth,
+                            label = "AMC Mgmt",
+                            color = Color(0xFF6366F1),
+                            onClick = onNavigateToAmcManagement,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -451,7 +458,8 @@ fun ServiceCoordinatorDashboardContent(
                         Card(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxHeight(),
+                                .fillMaxHeight()
+                                .clickable { onNavigateToAmcManagement() },
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -934,11 +942,20 @@ fun ServiceCoordinatorDashboardContent(
                             modifier = Modifier.padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Text(
-                                text = "AMC Cleaning Visit Log",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "AMC Cleaning Visit Log",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                TextButton(onClick = onNavigateToAmcManagement) {
+                                    Text("Manage AMC", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
 
                             if (isLoadingAmc) {
                                 Box(

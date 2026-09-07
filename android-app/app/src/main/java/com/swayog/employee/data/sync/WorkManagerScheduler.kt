@@ -37,7 +37,7 @@ object WorkManagerScheduler {
         
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_TASK_REFRESH_WORK,
-            ExistingPeriodicWorkPolicy.REPLACE, // Replace any existing work with this one
+            ExistingPeriodicWorkPolicy.UPDATE, // Preserves enqueue time and doesn't cancel running workers
             periodicWorkRequest
         )
         

@@ -95,7 +95,10 @@ class DashboardViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { (id, _, roles) ->
                     val (role, job) = roles
-                    val isServiceCoordinator = role?.uppercase() == "SUB_ADMIN" || job?.replace(" ", "")?.lowercase() == "servicecoordinator"
+                    val r = role?.uppercase() ?: ""
+                    val j = job?.lowercase()?.replace(" ", "")?.replace("_", "") ?: ""
+                    val isServiceCoordinator = r in listOf("SUB_ADMIN", "ADMIN", "SUPER_ADMIN") ||
+                            j == "servicecoordinator" || j.contains("amc") || j.contains("coordinator") || j.contains("subadmin")
                     if (isServiceCoordinator) {
                         _dashboardState.value = DashboardState.Success
                     } else {

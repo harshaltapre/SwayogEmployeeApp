@@ -89,11 +89,21 @@ const upsertAmcVisitForDate = async (
  * Get all customers with AMC details for the management dashboard
  */
 export const getAmcCustomers = async (req: Request, res: Response) => {
+  const { status, amcStatus } = req.query;
+  const where: any = {};
+  
+  if (status && status !== "ALL") {
+    where.status = status as any;
+  } else if (!status) {
+    where.status = "ACTIVE";
+  }
+
+  if (amcStatus && amcStatus !== "ALL") {
+    where.amcStatus = amcStatus as any;
+  }
+
   const customers = await prisma.customer.findMany({
-    where: {
-      status: "ACTIVE",
-      amcStatus: "ACTIVE"
-    },
+    where,
     include: {
       apartment: true
     },
@@ -101,6 +111,119 @@ export const getAmcCustomers = async (req: Request, res: Response) => {
   });
 
   res.json({ status: "success", data: customers });
+};
+
+/**
+ * Create a new AMC visit manually
+ */
+export const createAmcVisit = async (req: Request, res: Response) => {
+  const { customerId, scheduledDate, timeSlot, assignedEmployeeId, notes } = req.body;
+
+  if (!customerId || !scheduledDate) {
+    throw new ApiError(400, "customerId and scheduledDate are required");
+  }
+
+  const custId = Number(customerId);
+  const customer = await prisma.customer.findUnique({
+    where: { id: custId }
+  });
+
+  if (!customer) {
+    throw new ApiError(404, "Customer not found");
+  }
+
+  const normalizedEmployeeId = normalizeAssignedEmployeeId(assignedEmployeeId);
+  const dateObj = new Date(scheduledDate);
+  if (timeSlot) {
+    const [hours, minutes] = timeSlot.replace(/(AM|PM|\s)/gi, "").split(":").map(Number);
+    if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+      const isPM = /PM/i.test(timeSlot) && hours < 12;
+      const isAM = /AM/i.test(timeSlot) && hours === 12;
+      const adjustedHours = isPM ? hours + 12 : (isAM ? 0 : hours);
+      dateObj.setHours(adjustedHours, minutes, 0, 0);
+    }
+  }
+
+  // Find count of existing visits for this customer in the month to set cleaningNumber
+  const monthStart = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
+  const monthEnd = new Date(dateObj.getFullYear(), dateObj.getMonth() + 1, 0, 23, 59, 59);
+  const existingVisitsCount = await prisma.amcVisit.count({
+    where: {
+      customerId: custId,
+      scheduledDate: {
+        gte: monthStart,
+        lte: monthEnd
+      }
+    }
+  });
+
+  const visit = await prisma.amcVisit.create({
+    data: {
+      customerId: custId,
+      scheduledDate: dateObj,
+      status: AmcVisitStatus.PENDING,
+      assignedEmployeeId: normalizedEmployeeId,
+      timeSlot: timeSlot || "09:00",
+      cleaningNumber: existingVisitsCount + 1,
+      notes: notes || null
+    },
+    include: {
+      customer: {
+        select: {
+          fullName: true,
+          city: true,
+          phoneNumber: true,
+          apartmentId: true,
+          apartment: true
+        }
+      },
+      assignedEmployee: {
+        select: {
+          id: true,
+          fullName: true,
+          phoneNumber: true
+        }
+      }
+    }
+  });
+
+  const authUserId = req.auth?.userId || "system";
+  const userObj = await prisma.user.findUnique({ where: { id: authUserId } });
+  const userName = userObj?.fullName || req.auth?.loginId || "System";
+
+  await createAdminNotification({
+    type: "CLEANING_SCHEDULE",
+    message: `${userName} created a new AMC cleaning visit for customer ${customer.fullName} scheduled for ${dateObj.toLocaleDateString()}`,
+    employeeId: authUserId,
+  });
+
+  if (visit.assignedEmployee) {
+    const dateStr = visit.scheduledDate.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+    const phoneInfo = visit.assignedEmployee.phoneNumber ? ` (Phone: ${visit.assignedEmployee.phoneNumber})` : "";
+    const customerMessage = `An employee is scheduled for your AMC Cleaning. Details:
+- Task: AMC Cleaning
+- Scheduled Time: ${dateStr}
+- Assigned Employee: ${visit.assignedEmployee.fullName}${phoneInfo}`;
+
+    await createCustomerNotification({
+      customerId: custId,
+      type: "SERVICE_SCHEDULED",
+      message: customerMessage,
+    });
+  }
+
+  const hours = String(dateObj.getHours()).padStart(2, "0");
+  const minutes = String(dateObj.getMinutes()).padStart(2, "0");
+  const formattedVisit = {
+    ...visit,
+    scheduledTime: `${hours}:${minutes}`,
+    assignedEmployee: visit.assignedEmployee ? {
+      id: visit.assignedEmployee.id,
+      name: visit.assignedEmployee.fullName
+    } : null
+  };
+
+  res.status(201).json({ status: "success", data: formattedVisit });
 };
 
 /**

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Swayog Sites Map</title>
+    <link rel="stylesheet" href="leaflet.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #f1f5f9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #map {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #e2e8f0;
+        }
+        .swayog-marker {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: 3px solid #ffffff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            font-size: 18px;
+            font-weight: 700;
+            color: #ffffff;
+            cursor: pointer;
+            transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .swayog-marker:hover, .swayog-marker:active {
+            transform: scale(1.22);
+        }
+        .marker-amc {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        .marker-complaint-pending {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        .marker-complaint-scheduled {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+            padding: 4px;
+        }
+        .leaflet-popup-content {
+            margin: 8px 12px;
+            line-height: 1.4;
+        }
+        .popup-title {
+            font-weight: 700;
+            font-size: 14px;
+            color: #0f172a;
+            margin-bottom: 2px;
+        }
+        .popup-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 6px;
+        }
+        .popup-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .badge-amc { background: #d1fae5; color: #065f46; }
+        .badge-pending { background: #fee2e2; color: #991b1b; }
+        .badge-scheduled { background: #dbeafe; color: #1e40af; }
+        .popup-btn {
+            display: block;
+            width: 100%;
+            text-align: center;
+            background: #0284c7;
+            color: white;
+            border-radius: 6px;
+            padding: 6px 0;
+            font-size: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script src="leaflet.js"></script>
+    <script>
+        console.log("Initializing Leaflet map...");
+        var map = L.map('map', {
+            zoomControl: false,
+            attributionControl: false
+        }).setView([18.5204, 73.8567], 7);
+        console.log("Leaflet map created!");
+
+        // Add zoom control at top-right
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // Standard High-Def OpenStreetMap Tiles (No watermark, free)
+        var osmLayer = L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        var markersLayer = L.layerGroup().addTo(map);
+
+        setTimeout(function() {
+            map.invalidateSize();
+        }, 200);
+
+        window.updateMapPins = function(pinsJson) {
+            console.log("updateMapPins called");
+            var pins = [];
+            try {
+                pins = typeof pinsJson === 'string' ? JSON.parse(pinsJson) : pinsJson;
+                console.log("Pins parsed, count = " + (pins ? pins.length : 0));
+            } catch (e) {
+                console.error("Failed to parse pinsJson", e);
+                return;
+            }
+
+            if (!pins || pins.length === 0) {
+                console.log("No pins to render, keeping current markers");
+                return;
+            }
+
+            markersLayer.clearLayers();
+
+            var bounds = [];
+            pins.forEach(function(pin) {
+                if (pin.lat == null || pin.lng == null) return;
+
+                var markerClass = 'marker-amc';
+                var badgeClass = 'badge-amc';
+                var badgeText = 'AMC Site';
+                var iconSymbol = '✓';
+
+                if (pin.type === 'complaint') {
+                    if (pin.status === 'pending') {
+                        markerClass = 'marker-complaint-pending';
+                        badgeClass = 'badge-pending';
+                        badgeText = 'Pending Complaint';
+                        iconSymbol = '!';
+                    } else {
+                        markerClass = 'marker-complaint-scheduled';
+                        badgeClass = 'badge-scheduled';
+                        badgeText = 'Scheduled Complaint';
+                        iconSymbol = '📅';
+                    }
+                }
+
+                var htmlIcon = '<div class="swayog-marker ' + markerClass + '">' + iconSymbol + '</div>';
+                var customIcon = L.divIcon({
+                    html: htmlIcon,
+                    className: '',
+                    iconSize: [42, 42],
+                    iconAnchor: [21, 21]
+                });
+
+                var marker = L.marker([pin.lat, pin.lng], { icon: customIcon });
+
+                var popupContent = '<div class="popup-title">' + (pin.title || 'Site') + '</div>' +
+                    '<div class="popup-subtitle">' + (pin.subtitle || '') + '</div>' +
+                    '<span class="popup-badge ' + badgeClass + '">' + badgeText + '</span>' +
+                    '<a class="popup-btn" onclick="onDetailsClick(\'' + pin.id + '\', \'' + pin.type + '\')">View Details</a>';
+
+                marker.bindPopup(popupContent);
+
+                marker.on('click', function() {
+                    if (window.AndroidBridge && window.AndroidBridge.onPinClick) {
+                        window.AndroidBridge.onPinClick(pin.id, pin.type);
+                    }
+                });
+
+                markersLayer.addLayer(marker);
+                bounds.push([pin.lat, pin.lng]);
+            });
+
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 13 });
+            }
+        };
+
+        window.onDetailsClick = function(id, type) {
+            if (window.AndroidBridge && window.AndroidBridge.onPinClick) {
+                window.AndroidBridge.onPinClick(id, type);
+            }
+        };
+
+        // Notify Android that map is ready
+        if (window.AndroidBridge && window.AndroidBridge.onMapReady) {
+            window.AndroidBridge.onMapReady();
+        }
+    </script>
+</body>
+</html>

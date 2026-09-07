@@ -51,11 +51,21 @@ class AmcManagementViewModel @Inject constructor(
                 }
                 
                 // Load employees
-                 val employeesResult = employeeRepository.getInternalUsers()
+                val employeesResult = employeeRepository.getInternalUsers()
                 if (employeesResult.isSuccess) {
                     _employees.value = employeesResult.getOrNull() ?: emptyList()
                 } else {
                     _errorMessage.value = "Failed to load employees: ${employeesResult.exceptionOrNull()?.message}"
+                }
+
+                // Load AMC visits
+                val visitsResult = if (currentCustomerId != null) {
+                    customerRepository.getSubAdminAmcVisits(currentCustomerId)
+                } else {
+                    customerRepository.getAmcVisits()
+                }
+                if (visitsResult.isSuccess) {
+                    _amcVisits.value = visitsResult.getOrNull() ?: emptyList()
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "Error loading data: ${e.message}"
@@ -101,7 +111,10 @@ class AmcManagementViewModel @Inject constructor(
         }
     }
     
+    private var currentCustomerId: Int? = null
+
     fun loadAmcVisits(customerId: Int? = null) {
+        currentCustomerId = customerId
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -124,13 +137,27 @@ class AmcManagementViewModel @Inject constructor(
         }
     }
     
+    fun createAmcVisit(request: com.swayog.employee.data.model.CreateAmcVisitRequest, onComplete: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val result = customerRepository.createAmcVisit(request)
+                onComplete(result.map { })
+                if (result.isSuccess) {
+                    loadAmcVisits(currentCustomerId)
+                }
+            } catch (e: Exception) {
+                onComplete(Result.failure(e))
+            }
+        }
+    }
+
     fun updateAmcVisit(visitId: String, request: com.swayog.employee.data.model.UpdateAmcVisitRequest, onComplete: (Result<Unit>) -> Unit) {
         viewModelScope.launch {
             try {
                 val result = customerRepository.updateAmcVisit(visitId, request)
                 onComplete(result.map { })
                 if (result.isSuccess) {
-                    loadAmcVisits()
+                    loadAmcVisits(currentCustomerId)
                 }
             } catch (e: Exception) {
                 onComplete(Result.failure(e))
@@ -144,7 +171,7 @@ class AmcManagementViewModel @Inject constructor(
                 val result = customerRepository.markAmcVisitDone(visitId, visitNotes, beforeImageUrl, afterImageUrl)
                 onComplete(result.map { })
                 if (result.isSuccess) {
-                    loadAmcVisits()
+                    loadAmcVisits(currentCustomerId)
                 }
             } catch (e: Exception) {
                 onComplete(Result.failure(e))

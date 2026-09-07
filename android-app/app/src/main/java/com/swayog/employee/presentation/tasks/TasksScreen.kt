@@ -869,6 +869,7 @@ fun TaskDetailDialog(
         else -> "REGULAR"
     }
 
+
     // Helper to get current GPS, watermark the bitmap, and convert to base64
     fun processPhoto(bitmap: Bitmap, type: String, addressOverride: String? = null) {
         coroutineScope.launch {
@@ -955,7 +956,6 @@ fun TaskDetailDialog(
             }
         }
     }
-
 
     // Gallery launcher (returns a Uri)
     val galleryLauncher = rememberLauncherForActivityResult(

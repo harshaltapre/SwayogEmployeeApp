@@ -33,6 +33,7 @@ import com.swayog.employee.data.model.ServiceRequest
 import com.swayog.employee.presentation.common.components.*
 
 import com.google.maps.android.clustering.ClusterItem
+import com.swayog.employee.presentation.subadmin.components.InteractiveMapView
 
 sealed class MapPinType : ClusterItem {
     data class Amc(val customer: Customer) : MapPinType() {
@@ -68,6 +69,7 @@ fun SubAdminMapScreen(
     var selectedComplaintToSchedule by remember { mutableStateOf<ServiceRequest?>(null) }
     var isScheduleOpen by remember { mutableStateOf(false) }
     var isPerformingAction by remember { mutableStateOf(false) }
+    var useGoogleMaps by remember { mutableStateOf(false) }
 
     val activePins = remember(customers, complaints, selectedFilter) {
         val cityCoords = mapOf(
@@ -144,6 +146,19 @@ fun SubAdminMapScreen(
                     IconButton(onClick = onNavigateToEmployees) {
                         Icon(Icons.Default.People, contentDescription = "Technicians")
                     }
+                    IconButton(onClick = {
+                        useGoogleMaps = !useGoogleMaps
+                        if (useGoogleMaps) {
+                            Toast.makeText(context, "Switched to Google Maps (requires active API key)", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Switched to OpenStreetMap (Live tiles)", Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Icon(
+                            if (useGoogleMaps) Icons.Default.Layers else Icons.Default.Map,
+                            contentDescription = "Toggle Map Provider"
+                        )
+                    }
                     IconButton(onClick = { viewModel.loadData() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
@@ -164,55 +179,111 @@ fun SubAdminMapScreen(
                     Tab(selected = selectedFilter == 2, onClick = { selectedFilter = 2; selectedLocationPins = null }, text = { Text("Complaints") })
                 }
 
-                // Google Map
-                GoogleMap(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    cameraPositionState = cameraPositionState
-                ) {
-                    Clustering(
-                        items = activePins,
-                        onClusterClick = { cluster ->
-                            selectedLocationPins = cluster.items.toList()
-                            true
+                if (!useGoogleMaps) {
+                    // Interactive Leaflet / OpenStreetMap (Live vector tiles, no API key required)
+                    InteractiveMapView(
+                        pins = activePins,
+                        onPinClick = { id, type ->
+                            val found = activePins.find { pin ->
+                                when (pin) {
+                                    is MapPinType.Amc -> pin.customer.id.toString() == id && type == "amc"
+                                    is MapPinType.Complaint -> pin.request.id.toString() == id && type == "complaint"
+                                }
+                            }
+                            found?.let { selectedLocationPins = listOf(it) }
                         },
-                        onClusterItemClick = { item ->
-                            selectedLocationPins = listOf(item)
-                            true
-                        },
-                        clusterItemContent = { item ->
-                            val (color, icon) = when (item) {
-                                is MapPinType.Amc -> Color(0xFF10B981) to "✓" // Green for AMC
-                                is MapPinType.Complaint -> {
-                                    if (item.request.status.lowercase() == "pending") {
-                                        Color(0xFFEF4444) to "!" // Red for pending
-                                    } else {
-                                        Color(0xFF3B82F6) to "📅" // Blue for scheduled
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
+                } else {
+                    // Google Map
+                    GoogleMap(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        cameraPositionState = cameraPositionState
+                    ) {
+                        Clustering(
+                            items = activePins,
+                            onClusterClick = { cluster ->
+                                selectedLocationPins = cluster.items.toList()
+                                true
+                            },
+                            onClusterItemClick = { item ->
+                                selectedLocationPins = listOf(item)
+                                true
+                            },
+                            clusterItemContent = { item ->
+                                val (color, icon) = when (item) {
+                                    is MapPinType.Amc -> Color(0xFF10B981) to "✓" // Green for AMC
+                                    is MapPinType.Complaint -> {
+                                        if (item.request.status.lowercase() == "pending") {
+                                            Color(0xFFEF4444) to "!" // Red for pending
+                                        } else {
+                                            Color(0xFF3B82F6) to "📅" // Blue for scheduled
+                                        }
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(Color.White, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .background(color, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = icon,
+                                            color = Color.White,
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                             }
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .background(Color.White, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .background(color, CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = icon,
-                                        color = Color.White,
-                                        fontSize = 20.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
+                        )
+                    }
+                }
+            }
+
+            // Map Provider Pill Switcher
+            Surface(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                shape = RoundedCornerShape(20.dp),
+                shadowElevation = 4.dp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 62.dp, end = 12.dp)
+                    .clickable {
+                        useGoogleMaps = !useGoogleMaps
+                        if (useGoogleMaps) {
+                            Toast.makeText(context, "Switched to Google Maps (requires active API key)", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Switched to OpenStreetMap (Live tiles)", Toast.LENGTH_SHORT).show()
                         }
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (useGoogleMaps) Icons.Default.Layers else Icons.Default.Public,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (useGoogleMaps) "Google Maps" else "OpenStreetMap",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }

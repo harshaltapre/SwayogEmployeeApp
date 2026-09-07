@@ -66,7 +66,33 @@ router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, r
   res.json({ photo: user?.profileImageUrl || null });
 }));
 
-router.post("/profile-photo", authenticateAccessToken, upload.single("file"), asyncHandler(uploadMyProfileImageHandler));
+router.post("/profile-photo", authenticateAccessToken, upload.single("file"), asyncHandler(async (req, res) => {
+  const userId = req.auth!.userId;
+  let photoUrl: string | null = null;
+
+  if (req.file) {
+    const ext = path.extname(req.file.originalname) || ".jpg";
+    const filename = `profile-${userId}-${Date.now()}${ext}`;
+    const uploadsDir = path.join(process.cwd(), "uploads", "profiles");
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(uploadsDir, filename), req.file.buffer);
+    photoUrl = `/uploads/profiles/${filename}`;
+  } else if (req.body?.photo) {
+    photoUrl = req.body.photo;
+    savePhoto(userId, photoUrl);
+  }
+
+  if (photoUrl) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { profileImageUrl: photoUrl },
+    });
+  }
+
+  res.json({ success: true, photo: photoUrl });
+}));
 
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {

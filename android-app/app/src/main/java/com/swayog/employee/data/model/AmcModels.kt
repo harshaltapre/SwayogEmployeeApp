@@ -3,32 +3,43 @@ package com.swayog.employee.data.model
 import com.google.gson.annotations.SerializedName
 
 data class AmcCustomerInfo(
-    val fullName: String,
-    val city: String?,
-    val phoneNumber: String?,
-    val address: String? = null
+    val fullName: String? = null,
+    val city: String? = null,
+    val phoneNumber: String? = null,
+    val address: String? = null,
+    val apartmentId: Int? = null,
+    val apartment: Apartment? = null
+)
+
+data class AssignedEmployeeInfo(
+    val id: String? = null,
+    val name: String? = null,
+    val fullName: String? = null,
+    val phoneNumber: String? = null
 )
 
 data class AmcVisit(
-    val id: String,
-    val customerId: Int,
-    val scheduledDate: String,
-    val status: String,
-    val completedAt: String?,
-    val notes: String?,
-    val assignedEmployeeId: String?,
-    val cleaningNumber: Int?,
-    val timeSlot: String?,
-    val completedByEmployeeId: String?,
-    val completedByName: String?,
-    val visitNotes: String?,
-    val beforeImageUrl: String?,
-    val afterImageUrl: String?,
+    val id: String = "",
+    val customerId: Int = 0,
+    val scheduledDate: String = "",
+    val status: String = "PENDING",
+    val completedAt: String? = null,
+    val notes: String? = null,
+    val assignedEmployeeId: String? = null,
+    val cleaningNumber: Int? = null,
+    val timeSlot: String? = null,
+    val scheduledTime: String? = null,
+    val completedByEmployeeId: String? = null,
+    val completedByName: String? = null,
+    val visitNotes: String? = null,
+    val beforeImageUrl: String? = null,
+    val afterImageUrl: String? = null,
     val sitePhotos: List<String>? = null,
     val images: List<String>? = null,
-    val createdAt: String,
-    val updatedAt: String,
-    val customer: AmcCustomerInfo? = null
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
+    val customer: AmcCustomerInfo? = null,
+    val assignedEmployee: AssignedEmployeeInfo? = null
 )
 
 data class CreateAmcVisitRequest(

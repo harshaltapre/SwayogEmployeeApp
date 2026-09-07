@@ -12,5 +12,7 @@ data class OutboxQueueEntity(
     val payload: String,
     val createdAt: String,
     val retryCount: Int = 0,
-    val isSynced: Boolean = false
+    val isSynced: Boolean = false,
+    val clientUploadId: String? = null // Idempotency key for duplicate prevention
 )
+

@@ -502,6 +502,7 @@ class TaskRepository @Inject constructor(
         sitePhotos: List<String>? = null
     ): Result<Task> {
         val cleanTaskId = sanitizeTaskId(taskId)
+        val clientUploadId = UUID.randomUUID().toString()
         val photosToSubmit = (sitePhotos ?: images)?.filter { it.isNotBlank() }
         if (cleanTaskId.startsWith("amc_")) {
             val visitId = cleanTaskId.replace("amc_", "")
@@ -565,12 +566,12 @@ class TaskRepository @Inject constructor(
                     taskDao.updateTask(entity)
                     Result.success(completedTask)
                 } else {
-                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
+                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, clientUploadId)
                     saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
                     Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
                 }
             } catch (e: Exception) {
-                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
+                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, clientUploadId)
                 saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
                 Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
             }
@@ -592,7 +593,8 @@ class TaskRepository @Inject constructor(
                     images = images,
                     sitePhotos = sitePhotos ?: images,
                     beforeImages = beforeImages,
-                    afterImages = afterImages
+                    afterImages = afterImages,
+                    clientUploadId = clientUploadId
                 )
                 android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: RawTaskId=$taskId, CleanTaskId=$cleanTaskId, Endpoint=PATCH tasks/$cleanTaskId/complete, sitePhotosCount=${req.sitePhotos?.size}, message=${req.message}")
                 val response = apiService.completeTask(cleanTaskId, req)
@@ -711,7 +713,8 @@ class TaskRepository @Inject constructor(
                         taskType = taskType,
                         images = images,
                         beforeImages = beforeImages,
-                        afterImages = afterImages
+                        afterImages = afterImages,
+                        clientUploadId = clientUploadId
                     )
                     saveCompletionLocally(
                         taskId = taskId,
@@ -746,7 +749,8 @@ class TaskRepository @Inject constructor(
                     taskType = taskType,
                     images = images,
                     beforeImages = beforeImages,
-                    afterImages = afterImages
+                    afterImages = afterImages,
+                    clientUploadId = clientUploadId
                 )
                 saveCompletionLocally(
                     taskId = taskId,
@@ -781,7 +785,8 @@ class TaskRepository @Inject constructor(
                 taskType = taskType,
                 images = images,
                 beforeImages = beforeImages,
-                afterImages = afterImages
+                afterImages = afterImages,
+                clientUploadId = clientUploadId
             )
             saveCompletionLocally(
                 taskId = taskId,
@@ -859,7 +864,8 @@ class TaskRepository @Inject constructor(
         taskType: String? = null,
         images: List<String>? = null,
         beforeImages: List<String>? = null,
-        afterImages: List<String>? = null
+        afterImages: List<String>? = null,
+        clientUploadId: String? = null
     ) {
         val cleanTaskId = sanitizeTaskId(taskId)
         val beforeImageFilePath = beforeImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_before") }
@@ -879,6 +885,8 @@ class TaskRepository @Inject constructor(
         val jsonArrayBeforeFilePaths = JSONObject.wrap(beforeImageFilePaths ?: emptyList<String>())
         val jsonArrayAfterFilePaths = JSONObject.wrap(afterImageFilePaths ?: emptyList<String>())
 
+        val effectiveUploadId = clientUploadId ?: UUID.randomUUID().toString()
+
         val payload = JSONObject().apply {
             put("taskId", cleanTaskId)
             put("message", completionMessage)
@@ -893,6 +901,7 @@ class TaskRepository @Inject constructor(
             put("sitePhotoFilePaths", jsonArraySitePhotoFilePaths)
             put("beforeImagesFilePaths", jsonArrayBeforeFilePaths)
             put("afterImagesFilePaths", jsonArrayAfterFilePaths)
+            put("clientUploadId", effectiveUploadId)
         }.toString()
         
         val outboxItem = OutboxQueueEntity(
@@ -900,7 +909,8 @@ class TaskRepository @Inject constructor(
             endpoint = "tasks/$cleanTaskId/complete",
             method = "PATCH",
             payload = payload,
-            createdAt = System.currentTimeMillis().toString()
+            createdAt = System.currentTimeMillis().toString(),
+            clientUploadId = effectiveUploadId
         )
         outboxQueueDao.insertItem(outboxItem)
 
@@ -1223,8 +1233,8 @@ class TaskRepository @Inject constructor(
                                                 isSynced = true,
                                                 invoiceJson = task.invoice?.let { gson.toJson(it) },
                                                 taskType = task.taskType ?: json.optString("taskType").takeIf { it.isNotEmpty() } ?: if (sitePhotosList.isNotEmpty()) "SITE_VISIT" else null,
-                                                imagesJson = (task.sitePhotos ?: task.images ?: sitePhotosList)?.let { gson.toJson(it) },
-                                                sitePhotosJson = (task.sitePhotos ?: task.images ?: sitePhotosList)?.let { gson.toJson(it) },
+                                                imagesJson = gson.toJson(task.sitePhotos ?: task.images ?: sitePhotosList),
+                                                sitePhotosJson = gson.toJson(task.sitePhotos ?: task.images ?: sitePhotosList),
                                                 assignedEmployeeName = task.assignedEmployeeName,
                                                 assignedEmployeePhone = task.assignedEmployeePhone
                                             )
@@ -1357,6 +1367,44 @@ class TaskRepository @Inject constructor(
         }
     }
 
+    /**
+     * Fetches all R2-stored images for a specific task.
+     * Maps to GET /api/v1/tasks/:taskId/images on the backend.
+     */
+    suspend fun getTaskImages(taskId: String): Result<List<TaskImage>> {
+        val cleanTaskId = sanitizeTaskId(taskId)
+        return try {
+            val response = apiService.getTaskImages(cleanTaskId)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!.images)
+            } else {
+                Result.failure(Exception("Failed to fetch task images: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to fetch task images: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    /**
+     * Resolves an R2 object key or legacy image URL into a viewable HTTP endpoint.
+     */
+    fun resolveImageUrl(urlOrKey: String?): String? {
+        if (urlOrKey.isNullOrBlank()) return null
+        val trimmed = urlOrKey.trim()
+        val baseUrl = com.swayog.employee.BuildConfig.API_BASE_URL.removeSuffix("/").removeSuffix("/api/v1")
+        return when {
+            trimmed.startsWith("data:") || trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
+            trimmed.startsWith("tasks/") -> {
+                val encoded = java.net.URLEncoder.encode(trimmed, "UTF-8")
+                "$baseUrl/api/v1/tasks/images/view?key=$encoded"
+            }
+            else -> {
+                val clean = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
+                "$baseUrl$clean"
+            }
+        }
+    }
+
     private suspend fun saveTaskLocally(task: Task) {
         val entity = TaskEntity(
             id = task.id,
@@ -1398,7 +1446,7 @@ class TaskRepository @Inject constructor(
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             "offline_sync_work",
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.KEEP,
             syncRequest
         )
         android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work after task queue update")

@@ -111,47 +111,9 @@ async function main() {
     });
   }
 
-  // 5. Seed ServiceRequests (Complaints)
-  const complaintData = [
-    {
-      customerId: customers[0].id,
-      title: "Inverter Offline",
-      description: "Inverter device sn is offline since morning, no generation logged.",
-      status: ServiceRequestStatus.PENDING,
-      address: customers[0].address,
-    },
-    {
-      customerId: customers[1].id,
-      title: "Panel Cleaning Required",
-      description: "Lots of dust gathered on solar panels. Generation dropped by 20%.",
-      status: ServiceRequestStatus.SCHEDULED,
-      scheduledDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      scheduledTime: "11:00 AM",
-      address: customers[1].address,
-    },
-    {
-      customerId: customers[2].id,
-      title: "Fluctuating Voltage",
-      description: "ACDB reading shows irregular voltage inputs. Grid sync failures.",
-      status: ServiceRequestStatus.PENDING,
-      address: customers[2].address,
-    },
-    {
-      customerId: customers[3 % customers.length].id,
-      title: "Cable Loose Connection",
-      description: "Visual wire sagging near base plate, safety check needed.",
-      status: ServiceRequestStatus.COMPLETED,
-      scheduledDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      scheduledTime: "03:30 PM",
-      address: customers[3 % customers.length].address,
-    }
-  ];
-
-  for (const c of complaintData) {
-    await prisma.serviceRequest.create({ data: c });
-  }
-
-  console.log("Seeding complete! Seeded 5 Tasks and 4 ServiceRequests (Complaints).");
+  // 5. ServiceRequests should only be created when real customers submit requests from the customer portal.
+  // Random / test service requests must never be auto-seeded.
+  console.log("Seeding complete! Seeded Tasks. No random ServiceRequests seeded.");
 }
 
 main()

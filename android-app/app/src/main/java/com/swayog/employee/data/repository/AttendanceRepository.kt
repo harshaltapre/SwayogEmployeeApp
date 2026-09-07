@@ -290,23 +290,8 @@ class AttendanceRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.snapshot != null) {
                 Result.success(response.body()!!.snapshot!!)
             } else {
-                // Return mock performance if API fails (useful for mock testing)
-                Result.success(PerformanceSnapshot(
-                    id = "perf-mock",
-                    employeeId = "mock-123",
-                    month = month,
-                    year = year,
-                    attendancePercent = 91.0,
-                    taskCompletionRate = 85.0,
-                    avgWorkScore = 4.2,
-                    totalHoursLogged = 160.0,
-                    performanceScore = 4.5,
-                    daysPresent = 20,
-                    daysAbsent = 2,
-                    tasksAssigned = 45,
-                    tasksCompleted = 42,
-                    workSubmissions = 38
-                ))
+                val errorMsg = response.errorBody()?.string() ?: "Failed to fetch performance snapshot (${response.code()})"
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)

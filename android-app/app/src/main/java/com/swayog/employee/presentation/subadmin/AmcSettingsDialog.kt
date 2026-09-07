@@ -54,7 +54,14 @@ fun AmcSettingsDialog(
         "09:00", "09:00", "09:00", "09:00", "09:00", "09:00", "09:00", "09:00"
     ) }
     
-    var scheduleMonth by remember { mutableStateOf("2026-07") }
+    val currentYearMonth = remember {
+        try {
+            java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"))
+        } catch (_: Exception) {
+            "2026-09"
+        }
+    }
+    var scheduleMonth by remember { mutableStateOf(currentYearMonth) }
     var nextSurveyDate by remember { mutableStateOf("") }
     
     val clientTypes = listOf("pre_paid", "post_paid", "free_service", "corporate", "on_call")
@@ -321,7 +328,14 @@ fun ApartmentAmcSettingsDialog(
         "09:00", "09:00", "09:00", "09:00", "09:00", "09:00", "09:00", "09:00"
     ) }
     
-    var scheduleMonth by remember { mutableStateOf("2026-07") }
+    val currentYearMonth = remember {
+        try {
+            java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"))
+        } catch (_: Exception) {
+            "2026-09"
+        }
+    }
+    var scheduleMonth by remember { mutableStateOf(currentYearMonth) }
     var nextSurveyDate by remember { mutableStateOf("") }
     
     val clientTypes = listOf("pre_paid", "post_paid", "free_service", "corporate", "on_call")

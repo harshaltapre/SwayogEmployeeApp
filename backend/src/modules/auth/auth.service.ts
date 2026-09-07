@@ -356,7 +356,10 @@ export async function login(input: LoginInput) {
       // Specialized cases:
       // 1. SUB_ADMIN users should be allowed to login using the "EMPLOYEE" role selection
       // 2. PARTNER users / EPC Contractor users logging in via "Partner" role selection
-      const isSubAdminLoggingAsEmployee = (user.role === UserRole.SUB_ADMIN && (input.role as string) === "EMPLOYEE");
+      const isSubAdminLoggingAsEmployee = (
+        (user.role === UserRole.SUB_ADMIN || user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN) &&
+        (input.role as string) === "EMPLOYEE"
+      );
       const isPartnerLoggingIn = (
         (user.role === UserRole.PARTNER && ((input.role as string) === "PARTNER" || (input.role as string) === "EMPLOYEE")) ||
         (user.role === UserRole.EMPLOYEE && (input.role as string) === "PARTNER" && (

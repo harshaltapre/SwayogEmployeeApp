@@ -50,7 +50,10 @@ fun DashboardScreen(
     onNavigateToSubAdminComplaints: () -> Unit,
     onNavigateToSubAdminCalendar: () -> Unit,
     onNavigateToSubAdminEmployees: () -> Unit,
-    onNavigateToSubAdminFinancials: () -> Unit,
+    onNavigateToSubAdminFinancials: () -> Unit = {},
+    onNavigateToAmcManagement: () -> Unit = {},
+    onNavigateToInverterData: () -> Unit = {},
+
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val dashboardState by viewModel.dashboardState.collectAsState()
@@ -64,7 +67,10 @@ fun DashboardScreen(
     val serverUrl by viewModel.serverUrl.collectAsState()
 
     val isServiceCoordinator = remember(userRole, jobRole) {
-        userRole?.uppercase() == "SUB_ADMIN" || jobRole?.replace(" ", "")?.lowercase() == "servicecoordinator"
+        val r = userRole?.uppercase() ?: ""
+        val j = jobRole?.lowercase()?.replace(" ", "")?.replace("_", "") ?: ""
+        r in listOf("SUB_ADMIN", "ADMIN", "SUPER_ADMIN") ||
+        j == "servicecoordinator" || j.contains("amc") || j.contains("coordinator") || j.contains("subadmin")
     }
     var currentTab by remember { mutableIntStateOf(0) }
 
@@ -198,6 +204,7 @@ fun DashboardScreen(
                                 onNavigateToFinancials = onNavigateToSubAdminFinancials,
                                 onNavigateToAttendance = onNavigateToAttendance,
                                 onNavigateToDailyCommits = onNavigateToDailyCommit,
+                                onNavigateToAmcManagement = onNavigateToAmcManagement,
                                 modifier = Modifier.padding(paddingValues)
                             )
                         }

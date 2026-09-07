@@ -3,31 +3,31 @@ package com.swayog.employee.data.model
 import com.google.gson.annotations.SerializedName
 
 data class Customer(
-    val id: Int,
-    val customerCode: String,
+    val id: Int = 0,
+    val customerCode: String = "",
     @SerializedName("name", alternate = ["fullName"])
-    val fullName: String,
-    val email: String,
+    val fullName: String = "",
+    val email: String = "",
     @SerializedName("phone", alternate = ["phoneNumber"])
-    val phoneNumber: String,
-    val city: String?,
-    val address: String?,
-    val systemSizeKw: Float?,
-    val installationDate: String?,
-    val warrantyExpiry: String?,
-    val panelBrand: String?,
-    val inverterBrand: String?,
-    val inverterModel: String?,
-    val amcStatus: String,
-    val amcExpiryDate: String?,
-    val status: String,
-    val projectStage: Int?,
-    val latitude: Double?,
-    val longitude: Double?,
-    val inverterLoginId: String?,
-    val inverterPassword: String?,
-    val inverterApiKey: String?,
-    val inverterDeviceSn: String?,
+    val phoneNumber: String = "",
+    val city: String? = null,
+    val address: String? = null,
+    val systemSizeKw: Float? = null,
+    val installationDate: String? = null,
+    val warrantyExpiry: String? = null,
+    val panelBrand: String? = null,
+    val inverterBrand: String? = null,
+    val inverterModel: String? = null,
+    val amcStatus: String = "NONE",
+    val amcExpiryDate: String? = null,
+    val status: String = "ACTIVE",
+    val projectStage: Int? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val inverterLoginId: String? = null,
+    val inverterPassword: String? = null,
+    val inverterApiKey: String? = null,
+    val inverterDeviceSn: String? = null,
     val cleaningsPerMonth: Int? = null,
     val completedVisits: Int? = null,
     val pendingVisits: Int? = null,
@@ -56,10 +56,10 @@ data class Customer(
 )
 
 data class Apartment(
-    val id: Int,
-    val name: String,
-    val address: String?,
-    val city: String?
+    val id: Int = 0,
+    val name: String = "",
+    val address: String? = null,
+    val city: String? = null
 )
 
 data class CustomerSummary(

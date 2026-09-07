@@ -10,9 +10,9 @@ object ImageUtils {
 
     @Suppress("UNUSED_PARAMETER")
     fun resolveImageModel(
-        context: Context,
+        context: Context? = null,
         photoUrl: String?,
-        serverUrl: String?
+        serverUrl: String? = null
     ): Any? {
         if (photoUrl.isNullOrBlank()) return null
 

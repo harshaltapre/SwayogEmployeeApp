@@ -3902,3 +3902,61 @@ export function useMarkCustomerNotificationRead(opts?: any) {
   });
 }
 
+export const getEmployeeNotificationsQueryKey = () => ["employee", "notifications"] as const;
+export const getEmployeeUnreadNotificationsCountQueryKey = () => ["employee", "notifications", "unread-count"] as const;
+
+export function useGetEmployeeNotifications(opts?: any) {
+  return useQuery<any[]>({
+    queryKey: getEmployeeNotificationsQueryKey(),
+    queryFn: async () => {
+      const apiBaseUrl = getEffectiveApiBaseUrl();
+      if (!apiBaseUrl) return [];
+      const response = await requestApi<any[]>("/employee/notifications");
+      return Array.isArray(response) ? response : (response as any)?.data || [];
+    },
+    ...opts?.query,
+  });
+}
+
+export function useGetEmployeeUnreadNotificationsCount(opts?: any) {
+  return useQuery<{ count: number }>({
+    queryKey: getEmployeeUnreadNotificationsCountQueryKey(),
+    queryFn: async () => {
+      const apiBaseUrl = getEffectiveApiBaseUrl();
+      if (!apiBaseUrl) return { count: 0 };
+      const response = await requestApi<any>("/employee/notifications/unread-count");
+      if (response && typeof response === "object") {
+        if ("count" in response) return response;
+        if ("data" in response && response.data && typeof response.data === "object" && "count" in response.data) return response.data;
+      }
+      return { count: 0 };
+    },
+    ...opts?.query,
+  });
+}
+
+export function useMarkEmployeeNotificationRead(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async (notificationId: string) => {
+      const apiBaseUrl = getEffectiveApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required." };
+      }
+      return await requestApi<any>(`/employee/notifications/${notificationId}/read`, {
+        method: "POST",
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: getEmployeeNotificationsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getEmployeeUnreadNotificationsCountQueryKey() });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+

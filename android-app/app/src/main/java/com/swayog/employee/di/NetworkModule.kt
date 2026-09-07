@@ -89,6 +89,7 @@ object NetworkModule {
                 if (refreshToken != null) {
                     val currentBaseUrl = request.url.newBuilder()
                         .encodedPath("/")
+                        .query(null)
                         .build()
                         .toString()
                     val refreshUrl = if (currentBaseUrl.endsWith("/")) {

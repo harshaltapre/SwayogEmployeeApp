@@ -103,12 +103,14 @@ data class CompleteTaskRequest(
     val images: List<String>? = null, // Multiple images for site visits
     val sitePhotos: List<String>? = null, // Site visit photo gallery
     val beforeImages: List<String>? = null, // Multiple before images for AMC visits
-    val afterImages: List<String>? = null // Multiple after images for AMC visits
+    val afterImages: List<String>? = null, // Multiple after images for AMC visits
+    val clientUploadId: String? = null // Idempotency key to prevent duplicate submissions
 )
 
 data class UpdateTaskPhotosRequest(
     val sitePhotos: List<String>
 )
+
 
 data class TaskAssignee(
     val id: String,

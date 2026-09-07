@@ -31,7 +31,10 @@ fun SwayogNavHost(
     onLogout: () -> Unit = {}
 ) {
     val isServiceCoordinator = androidx.compose.runtime.remember(userRole, jobRole) {
-        userRole?.uppercase() == "SUB_ADMIN" || jobRole?.replace(" ", "")?.lowercase() == "servicecoordinator"
+        val r = userRole?.uppercase() ?: ""
+        val j = jobRole?.lowercase()?.replace(" ", "")?.replace("_", "") ?: ""
+        r in listOf("SUB_ADMIN", "ADMIN", "SUPER_ADMIN") ||
+        j == "servicecoordinator" || j.contains("amc") || j.contains("coordinator") || j.contains("subadmin")
     }
     androidx.compose.runtime.LaunchedEffect(isLoggedIn) {
         if (!isLoggedIn && navController.currentDestination?.route != Screen.Login.route) {
@@ -65,6 +68,7 @@ fun SwayogNavHost(
             LaunchedEffect(navBackStackEntry) {
                 if (navController.currentDestination?.route == Screen.Dashboard.route) {
                     dashboardViewModel.refreshTodayAttendance()
+                    dashboardViewModel.retryLoading()
                 }
             }
 
@@ -105,6 +109,12 @@ fun SwayogNavHost(
                 },
                 onNavigateToSubAdminFinancials = {
                     navController.navigate(Screen.SubAdminFinancials.route)
+                },
+                onNavigateToAmcManagement = {
+                    navController.navigate(Screen.AmcManagement.route)
+                },
+                onNavigateToInverterData = {
+                    navController.navigate(Screen.InverterData.route)
                 }
             )
         }
@@ -171,6 +181,12 @@ fun SwayogNavHost(
                 onNavigateBack = {
                     navController.popBackStack()
                 }
+            )
+        }
+
+        composable(Screen.AmcManagement.route) {
+            AmcManagementScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -248,6 +264,7 @@ sealed class Screen(val route: String) {
     data object SubAdminMap : Screen("subadmin_map")
     data object SubAdminEmployees : Screen("subadmin_employees")
     data object SubAdminFinancials : Screen("subadmin_financials")
+    data object AmcManagement : Screen("amc_management")
     data object FaceEnrollment : Screen("face_enrollment")
     data object InverterData : Screen("inverter_data")
 }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 import javax.inject.Singleton
+import org.json.JSONObject
 
 
 
@@ -231,9 +232,13 @@ class CustomerRepository @Inject constructor(
                 Result.success(customers)
 
             } else {
-
-                Result.failure(Exception("Failed to fetch customers"))
-
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("details", "Failed to fetch customers (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to fetch customers (${response.code()})"
+                Result.failure(Exception(errorMsg))
             }
 
         } catch (e: Exception) {
@@ -290,9 +295,13 @@ class CustomerRepository @Inject constructor(
                 Result.success(customerSummary)
 
             } else {
-
-                Result.failure(Exception("Failed to fetch customer summary"))
-
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("details", "Failed to fetch customer summary (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to fetch customer summary (${response.code()})"
+                Result.failure(Exception(errorMsg))
             }
 
         } catch (e: Exception) {
@@ -335,7 +344,13 @@ class CustomerRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to fetch AMC customers"))
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("message", "Failed to fetch AMC customers (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to fetch AMC customers (${response.code()})"
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -511,10 +526,10 @@ class CustomerRepository @Inject constructor(
                 // Update local cache for the basic fields
                 val entity = CustomerEntity(
                     id = customer.id,
-                    customerCode = customer.customerCode,
-                    fullName = customer.fullName,
-                    email = customer.email,
-                    phoneNumber = customer.phoneNumber,
+                    customerCode = customer.customerCode ?: "",
+                    fullName = customer.fullName ?: "",
+                    email = customer.email ?: "",
+                    phoneNumber = customer.phoneNumber ?: "",
                     city = customer.city,
                     address = customer.address,
                     systemSizeKw = customer.systemSizeKw,
@@ -523,9 +538,9 @@ class CustomerRepository @Inject constructor(
                     panelBrand = customer.panelBrand,
                     inverterBrand = customer.inverterBrand,
                     inverterModel = customer.inverterModel,
-                    amcStatus = customer.amcStatus,
+                    amcStatus = customer.amcStatus ?: "NONE",
                     amcExpiryDate = customer.amcExpiryDate,
-                    status = customer.status,
+                    status = customer.status ?: "ACTIVE",
                     projectStage = customer.projectStage,
                     latitude = customer.latitude,
                     longitude = customer.longitude,
@@ -540,7 +555,13 @@ class CustomerRepository @Inject constructor(
                 
                 Result.success(customer)
             } else {
-                Result.failure(Exception(response.body()?.message ?: "Failed to update AMC settings"))
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("message", "Failed to update AMC settings (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to update AMC settings (${response.code()})"
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -560,8 +581,13 @@ class CustomerRepository @Inject constructor(
                 Result.success(response.body()!!.data!!)
 
             } else {
-
-                Result.failure(Exception("Failed to fetch AMC visits: ${response.message()}"))
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("message", "Failed to fetch AMC visits (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to fetch AMC visits (${response.code()})"
+                Result.failure(Exception(errorMsg))
 
             }
 
@@ -618,8 +644,13 @@ class CustomerRepository @Inject constructor(
                 Result.success(response.body()!!.data!!)
 
             } else {
-
-                Result.failure(Exception("Failed to fetch AMC visits: ${response.message()}"))
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("message", "Failed to fetch AMC visits (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to fetch AMC visits (${response.code()})"
+                Result.failure(Exception(errorMsg))
 
             }
 
@@ -638,7 +669,13 @@ class CustomerRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to update AMC visit: ${response.message()}"))
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("message", "Failed to update AMC visit (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to update AMC visit (${response.code()})"
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -651,7 +688,13 @@ class CustomerRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to create AMC visit: ${response.message()}"))
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("message", "Failed to create AMC visit (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to create AMC visit (${response.code()})"
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -669,7 +712,13 @@ class CustomerRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 Result.success(response.body()!!.data!!)
             } else {
-                Result.failure(Exception("Failed to mark AMC visit done: ${response.message()}"))
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("message", "Failed to mark AMC visit done (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to mark AMC visit done (${response.code()})"
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)

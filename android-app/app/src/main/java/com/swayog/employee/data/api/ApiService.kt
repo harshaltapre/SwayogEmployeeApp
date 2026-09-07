@@ -273,6 +273,23 @@ interface ApiService {
         @Path("taskId") taskId: String,
         @Body request: UpdateTaskPhotosRequest
     ): Response<ApiResponse<Task>>
+
+    /**
+     * Fetch all R2-stored images for a task.
+     * Returns TaskImage records with objectKey, url, geo-coordinates, and watermark metadata.
+     */
+    @GET("tasks/{taskId}/images")
+    suspend fun getTaskImages(
+        @Path("taskId") taskId: String
+    ): Response<TaskImagesResponse>
+
+    /**
+     * Lookup employee details by loginId, email, or phone.
+     */
+    @GET("employee/lookup")
+    suspend fun lookupEmployee(
+        @Query("identifier") identifier: String
+    ): Response<ApiResponse<Employee>>
     
     @POST("tasks/{taskId}/rate")
     suspend fun rateTask(
