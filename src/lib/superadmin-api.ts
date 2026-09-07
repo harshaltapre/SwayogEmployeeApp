@@ -85,7 +85,8 @@ export interface SAUser {
   createdAt: string;
   updatedAt: string;
   portalPassword?: string | null;
-  employeeProfile?: { jobRole: string; zone: string; monthlySalaryInr?: number | null } | null;
+  permissions?: string[];
+  employeeProfile?: { jobRole: string; zone: string; monthlySalaryInr?: number | null; permissions?: string[] } | null;
   partnerProfile?: { businessName: string; serviceZone: string } | null;
 }
 
@@ -112,6 +113,7 @@ export interface CreateUserInput {
   zone?: string;
   monthlySalaryInr?: number;
   businessName?: string;
+  permissions?: string[];
 }
 
 export interface UpdateUserInput {
@@ -124,6 +126,7 @@ export interface UpdateUserInput {
   jobRole?: string;
   zone?: string;
   monthlySalaryInr?: number;
+  permissions?: string[];
 }
 
 export interface ImportUserRow {
@@ -189,6 +192,9 @@ export const superAdminApi = {
 
   updateUser: (userId: string, data: UpdateUserInput) =>
     request<SAUser>("PATCH", `/users/${userId}`, data),
+
+  updateUserPermissions: (userId: string, permissions: string[]) =>
+    request<SAUser>("PATCH", `/users/${userId}/permissions`, { permissions }),
 
   deleteUser: (userId: string) =>
     request<{ success: boolean; message: string }>("DELETE", `/users/${userId}`),

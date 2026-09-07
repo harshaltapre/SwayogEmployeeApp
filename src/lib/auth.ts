@@ -70,6 +70,7 @@ function getSafeStoredUser(): User | null {
         reportingManagerId: parsed.reportingManagerId,
         employeeCode: parsed.employeeCode,
         loginId: parsed.loginId,
+        permissions: Array.isArray(parsed.permissions) ? parsed.permissions : [],
       };
     }
   } catch {
@@ -209,7 +210,7 @@ export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
 }
 
 
-interface User {
+export interface User {
   id: number | string;
   name: string;
   email: string;
@@ -222,6 +223,7 @@ interface User {
   reportingManagerId?: string | null;
   employeeCode?: string | null;
   loginId?: string | null;
+  permissions?: string[];
 }
 
 interface AuthState {
@@ -231,10 +233,11 @@ interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (token: string, user: User, refreshToken?: string) => void;
+  updateUser: (partialUser: Partial<User>) => void;
   logout: () => void;
 }
 
-export const useAuth = create<AuthState>((set) => ({
+export const useAuth = create<AuthState>((set, get) => ({
   user: getSafeStoredUser(),
   token: getSafeStoredValue(AUTH_STORAGE_KEYS.token),
   refreshToken: getSafeStoredValue(AUTH_STORAGE_KEYS.refreshToken),
@@ -247,6 +250,13 @@ export const useAuth = create<AuthState>((set) => ({
       localStorage.setItem(AUTH_STORAGE_KEYS.refreshToken, refreshToken);
     }
     set({ token, user, refreshToken: refreshToken ?? null, isAuthenticated: true });
+  },
+  updateUser: (partialUser) => {
+    const current = get().user;
+    if (!current) return;
+    const updated = { ...current, ...partialUser };
+    localStorage.setItem(AUTH_STORAGE_KEYS.user, JSON.stringify(updated));
+    set({ user: updated });
   },
   logout: () => {
     localStorage.removeItem(AUTH_STORAGE_KEYS.token);

@@ -357,31 +357,15 @@ export function serializeTask(task: any, options: { scopedEmployeeUserId?: strin
 
   const beforeImageObj = taskImages.find((img: any) => img.type === "before" || img.type === "Before");
   const afterImageObj = taskImages.find((img: any) => img.type === "after" || img.type === "After");
-  const sitePhotosFromColumn = Array.isArray(task.sitePhotos) ? task.sitePhotos : [];
+  const sitePhotosFromColumn = Array.isArray(task.sitePhotos) ? task.sitePhotos.filter((url: any) => typeof url === "string" && url.trim().length > 0) : [];
   const sitePhotosFromImages = taskImages
     .filter((img: any) => img.type === "site_photo" || String(img.type).startsWith("site_photo"))
-    .map((img: any) => img.url);
-
-  // Normalize URLs for deduplication (remove trailing slashes, query params for comparison)
-  const normalizeUrl = (url: string) => {
-    if (typeof url !== "string") return "";
-    return url.trim().replace(/\/$/, "").split("?")[0];
-  };
-
-  // Merge and filter out any empty strings with robust deduplication
-  const allPhotos = [...sitePhotosFromColumn, ...sitePhotosFromImages]
+    .map((img: any) => img.url)
     .filter((url: any) => typeof url === "string" && url.trim().length > 0);
-  
-  const seenUrls = new Set<string>();
-  const mergedSitePhotos: string[] = [];
-  
-  for (const url of allPhotos) {
-    const normalized = normalizeUrl(url);
-    if (normalized && !seenUrls.has(normalized)) {
-      seenUrls.add(normalized);
-      mergedSitePhotos.push(url); // Keep original URL
-    }
-  }
+
+  // Use primary sitePhotos column if available; fallback to taskImages table records only if column is empty
+  const rawSitePhotosList = sitePhotosFromColumn.length > 0 ? sitePhotosFromColumn : sitePhotosFromImages;
+  const mergedSitePhotos = Array.from(new Set(rawSitePhotosList));
 
   const resolvedTaskType = resolveTaskType(task.taskType, task.jobType);
   const config = getTaskTypeConfig(resolvedTaskType, task.jobType);
@@ -981,7 +965,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
     const inputPhotos = getInputSitePhotos(input);
     const savedInputPhotos = await processAndSaveBase64Photos(inputPhotos, id, "site-visit", task.jobType, task.customerName);
     const finalSitePhotos = savedInputPhotos.length > 0
-      ? Array.from(new Set([...existingSitePhotos, ...savedInputPhotos]))
+      ? Array.from(new Set(savedInputPhotos))
       : existingSitePhotos;
 
     // Process before/after images to Cloudflare R2
@@ -1008,24 +992,13 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         data: { status: TaskAssignmentStatus.COMPLETED },
       });
 
-      // Simplify single-employee task completion logic
-      const totalAssignments = await prisma.taskAssignment.count({
-        where: { taskId: id },
+      const remainingAssignments = await prisma.taskAssignment.count({
+        where: {
+          taskId: id,
+          status: { not: TaskAssignmentStatus.COMPLETED },
+        },
       });
-
-      if (totalAssignments <= 1) {
-        // Single-employee task: mark as completed immediately
-        nextTaskStatus = TaskStatus.COMPLETED;
-      } else {
-        // Multi-employee task: check remaining assignments
-        const remainingAssignments = await prisma.taskAssignment.count({
-          where: {
-            taskId: id,
-            status: { not: TaskAssignmentStatus.COMPLETED },
-          },
-        });
-        nextTaskStatus = remainingAssignments === 0 ? TaskStatus.COMPLETED : TaskStatus.IN_PROGRESS;
-      }
+      nextTaskStatus = remainingAssignments === 0 ? TaskStatus.COMPLETED : TaskStatus.IN_PROGRESS;
     }
 
     let updated: any;
@@ -1092,7 +1065,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
 
         if (imageRecords.length > 0) {
           await tx.taskImage.deleteMany({
-            where: isAdminTaskActor(auth) ? { taskId: id } : { taskId: id, employeeUserId: auth.userId },
+            where: { taskId: id },
           });
           await tx.taskImage.createMany({ data: imageRecords });
         }
@@ -1405,7 +1378,6 @@ export async function updateTaskPhotos(auth: AuthContext, id: number | string, s
     const task = await prisma.task.findUnique({
       where: { id: numericId },
       select: {
-        status: true,
         employeeUserId: true,
         jobType: true,
         customerName: true,
@@ -1413,12 +1385,6 @@ export async function updateTaskPhotos(auth: AuthContext, id: number | string, s
       },
     });
     if (!task) throw new ApiError(404, "Task not found");
-    
-    // Prevent photo uploads after task completion
-    if (task.status === TaskStatus.COMPLETED) {
-      throw new ApiError(400, "Cannot add photos to a completed task");
-    }
-    
     const isAssignedEmployee = task.employeeUserId === auth.userId ||
       task.taskAssignments.some((assignment) => assignment.employeeUserId === auth.userId);
     if (auth.role === UserRole.EMPLOYEE && !isAssignedEmployee) {

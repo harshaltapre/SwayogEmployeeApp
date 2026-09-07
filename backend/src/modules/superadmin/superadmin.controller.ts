@@ -126,11 +126,12 @@ export async function getAllUsers(req: Request, res: Response): Promise<void> {
           portalPassword: true,
           role: true,
           isActive: true,
+          permissions: true,
           failedLoginAttempts: true,
           lockoutUntil: true,
           createdAt: true,
           updatedAt: true,
-          employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true } },
+          employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true, permissions: true } },
           partnerProfile: { select: { businessName: true, serviceZone: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -163,9 +164,9 @@ export async function getUserById(req: Request, res: Response): Promise<void> {
     select: {
       id: true, loginId: true, email: true, fullName: true, phoneNumber: true,
       portalPassword: true,
-      role: true, isActive: true, failedLoginAttempts: true, lockoutUntil: true,
+      role: true, isActive: true, permissions: true, failedLoginAttempts: true, lockoutUntil: true,
       createdAt: true, updatedAt: true,
-      employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true } },
+      employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true, permissions: true } },
       partnerProfile: { select: { businessName: true, serviceZone: true } },
     },
   });
@@ -213,8 +214,14 @@ export async function createUser(req: Request, res: Response): Promise<void> {
       portalPassword: password,
       role,
       reportingManagerId: reportingManagerId || null,
+      permissions: req.body.permissions || [],
       employeeProfile: role === UserRole.EMPLOYEE ? {
-        create: { jobRole: jobRole || "field_technician", zone: zone || "Unassigned", monthlySalaryInr: monthlySalaryInr || null },
+        create: {
+          jobRole: jobRole || "field_technician",
+          zone: zone || "Unassigned",
+          monthlySalaryInr: monthlySalaryInr || null,
+          permissions: req.body.permissions || [],
+        },
       } : undefined,
       partnerProfile: role === UserRole.PARTNER ? {
         create: { businessName: businessName || fullName, serviceZone: zone || "Unassigned" },
@@ -240,8 +247,9 @@ export async function createUser(req: Request, res: Response): Promise<void> {
       fullName: true, 
       role: true, 
       isActive: true, 
+      permissions: true,
       createdAt: true,
-      employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true } }
+      employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true, permissions: true } }
     },
   });
 
@@ -257,7 +265,7 @@ export async function createUser(req: Request, res: Response): Promise<void> {
 export async function updateUser(req: Request, res: Response): Promise<void> {
   const auth = req.auth as AuthContext;
   const { userId } = req.params;
-  const { fullName, phoneNumber, role, isActive, jobRole, zone, monthlySalaryInr, reportingManagerId, email, password } = req.body;
+  const { fullName, phoneNumber, role, isActive, jobRole, zone, monthlySalaryInr, reportingManagerId, email, password, permissions } = req.body;
 
   const existing = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, role: true, email: true } });
   if (!existing) throw new ApiError(404, "User not found");
@@ -270,6 +278,7 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
   if (typeof isActive === "boolean") userData.isActive = isActive;
   if (role) userData.role = role;
   if (reportingManagerId !== undefined) userData.reportingManagerId = reportingManagerId;
+  if (permissions !== undefined && Array.isArray(permissions)) userData.permissions = permissions;
 
   if (email && typeof email === "string" && email.trim()) {
     const targetEmail = email.trim().toLowerCase();
@@ -304,8 +313,9 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
       phoneNumber: true, 
       role: true, 
       isActive: true, 
+      permissions: true,
       updatedAt: true,
-      employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true } }
+      employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true, permissions: true } }
     },
   });
 
@@ -324,6 +334,7 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
     if (jobRole) empData.jobRole = jobRole;
     if (zone) empData.zone = zone;
     if (monthlySalaryInr !== undefined) empData.monthlySalaryInr = monthlySalaryInr;
+    if (permissions !== undefined && Array.isArray(permissions)) empData.permissions = permissions;
     
     await prisma.employeeProfile.upsert({
       where: { userId },
@@ -331,7 +342,8 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
         userId, 
         jobRole: (jobRole as string) || "field_technician", 
         zone: (zone as string) || "Unassigned",
-        monthlySalaryInr: monthlySalaryInr !== undefined ? monthlySalaryInr : null
+        monthlySalaryInr: monthlySalaryInr !== undefined ? monthlySalaryInr : null,
+        permissions: permissions || []
       },
       update: empData,
     });
@@ -867,4 +879,61 @@ export async function setSystemMaintenanceMode(req: Request, res: Response): Pro
   }).catch(() => {});
 
   res.status(200).json({ data: nextState });
+}
+
+export async function updateUserPermissions(req: Request, res: Response): Promise<void> {
+  const auth = req.auth as AuthContext;
+  const { userId } = req.params;
+  const { permissions } = req.body;
+
+  if (!Array.isArray(permissions)) {
+    throw new ApiError(400, "permissions must be an array of section strings");
+  }
+
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, email: true },
+  });
+  if (!existing) throw new ApiError(404, "User not found");
+
+  const [updatedUser] = await Promise.all([
+    prisma.user.update({
+      where: { id: userId },
+      data: { permissions },
+      select: {
+        id: true,
+        loginId: true,
+        email: true,
+        fullName: true,
+        phoneNumber: true,
+        role: true,
+        isActive: true,
+        permissions: true,
+        updatedAt: true,
+        employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true, permissions: true } },
+      },
+    }),
+    prisma.employeeProfile.upsert({
+      where: { userId },
+      create: {
+        userId,
+        permissions,
+      },
+      update: {
+        permissions,
+      },
+    }).catch(() => null),
+  ]);
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: auth.userId,
+      action: "SUPERADMIN_PERMISSIONS_UPDATE",
+      entity: "User",
+      entityId: userId,
+      metadata: { permissionsCount: permissions.length, permissions },
+    },
+  }).catch(() => {});
+
+  res.status(200).json({ data: updatedUser });
 }

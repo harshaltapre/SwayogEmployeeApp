@@ -20,7 +20,9 @@ import { useTeamDailyCommits } from "@/hooks/useDailyCommits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Phone, Mail, MapPin, Briefcase, Star, Calendar, ArrowLeft, User, Trash2, RefreshCw, GitBranch, Network, ShieldAlert, Download, Copy, Award, CheckSquare, XSquare, Check, X, ExternalLink, FileText, Camera, CheckCircle2, CalendarCheck, ClipboardList } from "lucide-react";
+import { Phone, Mail, MapPin, Briefcase, Star, Calendar, ArrowLeft, User, Trash2, RefreshCw, GitBranch, Network, ShieldAlert, Shield, ShieldCheck, Download, Copy, Award, CheckSquare, XSquare, Check, X, ExternalLink, FileText, Camera, CheckCircle2, CalendarCheck, ClipboardList, LayoutDashboard } from "lucide-react";
+import { EmployeePermissionsModal } from "@/components/employees/EmployeePermissionsModal";
+import { SPECIALIZED_SECTIONS } from "@/lib/section-permissions";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -88,6 +90,7 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
         query: { enabled: !!employeeId, queryKey: getGetEmployeeQueryKey(employeeId || 0) }
       });
 
+  const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [showAdditionalAssignees, setShowAdditionalAssignees] = useState(false);
   const [additionalAssignees, setAdditionalAssignees] = useState<string[]>([]);
@@ -697,6 +700,49 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                       </Button>
                     )}
                   </div>
+                </div>
+              )}
+              {isAdminOrSuperAdmin && (
+                <div className="pt-4 border-t space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-xs text-slate-500 uppercase tracking-wider">
+                      Sidebar Section Access
+                    </div>
+                    <Badge variant="outline" className="text-[10px] font-bold text-amber-800 bg-amber-50 border-amber-300">
+                      {((employee as any)?.permissions || []).length} Granted
+                    </Badge>
+                  </div>
+                  {((employee as any)?.permissions || []).length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 py-1">
+                      {((employee as any)?.permissions || []).map((permId: string) => {
+                        const sec = SPECIALIZED_SECTIONS.find((s) => s.id === permId);
+                        if (!sec) return null;
+                        const SecIcon = sec.icon;
+                        return (
+                          <span
+                            key={permId}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 border border-amber-200 text-amber-900"
+                          >
+                            <SecIcon className="w-3 h-3 text-amber-600" />
+                            {sec.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Default role sections only. Grant Service Coordinator, Inventory, or Executive modules below.
+                    </p>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsPermissionsOpen(true)}
+                    className="w-full text-xs font-bold border-amber-400 text-amber-900 bg-amber-50/70 hover:bg-amber-100 hover:text-amber-950 transition-all gap-1.5"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-amber-600" />
+                    Configure Section Permissions
+                  </Button>
                 </div>
               )}
             </div>
@@ -2041,6 +2087,24 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {isPermissionsOpen && employee && (
+        <EmployeePermissionsModal
+          user={{
+            id: employeeUserId,
+            fullName: employee.name,
+            loginId: employee.loginId,
+            email: employee.email,
+            role: employee.role,
+            jobRole: employee.role,
+            permissions: (employee as any).permissions || [],
+          }}
+          onClose={() => setIsPermissionsOpen(false)}
+          onSaved={() => {
+            setIsPermissionsOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

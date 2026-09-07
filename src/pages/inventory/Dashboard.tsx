@@ -82,6 +82,11 @@ export default function InventoryExecutiveDashboard() {
                 Open Inventory Management
               </button>
             </Link>
+            <Link href="/inventory/customers">
+              <button className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 sm:w-auto shadow-sm">
+                Material Dispatch to Customers
+              </button>
+            </Link>
             <Link href="/employee/settings">
               <button className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50 sm:w-auto">
                 Open Settings

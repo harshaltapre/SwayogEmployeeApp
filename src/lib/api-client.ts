@@ -272,6 +272,7 @@ export type EmployeeRecord = {
   reportingManagerId?: string | null;
   department?: string | null;
   portalPassword?: string;
+  permissions?: string[];
 };
 
 type ListEmployeesParams = {
@@ -359,6 +360,9 @@ export type InventoryRecord = {
   sku: string;
   name: string;
   category: string;
+  company?: string;
+  unit?: string;
+  capacityKw?: string | number;
   inStock: number;
   minThreshold: number;
   supplier: string;
@@ -429,6 +433,9 @@ function normalizeInventoryRecord(raw: any): InventoryRecord {
     sku: String(raw?.sku ?? "").trim(),
     name: String(raw?.name ?? "").trim(),
     category: String(raw?.category ?? "misc").trim(),
+    company: raw?.company ? String(raw.company).trim() : undefined,
+    capacityKw: raw?.capacityKw ? String(raw.capacityKw).trim() : undefined,
+    unit: raw?.unit ? String(raw.unit).trim() : "unit",
     inStock,
     minThreshold,
     supplier: String(raw?.supplier ?? "").trim(),
@@ -940,6 +947,11 @@ async function refreshAccessToken(apiBaseUrl: string): Promise<string | null> {
           jobRole,
           avatarInitials: String(session.user.avatarInitials ?? toInitials(userName)),
           reportingManagerId: session.user.reportingManagerId ?? null,
+          permissions: Array.isArray(session.user.permissions)
+            ? session.user.permissions
+            : (Array.isArray(session.user.employeeProfile?.permissions)
+              ? session.user.employeeProfile.permissions
+              : (authState.user?.permissions ?? [])),
         },
         typeof session.refreshToken === "string" ? session.refreshToken : refreshToken,
       );
@@ -1173,6 +1185,9 @@ function normalizeEmployeeRecord(raw: any): EmployeeRecord {
     reportingManagerId: raw?.reportingManagerId ? String(raw.reportingManagerId) : null,
     department: raw?.department?.name ?? null,
     portalPassword: typeof raw?.portalPassword === "string" ? raw.portalPassword : undefined,
+    permissions: Array.isArray(raw?.permissions)
+      ? raw.permissions
+      : (Array.isArray(raw?.employeeProfile?.permissions) ? raw.employeeProfile.permissions : []),
   };
 }
 
@@ -1262,6 +1277,9 @@ async function loginViaBackend(data: LoginInput, apiBaseUrl: string): Promise<Au
       avatarInitials: String(session.user.avatarInitials ?? toInitials(userName)),
       reportingManagerId: session.user.reportingManagerId ?? null,
       employeeCode: session.user.employeeCode ?? null,
+      permissions: Array.isArray(session.user.permissions)
+        ? session.user.permissions
+        : (Array.isArray(session.user.employeeProfile?.permissions) ? session.user.employeeProfile.permissions : []),
     },
   };
 }
@@ -1626,18 +1644,17 @@ export function useGetSubadminCustomerSummary(customerId: number, opts?: any) {
   });
 }
 
-export function useGetCustomerInverterGenerationHistory(customerId: number, period: string, date?: string, opts?: any) {
+export function useGetCustomerInverterGenerationHistory(customerId: number, period: string, opts?: any) {
   return useQuery<CustomerGenerationHistoryPoint[]>({
-    queryKey: [...getGetCustomerInverterGenerationHistoryQueryKey(customerId, period), date],
+    queryKey: getGetCustomerInverterGenerationHistoryQueryKey(customerId, period),
     queryFn: async () => {
       const apiBaseUrl = getApiBaseUrl();
       if (!apiBaseUrl) {
         throw { error: "Backend API URL is required for inverter history." };
       }
 
-      const dateParam = date ? `&date=${encodeURIComponent(date)}` : "";
       const response = await requestApi<{ period: string; history: CustomerGenerationHistoryPoint[]; dataUnavailable?: boolean; unavailableReason?: string }>(
-        `/subadmin/customers/${customerId}/inverter-generation-history?period=${encodeURIComponent(period)}${dateParam}`,
+        `/subadmin/customers/${customerId}/inverter-generation-history?period=${encodeURIComponent(period)}`,
       );
 
       // If backend signals data is unavailable (e.g. Growatt auth failed), surface a clear error
@@ -2443,7 +2460,7 @@ export function useCreateInventory(opts?: any) {
   const { onSuccess, ...restMutationOptions } = mutationOptions;
 
   return useMutation({
-    mutationFn: async ({ data }: { data: { sku: string; name: string; category: string; inStock: number; minThreshold: number; supplier: string } }) => {
+    mutationFn: async ({ data }: { data: Partial<InventoryRecord> }) => {
       const apiBaseUrl = getApiBaseUrl();
       if (apiBaseUrl) {
         return requestApi<InventoryRecord>("/inventory", {
@@ -2453,20 +2470,23 @@ export function useCreateInventory(opts?: any) {
       }
       const records = getStoredInventoryRecords();
       const nextId = records.reduce((max, current) => Math.max(max, Number(current.id) || 0), 0) + 1;
-      const inStock = Number.isFinite(data.inStock) ? Math.max(0, data.inStock) : 0;
-      const minThreshold = Number.isFinite(data.minThreshold) ? Math.max(0, data.minThreshold) : 0;
+      const inStock = Number.isFinite(Number(data.inStock)) ? Math.max(0, Number(data.inStock)) : 0;
+      const minThreshold = Number.isFinite(Number(data.minThreshold)) ? Math.max(0, Number(data.minThreshold)) : 0;
 
       const created: InventoryRecord = {
         id: nextId,
-        sku: data.sku,
-        name: data.name,
-        category: data.category,
+        sku: data.sku || `SKU-${nextId}`,
+        name: data.name || "Item",
+        category: data.category || "General",
+        company: data.company,
+        capacityKw: data.capacityKw,
+        unit: data.unit ?? "unit",
         inStock,
         minThreshold,
-        supplier: data.supplier,
+        supplier: data.supplier || "",
         isLowStock: inStock <= minThreshold,
-        pricePerUnit: 0,
-        entryDate: new Date().toISOString(),
+        pricePerUnit: Number(data.pricePerUnit) || 0,
+        entryDate: data.entryDate || new Date().toISOString(),
       };
 
       setStoredInventoryRecords([created, ...records]);

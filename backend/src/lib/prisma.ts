@@ -204,6 +204,10 @@ function getPrisma(): any {
               errStr.includes("connection refused") ||
               errStr.includes("ConnectionReset") ||
               errStr.includes("forcibly closed") ||
+              errStr.includes("Timed out fetching a new connection") ||
+              errStr.includes("connection pool") ||
+              errStr.includes("exceeded the data transfer quota") ||
+              errStr.includes("quota") ||
               errStr.includes("10054") ||
               error?.code === "P2024" ||
               error?.code === "P1001" ||
@@ -214,13 +218,14 @@ function getPrisma(): any {
 
             if (isConnectionError) {
               try {
-                console.warn(`[Prisma] Temporary connection reset/lost (${error?.message || error?.code}). Retrying query in 500ms...`);
+                console.warn(`[Prisma] Connection issue detected (${error?.message || error?.code}). Retrying query...`);
                 await new Promise((r) => setTimeout(r, 500));
                 const retryResult = await query(args);
                 return processFields(retryResult, decryptVal);
               } catch (retryErr: any) {
-                if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_FALLBACK === 'true') {
-                  console.warn("[Prisma] Database connection lost and USE_MOCK_FALLBACK enabled. Switching to mock database fallback.");
+                const shouldMockFallback = process.env.NODE_ENV === 'development' || process.env.USE_MOCK_FALLBACK === 'true';
+                if (shouldMockFallback) {
+                  console.warn("[Prisma] Database connection unavailable (or quota exceeded). Switching to mock database fallback.");
                   mockMode = true;
                   await ensureMockDbInitialized();
                   const mockClient = createMockPrismaWrapper();

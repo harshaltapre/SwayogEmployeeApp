@@ -1,4 +1,6 @@
-import { prisma } from "../lib/prisma.js";
+// Generation log service for historical data management
+
+import { prisma } from "./prisma.js";
 import type { GenerationDataSource } from "@prisma/client";
 
 interface CreateGenerationLogInput {
@@ -206,7 +208,7 @@ export class GenerationLogService {
       take: 1000,
     });
 
-    const gaps: Array<{ from: Date; to: Date; durationMinutes: number }> = [];
+    const gaps = [];
 
     for (let i = 1; i < logs.length; i++) {
       const prevTime = logs[i - 1].timestamp.getTime();

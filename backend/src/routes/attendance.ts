@@ -53,9 +53,9 @@ router.post("/rules", adminAuth, asyncHandler(async (req, res) => {
   }
 }));
 
-// ── Profile Photo (syncs across devices & Cloudflare R2) ─────────────────────
+// ── Profile Photo (syncs across devices) ─────────────────────────────────────
 // GET  /profile-photo        → returns the current user's photo
-// POST /profile-photo        → saves/updates the current user's photo (R2 backed)
+// POST /profile-photo        → saves/updates the current user's photo
 router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
   const userId = req.auth!.userId;
   const user = await prisma.user.findUnique({
@@ -67,39 +67,21 @@ router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, r
 
 router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
   const userId = req.auth!.userId;
-  const { photo, photoDataUrl } = req.body as { photo?: string; photoDataUrl?: string };
-  // Accept either `photo` (web app) or `photoDataUrl` (mobile app) field
-  const imageData = photo || photoDataUrl;
-  if (!imageData || !imageData.startsWith("data:image/")) {
+  const { photo } = req.body as { photo: string };
+  if (!photo || !photo.startsWith("data:image/")) {
     res.status(400).json({ error: "Invalid image data. Must be a base64 data URL." });
     return;
   }
   // Rough size check – base64 of a 2 MB image ≈ 2.7 MB string
-  if (imageData.length > 4 * 1024 * 1024) {
+  if (photo.length > 4 * 1024 * 1024) {
     res.status(413).json({ error: "Image too large. Please upload a photo under 2 MB." });
     return;
   }
-  const updatedUser = await prisma.user.update({
+  await prisma.user.update({
     where: { id: userId },
-    data: { profileImageUrl: imageData },
-    select: {
-      id: true,
-      fullName: true,
-      email: true,
-      role: true,
-      isActive: true,
-      profileImageUrl: true,
-      loginId: true,
-      employeeCode: true,
-      phoneNumber: true,
-      designationTitle: true,
-      departmentId: true,
-      reportingManagerId: true,
-      createdAt: true,
-    },
+    data: { profileImageUrl: photo },
   });
-  // Return the saved photo AND user object so mobile/web clients can update state immediately
-  res.json({ success: true, photo: imageData, data: updatedUser });
+  res.json({ success: true });
 }));
 
 
@@ -419,13 +401,13 @@ router.post(
       descriptor3: number[];
     };
 
-    // Validate — each descriptor must be a valid float array (e.g. 128 or 192 floats)
+    // Validate — each descriptor must be a 128-length float array
     const isValidDescriptor = (d: any) =>
-      Array.isArray(d) && d.length >= 64 && d.length <= 512 && d.every((v: any) => typeof v === "number");
+      Array.isArray(d) && d.length === 128 && d.every((v: any) => typeof v === "number");
 
     if (!isValidDescriptor(descriptor1) || !isValidDescriptor(descriptor2) || !isValidDescriptor(descriptor3)) {
       res.status(400).json({
-        error: "Invalid face descriptors. Each descriptor must be a float array of length between 64 and 512 elements.",
+        error: "Invalid face descriptors. Each descriptor must be a 128-element float array.",
       });
       return;
     }
