@@ -51,7 +51,6 @@ fun DashboardScreen(
     onNavigateToSubAdminCalendar: () -> Unit,
     onNavigateToSubAdminEmployees: () -> Unit,
     onNavigateToSubAdminFinancials: () -> Unit,
-    onNavigateToInverterData: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val dashboardState by viewModel.dashboardState.collectAsState()

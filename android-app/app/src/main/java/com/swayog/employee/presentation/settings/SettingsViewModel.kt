@@ -221,24 +221,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun uploadProfilePhoto(base64Image: String) {
-        viewModelScope.launch {
-            _uploadingPhoto.value = true
-            _uploadError.value = null
 
-            val result = authRepository.updateProfilePhoto(base64Image)
-            if (result.isSuccess) {
-                // Bump cache key so Coil discards its cached (stale) image immediately
-                _profilePhotoCacheKey.value = System.currentTimeMillis()
-                android.util.Log.d("SETTINGS_VM", "Photo upload succeeded — bumping cache key to ${_profilePhotoCacheKey.value}")
-            } else {
-                _uploadError.value = result.exceptionOrNull()?.message ?: "Failed to upload photo"
-                android.util.Log.e("SETTINGS_VM", "Photo upload failed: ${result.exceptionOrNull()?.message}")
-            }
-
-            _uploadingPhoto.value = false
-        }
-    }
 
     fun uploadProfilePhotoFile(file: java.io.File) {
         viewModelScope.launch {

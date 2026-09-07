@@ -6,8 +6,9 @@ import { prisma } from "../lib/prisma.js";
 import * as AttendanceService from "../services/attendanceService.js";
 import fs from "fs";
 import path from "path";
+import multer from "multer";
 
-
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = Router();
 
@@ -65,23 +66,50 @@ router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, r
   res.json({ photo: user?.profileImageUrl || null });
 }));
 
-router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
+router.post("/profile-photo", authenticateAccessToken, upload.single("file"), asyncHandler(async (req, res) => {
   const userId = req.auth!.userId;
-  const { photo } = req.body as { photo: string };
-  if (!photo || !photo.startsWith("data:image/")) {
-    res.status(400).json({ error: "Invalid image data. Must be a base64 data URL." });
+  let imageData: string | null = null;
+
+  if (req.file) {
+    const mimeType = req.file.mimetype || "image/jpeg";
+    imageData = `data:${mimeType};base64,${req.file.buffer.toString("base64")}`;
+  } else {
+    const { photo, photoDataUrl } = (req.body || {}) as { photo?: string; photoDataUrl?: string };
+    imageData = photo || photoDataUrl || null;
+  }
+
+  if (!imageData || !imageData.startsWith("data:image/")) {
+    res.status(400).json({ error: "Invalid image data. Must be a base64 data URL or uploaded file." });
     return;
   }
-  // Rough size check – base64 of a 2 MB image ≈ 2.7 MB string
-  if (photo.length > 4 * 1024 * 1024) {
-    res.status(413).json({ error: "Image too large. Please upload a photo under 2 MB." });
+
+  // Rough size check – base64 of a 4 MB image ≈ 5.5 MB string
+  if (imageData.length > 6 * 1024 * 1024) {
+    res.status(413).json({ error: "Image too large. Please upload a photo under 4 MB." });
     return;
   }
-  await prisma.user.update({
+
+  const updatedUser = await prisma.user.update({
     where: { id: userId },
-    data: { profileImageUrl: photo },
+    data: { profileImageUrl: imageData },
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      role: true,
+      isActive: true,
+      profileImageUrl: true,
+      loginId: true,
+      employeeCode: true,
+      phoneNumber: true,
+      designationTitle: true,
+      departmentId: true,
+      reportingManagerId: true,
+      createdAt: true,
+    },
   });
-  res.json({ success: true });
+
+  res.json({ success: true, photo: imageData, data: updatedUser });
 }));
 
 

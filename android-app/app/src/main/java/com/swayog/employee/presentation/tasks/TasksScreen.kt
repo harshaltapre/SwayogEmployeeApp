@@ -419,7 +419,6 @@ fun CreateTaskDialog(
         employeeUserId: String
     ) -> Unit
 ) {
-    val context = LocalContext.current
     val userId by remember { mutableStateOf("") }
     
     var jobType by remember { mutableStateOf("") }
@@ -869,13 +868,6 @@ fun TaskDetailDialog(
         task.isAmcVisit -> "AMC_VISIT"
         else -> "REGULAR"
     }
-    
-    val requiredImageCount = task.requiredImageCount
-    val currentImageCount = when (taskType) {
-        "SITE_VISIT" -> uploadedImages.size
-        "AMC_VISIT" -> beforeImages.size + afterImages.size
-        else -> (if (beforeImageUrl != null) 1 else 0) + (if (afterImageUrl != null) 1 else 0)
-    }
 
     // Helper to get current GPS, watermark the bitmap, and convert to base64
     fun processPhoto(bitmap: Bitmap, type: String, addressOverride: String? = null) {
@@ -964,15 +956,6 @@ fun TaskDetailDialog(
         }
     }
 
-    // Camera launcher (returns a Bitmap thumbnail)
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        if (bitmap != null && pendingPhotoType != null) {
-            processPhoto(bitmap, pendingPhotoType!!)
-        }
-        pendingPhotoType = null
-    }
 
     // Gallery launcher (returns a Uri)
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -1761,7 +1744,7 @@ fun TaskDetailDialog(
                                                         )
                                                         if (task.beforeLatitude != null && task.beforeLongitude != null) {
                                                             Text(
-                                                                text = "📍 ${task.beforeLatitude!!.toString().take(6)}, ${task.beforeLongitude!!.toString().take(6)}",
+                                                                text = "📍 ${task.beforeLatitude.toString().take(6)}, ${task.beforeLongitude.toString().take(6)}",
                                                                 style = MaterialTheme.typography.labelSmall,
                                                                 modifier = Modifier.padding(8.dp),
                                                                 color = Color.Blue
@@ -1793,7 +1776,7 @@ fun TaskDetailDialog(
                                                         )
                                                         if (task.afterLatitude != null && task.afterLongitude != null) {
                                                             Text(
-                                                                text = "📍 ${task.afterLatitude!!.toString().take(6)}, ${task.afterLongitude!!.toString().take(6)}",
+                                                                text = "📍 ${task.afterLatitude.toString().take(6)}, ${task.afterLongitude.toString().take(6)}",
                                                                 style = MaterialTheme.typography.labelSmall,
                                                                 modifier = Modifier.padding(8.dp),
                                                                 color = Color.Blue
