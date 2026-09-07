@@ -38,7 +38,7 @@ export default function CustomerInstallation() {
     isError: isErrorHistory,
     error: inverterHistoryError,
     refetch: refetchHistory,
-  } = useGetCustomerInverterGenerationHistory(customerId ?? -1, selectedPeriod, undefined, {
+  } = useGetCustomerInverterGenerationHistory(customerId ?? -1, selectedPeriod, {
     enabled: !!customerId,
     retry: false,
   });

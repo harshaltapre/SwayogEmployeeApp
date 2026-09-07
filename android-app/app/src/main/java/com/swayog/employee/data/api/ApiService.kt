@@ -332,6 +332,17 @@ interface ApiService {
         @Body request: DispatchRequest
     ): Response<ApiResponse<DispatchRecord>>
     
+    @PATCH("inventory/dispatches/{id}")
+    suspend fun updateDispatch(
+        @Path("id") id: String,
+        @Body request: UpdateDispatchRequest
+    ): Response<ApiResponse<DispatchRecord>>
+
+    @DELETE("inventory/dispatches/{id}")
+    suspend fun deleteDispatch(
+        @Path("id") id: String
+    ): Response<ApiResponse<Unit>>
+    
     @GET("inventory")
     suspend fun getInventoryItems(): Response<ApiResponse<List<InventoryItem>>>
     

@@ -31,6 +31,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val compactViewEnabled by mainViewModel.compactViewEnabled.collectAsState()
             val animationsEnabled by mainViewModel.animationsEnabled.collectAsState()
 
+            val isInventoryCoordinator = androidx.compose.runtime.remember(userRole, jobRole) {
+                val normalizedJob = jobRole?.lowercase()?.replace(" ", "")?.replace("-", "") ?: ""
+                val normalizedRole = userRole?.lowercase()?.replace(" ", "")?.replace("-", "") ?: ""
+                normalizedJob.contains("inventory") || normalizedRole.contains("inventory")
+            }
+
             CompositionLocalProvider(
                 LocalCompactViewEnabled provides compactViewEnabled,
                 LocalAnimationsEnabled provides animationsEnabled
@@ -45,7 +51,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             userRole = userRole,
                             jobRole = jobRole,
                             startDestination = if (isLoggedIn) {
-                                com.swayog.employee.presentation.navigation.Screen.Dashboard.route
+                                if (isInventoryCoordinator) {
+                                    com.swayog.employee.presentation.navigation.Screen.InventoryCoordinator.route
+                                } else {
+                                    com.swayog.employee.presentation.navigation.Screen.Dashboard.route
+                                }
                             } else {
                                 com.swayog.employee.presentation.navigation.Screen.Login.route
                             },

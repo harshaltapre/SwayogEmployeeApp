@@ -20,6 +20,7 @@ import com.swayog.employee.presentation.attendance.face.FaceEnrollmentScreen
 import com.swayog.employee.presentation.inverter.InverterDataScreen
 
 import com.swayog.employee.presentation.notifications.NotificationsScreen
+import com.swayog.employee.presentation.inventory.InventoryCoordinatorScreen
 
 @Composable
 fun SwayogNavHost(
@@ -36,6 +37,11 @@ fun SwayogNavHost(
         r in listOf("SUB_ADMIN", "ADMIN", "SUPER_ADMIN") ||
         j == "servicecoordinator" || j.contains("amc") || j.contains("coordinator") || j.contains("subadmin")
     }
+    val isInventoryCoordinator = androidx.compose.runtime.remember(userRole, jobRole) {
+        val normalizedJob = jobRole?.lowercase()?.replace(" ", "")?.replace("-", "") ?: ""
+        val normalizedRole = userRole?.lowercase()?.replace(" ", "")?.replace("-", "") ?: ""
+        normalizedJob.contains("inventory") || normalizedRole.contains("inventory")
+    }
     androidx.compose.runtime.LaunchedEffect(isLoggedIn) {
         if (!isLoggedIn && navController.currentDestination?.route != Screen.Login.route) {
             navController.navigate(Screen.Login.route) {
@@ -51,7 +57,8 @@ fun SwayogNavHost(
         composable(Screen.Login.route) {
             LoginScreen(
                 onLoginSuccess = {
-                    navController.navigate(Screen.Dashboard.route) {
+                    val dest = if (isInventoryCoordinator) Screen.InventoryCoordinator.route else Screen.Dashboard.route
+                    navController.navigate(dest) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
                 }
@@ -243,6 +250,15 @@ fun SwayogNavHost(
                 )
             }
         }
+
+        composable(Screen.InventoryCoordinator.route) {
+            InventoryCoordinatorScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+                onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) }
+            )
+        }
     }
 }
 
@@ -267,4 +283,5 @@ sealed class Screen(val route: String) {
     data object AmcManagement : Screen("amc_management")
     data object FaceEnrollment : Screen("face_enrollment")
     data object InverterData : Screen("inverter_data")
+    data object InventoryCoordinator : Screen("inventory_coordinator")
 }

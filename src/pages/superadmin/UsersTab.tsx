@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Users, Plus, Search, Download, Upload, RefreshCw,
   Edit2, Trash2, LogOut, Key, History, ChevronDown,
-  Shield, UserCheck, UserX, CheckCircle, XCircle, X,
+  Shield, ShieldCheck, UserCheck, UserX, CheckCircle, XCircle, X,
   AlertTriangle, Eye, EyeOff,
 } from "lucide-react";
 import { C, SectionTitle } from "./shared";
@@ -12,6 +12,7 @@ import {
   type UpdateUserInput, type LoginHistoryEntry, type ImportUserRow,
 } from "../../lib/superadmin-api";
 import { notifyEmployeeDataChanged, subscribeEmployeeDataChanged } from "@/lib/entity-sync";
+import { EmployeePermissionsModal } from "@/components/employees/EmployeePermissionsModal";
 
 // ─── Role Config ──────────────────────────────────────────────────────────────
 const ROLE_COLOR: Record<UserRole, string> = {
@@ -501,6 +502,7 @@ export default function UsersTab() {
   // Modals
   const [createOpen, setCreateOpen] = useState(false);
   const [editUser, setEditUser] = useState<SAUser | null>(null);
+  const [permissionsUser, setPermissionsUser] = useState<SAUser | null>(null);
   const [deleteUser, setDeleteUser] = useState<SAUser | null>(null);
   const [resetPwUser, setResetPwUser] = useState<SAUser | null>(null);
   const [historyUser, setHistoryUser] = useState<SAUser | null>(null);
@@ -603,6 +605,25 @@ export default function UsersTab() {
       {/* Modals */}
       {createOpen && <UserFormModal onClose={() => setCreateOpen(false)} onSaved={onUserSaved} />}
       {editUser && <UserFormModal user={editUser} onClose={() => setEditUser(null)} onSaved={onUserSaved} />}
+      {permissionsUser && (
+        <EmployeePermissionsModal
+          user={{
+            id: permissionsUser.id,
+            fullName: permissionsUser.fullName,
+            loginId: permissionsUser.loginId,
+            email: permissionsUser.email,
+            role: permissionsUser.role,
+            jobRole: permissionsUser.employeeProfile?.jobRole || permissionsUser.role,
+            permissions: permissionsUser.permissions || (permissionsUser.employeeProfile as any)?.permissions || [],
+          }}
+          onClose={() => setPermissionsUser(null)}
+          onSaved={() => {
+            load();
+            setPermissionsUser(null);
+            push("Permissions updated successfully");
+          }}
+        />
+      )}
       {deleteUser && <DeleteModal user={deleteUser} onClose={() => setDeleteUser(null)} onDeleted={() => { if (deleteUser.role === "EMPLOYEE") { notifyEmployeeDataChanged(); } load(); push(`User deleted`); }} />}
       {resetPwUser && <ResetPasswordModal user={resetPwUser} onClose={() => setResetPwUser(null)} onDone={() => push("Password reset successfully")} />}
       {historyUser && <LoginHistoryModal user={historyUser} onClose={() => setHistoryUser(null)} />}
@@ -731,6 +752,17 @@ export default function UsersTab() {
               >
                 {user.isActive ? <UserX size={14} /> : <UserCheck size={14} />}
               </button>
+
+              {/* Permissions */}
+              {(user.role === "EMPLOYEE" || user.role === "SUB_ADMIN") && (
+                <button
+                  onClick={() => setPermissionsUser(user)}
+                  title="Configure Sidebar Permissions"
+                  style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: "#D97706" }}
+                >
+                  <Shield size={14} />
+                </button>
+              )}
 
               {/* Edit */}
               <button onClick={() => setEditUser(user)} title="Edit" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.slate }}>

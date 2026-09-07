@@ -1,7 +1,15 @@
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { isInventoryExecutiveJobRole, isSubAdminJobRole, isServiceExecutiveHeadJobRole, isEpcPartnerJobRole, isInstallationTeamJobRole, useAuth } from "@/lib/auth";
+import {
+  isInventoryExecutiveJobRole,
+  isSubAdminJobRole,
+  isServiceExecutiveHeadJobRole,
+  isEpcPartnerJobRole,
+  isInstallationTeamJobRole,
+  useAuth,
+} from "@/lib/auth";
+import { getAllowedSpecializedSections } from "@/lib/section-permissions";
 
 import {
   LayoutDashboard,
@@ -27,6 +35,7 @@ import {
   FileCheck,
   Camera,
   CreditCard,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
@@ -111,12 +120,36 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       user.role === "team_lead" ||
       user.role === "department_head"
     ) {
-      const isServiceExecutive = isServiceExecutiveHeadJobRole(user.jobRole) || location.startsWith("/service-executive");
-      const isInventory = isInventoryExecutiveJobRole(user.jobRole) || isInventoryPath;
-      const isSubAdmin = isSubAdminJobRole(user.jobRole) || isSubAdminPath || user.role === "sub_admin";
+      const isServiceExecutive = isServiceExecutiveHeadJobRole(user.jobRole);
+      const isInventory = isInventoryExecutiveJobRole(user.jobRole);
+      const isSubAdmin = user.role === "sub_admin" || isSubAdminJobRole(user.jobRole);
+      const allowedSpecialized = getAllowedSpecializedSections(user);
+
+      const appendUniqueCustomSections = (baseItems: { name: string; href: string; icon: any; sectionHeader?: string }[]) => {
+        const existingHrefs = new Set(baseItems.map((i) => i.href));
+        const extraItems = allowedSpecialized
+          .filter((sec) => !existingHrefs.has(sec.href))
+          .map((sec, idx) => ({
+            name: sec.name,
+            href: sec.href,
+            icon: sec.icon,
+            sectionHeader: idx === 0 ? "Special Access Modules" : undefined,
+          }));
+        
+        // Insert extra items before Settings
+        const settingsIdx = baseItems.findIndex((i) => i.name === "Settings");
+        if (settingsIdx !== -1) {
+          return [
+            ...baseItems.slice(0, settingsIdx),
+            ...extraItems,
+            ...baseItems.slice(settingsIdx),
+          ];
+        }
+        return [...baseItems, ...extraItems];
+      };
 
       if (isServiceExecutive) {
-        return [
+        const baseItems = [
           { name: "Overview Dashboard", href: "/service-executive/dashboard?tab=overview", icon: LayoutDashboard },
           { name: "Partners Lead", href: "/service-executive/dashboard?tab=partners-lead", icon: Users },
           { name: "EPC Contractors", href: "/service-executive/dashboard?tab=epc", icon: HardHat },
@@ -132,20 +165,22 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           { name: "Daily Commit", href: "/employee/daily-commit", icon: FileText },
           { name: "Settings", href: "/employee/settings", icon: Settings },
         ];
+        return appendUniqueCustomSections(baseItems);
       }
 
       if (isInventory) {
-        return [
+        const baseItems = [
           { name: "Dashboard", href: "/inventory/dashboard", icon: LayoutDashboard },
           { name: "Inventory", href: "/inventory/inventory", icon: Package },
           { name: "Customers", href: "/inventory/customers", icon: Users },
           { name: "Attendance", href: "/employee/attendance", icon: Calendar },
           { name: "Settings", href: "/employee/settings", icon: Settings },
         ];
+        return appendUniqueCustomSections(baseItems);
       }
 
       if (isSubAdmin) {
-        return [
+        const baseItems = [
           { name: "Dashboard", href: "/subadmin/dashboard", icon: LayoutDashboard },
           { name: "Partners Lead", href: "/subadmin/partner-leads", icon: Users },
           { name: "Customers", href: "/subadmin/customers", icon: Users },
@@ -155,18 +190,39 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           { name: "Calendar", href: "/subadmin/calendar", icon: Calendar },
           { name: "Settings", href: "/employee/settings", icon: Settings },
         ];
+        return appendUniqueCustomSections(baseItems);
       }
 
-      // Default Employee Sidebar
-      return [
+      // Default Employee Sidebar + Granted Specialized Sections
+      const standardTop: { name: string; href: string; icon: any; sectionHeader?: string }[] = [
         { name: "Dashboard", href: "/employee/dashboard", icon: LayoutDashboard },
         { name: "Employees Under Me", href: "/employee/under-me", icon: Users },
         { name: "Tasks", href: "/employee/tasks", icon: CheckSquare },
-        { name: "Attendance", href: "/employee/attendance", icon: Calendar },
+      ];
+
+      const grantedItems: { name: string; href: string; icon: any; sectionHeader?: string }[] = allowedSpecialized.map((sec, idx) => ({
+        name: sec.name,
+        href: sec.href,
+        icon: sec.icon,
+        sectionHeader: idx === 0 ? "Special Access Modules" : undefined,
+      }));
+
+      const standardBottom: { name: string; href: string; icon: any; sectionHeader?: string }[] = [
+        { name: "Attendance", href: "/employee/attendance", icon: Calendar, sectionHeader: grantedItems.length > 0 ? "General Workspace" : undefined },
         { name: "Daily Commit", href: "/employee/daily-commit", icon: FileText },
         { name: "Team Commits", href: "/employee/daily-commits/team", icon: ClipboardList },
         { name: "Settings", href: "/employee/settings", icon: Settings },
       ];
+
+      // Merge and deduplicate by full href
+      const combined = [...standardTop, ...grantedItems, ...standardBottom];
+      const seenHrefs = new Set<string>();
+      return combined.filter((item) => {
+        const key = item.href;
+        if (seenHrefs.has(key)) return false;
+        seenHrefs.add(key);
+        return true;
+      });
     }
 
     if (isInstallationTeamJobRole(user.jobRole) || (user.role as string) === "installer") {
@@ -217,6 +273,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const navItems = getNavItems();
 
   const getRoleLabel = () => {
+    if (user.designation && user.designation.trim()) return user.designation.trim().toUpperCase();
     if (isInstallationTeamJobRole(user.jobRole) || (user.role as string) === "installer") return "CERTIFIED INSTALLER";
     if (user.role === "super_admin") return "SUPER ADMIN";
     if (user.role === "admin") return "ADMIN";
@@ -246,40 +303,50 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         <nav className="space-y-1">
           {navItems.map((item) => {
             const currentTab = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+            const itemPath = item.href.split("?")[0];
             const itemTab = item.href.includes("?tab=") ? item.href.split("?tab=")[1] : null;
             const isActive = itemTab
-              ? (currentTab ? currentTab === itemTab : itemTab === "overview")
+              ? (location === itemPath && (currentTab ? currentTab === itemTab : itemTab === "overview"))
               : (location === item.href);
             return (
-              <Link
-                key={item.name}
-                href={item.href}
-                onClick={(e) => {
-                  if (item.href.includes("?tab=")) {
-                    e.preventDefault();
-                    window.history.pushState({}, "", item.href);
-                    window.dispatchEvent(new Event("popstate"));
-                  }
-                }}
-                className="block rounded-md outline-none focus:outline-none focus-visible:outline-none"
-              >
-                <div
-                  className={cn(
-                    "group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors cursor-pointer border-0",
-                    isActive
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                  )}
+              <div key={item.name + item.href}>
+                {item.sectionHeader && (
+                  <div className="pt-4 pb-1.5 px-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500/90 flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                      <span>{item.sectionHeader}</span>
+                    </div>
+                  </div>
+                )}
+                <Link
+                  href={item.href}
+                  onClick={(e) => {
+                    if (item.href.includes("?tab=")) {
+                      e.preventDefault();
+                      window.history.pushState({}, "", item.href);
+                      window.dispatchEvent(new Event("popstate"));
+                    }
+                  }}
+                  className="block rounded-md outline-none focus:outline-none focus-visible:outline-none"
                 >
-                  <item.icon
+                  <div
                     className={cn(
-                      "mr-3 h-5 w-5 shrink-0",
-                      isActive ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/65 group-hover:text-sidebar-foreground"
+                      "group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors cursor-pointer border-0",
+                      isActive
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                     )}
-                  />
-                  {item.name}
-                </div>
-              </Link>
+                  >
+                    <item.icon
+                      className={cn(
+                        "mr-3 h-5 w-5 shrink-0",
+                        isActive ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/65 group-hover:text-sidebar-foreground"
+                      )}
+                    />
+                    <span className="truncate">{item.name}</span>
+                  </div>
+                </Link>
+              </div>
             );
           })}
         </nav>
@@ -291,7 +358,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           </Avatar>
           <div className="flex flex-col overflow-hidden">
             <span className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</span>
-            <span className="text-xs text-sidebar-foreground/65 capitalize">{user.role}</span>
+            <span className="text-xs text-sidebar-foreground/65 capitalize">{user.designation || (user.jobRole ? user.jobRole.replace(/_/g, " ") : user.role)}</span>
           </div>
         </div>
         <Button

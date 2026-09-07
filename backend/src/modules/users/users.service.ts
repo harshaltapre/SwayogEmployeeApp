@@ -238,12 +238,14 @@ export async function listInternalUsers(actorRole: InternalUserRole, query: List
     },
     reportingManagerId: true,
     isActive: true,
+    permissions: true,
     createdAt: true,
     employeeProfile: {
       select: {
         zone: true,
         jobRole: true,
         monthlySalaryInr: true,
+        permissions: true,
       },
     },
     partnerProfile: {

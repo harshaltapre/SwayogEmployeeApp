@@ -4,22 +4,28 @@ export const createInventorySchema = z.object({
   sku: z.string().trim().min(1, "SKU is required"),
   name: z.string().trim().min(1, "Name is required"),
   category: z.string().trim().min(1, "Category is required"),
-  inStock: z.number().int().nonnegative().default(0),
-  minThreshold: z.number().int().nonnegative().default(0),
+  company: z.string().trim().optional().nullable(),
+  capacityKw: z.string().trim().optional().nullable(),
+  unit: z.string().trim().default("unit"),
+  inStock: z.coerce.number().int().nonnegative().default(0),
+  minThreshold: z.coerce.number().int().nonnegative().default(0),
   supplier: z.string().trim().optional().nullable(),
-  pricePerUnit: z.number().nonnegative().default(0),
-  entryDate: z.string().datetime().optional().nullable(),
+  pricePerUnit: z.coerce.number().nonnegative().default(0),
+  entryDate: z.string().optional().nullable(),
 });
 
 export const updateInventorySchema = z.object({
   sku: z.string().trim().min(1).optional(),
   name: z.string().trim().min(1).optional(),
   category: z.string().trim().min(1).optional(),
-  inStock: z.number().int().nonnegative().optional(),
-  minThreshold: z.number().int().nonnegative().optional(),
+  company: z.string().trim().optional().nullable(),
+  capacityKw: z.string().trim().optional().nullable(),
+  unit: z.string().trim().optional(),
+  inStock: z.coerce.number().int().nonnegative().optional(),
+  minThreshold: z.coerce.number().int().nonnegative().optional(),
   supplier: z.string().trim().optional().nullable(),
-  pricePerUnit: z.number().nonnegative().optional(),
-  entryDate: z.string().datetime().optional().nullable(),
+  pricePerUnit: z.coerce.number().nonnegative().optional(),
+  entryDate: z.string().optional().nullable(),
 });
 
 export const createDispatchSchema = z.object({

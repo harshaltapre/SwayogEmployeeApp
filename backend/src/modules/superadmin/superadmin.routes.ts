@@ -10,6 +10,7 @@ import {
   getUserById,
   createUser,
   updateUser,
+  updateUserPermissions,
   deleteUser,
   activateUser,
   deactivateUser,
@@ -54,6 +55,7 @@ superadminRoutes.get("/users/:userId", ...SA, asyncHandler(getUserById));
 // Create / Update / Delete
 superadminRoutes.post("/users",           ...SA, asyncHandler(createUser));
 superadminRoutes.patch("/users/:userId",  ...SA, asyncHandler(updateUser));
+superadminRoutes.patch("/users/:userId/permissions", ...SA, asyncHandler(updateUserPermissions));
 superadminRoutes.delete("/users/:userId", ...SA, asyncHandler(deleteUser));
 
 // Role

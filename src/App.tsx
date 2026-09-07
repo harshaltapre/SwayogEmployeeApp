@@ -205,7 +205,11 @@ function Router() {
   );
 }
 
+import { useAuthProfileSync } from "@/hooks/use-auth-profile-sync";
+
 function App() {
+  useAuthProfileSync();
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

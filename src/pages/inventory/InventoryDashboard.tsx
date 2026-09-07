@@ -197,13 +197,27 @@ export default function InventoryDashboard() {
                       <tr key={item.id} style={{ borderTop: "1px solid #F1F5F9", background: i % 2 === 0 ? "#fff" : "#FAFBFC" }}>
                         <td style={{ padding: "16px 24px", fontSize: 13, fontWeight: 600, color: C.sky }}>{item.sku}</td>
                         <td style={{ padding: "16px 24px" }}>
-                          <div style={{ fontWeight: 700, color: C.ink }}>{item.name}</div>
-                          <div style={{ fontSize: 11, color: C.slate }}>Updated 2h ago</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ fontWeight: 700, color: C.ink }}>{item.name}</span>
+                            {item.company && (
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#EFF6FF", color: "#1E40AF", border: "1px solid #BFDBFE" }}>
+                                {item.company}
+                              </span>
+                            )}
+                            {item.capacityKw && (
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#FEF9C3", color: "#854D0E", border: "1px solid #FDE047", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                ⚡ {String(item.capacityKw).toLowerCase().includes("w") || String(item.capacityKw).toLowerCase().includes("k") ? item.capacityKw : `${item.capacityKw} ${(item.name.toLowerCase().includes("panel") || item.category === "solar_panels") ? "Wp" : "kW"}`}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.slate }}>Updated recently</div>
                         </td>
                         <td style={{ padding: "16px 24px", fontSize: 13, textTransform: "capitalize" }}>{item.category.replace("_", " ")}</td>
                         <td style={{ padding: "16px 24px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontWeight: 800, fontSize: 15, color: isOut ? C.rose : isLow ? C.amber : C.ink }}>{item.inStock}</span>
+                            <span style={{ fontWeight: 800, fontSize: 15, color: isOut ? C.rose : isLow ? C.amber : C.ink }}>
+                              {item.inStock} {item.unit || "units"}
+                            </span>
                             <span style={{ fontSize: 11, color: C.slate }}>/ {item.minThreshold} min</span>
                           </div>
                           <div style={{ width: 80, height: 4, background: "#E2E8F0", borderRadius: 2, marginTop: 6 }}>

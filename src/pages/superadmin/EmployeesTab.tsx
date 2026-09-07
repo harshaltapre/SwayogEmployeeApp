@@ -1,9 +1,10 @@
-import { Users, IndianRupee, CheckCircle, Star, MapPin, Download, Plus, LayoutGrid, List, ChevronRight } from "lucide-react";
+import { Users, IndianRupee, CheckCircle, Star, MapPin, Download, Plus, LayoutGrid, List, ChevronRight, ShieldCheck, Shield } from "lucide-react";
 import { C, fmt, Pill, StatCard, Card } from "./shared";
 import { superAdminApi } from "@/lib/superadmin-api";
 import { UserFormModal, roleLabel } from "./UsersTab";
 import { useEffect, useState } from "react";
 import { EmployeeDetailContent } from "@/components/employees/EmployeeDetailContent";
+import { EmployeePermissionsModal } from "@/components/employees/EmployeePermissionsModal";
 import { useLocation } from "wouter";
 import { subscribeEmployeeDataChanged } from "@/lib/entity-sync";
 import { BulkTaskAssignModal } from "@/components/employees/BulkTaskAssignModal";
@@ -17,6 +18,7 @@ export default function EmployeesTab() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [totalCount, setTotalCount] = useState(0);
+  const [permissionEmployee, setPermissionEmployee] = useState<any | null>(null);
 
   const fetchEmployees = async () => {
     try {
@@ -36,6 +38,7 @@ export default function EmployeesTab() {
         monthlySalaryInr: user.employeeProfile?.monthlySalaryInr || 0,
         loginId: user.loginId,
         portalPassword: user.portalPassword || '',
+        permissions: user.permissions || (user.employeeProfile as any)?.permissions || [],
         rating: 0, // Default rating since not provided by superadmin API
         activeTasksCount: 0, // Default since not provided
         jobsCompletedThisMonth: 0, // Default since not provided
@@ -236,12 +239,28 @@ export default function EmployeesTab() {
                       </div>
 
                       <div style={{ display: "grid", gap: 8 }}>
-                        <button 
-                          onClick={() => setSelectedEmployee(e)}
-                          style={{ width: "100%", border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: C.slate, background: "#F8FAFC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-                        >
-                          View Full Profile <ChevronRight size={14} />
-                        </button>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                          <button 
+                            onClick={() => setSelectedEmployee(e)}
+                            style={{ border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: C.slate, background: "#F8FAFC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
+                          >
+                            Profile <ChevronRight size={14} />
+                          </button>
+                          <button 
+                            onClick={() => setPermissionEmployee({
+                              id: e.userId,
+                              fullName: e.name,
+                              loginId: e.loginId,
+                              email: e.email,
+                              role: e.role,
+                              jobRole: e.role,
+                              permissions: e.permissions || [],
+                            })}
+                            style={{ border: "1px solid #FCD34D", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: "#92400E", background: "#FEF3C7", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
+                          >
+                            <Shield size={13} color="#D97706" /> Permissions
+                          </button>
+                        </div>
                         <button
                           onClick={() => setSelectedEmployee(e)}
                           style={{ width: "100%", border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: C.ink, background: "#FFF9ED", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
@@ -260,7 +279,7 @@ export default function EmployeesTab() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#F8FAFC" }}>
-                {["ID", "Name", "Role", "Zone", "Salary (₹)", "Attendance", "Tasks", "Rating", "Status", "Actions"].map(h => (
+                {["ID", "Name", "Role", "Zone", "Salary (₹)", "Attendance", "Tasks", "Rating", "Permissions", "Status", "Actions"].map(h => (
                   <th key={h} style={{ textAlign: "left", padding: "12px 16px", fontSize: 11, fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -268,22 +287,23 @@ export default function EmployeesTab() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: "40px", textAlign: "center", color: C.slate, fontSize: 14 }}>Loading employees...</td>
+                  <td colSpan={11} style={{ padding: "40px", textAlign: "center", color: C.slate, fontSize: 14 }}>Loading employees...</td>
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: "40px", textAlign: "center", color: "#ef4444", fontSize: 14 }}>
+                  <td colSpan={11} style={{ padding: "40px", textAlign: "center", color: "#ef4444", fontSize: 14 }}>
                     {error}
                   </td>
                 </tr>
               ) : employees?.length === 0 ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: "40px", textAlign: "center", color: C.slate, fontSize: 14 }}>No employees found in database.</td>
+                  <td colSpan={11} style={{ padding: "40px", textAlign: "center", color: C.slate, fontSize: 14 }}>No employees found in database.</td>
                 </tr>
               ) : (
                 employees?.map((e, i) => {
                   const empId = e.loginId ?? `EMP-${String(e.id).padStart(3, "0")}`;
                   const attendance = 0; // Removed mock attendance
+                  const permCount = (e.permissions || []).length;
                   
                   return (
                     <tr key={e.id} style={{ borderTop: "1px solid #F1F5F9", background: i % 2 === 0 ? "#FAFBFC" : "#fff" }}>
@@ -308,6 +328,35 @@ export default function EmployeesTab() {
                           <Star size={12} color={C.gold} fill={C.gold} />
                           <span style={{ fontWeight: 700, fontSize: 13 }}>{e.rating}</span>
                         </div>
+                      </td>
+                      <td style={{ padding: "14px 16px" }}>
+                        <button
+                          onClick={() => setPermissionEmployee({
+                            id: e.userId,
+                            fullName: e.name,
+                            loginId: e.loginId,
+                            email: e.email,
+                            role: e.role,
+                            jobRole: e.role,
+                            permissions: e.permissions || [],
+                          })}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: "3px 8px",
+                            borderRadius: 6,
+                            border: "1px solid #FCD34D",
+                            background: permCount > 0 ? "#FEF3C7" : "#F8FAFC",
+                            color: permCount > 0 ? "#92400E" : C.slate,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Shield size={11} color={permCount > 0 ? "#D97706" : C.slate} />
+                          {permCount > 0 ? `${permCount} Sections` : "Default"}
+                        </button>
                       </td>
                       <td style={{ padding: "14px 16px" }}>
                         <Pill text={e.status === "active" ? "Active" : "Inactive"} variant={e.status === "active" ? "green" : "gray"} />
@@ -381,6 +430,16 @@ export default function EmployeesTab() {
         <BulkTaskAssignModal 
           open={isBulkAssignOpen} 
           onOpenChange={setIsBulkAssignOpen} 
+        />
+      )}
+      {permissionEmployee && (
+        <EmployeePermissionsModal
+          user={permissionEmployee}
+          onClose={() => setPermissionEmployee(null)}
+          onSaved={() => {
+            fetchEmployees();
+            setPermissionEmployee(null);
+          }}
         />
       )}
     </div>

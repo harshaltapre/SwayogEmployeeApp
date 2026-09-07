@@ -61,4 +61,56 @@ class InventoryRepository @Inject constructor(
             Result.failure(Exception("Failed to delete inventory item: ${ErrorUtils.formatException(e)}"))
         }
     }
+
+    suspend fun getDispatches(): Result<List<DispatchRecord>> {
+        return try {
+            val response = apiService.getDispatches()
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to fetch dispatches: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to fetch dispatches: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    suspend fun createDispatch(request: DispatchRequest): Result<DispatchRecord> {
+        return try {
+            val response = apiService.createDispatch(request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to record dispatch: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to record dispatch: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    suspend fun updateDispatch(id: String, request: UpdateDispatchRequest): Result<DispatchRecord> {
+        return try {
+            val response = apiService.updateDispatch(id, request)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Result.success(response.body()!!.data!!)
+            } else {
+                Result.failure(Exception("Failed to update dispatch: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to update dispatch: ${ErrorUtils.formatException(e)}"))
+        }
+    }
+
+    suspend fun deleteDispatch(id: String): Result<Unit> {
+        return try {
+            val response = apiService.deleteDispatch(id)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to delete dispatch: ${ErrorUtils.formatResponseError(response)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to delete dispatch: ${ErrorUtils.formatException(e)}"))
+        }
+    }
 }

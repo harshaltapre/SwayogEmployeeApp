@@ -16,6 +16,9 @@ function serializeInventoryItem(item: any) {
     sku: item.sku,
     name: item.name,
     category: item.category,
+    company: item.company ?? "",
+    capacityKw: item.capacityKw ?? "",
+    unit: item.unit ?? "unit",
     inStock: item.inStock,
     minThreshold: item.minThreshold,
     supplier: item.supplier ?? "",
@@ -68,16 +71,23 @@ export async function createInventoryItem(_auth: AuthContext, input: CreateInven
     throw new ApiError(400, `An item with SKU "${input.sku}" already exists`);
   }
 
+  const parsedEntryDate = input.entryDate && !isNaN(new Date(input.entryDate).getTime())
+    ? new Date(input.entryDate)
+    : new Date();
+
   const item = await prisma.inventory.create({
     data: {
       sku: input.sku,
       name: input.name,
       category: input.category,
+      company: input.company,
+      capacityKw: input.capacityKw,
+      unit: input.unit ?? "unit",
       inStock: input.inStock ?? 0,
       minThreshold: input.minThreshold ?? 0,
       supplier: input.supplier,
       pricePerUnit: input.pricePerUnit ?? 0,
-      entryDate: input.entryDate ? new Date(input.entryDate) : undefined,
+      entryDate: parsedEntryDate,
     },
   });
 
@@ -85,7 +95,7 @@ export async function createInventoryItem(_auth: AuthContext, input: CreateInven
   const userName = user?.fullName || _auth.loginId;
   await createAdminNotification({
     type: "MATERIAL_ADD",
-    message: `${userName} added new material: ${item.name} (${item.inStock} units)`,
+    message: `${userName} added new material: ${item.name} (${item.inStock} ${item.unit || "units"})`,
     employeeId: _auth.userId,
   });
 
@@ -109,18 +119,26 @@ export async function updateInventoryItem(_auth: AuthContext, id: number, input:
     }
   }
 
+  const updateData: any = {};
+  if (input.sku !== undefined) updateData.sku = input.sku;
+  if (input.name !== undefined) updateData.name = input.name;
+  if (input.category !== undefined) updateData.category = input.category;
+  if (input.inStock !== undefined) updateData.inStock = input.inStock;
+  if (input.minThreshold !== undefined) updateData.minThreshold = input.minThreshold;
+  if (input.supplier !== undefined) updateData.supplier = input.supplier;
+  if (input.pricePerUnit !== undefined) updateData.pricePerUnit = input.pricePerUnit;
+  if (input.entryDate !== undefined) {
+    updateData.entryDate = input.entryDate && !isNaN(new Date(input.entryDate).getTime())
+      ? new Date(input.entryDate)
+      : new Date();
+  }
+  if (input.company !== undefined) updateData.company = input.company;
+  if (input.capacityKw !== undefined) updateData.capacityKw = input.capacityKw;
+  if (input.unit !== undefined) updateData.unit = input.unit;
+
   const updated = await prisma.inventory.update({
     where: { id },
-    data: {
-      sku: input.sku,
-      name: input.name,
-      category: input.category,
-      inStock: input.inStock,
-      minThreshold: input.minThreshold,
-      supplier: input.supplier,
-      pricePerUnit: input.pricePerUnit,
-      entryDate: input.entryDate ? new Date(input.entryDate) : undefined,
-    },
+    data: updateData,
   });
 
   const user = await prisma.user.findUnique({ where: { id: _auth.userId } });
@@ -128,7 +146,7 @@ export async function updateInventoryItem(_auth: AuthContext, id: number, input:
   let notificationMessage = `${userName} updated material: ${updated.name}`;
   if (input.inStock !== undefined && input.inStock > existing.inStock) {
     const diff = input.inStock - existing.inStock;
-    notificationMessage = `${userName} added ${diff} units to ${updated.name} (Total: ${updated.inStock})`;
+    notificationMessage = `${userName} added ${diff} ${updated.unit || "units"} to ${updated.name} (Total: ${updated.inStock})`;
   }
   await createAdminNotification({
     type: "MATERIAL_ADD",

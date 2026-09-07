@@ -33,11 +33,10 @@ model User {
   lastFailedLoginAt   DateTime?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
+  permissions         String[]              @default([])
   profileImageUrl     String?
-  profileImageKey     String?
   AttendanceRecord    AttendanceRecord[]
   faceEnrollment      FaceEnrollment?
-  userPreferences     UserPreferences?
   checkIns            CheckIn[]
   auditLogs           AuditLog[]            @relation("audit_actor")
   customerProfile     Customer?
@@ -216,6 +215,7 @@ model EmployeeProfile {
   zone             String?
   monthlySalaryInr Int?
   isActive         Boolean         @default(true)
+  permissions      String[]        @default([])
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   partner          PartnerProfile? @relation(fields: [partnerId], references: [id])
@@ -540,31 +540,6 @@ model FaceEnrollment {
   @@index([employeeId])
 }
 
-// ---------------------------------------------------------------------------
-// User Preferences (Synchronized Cross-Platform Settings)
-// ---------------------------------------------------------------------------
-
-model UserPreferences {
-  id                   String   @id @default(uuid())
-  userId               String   @unique
-  language             String   @default("en")
-  animationsEnabled    Boolean  @default(true)
-  compactView          Boolean  @default(false)
-  theme                String   @default("light")
-  darkMode             Boolean  @default(false)
-  biometricEnabled     Boolean  @default(false)
-  notificationsEnabled Boolean  @default(true)
-  profileVisibility    Boolean  @default(true)
-  showStatus           Boolean  @default(true)
-  activitySharing      Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
 model PerformanceSnapshot {
   id                 String   @id @default(uuid())
   employeeId         String
@@ -642,7 +617,6 @@ enum UserRole {
   CUSTOMER
   DEPARTMENT_HEAD
   TEAM_LEAD
-  ELECTRICAL_ENGINEER
 }
 
 enum DepartmentCode {
@@ -699,6 +673,9 @@ model Inventory {
   inStock      Int              @default(0)
   minThreshold Int              @default(0)
   supplier     String?
+  company      String?
+  capacityKw   String?
+  unit         String           @default("unit")
   pricePerUnit Float            @default(0)
   entryDate    DateTime         @default(now())
   createdAt    DateTime         @default(now())

@@ -295,6 +295,9 @@ export function PartnersLeadSection({ isServiceCoordinator = false }: PartnersLe
       if (!isServiceCoordinator && epcFilter !== "ALL") {
         if (epcFilter === "ASSIGNED" && !lead.assignedEpc) return false;
         if (epcFilter === "UNASSIGNED" && Boolean(lead.assignedEpc)) return false;
+        if (epcFilter === "ACCEPTED" && lead.epcAssignmentStatus !== "ACCEPTED") return false;
+        if (epcFilter === "PENDING_RESP" && (!lead.assignedEpc || lead.epcAssignmentStatus !== null)) return false;
+        if (epcFilter === "REJECTED" && lead.epcAssignmentStatus !== "REJECTED") return false;
       }
 
       // Partner filter
@@ -532,13 +535,16 @@ export function PartnersLeadSection({ isServiceCoordinator = false }: PartnersLe
               </Select>
             ) : (
               <Select value={epcFilter} onValueChange={setEpcFilter}>
-                <SelectTrigger className="h-9 text-xs w-40">
+                <SelectTrigger className="h-9 text-xs w-44">
                   <SelectValue placeholder="EPC Assignment" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Assignment</SelectItem>
-                  <SelectItem value="ASSIGNED">Assigned EPC</SelectItem>
-                  <SelectItem value="UNASSIGNED">Unassigned EPC</SelectItem>
+                  <SelectItem value="ALL">All EPC Status</SelectItem>
+                  <SelectItem value="ASSIGNED">Assigned (Any)</SelectItem>
+                  <SelectItem value="UNASSIGNED">Unassigned Leads</SelectItem>
+                  <SelectItem value="ACCEPTED">✓ Accepted by EPC</SelectItem>
+                  <SelectItem value="PENDING_RESP">⏳ Awaiting EPC Response</SelectItem>
+                  <SelectItem value="REJECTED">✕ Declined by EPC</SelectItem>
                 </SelectContent>
               </Select>
             )}

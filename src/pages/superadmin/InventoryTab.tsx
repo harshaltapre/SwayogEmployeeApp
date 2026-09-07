@@ -151,10 +151,26 @@ export default function InventoryTab() {
               return (
                 <tr key={item.id} style={{ borderTop: "1px solid #F1F5F9", background: isLow ? "#FFF7ED" : i % 2 === 0 ? "#FAFBFC" : "#fff" }}>
                   <td style={{ padding: "14px 16px", fontSize: 12, fontFamily: "monospace", color: C.slate }}>{item.sku}</td>
-                  <td style={{ padding: "14px 16px", fontWeight: 700, color: C.ink }}>{item.name}</td>
+                  <td style={{ padding: "14px 16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, color: C.ink }}>{item.name}</span>
+                      {item.company && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#EFF6FF", color: "#1E40AF", border: "1px solid #BFDBFE" }}>
+                          {item.company}
+                        </span>
+                      )}
+                      {item.capacityKw && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#FEF9C3", color: "#854D0E", border: "1px solid #FDE047", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                          ⚡ {String(item.capacityKw).toLowerCase().includes("w") || String(item.capacityKw).toLowerCase().includes("k") ? item.capacityKw : `${item.capacityKw} ${(item.name.toLowerCase().includes("panel") || item.category === "solar_panels") ? "Wp" : "kW"}`}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td style={{ padding: "14px 16px" }}><Pill text={item.category.replace("_", " ")} variant="blue" /></td>
-                  <td style={{ padding: "14px 16px", fontWeight: 800, color: isLow ? C.rose : C.ink }}>{item.inStock}</td>
-                  <td style={{ padding: "14px 16px", color: C.slate }}>{item.minThreshold}</td>
+                  <td style={{ padding: "14px 16px", fontWeight: 800, color: isLow ? C.rose : C.ink }}>
+                    {item.inStock} {item.unit || "units"}
+                  </td>
+                  <td style={{ padding: "14px 16px", color: C.slate }}>{item.minThreshold} {item.unit || "units"}</td>
                   <td style={{ padding: "14px 16px", fontWeight: 700, color: C.emerald }}>₹{item.pricePerUnit?.toLocaleString('en-IN') || '0'}</td>
                   <td style={{ padding: "14px 16px", color: C.slate, fontSize: 12 }}>{item.supplier}</td>
                   <td style={{ padding: "14px 16px" }}>
