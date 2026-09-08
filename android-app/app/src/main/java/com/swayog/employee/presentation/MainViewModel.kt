@@ -53,6 +53,25 @@ class MainViewModel @Inject constructor(
         initialValue = true
     )
 
+    init {
+        checkInactivitySession()
+    }
+
+    fun checkInactivitySession() {
+        viewModelScope.launch {
+            if (dataStoreManager.isSessionExpiredDueToInactivity(maxInactiveDays = 10L)) {
+                android.util.Log.w("MainViewModel", "Session expired due to 10+ days of inactivity. Logging out.")
+                authRepository.logout()
+            } else {
+                dataStoreManager.recordUserActive()
+            }
+        }
+    }
+
+    fun onAppForegrounded() {
+        checkInactivitySession()
+    }
+
     fun logout() {
         viewModelScope.launch {
             authRepository.logout()

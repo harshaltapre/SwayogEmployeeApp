@@ -10,7 +10,9 @@ data class AttendanceRecord(
     val checkOutTime: String?,
     val totalMinutes: Int?,
     val status: String,
-    val notes: String?
+    val notes: String?,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 data class CheckInRequest(

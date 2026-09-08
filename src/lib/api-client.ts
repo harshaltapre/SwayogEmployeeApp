@@ -704,6 +704,7 @@ type AuthUser = {
   jobRole?: string;
   reportingManagerId?: string | null;
   employeeCode?: string | null;
+  permissions?: string[];
 };
 
 type AuthSession = {

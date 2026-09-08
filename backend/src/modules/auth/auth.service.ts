@@ -471,12 +471,8 @@ export async function refreshSession(rawRefreshToken: string) {
   }
 
   const tokenHash = hashToken(rawRefreshToken);
-  const revokedInCache = await isRefreshTokenRevoked(tokenHash);
-  if (revokedInCache) {
-    throw new ApiError(401, "Refresh token is expired or revoked");
-  }
 
-  const existingToken = await prisma.refreshToken.findFirst({
+  let existingToken = await prisma.refreshToken.findFirst({
     where: {
       userId: payload.sub,
       tokenHash,
@@ -487,7 +483,32 @@ export async function refreshSession(rawRefreshToken: string) {
     },
   });
 
+  // Token rotation grace period: allow recent rotation (within 30 seconds) to return an active session
+  let isGracePeriodReuse = false;
   if (!existingToken) {
+    const graceCutoff = new Date(Date.now() - 30 * 1000);
+    existingToken = await prisma.refreshToken.findFirst({
+      where: {
+        userId: payload.sub,
+        tokenHash,
+        revokedAt: {
+          gte: graceCutoff,
+        },
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+    });
+    if (existingToken) {
+      isGracePeriodReuse = true;
+    }
+  }
+
+  if (!existingToken) {
+    const revokedInCache = await isRefreshTokenRevoked(tokenHash);
+    if (revokedInCache) {
+      throw new ApiError(401, "Refresh token is expired or revoked");
+    }
     throw new ApiError(401, "Refresh token is expired or revoked");
   }
 
@@ -500,12 +521,14 @@ export async function refreshSession(rawRefreshToken: string) {
     throw new ApiError(401, "User not active");
   }
 
-  await prisma.refreshToken.update({
-    where: { id: existingToken.id },
-    data: { revokedAt: new Date() },
-  });
+  if (!isGracePeriodReuse) {
+    await prisma.refreshToken.update({
+      where: { id: existingToken.id },
+      data: { revokedAt: new Date() },
+    });
 
-  await markRefreshTokenRevoked(tokenHash, existingToken.expiresAt);
+    await markRefreshTokenRevoked(tokenHash, existingToken.expiresAt);
+  }
 
   await prisma.auditLog.create({
     data: {

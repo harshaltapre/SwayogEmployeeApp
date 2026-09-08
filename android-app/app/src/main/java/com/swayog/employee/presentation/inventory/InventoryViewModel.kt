@@ -6,6 +6,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.*
+import com.swayog.employee.data.repository.AttendanceRepository
 import com.swayog.employee.data.repository.CustomerRepository
 import com.swayog.employee.data.repository.InventoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,11 +21,15 @@ import javax.inject.Inject
 @HiltViewModel
 class InventoryViewModel @Inject constructor(
     private val inventoryRepository: InventoryRepository,
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val attendanceRepository: AttendanceRepository
 ) : ViewModel() {
 
     private val _inventoryState = MutableStateFlow<InventoryState>(InventoryState.Initial)
     val inventoryState: StateFlow<InventoryState> = _inventoryState.asStateFlow()
+
+    val todayAttendance: StateFlow<AttendanceRecord?> = attendanceRepository.getTodayAttendanceFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private val _inventoryItems = MutableStateFlow<List<InventoryItem>>(emptyList())
     val inventoryItems: StateFlow<List<InventoryItem>> = _inventoryItems.asStateFlow()
@@ -103,6 +108,13 @@ class InventoryViewModel @Inject constructor(
         loadInventoryItems()
         loadDispatches()
         loadCustomers()
+        loadAttendance()
+    }
+
+    fun loadAttendance() {
+        viewModelScope.launch {
+            attendanceRepository.getTodayAttendance()
+        }
     }
 
     fun loadInventoryItems() {

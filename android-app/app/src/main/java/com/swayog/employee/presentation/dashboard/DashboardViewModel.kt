@@ -132,15 +132,6 @@ class DashboardViewModel @Inject constructor(
                     val attendanceRes = attendanceDeferred.await()
                     val perfRes = perfDeferred.await()
 
-                    val isAuthExpired = com.swayog.employee.core.util.ErrorUtils.isUnauthorized(taskRes.exceptionOrNull()) ||
-                            com.swayog.employee.core.util.ErrorUtils.isUnauthorized(attendanceRes.exceptionOrNull()) ||
-                            com.swayog.employee.core.util.ErrorUtils.isUnauthorized(perfRes.exceptionOrNull())
-
-                    if (isAuthExpired) {
-                        viewModelScope.launch {
-                            dataStoreManager.clearAll()
-                        }
-                    }
 
                     taskRes.onSuccess { taskList ->
                         _tasks.value = taskList

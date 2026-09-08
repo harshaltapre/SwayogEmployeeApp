@@ -19,15 +19,35 @@ data class AttendanceEntity(
     val checkInLocation: String?,
     val isSynced: Boolean = true
 ) {
-    fun toAttendanceRecord(): AttendanceRecord = AttendanceRecord(
-        id = id,
-        employeeId = employeeId,
-        date = date,
-        checkInTime = checkInTime,
-        checkOutTime = checkOutTime,
-        totalMinutes = totalMinutes,
-        status = status,
-        notes = notes
-    )
+    fun toAttendanceRecord(): AttendanceRecord {
+        var lat: Double? = null
+        var lng: Double? = null
+        if (!checkInLocation.isNullOrBlank()) {
+            try {
+                val parts = checkInLocation
+                    .replace("Lat", "")
+                    .replace("Lng", "")
+                    .replace("lat:", "")
+                    .replace("lng:", "")
+                    .split(",")
+                if (parts.size == 2) {
+                    lat = parts[0].trim().toDoubleOrNull()
+                    lng = parts[1].trim().toDoubleOrNull()
+                }
+            } catch (_: Exception) {}
+        }
+        return AttendanceRecord(
+            id = id,
+            employeeId = employeeId,
+            date = date,
+            checkInTime = checkInTime,
+            checkOutTime = checkOutTime,
+            totalMinutes = totalMinutes,
+            status = status,
+            notes = notes,
+            latitude = lat,
+            longitude = lng
+        )
+    }
 }
 

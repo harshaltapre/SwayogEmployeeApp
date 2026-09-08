@@ -38,6 +38,7 @@ class DataStoreManager @Inject constructor(
         val LANGUAGE = stringPreferencesKey("language")
         val SERVER_URL = stringPreferencesKey("server_url")
         val PROFILE_PHOTO_URL = stringPreferencesKey("profile_photo_url")
+        val LAST_ACTIVE_TIME = longPreferencesKey("last_active_time")
         
         // Face recognition
         val FACE_ENROLLED = booleanPreferencesKey("face_enrolled")
@@ -101,6 +102,29 @@ class DataStoreManager @Inject constructor(
     
     val isLoggedIn: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.IS_LOGGED_IN] ?: false
+    }
+
+    val lastActiveTime: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.LAST_ACTIVE_TIME]
+    }
+
+    suspend fun recordUserActive(timestamp: Long = System.currentTimeMillis()) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.LAST_ACTIVE_TIME] = timestamp
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun isSessionExpiredDueToInactivity(maxInactiveDays: Long = 10L): Boolean {
+        val loggedIn = isLoggedIn.first()
+        if (!loggedIn) return false
+        val lastActive = lastActiveTime.first() ?: return false
+        val maxInactiveDurationMs = maxInactiveDays * 24L * 60L * 60L * 1000L
+        val elapsed = System.currentTimeMillis() - lastActive
+        return elapsed > maxInactiveDurationMs
     }
     
     val biometricEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -189,6 +213,7 @@ class DataStoreManager @Inject constructor(
                 } else {
                     preferences.remove(PreferencesKeys.PROFILE_PHOTO_URL)
                 }
+                preferences[PreferencesKeys.LAST_ACTIVE_TIME] = System.currentTimeMillis()
                 preferences[PreferencesKeys.IS_LOGGED_IN] = true
             }
         } catch (e: Exception) {
@@ -207,6 +232,7 @@ class DataStoreManager @Inject constructor(
             preferences.remove(PreferencesKeys.JOB_ROLE)
             preferences.remove(PreferencesKeys.IS_LOGGED_IN)
             preferences.remove(PreferencesKeys.PROFILE_PHOTO_URL)
+            preferences.remove(PreferencesKeys.LAST_ACTIVE_TIME)
             
             // Clear face enrollment data on logout
             preferences.remove(PreferencesKeys.FACE_ENROLLED)

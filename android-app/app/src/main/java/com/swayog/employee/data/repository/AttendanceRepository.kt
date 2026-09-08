@@ -37,18 +37,7 @@ class AttendanceRepository @Inject constructor(
     }
     fun getAttendanceByEmployeeId(employeeId: String): Flow<List<AttendanceRecord>> {
         return attendanceDao.getAttendanceByEmployeeId(employeeId).map { entities ->
-            entities.map { entity ->
-                AttendanceRecord(
-                    id = entity.id,
-                    employeeId = entity.employeeId,
-                    date = entity.date,
-                    checkInTime = entity.checkInTime,
-                    checkOutTime = entity.checkOutTime,
-                    totalMinutes = entity.totalMinutes,
-                    status = entity.status,
-                    notes = entity.notes
-                )
-            }
+            entities.map { it.toAttendanceRecord() }
         }
     }
 
@@ -60,18 +49,7 @@ class AttendanceRepository @Inject constructor(
     fun getTodayAttendanceFlow(): Flow<AttendanceRecord?> {
         val todayStr = java.time.LocalDate.now().toString()
         return attendanceDao.getTodayAttendanceFlow(todayStr).map { entity ->
-            entity?.let {
-                AttendanceRecord(
-                    id = it.id,
-                    employeeId = it.employeeId,
-                    date = it.date,
-                    checkInTime = it.checkInTime,
-                    checkOutTime = it.checkOutTime,
-                    totalMinutes = it.totalMinutes,
-                    status = it.status,
-                    notes = it.notes
-                )
-            }
+            entity?.toAttendanceRecord()
         }
     }
 
@@ -83,6 +61,11 @@ class AttendanceRepository @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 val record = response.body()!!.record
                 if (record != null) {
+                    val existingLoc = try { attendanceDao.getTodayAttendance(todayStr)?.checkInLocation } catch (_: Exception) { null }
+                    val locStr = if (record.latitude != null && record.longitude != null) {
+                        "Lat ${record.latitude}, Lng ${record.longitude}"
+                    } else existingLoc
+
                     attendanceDao.insertAttendance(
                         AttendanceEntity(
                             id = record.id,
@@ -94,7 +77,7 @@ class AttendanceRepository @Inject constructor(
                             status = record.status,
                             notes = record.notes,
                             checkInSelfieUrl = null,
-                            checkInLocation = null,
+                            checkInLocation = locStr,
                             isSynced = true
                         )
                     )

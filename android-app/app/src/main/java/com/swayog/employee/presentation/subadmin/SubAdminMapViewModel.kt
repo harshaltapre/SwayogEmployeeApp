@@ -63,8 +63,7 @@ class SubAdminMapViewModel @Inject constructor(
                         .onSuccess { _complaints.value = it }
                         .onFailure { error ->
                             if (com.swayog.employee.core.util.ErrorUtils.isUnauthorized(error)) {
-                                _errorMessage.value = "Session expired. Redirecting..."
-                                viewModelScope.launch { dataStoreManager.clearAll() }
+                                _errorMessage.value = "Authentication error. Please retry."
                             } else {
                                 _errorMessage.value = com.swayog.employee.core.util.ErrorUtils.formatException(error)
                             }

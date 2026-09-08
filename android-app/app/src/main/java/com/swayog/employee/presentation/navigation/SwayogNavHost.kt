@@ -256,7 +256,8 @@ fun SwayogNavHost(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-                onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) }
+                onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
+                onNavigateToAttendance = { navController.navigate(Screen.Attendance.route) }
             )
         }
     }

@@ -8,8 +8,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -40,13 +38,9 @@ fun LoginScreen(
     val loginState by viewModel.loginState.collectAsState()
     val email by viewModel.email.collectAsState()
     val password by viewModel.password.collectAsState()
-    val credentialMode by viewModel.credentialMode.collectAsState()
-    val phoneNumber by viewModel.phoneNumber.collectAsState()
-    val otp by viewModel.otp.collectAsState()
     val isPasswordVisible by viewModel.isPasswordVisible.collectAsState()
     val isBiometricAvailable by viewModel.isBiometricAvailable.collectAsState()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     // Server URL configuration state
     var showServerDialog by remember { mutableStateOf(false) }
@@ -165,112 +159,57 @@ fun LoginScreen(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
                 
-                // Login Mode Tabs
-                TabRow(
-                    selectedTabIndex = if (credentialMode == "email_passcode") 0 else 1,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                ) {
-                    Tab(
-                        selected = credentialMode == "email_passcode",
-                        onClick = { viewModel.setCredentialMode("email_passcode") },
-                        text = { Text("Email / ID") }
-                    )
-                    Tab(
-                        selected = credentialMode == "mobile_otp",
-                        onClick = { viewModel.setCredentialMode("mobile_otp") },
-                        text = { Text("Phone OTP") }
-                    )
-                }
-                
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                if (credentialMode == "email_passcode") {
-                    // Email Field
-                    SwayogTextField(
-                        value = email,
-                        onValueChange = viewModel::onEmailChange,
-                        label = "Email / Login ID",
-                        placeholder = "Enter email or EMP-XXXXXX",
-                        keyboardType = KeyboardType.Email,
-                        trailingIcon = {
+                // Email / Login ID Field
+                SwayogTextField(
+                    value = email,
+                    onValueChange = viewModel::onEmailChange,
+                    label = "Email / Login ID",
+                    placeholder = "Enter email or EMP-XXXXXX",
+                    keyboardType = KeyboardType.Email,
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Email,
+                            contentDescription = "Email",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
+                )
+                
+                // Password Field
+                SwayogTextField(
+                    value = password,
+                    onValueChange = viewModel::onPasswordChange,
+                    label = "Password",
+                    placeholder = "Enter your password",
+                    keyboardType = KeyboardType.Password,
+                    visualTransformation = if (isPasswordVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = viewModel::togglePasswordVisibility) {
                             Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = "Email",
+                                imageVector = if (isPasswordVisible) {
+                                    Icons.Default.VisibilityOff
+                                } else {
+                                    Icons.Default.Visibility
+                                },
+                                contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             )
                         }
-                    )
-                    
-                    // Password Field
-                    SwayogTextField(
-                        value = password,
-                        onValueChange = viewModel::onPasswordChange,
-                        label = "Password",
-                        placeholder = "Enter your password",
-                        keyboardType = KeyboardType.Password,
-                        visualTransformation = if (isPasswordVisible) {
-                            VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
-                        },
-                        trailingIcon = {
-                            IconButton(onClick = viewModel::togglePasswordVisibility) {
-                                Icon(
-                                    imageVector = if (isPasswordVisible) {
-                                        Icons.Default.VisibilityOff
-                                    } else {
-                                        Icons.Default.Visibility
-                                    },
-                                    contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                )
-                            }
-                        }
-                    )
-                } else {
-                    // Phone Field
-                    SwayogTextField(
-                        value = phoneNumber,
-                        onValueChange = viewModel::onPhoneNumberChange,
-                        label = "Phone Number",
-                        placeholder = "Enter phone number",
-                        keyboardType = KeyboardType.Phone,
-                        trailingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Phone,
-                                contentDescription = "Phone",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            )
-                        }
-                    )
-                    
-                    // OTP Field
-                    SwayogTextField(
-                        value = otp,
-                        onValueChange = viewModel::onOtpChange,
-                        label = "OTP Code",
-                        placeholder = "Enter OTP code",
-                        keyboardType = KeyboardType.Number,
-                        trailingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "OTP",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            )
-                        }
-                    )
-                }
+                    }
+                )
                 
                 // Login Button
                 SwayogButton(
                     text = "Login",
                     onClick = viewModel::login,
                     isLoading = loginState is LoginState.Loading,
-                    enabled = (loginState !is LoginState.Loading) && if (credentialMode == "email_passcode") {
-                        email.isNotBlank() && password.isNotBlank()
-                    } else {
-                        phoneNumber.isNotBlank() && otp.isNotBlank()
-                    }
+                    enabled = (loginState !is LoginState.Loading) && email.isNotBlank() && password.isNotBlank()
                 )
                 
                 // Biometric Login
