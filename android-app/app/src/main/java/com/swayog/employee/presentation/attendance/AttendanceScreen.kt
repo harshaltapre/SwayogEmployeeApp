@@ -77,7 +77,25 @@ fun AttendanceScreen(
     var calendarMonth by remember { mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH)) }
     var calendarYear by remember { mutableIntStateOf(Calendar.getInstance().get(Calendar.YEAR)) }
 
+    val attendanceRules by viewModel.attendanceRules.collectAsState()
+    var useGoogleMaps by remember { mutableStateOf(false) }
+
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+
+    // Proactively fetch current GPS location if location permission is already granted
+    LaunchedEffect(Unit) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            try {
+                fusedLocationClient.lastLocation.addOnSuccessListener { loc: Location? ->
+                    if (loc != null) {
+                        currentLatitude = loc.latitude
+                        currentLongitude = loc.longitude
+                    }
+                }
+            } catch (_: SecurityException) {}
+        }
+    }
 
     // Live clock
     var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -364,63 +382,381 @@ fun AttendanceScreen(
                     item {
                         SwayogCard {
                             Column(modifier = Modifier.fillMaxWidth()) {
-                                Text(
-                                    text = "Geofenced Location Verification",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
+                                val isCheckedIn = todayAttendance?.checkInTime != null
+                                val loginTimeFormatted = if (isCheckedIn) formatUtcToLocalTime(todayAttendance?.checkInTime) else null
+                                val pinLat = todayAttendance?.latitude ?: currentLatitude ?: attendanceRules.officeLat
+                                val pinLng = todayAttendance?.longitude ?: currentLongitude ?: attendanceRules.officeLng
 
-                                val mapCenter = LatLng(currentLatitude ?: 18.5204, currentLongitude ?: 73.8567)
-                                val cameraPositionState = rememberCameraPositionState {
-                                    position = CameraPosition.fromLatLngZoom(mapCenter, 15f)
+                                val distFromOffice = remember(pinLat, pinLng, attendanceRules) {
+                                    val results = FloatArray(1)
+                                    Location.distanceBetween(
+                                        pinLat, pinLng,
+                                        attendanceRules.officeLat, attendanceRules.officeLng,
+                                        results
+                                    )
+                                    results[0]
                                 }
 
-                                LaunchedEffect(currentLatitude, currentLongitude) {
-                                    if (currentLatitude != null && currentLongitude != null) {
-                                        cameraPositionState.position = CameraPosition.fromLatLngZoom(
-                                            LatLng(currentLatitude!!, currentLongitude!!), 15f
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Geofenced Location Verification",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
                                         )
+                                        Text(
+                                            text = if (isCheckedIn) "Checked In at $loginTimeFormatted" else "Live GPS Location Verification",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (isCheckedIn) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            fontWeight = if (isCheckedIn) FontWeight.SemiBold else FontWeight.Normal
+                                        )
+                                    }
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        // Refresh location button
+                                        IconButton(
+                                            onClick = {
+                                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                                    try {
+                                                        fusedLocationClient.lastLocation.addOnSuccessListener { loc: Location? ->
+                                                            if (loc != null) {
+                                                                currentLatitude = loc.latitude
+                                                                currentLongitude = loc.longitude
+                                                                Toast.makeText(context, "GPS location updated", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    } catch (_: SecurityException) {}
+                                                } else {
+                                                    permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.CAMERA))
+                                                }
+                                            },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MyLocation,
+                                                contentDescription = "My Location",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+
+                                        // Toggle between Leaflet OSM & Google Maps
+                                        IconButton(
+                                            onClick = { useGoogleMaps = !useGoogleMaps },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (useGoogleMaps) Icons.Default.Layers else Icons.Default.Public,
+                                                contentDescription = if (useGoogleMaps) "Google Maps Active" else "OpenStreetMap Active",
+                                                tint = MaterialTheme.colorScheme.secondary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                     }
                                 }
 
-                                val mapUrl = remember(currentLatitude, currentLongitude) {
-                                    val lat = currentLatitude ?: 18.5204
-                                    val lon = currentLongitude ?: 73.8567
-                                    "https://www.openstreetmap.org/export/embed.html?bbox=${lon - 0.005}%2C${lat - 0.003}%2C${lon + 0.005}%2C${lat + 0.003}&layer=mapnik&marker=${lat}%2C${lon}"
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                val cameraPositionState = rememberCameraPositionState {
+                                    position = CameraPosition.fromLatLngZoom(LatLng(pinLat, pinLng), 16f)
+                                }
+
+                                LaunchedEffect(pinLat, pinLng) {
+                                    cameraPositionState.position = CameraPosition.fromLatLngZoom(
+                                        LatLng(pinLat, pinLng), 16f
+                                    )
+                                }
+
+                                val leafletHtml = remember(pinLat, pinLng, isCheckedIn, loginTimeFormatted, attendanceRules) {
+                                    val geofenceScript = if (attendanceRules.geofenceEnabled) {
+                                        """
+                                        L.circle([${attendanceRules.officeLat}, ${attendanceRules.officeLng}], {
+                                            color: '#10b981',
+                                            fillColor: '#10b981',
+                                            fillOpacity: 0.15,
+                                            radius: ${attendanceRules.officeRadius},
+                                            dashArray: '5, 5'
+                                        }).addTo(map).bindPopup('<b>Office Geofence Zone</b><br>Radius: ${attendanceRules.officeRadius.toInt()}m');
+                                        """.trimIndent()
+                                    } else ""
+
+                                    val pinBadge = if (isCheckedIn) "Login: $loginTimeFormatted" else "Current Location"
+                                    val pinColor = if (isCheckedIn) "#0B6E4F" else "#0284c7"
+
+                                    """
+                                    <!DOCTYPE html>
+                                    <html>
+                                    <head>
+                                        <meta charset="UTF-8">
+                                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+                                        <link rel="stylesheet" href="file:///android_asset/leaflet/leaflet.css" />
+                                        <style>
+                                            * { box-sizing: border-box; margin: 0; padding: 0; }
+                                            html, body, #map { width: 100%; height: 100%; background: #e2e8f0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                                            .swayog-pin-wrap {
+                                                display: flex;
+                                                flex-direction: column;
+                                                align-items: center;
+                                                pointer-events: auto;
+                                                cursor: pointer;
+                                            }
+                                            .swayog-time-pill {
+                                                background: $pinColor;
+                                                color: #ffffff;
+                                                font-size: 11px;
+                                                font-weight: 700;
+                                                padding: 4px 10px;
+                                                border-radius: 14px;
+                                                box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+                                                border: 2px solid #ffffff;
+                                                white-space: nowrap;
+                                                margin-bottom: 2px;
+                                                letter-spacing: 0.2px;
+                                                display: flex;
+                                                align-items: center;
+                                                gap: 4px;
+                                            }
+                                            .swayog-pin-head {
+                                                width: 32px;
+                                                height: 32px;
+                                                background: radial-gradient(circle at 50% 35%, #60a5fa, $pinColor 75%);
+                                                border: 2.5px solid #ffffff;
+                                                border-radius: 50% 50% 50% 0;
+                                                transform: rotate(-45deg);
+                                                box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+                                                display: flex;
+                                                align-items: center;
+                                                justify-content: center;
+                                            }
+                                            .swayog-pin-core {
+                                                width: 10px;
+                                                height: 10px;
+                                                background: #ffffff;
+                                                border-radius: 50%;
+                                                transform: rotate(45deg);
+                                            }
+                                            .swayog-pin-pulse {
+                                                width: 14px;
+                                                height: 5px;
+                                                background: rgba(0,0,0,0.25);
+                                                border-radius: 50%;
+                                                margin-top: -1px;
+                                            }
+                                            .leaflet-popup-content-wrapper {
+                                                border-radius: 12px;
+                                                box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+                                                padding: 4px;
+                                            }
+                                            .popup-title { font-weight: 700; font-size: 13px; color: $pinColor; margin-bottom: 4px; }
+                                            .popup-body { font-size: 12px; line-height: 1.4; color: #334155; }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <div id="map"></div>
+                                        <script src="file:///android_asset/leaflet/leaflet.js"></script>
+                                        <script>
+                                            var map = L.map('map', {
+                                                zoomControl: false,
+                                                attributionControl: false
+                                            }).setView([$pinLat, $pinLng], 16);
+
+                                            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+                                            L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
+                                                maxZoom: 19
+                                            }).addTo(map);
+
+                                            $geofenceScript
+
+                                            var pinHtml = '' +
+                                                '<div class="swayog-pin-wrap">' +
+                                                    '<div class="swayog-time-pill">⏰ $pinBadge</div>' +
+                                                    '<div class="swayog-pin-head"><div class="swayog-pin-core"></div></div>' +
+                                                    '<div class="swayog-pin-pulse"></div>' +
+                                                '</div>';
+
+                                            var customIcon = L.divIcon({
+                                                html: pinHtml,
+                                                className: '',
+                                                iconSize: [140, 68],
+                                                iconAnchor: [70, 68],
+                                                popupAnchor: [0, -64]
+                                            });
+
+                                            var marker = L.marker([$pinLat, $pinLng], { icon: customIcon }).addTo(map);
+
+                                            var popupContent = '<div class="popup-title">${if (isCheckedIn) "✅ Check-In Location Verified" else "📍 Current GPS Location"}</div>' +
+                                                '<div class="popup-body">' +
+                                                '<b>Login Time:</b> ${loginTimeFormatted ?: "Not Checked In Yet"}<br>' +
+                                                '<b>Coordinates:</b> ${"%.5f".format(pinLat)}, ${"%.5f".format(pinLng)}' +
+                                                '</div>';
+
+                                            marker.bindPopup(popupContent);
+
+                                            setTimeout(function() {
+                                                map.invalidateSize();
+                                            }, 250);
+                                        </script>
+                                    </body>
+                                    </html>
+                                    """.trimIndent()
                                 }
 
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(200.dp)
+                                        .height(230.dp)
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(Color.LightGray)
                                 ) {
-                                    androidx.compose.ui.viewinterop.AndroidView(
-                                        factory = { context ->
-                                            android.webkit.WebView(context).apply {
-                                                settings.javaScriptEnabled = true
-                                                webViewClient = android.webkit.WebViewClient()
+                                    if (!useGoogleMaps) {
+                                        androidx.compose.ui.viewinterop.AndroidView(
+                                            factory = { ctx ->
+                                                android.webkit.WebView(ctx).apply {
+                                                    settings.javaScriptEnabled = true
+                                                    settings.domStorageEnabled = true
+                                                    settings.allowFileAccess = true
+                                                    settings.allowContentAccess = true
+                                                    webViewClient = android.webkit.WebViewClient()
+                                                    loadDataWithBaseURL("file:///android_asset/leaflet/", leafletHtml, "text/html", "UTF-8", null)
+                                                }
+                                            },
+                                            update = { webView ->
+                                                webView.loadDataWithBaseURL("file:///android_asset/leaflet/", leafletHtml, "text/html", "UTF-8", null)
+                                            },
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        val markerState = rememberMarkerState(position = LatLng(pinLat, pinLng))
+                                        LaunchedEffect(pinLat, pinLng) {
+                                            markerState.position = LatLng(pinLat, pinLng)
+                                            markerState.showInfoWindow()
+                                        }
+
+                                        GoogleMap(
+                                            modifier = Modifier.fillMaxSize(),
+                                            cameraPositionState = cameraPositionState,
+                                            uiSettings = MapUiSettings(
+                                                zoomControlsEnabled = false,
+                                                compassEnabled = true
+                                            )
+                                        ) {
+                                            Marker(
+                                                state = markerState,
+                                                title = if (isCheckedIn) "Login Time: $loginTimeFormatted" else "Current Location",
+                                                snippet = "📍 %.4f, %.4f".format(pinLat, pinLng)
+                                            )
+
+                                            if (attendanceRules.geofenceEnabled) {
+                                                Circle(
+                                                    center = LatLng(attendanceRules.officeLat, attendanceRules.officeLng),
+                                                    radius = attendanceRules.officeRadius,
+                                                    strokeColor = Color(0xFF10B981),
+                                                    fillColor = Color(0x2210B981),
+                                                    strokeWidth = 2f
+                                                )
                                             }
-                                        },
-                                        update = { webView ->
-                                            if (webView.url != mapUrl) {
-                                                webView.loadUrl(mapUrl)
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxSize()
-                                    )
+                                        }
+                                    }
+
+                                    // Top-left floating badge over map
+                                    Surface(
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .padding(8.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                        shadowElevation = 3.dp
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isCheckedIn) Icons.Default.CheckCircle else Icons.Default.LocationOn,
+                                                contentDescription = null,
+                                                tint = if (isCheckedIn) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = if (isCheckedIn) "Login: $loginTimeFormatted" else "Live GPS",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isCheckedIn) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+
+                                    // Bottom-right Map Engine Badge
+                                    Surface(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(8.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color.Black.copy(alpha = 0.6f)
+                                    ) {
+                                        Text(
+                                            text = if (useGoogleMaps) "Google Maps" else "OpenStreetMap",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
                                 }
 
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "📍 ${
-                                        "%.4f".format(mapCenter.latitude)
-                                    }, ${"%.4f".format(mapCenter.longitude)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Place,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "${"%.4f".format(pinLat)}° N, ${"%.4f".format(pinLng)}° E",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                        )
+                                    }
+
+                                    if (attendanceRules.geofenceEnabled) {
+                                        val isInside = distFromOffice <= attendanceRules.officeRadius
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = if (isInside) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                                        ) {
+                                            Text(
+                                                text = if (isInside) "Inside Office Zone (${distFromOffice.toInt()}m)" else "${distFromOffice.toInt()}m away (Limit: ${attendanceRules.officeRadius.toInt()}m)",
+                                                color = if (isInside) Color(0xFF2E7D32) else Color(0xFFC62828),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            text = if (isCheckedIn) "GPS Verified Pin" else "GPS Signal Ready",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

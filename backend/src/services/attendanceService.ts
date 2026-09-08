@@ -248,9 +248,29 @@ export async function checkOut(employeeId: string) {
 }
 
 export async function getTodayAttendance(employeeId: string) {
-  return prisma.attendanceRecord.findUnique({
-    where: { employeeId_date: { employeeId, date: startOfDay(new Date()) } },
+  const today = startOfDay(new Date());
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const record = await prisma.attendanceRecord.findUnique({
+    where: { employeeId_date: { employeeId, date: today } },
   });
+
+  if (!record) return null;
+
+  const checkIn = await prisma.checkIn.findFirst({
+    where: {
+      employeeId,
+      createdAt: { gte: today, lt: tomorrow },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return {
+    ...record,
+    latitude: checkIn?.latitude ?? null,
+    longitude: checkIn?.longitude ?? null,
+  };
 }
 
 export async function getMonthlyAttendance(employeeId: string, month: number, year: number) {

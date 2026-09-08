@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.swayog.employee.data.model.AttendanceRecord
 import com.swayog.employee.data.model.Customer
 import com.swayog.employee.data.model.InventoryItem
 import com.swayog.employee.presentation.common.components.SwayogCard
@@ -32,6 +33,9 @@ import com.swayog.employee.presentation.common.components.SwayogTopBar
 import com.swayog.employee.presentation.inventory.dialogs.AddEditInventoryItemDialog
 import com.swayog.employee.presentation.inventory.dialogs.CustomerDispatchHistoryDialog
 import com.swayog.employee.presentation.inventory.dialogs.DispatchMaterialDialog
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,11 +44,13 @@ fun InventoryCoordinatorScreen(
     onNavigateToProfile: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToNotifications: () -> Unit = {},
+    onNavigateToAttendance: () -> Unit = {},
     viewModel: InventoryViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     var currentTab by remember { mutableIntStateOf(0) }
 
+    val todayAttendance by viewModel.todayAttendance.collectAsState()
     val inventoryState by viewModel.inventoryState.collectAsState()
     val rawItems by viewModel.inventoryItems.collectAsState()
     val filteredItems by viewModel.filteredInventoryItems.collectAsState()
@@ -62,6 +68,37 @@ fun InventoryCoordinatorScreen(
     var itemToDelete by remember { mutableStateOf<InventoryItem?>(null) }
     var customerForDispatch by remember { mutableStateOf<Customer?>(null) }
     var customerForHistory by remember { mutableStateOf<Customer?>(null) }
+
+    // Live clock
+    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTime = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+    val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.getDefault()) }
+    val formattedTime = timeFormat.format(Date(currentTime))
+
+    // Work timer calculation
+    val workDurationText = remember(todayAttendance, currentTime) {
+        val attendance = todayAttendance ?: return@remember null
+        val checkInStr = attendance.checkInTime ?: return@remember null
+        try {
+            val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+            val checkInDate = isoFormat.parse(checkInStr.substringBefore(".")) ?: return@remember null
+            val endTime = if (attendance.checkOutTime != null) {
+                isoFormat.parse(attendance.checkOutTime.substringBefore("."))?.time ?: currentTime
+            } else {
+                currentTime
+            }
+            val diffMs = endTime - checkInDate.time
+            val hours = (diffMs / 3600000).toInt()
+            val minutes = ((diffMs % 3600000) / 60000).toInt()
+            val seconds = ((diffMs % 60000) / 1000).toInt()
+            String.format("%02d:%02d:%02d", hours, minutes, seconds)
+        } catch (_: Exception) { null }
+    }
 
     // KPI stats
     val totalStockCount = rawItems.size
@@ -93,6 +130,9 @@ fun InventoryCoordinatorScreen(
                 actions = {
                     IconButton(onClick = { viewModel.refreshAll() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    }
+                    IconButton(onClick = onNavigateToAttendance) {
+                        Icon(Icons.Default.CalendarToday, contentDescription = "Attendance")
                     }
                     IconButton(onClick = onNavigateToNotifications) {
                         Icon(Icons.Default.Notifications, contentDescription = "Notifications")
@@ -157,6 +197,10 @@ fun InventoryCoordinatorScreen(
                 0 -> {
                     // TAB 0: OVERVIEW / DASHBOARD
                     OverviewTabContent(
+                        todayAttendance = todayAttendance,
+                        formattedTime = formattedTime,
+                        workDurationText = workDurationText,
+                        onNavigateToAttendance = onNavigateToAttendance,
                         totalStock = totalStockCount,
                         lowStock = lowStockCount,
                         totalDispatches = totalDispatchesCount,
@@ -364,6 +408,10 @@ fun InventoryCoordinatorScreen(
 // ─── TAB 0: OVERVIEW / DASHBOARD ─────────────────────────────────────────────
 @Composable
 private fun OverviewTabContent(
+    todayAttendance: AttendanceRecord?,
+    formattedTime: String,
+    workDurationText: String?,
+    onNavigateToAttendance: () -> Unit,
     totalStock: Int,
     lowStock: Int,
     totalDispatches: Int,
@@ -381,6 +429,117 @@ private fun OverviewTabContent(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Live Clock + Work Timer Card
+        item {
+            SwayogCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = formattedTime,
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 2.sp
+                        )
+                        Text(
+                            text = "Current Time",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
+                    if (workDurationText != null) {
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = workDurationText,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (todayAttendance?.checkOutTime != null)
+                                    Color(0xFF0B6E4F)
+                                else
+                                    Color(0xFF386FA4)
+                            )
+                            Text(
+                                text = if (todayAttendance?.checkOutTime != null) "Total Worked" else "Working...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Today's Attendance Card
+        item {
+            SwayogCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarToday,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Today's Attendance",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val attendance = todayAttendance
+                        if (attendance != null) {
+                            val inTime = if (attendance.checkInTime != null) {
+                                attendance.checkInTime.substringAfter("T").substringBefore(".")
+                            } else null
+
+                            Text(
+                                text = if (inTime != null) "Checked in at $inTime" else "Not checked in yet",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (inTime != null) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                fontWeight = if (inTime != null) FontWeight.SemiBold else FontWeight.Normal
+                            )
+                            if (attendance.checkOutTime != null) {
+                                Text(
+                                    text = "Checked out at ${attendance.checkOutTime.substringAfter("T").substringBefore(".")}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "No attendance record today",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Button(
+                        onClick = onNavigateToAttendance,
+                        modifier = Modifier.wrapContentWidth()
+                    ) {
+                        Text(
+                            text = if (todayAttendance?.checkInTime == null) "Check In" else "View Details",
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
         // KPI Grid
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -464,6 +623,31 @@ private fun OverviewTabContent(
                             Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Export", maxLines = 1)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onNavigateToAttendance,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Attendance & GPS", maxLines = 1)
+                        }
+
+                        OutlinedButton(
+                            onClick = onNavigateToLedger,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Inventory2, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Stock Ledger", maxLines = 1)
                         }
                     }
                 }
