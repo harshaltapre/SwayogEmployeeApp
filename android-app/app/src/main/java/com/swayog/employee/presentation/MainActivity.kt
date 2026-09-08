@@ -18,12 +18,15 @@ import androidx.compose.runtime.CompositionLocalProvider
 import com.swayog.employee.presentation.common.LocalCompactViewEnabled
 import com.swayog.employee.presentation.common.LocalAnimationsEnabled
 
+import androidx.activity.viewModels
+
 @AndroidEntryPoint
 class MainActivity : androidx.fragment.app.FragmentActivity() {
+    private val mainViewModel: MainViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val mainViewModel: MainViewModel = hiltViewModel()
             val isLoggedIn by mainViewModel.isLoggedIn.collectAsState()
             val userRole by mainViewModel.userRole.collectAsState()
             val jobRole by mainViewModel.jobRole.collectAsState()
@@ -67,5 +70,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        mainViewModel.onAppForegrounded()
     }
 }

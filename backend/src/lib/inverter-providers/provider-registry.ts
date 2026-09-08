@@ -11,8 +11,10 @@ import { SolarmanProvider } from "./solarman-provider.js";
 import { GenericRestProvider } from "./generic-provider.js";
 import { ManualEntryProvider } from "./manual-provider.js";
 
+type ProviderConstructor = new (config: ProviderConfig) => BaseInverterProvider;
+
 export class InverterProviderRegistry {
-  private static readonly providers = new Map<InverterProviderType, typeof BaseInverterProvider>();
+  private static readonly providers = new Map<InverterProviderType, ProviderConstructor>();
 
   static {
     // Register all available providers
@@ -62,7 +64,7 @@ export class InverterProviderRegistry {
    */
   static registerProvider(
     brand: InverterProviderType,
-    ProviderClass: typeof BaseInverterProvider,
+    ProviderClass: ProviderConstructor,
   ): void {
     this.providers.set(brand, ProviderClass);
   }

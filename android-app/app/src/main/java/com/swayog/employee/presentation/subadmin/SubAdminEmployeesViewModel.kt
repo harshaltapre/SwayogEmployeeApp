@@ -92,8 +92,7 @@ class SubAdminEmployeesViewModel @Inject constructor(
                 val taskExc = taskResult.exceptionOrNull()
                 
                 if (ErrorUtils.isUnauthorized(empExc) || ErrorUtils.isUnauthorized(taskExc)) {
-                    viewModelScope.launch { dataStoreManager.clearAll() }
-                    "Session expired. Redirecting to login..."
+                    "Authentication error. Please retry."
                 } else {
                     val empErr = empExc?.let { ErrorUtils.formatException(it) } ?: ""
                     val taskErr = taskExc?.let { ErrorUtils.formatException(it) } ?: ""

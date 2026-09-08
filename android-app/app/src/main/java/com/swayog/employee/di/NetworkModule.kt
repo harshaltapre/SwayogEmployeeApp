@@ -42,6 +42,10 @@ object NetworkModule {
         }
     }
     
+    private val tokenRefreshLock = Any()
+    @Volatile
+    private var lastRecordedActiveTime = 0L
+
     @Provides
     @Singleton
     fun provideAuthInterceptor(dataStoreManager: DataStoreManager): Interceptor {
@@ -84,69 +88,90 @@ object NetworkModule {
             val requestPath = request.url.encodedPath
             val isAuthRequest = requestPath.contains("auth/login") || requestPath.contains("auth/refresh")
             
+            if (response.isSuccessful && !isAuthRequest && !authToken.isNullOrBlank()) {
+                val now = System.currentTimeMillis()
+                if (now - lastRecordedActiveTime > 60_000L) {
+                    lastRecordedActiveTime = now
+                    runBlocking { dataStoreManager.recordUserActive(now) }
+                }
+            }
+
             if (response.code == 401 && !isAuthRequest) {
-                val refreshToken = runBlocking { dataStoreManager.refreshToken.first() }
-                if (refreshToken != null) {
-                    val currentBaseUrl = request.url.newBuilder()
-                        .encodedPath("/")
-                        .query(null)
-                        .build()
-                        .toString()
-                    val refreshUrl = if (currentBaseUrl.endsWith("/")) {
-                        "${currentBaseUrl}api/v1/auth/refresh"
+                val tokenUsed = authToken ?: ""
+                var newAccessTokenToRetry: String? = null
+
+                synchronized(tokenRefreshLock) {
+                    // Check if another concurrent request already refreshed the token
+                    val latestStoredToken = runBlocking { dataStoreManager.authToken.first() }
+                    if (!latestStoredToken.isNullOrBlank() && latestStoredToken != tokenUsed) {
+                        // Already refreshed by another thread!
+                        newAccessTokenToRetry = latestStoredToken
                     } else {
-                        "${currentBaseUrl}/api/v1/auth/refresh"
-                    }
-                    
-                    val refreshJson = JSONObject().put("refreshToken", refreshToken).toString()
-                    val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
-                    val refreshRequest = okhttp3.Request.Builder()
-                        .url(refreshUrl)
-                        .post(refreshJson.toRequestBody(mediaType))
-                        .header("bypass-tunnel-reminder", "true")
-                        .build()
-                    
-                    val basicClient = OkHttpClient.Builder()
-                        .connectTimeout(60, TimeUnit.SECONDS)
-                        .readTimeout(60, TimeUnit.SECONDS)
-                        .writeTimeout(60, TimeUnit.SECONDS)
-                        .build()
-                    
-                    try {
-                        val refreshResponse = basicClient.newCall(refreshRequest).execute()
-                        if (refreshResponse.isSuccessful && refreshResponse.body != null) {
-                            val responseBodyStr = refreshResponse.body!!.string()
-                            val json = JSONObject(responseBodyStr)
-                            val dataObj = json.optJSONObject("data")
-                            val newAccessToken = dataObj?.optString("accessToken")
-                            val newRefreshToken = dataObj?.optString("refreshToken")
-                            
-                            if (!newAccessToken.isNullOrBlank() && !newRefreshToken.isNullOrBlank()) {
-                                runBlocking {
-                                    dataStoreManager.saveAuthToken(newAccessToken)
-                                    dataStoreManager.saveRefreshToken(newRefreshToken)
-                                }
-                                
-                                response.close()
-                                
-                                val newRequest = request.newBuilder()
-                                    .header("Authorization", "Bearer $newAccessToken")
-                                    .build()
-                                response = chain.proceed(newRequest)
+                        // This thread performs the single refresh
+                        val refreshToken = runBlocking { dataStoreManager.refreshToken.first() }
+                        if (refreshToken != null) {
+                            val currentBaseUrl = request.url.newBuilder()
+                                .encodedPath("/")
+                                .query(null)
+                                .build()
+                                .toString()
+                            val refreshUrl = if (currentBaseUrl.endsWith("/")) {
+                                "${currentBaseUrl}api/v1/auth/refresh"
                             } else {
-                                runBlocking { dataStoreManager.clearAll() }
+                                "${currentBaseUrl}/api/v1/auth/refresh"
                             }
-                        } else {
-                            val code = refreshResponse.code
-                            if (code == 400 || code == 401 || code == 403) {
-                                runBlocking { dataStoreManager.clearAll() }
+                            
+                            val refreshJson = JSONObject().put("refreshToken", refreshToken).toString()
+                            val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+                            val refreshRequest = okhttp3.Request.Builder()
+                                .url(refreshUrl)
+                                .post(refreshJson.toRequestBody(mediaType))
+                                .header("bypass-tunnel-reminder", "true")
+                                .build()
+                            
+                            val basicClient = OkHttpClient.Builder()
+                                .connectTimeout(30, TimeUnit.SECONDS)
+                                .readTimeout(30, TimeUnit.SECONDS)
+                                .writeTimeout(30, TimeUnit.SECONDS)
+                                .build()
+                            
+                            try {
+                                val refreshResponse = basicClient.newCall(refreshRequest).execute()
+                                if (refreshResponse.isSuccessful && refreshResponse.body != null) {
+                                    val responseBodyStr = refreshResponse.body!!.string()
+                                    val json = JSONObject(responseBodyStr)
+                                    val dataObj = json.optJSONObject("data")
+                                    val newAccessToken = dataObj?.optString("accessToken")
+                                    val newRefreshToken = dataObj?.optString("refreshToken")
+                                    
+                                    if (!newAccessToken.isNullOrBlank() && !newRefreshToken.isNullOrBlank()) {
+                                        runBlocking {
+                                            dataStoreManager.saveAuthToken(newAccessToken)
+                                            dataStoreManager.saveRefreshToken(newRefreshToken)
+                                            dataStoreManager.recordUserActive()
+                                        }
+                                        newAccessTokenToRetry = newAccessToken
+                                    }
+                                } else {
+                                    val code = refreshResponse.code
+                                    if (code == 401 || code == 403) {
+                                        Log.w("NetworkModule", "Refresh token expired or invalid (HTTP $code). Clearing session.")
+                                        runBlocking { dataStoreManager.clearAuthData() }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e("NetworkModule", "Token refresh network error", e)
                             }
                         }
-                    } catch (e: Exception) {
-                        Log.e("NetworkModule", "Token refresh error", e)
                     }
-                } else {
-                    runBlocking { dataStoreManager.clearAll() }
+                }
+
+                if (!newAccessTokenToRetry.isNullOrBlank()) {
+                    response.close()
+                    val newRequest = request.newBuilder()
+                        .header("Authorization", "Bearer $newAccessTokenToRetry")
+                        .build()
+                    response = chain.proceed(newRequest)
                 }
             }
             

@@ -57,7 +57,7 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32, "JWT_REFRESH_SECRET must be at least 32 chars").default("9aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkL2mNo"),
   ENCRYPTION_KEY: z.string().min(32, "ENCRYPTION_KEY must be at least 32 chars").optional(),
   JWT_ACCESS_TTL: z.string().default("15m"),
-  JWT_REFRESH_TTL: z.string().default("7d"),
+  JWT_REFRESH_TTL: z.string().default("30d"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
   TRUST_PROXY: z.preprocess(
     (val) =>
