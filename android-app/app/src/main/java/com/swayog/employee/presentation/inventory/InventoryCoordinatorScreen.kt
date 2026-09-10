@@ -186,7 +186,6 @@ fun InventoryCoordinatorScreen(
                         OverviewTabContent(
                             todayAttendance = todayAttendance,
                             formattedTime = formattedTime,
-                            workDurationText = workDurationText,
                             onNavigateToAttendance = onNavigateToAttendance,
                             totalStock = totalStockCount,
                             lowStock = lowStockCount,
