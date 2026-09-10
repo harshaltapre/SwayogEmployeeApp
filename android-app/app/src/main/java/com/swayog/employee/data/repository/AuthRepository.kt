@@ -162,8 +162,8 @@ class AuthRepository @Inject constructor(
             // Ignore API exceptions so local logout always completes
         }
         return try {
-            // Clear local data
-            dataStoreManager.clearAll()
+            // Clear local auth session data while retaining saved credentials and app preferences
+            dataStoreManager.clearAuthData()
             withContext(Dispatchers.IO) {
                 appDatabase.clearAllTables()
             }

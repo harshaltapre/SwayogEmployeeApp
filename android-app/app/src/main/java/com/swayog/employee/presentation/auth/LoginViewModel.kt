@@ -30,7 +30,36 @@ class LoginViewModel @Inject constructor(
     private val _isBiometricAvailable = MutableStateFlow(false)
     val isBiometricAvailable: StateFlow<Boolean> = _isBiometricAvailable.asStateFlow()
     
+    private val _savePassword = MutableStateFlow(true)
+    val savePassword: StateFlow<Boolean> = _savePassword.asStateFlow()
+
     val serverUrl: Flow<String?> = dataStoreManager.serverUrl
+
+    init {
+        viewModelScope.launch {
+            val remember = dataStoreManager.rememberCredentials.first()
+            _savePassword.value = remember
+            if (remember) {
+                val savedId = dataStoreManager.savedLoginId.first()
+                val savedPass = dataStoreManager.savedPassword.first()
+                if (!savedId.isNullOrBlank()) {
+                    _email.value = savedId
+                }
+                if (!savedPass.isNullOrBlank()) {
+                    _password.value = savedPass
+                }
+            }
+        }
+    }
+
+    fun onSavePasswordChange(save: Boolean) {
+        _savePassword.value = save
+        if (!save) {
+            viewModelScope.launch {
+                dataStoreManager.clearSavedLoginCredentials()
+            }
+        }
+    }
 
     fun saveServerUrl(url: String) {
         viewModelScope.launch {
@@ -72,6 +101,11 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             authRepository.login(emailValue, passwordValue)
                 .onSuccess { authResponse ->
+                    if (_savePassword.value) {
+                        dataStoreManager.saveLoginCredentials(emailValue, passwordValue, true)
+                    } else {
+                        dataStoreManager.clearSavedLoginCredentials()
+                    }
                     _loginState.value = LoginState.Success(authResponse)
                 }
                 .onFailure { error ->

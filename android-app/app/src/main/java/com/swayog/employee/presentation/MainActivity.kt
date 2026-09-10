@@ -15,10 +15,24 @@ import com.swayog.employee.ui.theme.SwayogEmployeeAppTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 import androidx.compose.runtime.CompositionLocalProvider
-import com.swayog.employee.presentation.common.LocalCompactViewEnabled
+import com.swayog.employee.presentation.common.   LocalCompactViewEnabled
 import com.swayog.employee.presentation.common.LocalAnimationsEnabled
 
 import androidx.activity.viewModels
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 
 @AndroidEntryPoint
 class MainActivity : androidx.fragment.app.FragmentActivity() {
@@ -40,32 +54,39 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 normalizedJob.contains("inventory") || normalizedRole.contains("inventory")
             }
 
-            if (isLoggedIn == null) {
+            CompositionLocalProvider(
+                LocalCompactViewEnabled provides compactViewEnabled,
+                LocalAnimationsEnabled provides animationsEnabled
+            ) {
                 SwayogEmployeeAppTheme(darkTheme = darkMode) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        androidx.compose.foundation.layout.Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = androidx.compose.ui.Alignment.Center
-                        ) {
-                            androidx.compose.material3.CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            } else {
-                CompositionLocalProvider(
-                    LocalCompactViewEnabled provides compactViewEnabled,
-                    LocalAnimationsEnabled provides animationsEnabled
-                ) {
-                    SwayogEmployeeAppTheme(darkTheme = darkMode) {
-                        Surface(
-                            modifier = Modifier.fillMaxSize(),
-                            color = MaterialTheme.colorScheme.background
-                        ) {
+                        if (isLoggedIn == null) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
+                                ) {
+                                    androidx.compose.foundation.Image(
+                                        painter = androidx.compose.ui.res.painterResource(id = com.swayog.employee.R.drawable.app_logo),
+                                        contentDescription = "SWAYOG Logo",
+                                        modifier = Modifier
+                                            .size(90.dp)
+                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                                    )
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(28.dp),
+                                        strokeWidth = 2.5.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        } else {
                             SwayogNavHost(
                                 isLoggedIn = isLoggedIn == true,
                                 userRole = userRole,

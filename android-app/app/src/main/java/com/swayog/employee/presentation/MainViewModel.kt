@@ -7,6 +7,7 @@ import com.swayog.employee.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -17,11 +18,13 @@ class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository
 ) : ViewModel() {
 
-    val isLoggedIn: StateFlow<Boolean?> = dataStoreManager.isLoggedIn.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = null
-    )
+    val isLoggedIn: StateFlow<Boolean?> = dataStoreManager.isLoggedIn
+        .map<Boolean, Boolean?> { it }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = null
+        )
 
     val userRole: StateFlow<String?> = dataStoreManager.userRole.stateIn(
         scope = viewModelScope,
@@ -55,6 +58,7 @@ class MainViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            // Keep session alive and track activity timestamp without logging out automatically
             dataStoreManager.recordUserActive()
         }
     }
