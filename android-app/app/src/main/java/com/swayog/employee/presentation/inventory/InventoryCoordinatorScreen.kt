@@ -80,25 +80,7 @@ fun InventoryCoordinatorScreen(
     val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.getDefault()) }
     val formattedTime = timeFormat.format(Date(currentTime))
 
-    // Work timer calculation
-    val workDurationText = remember(todayAttendance, currentTime) {
-        val attendance = todayAttendance ?: return@remember null
-        val checkInStr = attendance.checkInTime ?: return@remember null
-        try {
-            val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-            val checkInDate = isoFormat.parse(checkInStr.substringBefore(".")) ?: return@remember null
-            val endTime = if (attendance.checkOutTime != null) {
-                isoFormat.parse(attendance.checkOutTime.substringBefore("."))?.time ?: currentTime
-            } else {
-                currentTime
-            }
-            val diffMs = endTime - checkInDate.time
-            val hours = (diffMs / 3600000).toInt()
-            val minutes = ((diffMs % 3600000) / 60000).toInt()
-            val seconds = ((diffMs % 60000) / 1000).toInt()
-            String.format("%02d:%02d:%02d", hours, minutes, seconds)
-        } catch (_: Exception) { null }
-    }
+    // Work timer removed — only current time is shown on the Overview clock card
 
     // KPI stats
     val totalStockCount = rawItems.size
@@ -199,7 +181,6 @@ fun InventoryCoordinatorScreen(
                     OverviewTabContent(
                         todayAttendance = todayAttendance,
                         formattedTime = formattedTime,
-                        workDurationText = workDurationText,
                         onNavigateToAttendance = onNavigateToAttendance,
                         totalStock = totalStockCount,
                         lowStock = lowStockCount,
@@ -410,7 +391,6 @@ fun InventoryCoordinatorScreen(
 private fun OverviewTabContent(
     todayAttendance: AttendanceRecord?,
     formattedTime: String,
-    workDurationText: String?,
     onNavigateToAttendance: () -> Unit,
     totalStock: Int,
     lowStock: Int,
@@ -429,46 +409,22 @@ private fun OverviewTabContent(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Live Clock + Work Timer Card
+        // Live Clock Card (work-duration timer removed)
         item {
             SwayogCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = formattedTime,
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            letterSpacing = 2.sp
-                        )
-                        Text(
-                            text = "Current Time",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
-                    }
-                    if (workDurationText != null) {
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = workDurationText,
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (todayAttendance?.checkOutTime != null)
-                                    Color(0xFF0B6E4F)
-                                else
-                                    Color(0xFF386FA4)
-                            )
-                            Text(
-                                text = if (todayAttendance?.checkOutTime != null) "Total Worked" else "Working...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            )
-                        }
-                    }
+                Column {
+                    Text(
+                        text = formattedTime,
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        letterSpacing = 2.sp
+                    )
+                    Text(
+                        text = "Current Time",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
                 }
             }
         }

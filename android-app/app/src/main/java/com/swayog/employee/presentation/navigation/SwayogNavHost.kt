@@ -55,6 +55,24 @@ fun SwayogNavHost(
         }
     }
 
+    // Re-route when designation changes at runtime (web admin changed the role).
+    // Only re-routes if the user is currently on a root screen (Dashboard or InventoryCoordinator)
+    // to avoid interrupting deep navigation flows.
+    androidx.compose.runtime.LaunchedEffect(isInventoryCoordinator, isLoggedIn) {
+        if (isLoggedIn) {
+            val dest = if (isInventoryCoordinator) Screen.InventoryCoordinator.route else Screen.Dashboard.route
+            val current = navController.currentDestination?.route
+            if (current != null && current != dest &&
+                (current == Screen.Dashboard.route || current == Screen.InventoryCoordinator.route)
+            ) {
+                navController.navigate(dest) {
+                    popUpTo(0) { inclusive = true }
+                }
+            }
+        }
+    }
+
+
     NavHost(
         navController = navController,
         startDestination = startDestination
