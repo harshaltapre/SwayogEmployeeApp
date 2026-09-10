@@ -56,6 +56,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
             val windowSizeInfo = com.swayog.employee.presentation.common.responsive.rememberWindowSizeInfo()
 
+            // Wait until we know both login state AND role data.
+            // isReady = true when:
+            //   - user is logged out (no need to wait for roles), OR
+            //   - user is logged in AND at least one role field has been emitted from DataStore
+            // This prevents the race condition where isInventoryCoordinator evaluates
+            // to false while jobRole is still null, landing the user on Dashboard first.
+            val isReady = isLoggedIn == false ||
+                (isLoggedIn == true && (userRole != null || jobRole != null))
+
             CompositionLocalProvider(
                 LocalCompactViewEnabled provides compactViewEnabled,
                 LocalAnimationsEnabled provides animationsEnabled,
@@ -66,7 +75,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        if (isLoggedIn == null) {
+                        if (!isReady) {
+                            // Show loading until session + role data is fully resolved
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
