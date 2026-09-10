@@ -314,12 +314,14 @@ fun SubAdminMapScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .padding(16.dp)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.BottomCenter
                 ) {
                     SwayogCard(
                         modifier = Modifier
+                            .widthIn(max = 640.dp)
                             .fillMaxWidth()
-                            .heightIn(max = 400.dp)
+                            .heightIn(max = 420.dp)
                     ) {
                         Column(
                             modifier = Modifier

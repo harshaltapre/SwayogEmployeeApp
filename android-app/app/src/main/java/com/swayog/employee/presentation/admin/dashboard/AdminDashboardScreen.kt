@@ -25,6 +25,8 @@ import com.swayog.employee.presentation.common.components.SwayogCard
 import com.swayog.employee.presentation.common.components.SwayogTopBar
 import java.text.DecimalFormat
 
+import com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboardScreen(
@@ -48,14 +50,19 @@ fun AdminDashboardScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        ResponsiveContentContainer(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(paddingValues),
+            maxWidth = 920.dp
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             if (dashboardState is DashboardState.Loading) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -79,6 +86,7 @@ fun AdminDashboardScreen(
             }
         }
     }
+}
 }
 
 @Composable

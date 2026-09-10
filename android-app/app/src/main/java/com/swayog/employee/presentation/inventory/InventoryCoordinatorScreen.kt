@@ -30,6 +30,7 @@ import com.swayog.employee.data.model.Customer
 import com.swayog.employee.data.model.InventoryItem
 import com.swayog.employee.presentation.common.components.SwayogCard
 import com.swayog.employee.presentation.common.components.SwayogTopBar
+import com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer
 import com.swayog.employee.presentation.inventory.dialogs.AddEditInventoryItemDialog
 import com.swayog.employee.presentation.inventory.dialogs.CustomerDispatchHistoryDialog
 import com.swayog.employee.presentation.inventory.dialogs.DispatchMaterialDialog
@@ -188,94 +189,99 @@ fun InventoryCoordinatorScreen(
             }
         }
     ) { paddingValues ->
-        Box(
+        ResponsiveContentContainer(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+            maxWidth = 960.dp
         ) {
-            when (currentTab) {
-                0 -> {
-                    // TAB 0: OVERVIEW / DASHBOARD
-                    OverviewTabContent(
-                        todayAttendance = todayAttendance,
-                        formattedTime = formattedTime,
-                        workDurationText = workDurationText,
-                        onNavigateToAttendance = onNavigateToAttendance,
-                        totalStock = totalStockCount,
-                        lowStock = lowStockCount,
-                        totalDispatches = totalDispatchesCount,
-                        valuation = totalValuation,
-                        lowStockItems = rawItems.filter { it.inStock <= it.minThreshold },
-                        recentDispatches = dispatches.take(10),
-                        onNavigateToLedger = { currentTab = 1 },
-                        onNavigateToCustomers = { currentTab = 2 },
-                        onAddItem = {
-                            itemToEdit = null
-                            showAddDialog = true
-                        },
-                        onExportCsv = {
-                            viewModel.exportInventoryCsv(
-                                context = context,
-                                onDone = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
-                                onError = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
-                            )
-                        },
-                        onEditItem = { item ->
-                            itemToEdit = item
-                            showAddDialog = true
-                        }
-                    )
-                }
-                1 -> {
-                    // TAB 1: STOCK LEDGER
-                    LedgerTabContent(
-                        items = filteredItems,
-                        isLoading = inventoryState is InventoryState.Loading && rawItems.isEmpty(),
-                        searchQuery = searchQuery,
-                        onSearchChange = { viewModel.searchQuery.value = it },
-                        selectedCategory = selectedCategory,
-                        onCategorySelect = { viewModel.selectedCategory.value = it },
-                        showOnlyLowStock = showOnlyLowStock,
-                        onToggleLowStock = { viewModel.showOnlyLowStock.value = !showOnlyLowStock },
-                        onExportCsv = {
-                            viewModel.exportInventoryCsv(
-                                context = context,
-                                onDone = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
-                                onError = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
-                            )
-                        },
-                        onEditItem = { item ->
-                            itemToEdit = item
-                            showAddDialog = true
-                        },
-                        onDeleteItem = { item ->
-                            itemToDelete = item
-                        }
-                    )
-                }
-                2 -> {
-                    // TAB 2: CUSTOMERS & DISPATCHES
-                    CustomersTabContent(
-                        customers = customers,
-                        customerSearchQuery = customerSearchQuery,
-                        onCustomerSearchChange = { viewModel.customerSearchQuery.value = it },
-                        dispatches = dispatches,
-                        onDispatchClick = { cust ->
-                            customerForDispatch = cust
-                        },
-                        onHistoryClick = { cust ->
-                            customerForHistory = cust
-                        }
-                    )
-                }
-                3 -> {
-                    // TAB 3: INVENTORY SETTINGS
-                    SettingsTabContent(
-                        viewModel = viewModel,
-                        onSaveSuccess = {
-                            Toast.makeText(context, "Inventory settings saved", Toast.LENGTH_SHORT).show()
-                        }
-                    )
+            Box(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                when (currentTab) {
+                    0 -> {
+                        // TAB 0: OVERVIEW / DASHBOARD
+                        OverviewTabContent(
+                            todayAttendance = todayAttendance,
+                            formattedTime = formattedTime,
+                            workDurationText = workDurationText,
+                            onNavigateToAttendance = onNavigateToAttendance,
+                            totalStock = totalStockCount,
+                            lowStock = lowStockCount,
+                            totalDispatches = totalDispatchesCount,
+                            valuation = totalValuation,
+                            lowStockItems = rawItems.filter { it.inStock <= it.minThreshold },
+                            recentDispatches = dispatches.take(10),
+                            onNavigateToLedger = { currentTab = 1 },
+                            onNavigateToCustomers = { currentTab = 2 },
+                            onAddItem = {
+                                itemToEdit = null
+                                showAddDialog = true
+                            },
+                            onExportCsv = {
+                                viewModel.exportInventoryCsv(
+                                    context = context,
+                                    onDone = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
+                                    onError = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+                                )
+                            },
+                            onEditItem = { item ->
+                                itemToEdit = item
+                                showAddDialog = true
+                            }
+                        )
+                    }
+                    1 -> {
+                        // TAB 1: STOCK LEDGER
+                        LedgerTabContent(
+                            items = filteredItems,
+                            isLoading = inventoryState is InventoryState.Loading && rawItems.isEmpty(),
+                            searchQuery = searchQuery,
+                            onSearchChange = { viewModel.searchQuery.value = it },
+                            selectedCategory = selectedCategory,
+                            onCategorySelect = { viewModel.selectedCategory.value = it },
+                            showOnlyLowStock = showOnlyLowStock,
+                            onToggleLowStock = { viewModel.showOnlyLowStock.value = !showOnlyLowStock },
+                            onExportCsv = {
+                                viewModel.exportInventoryCsv(
+                                    context = context,
+                                    onDone = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
+                                    onError = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+                                )
+                            },
+                            onEditItem = { item ->
+                                itemToEdit = item
+                                showAddDialog = true
+                            },
+                            onDeleteItem = { item ->
+                                itemToDelete = item
+                            }
+                        )
+                    }
+                    2 -> {
+                        // TAB 2: CUSTOMERS & DISPATCHES
+                        CustomersTabContent(
+                            customers = customers,
+                            customerSearchQuery = customerSearchQuery,
+                            onCustomerSearchChange = { viewModel.customerSearchQuery.value = it },
+                            dispatches = dispatches,
+                            onDispatchClick = { cust ->
+                                customerForDispatch = cust
+                            },
+                            onHistoryClick = { cust ->
+                                customerForHistory = cust
+                            }
+                        )
+                    }
+                    3 -> {
+                        // TAB 3: INVENTORY SETTINGS
+                        SettingsTabContent(
+                            viewModel = viewModel,
+                            onSaveSuccess = {
+                                Toast.makeText(context, "Inventory settings saved", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
                 }
             }
         }

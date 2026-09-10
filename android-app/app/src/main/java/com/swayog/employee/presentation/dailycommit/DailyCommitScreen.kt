@@ -25,6 +25,8 @@ import com.swayog.employee.presentation.common.components.*
 import java.text.SimpleDateFormat
 import java.util.*
 
+import com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DailyCommitScreen(
@@ -88,25 +90,29 @@ fun DailyCommitScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        ResponsiveContentContainer(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+            maxWidth = 720.dp
         ) {
-            PendingSyncBanner(
-                pendingCount = pendingSyncCount,
-                onClick = {
-                    Toast.makeText(context, "Refreshing daily commits...", Toast.LENGTH_SHORT).show()
-                    viewModel.refresh()
-                }
-            )
-            
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            Column(
+                modifier = Modifier.fillMaxSize()
             ) {
+                PendingSyncBanner(
+                    pendingCount = pendingSyncCount,
+                    onClick = {
+                        Toast.makeText(context, "Refreshing daily commits...", Toast.LENGTH_SHORT).show()
+                        viewModel.refresh()
+                    }
+                )
+                
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 // Submit Form Card
                 item {
                     SwayogCard {
@@ -285,4 +291,5 @@ fun DailyCommitScreen(
             }
         }
     }
+}
 }

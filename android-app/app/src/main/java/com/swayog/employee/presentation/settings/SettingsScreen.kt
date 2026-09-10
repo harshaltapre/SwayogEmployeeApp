@@ -166,6 +166,8 @@ fun SettingsScreen(
         )
     }
 
+    val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
+
     Scaffold(
         topBar = {
             SwayogTopBar(
@@ -175,13 +177,20 @@ fun SettingsScreen(
             )
         }
     ) { paddingValues ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentAlignment = Alignment.TopCenter
         ) {
+            com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
+                maxWidth = if (windowSize.isTablet) 680.dp else androidx.compose.ui.unit.Dp.Unspecified
+            ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(windowSize.contentPadding),
+                    verticalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)
+                ) {
             // Profile Summary Header card
             item {
                 SwayogCard {
@@ -611,7 +620,6 @@ fun SettingsScreen(
             }
 
 
-            // Logout Action Button
             item {
                 SwayogButton(
                     text = "Logout Session",
@@ -620,6 +628,8 @@ fun SettingsScreen(
                 )
             }
         }
+        }
+    }
 
         // Language Select Dialog modal
         if (showLanguageDialog) {

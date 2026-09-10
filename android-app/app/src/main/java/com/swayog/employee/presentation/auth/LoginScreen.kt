@@ -106,6 +106,8 @@ fun LoginScreen(
         }
     }
     
+    val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
+
     Scaffold(
         topBar = {
             SwayogTopBar(
@@ -127,160 +129,167 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .imePadding(),
+            contentAlignment = Alignment.Center
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .widthIn(max = if (windowSize.isTablet || windowSize.isLandscape) 520.dp else androidx.compose.ui.unit.Dp.Unspecified),
+                contentAlignment = Alignment.TopCenter
             ) {
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // App Logo
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = com.swayog.employee.R.drawable.app_logo),
-                    contentDescription = "SWAYOG Logo",
+                Column(
                     modifier = Modifier
-                        .size(110.dp)
-                        .clip(RoundedCornerShape(22.dp))
-                )
-                
-                Text(
-                    text = "Welcome Back",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                Text(
-                    text = "Sign in to access your dashboard",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Email / Login ID Field
-                SwayogTextField(
-                    value = email,
-                    onValueChange = viewModel::onEmailChange,
-                    label = "Email / Login ID",
-                    placeholder = "Enter email or EMP-XXXXXX",
-                    keyboardType = KeyboardType.Email,
-                    autofillTypes = listOf(AutofillType.EmailAddress, AutofillType.Username),
-                    trailingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Email,
-                            contentDescription = "Email",
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
-                    }
-                )
-                
-                // Password Field
-                SwayogTextField(
-                    value = password,
-                    onValueChange = viewModel::onPasswordChange,
-                    label = "Password",
-                    placeholder = "Enter your password",
-                    keyboardType = KeyboardType.Password,
-                    autofillTypes = listOf(AutofillType.Password),
-                    visualTransformation = if (isPasswordVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = viewModel::togglePasswordVisibility) {
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = windowSize.contentPadding, vertical = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(if (windowSize.isCompact) 12.dp else 16.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(if (windowSize.isLandscape) 8.dp else 20.dp))
+                    
+                    // App Logo
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.swayog.employee.R.drawable.app_logo),
+                        contentDescription = "SWAYOG Logo",
+                        modifier = Modifier
+                            .size(if (windowSize.isCompact) 84.dp else if (windowSize.isLandscape) 90.dp else 110.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                    )
+                    
+                    Text(
+                        text = "Welcome Back",
+                        style = if (windowSize.isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    Text(
+                        text = "Sign in to access your dashboard",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    // Email / Login ID Field
+                    SwayogTextField(
+                        value = email,
+                        onValueChange = viewModel::onEmailChange,
+                        label = "Email / Login ID",
+                        placeholder = "Enter email or EMP-XXXXXX",
+                        keyboardType = KeyboardType.Email,
+                        autofillTypes = listOf(AutofillType.EmailAddress, AutofillType.Username),
+                        trailingIcon = {
                             Icon(
-                                imageVector = if (isPasswordVisible) {
-                                    Icons.Default.VisibilityOff
-                                } else {
-                                    Icons.Default.Visibility
-                                },
-                                contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
+                                imageVector = Icons.Default.Email,
+                                contentDescription = "Email",
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             )
                         }
-                    }
-                )
+                    )
+                    
+                    // Password Field
+                    SwayogTextField(
+                        value = password,
+                        onValueChange = viewModel::onPasswordChange,
+                        label = "Password",
+                        placeholder = "Enter your password",
+                        keyboardType = KeyboardType.Password,
+                        autofillTypes = listOf(AutofillType.Password),
+                        visualTransformation = if (isPasswordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = viewModel::togglePasswordVisibility) {
+                                Icon(
+                                    imageVector = if (isPasswordVisible) {
+                                        Icons.Default.VisibilityOff
+                                    } else {
+                                        Icons.Default.Visibility
+                                    },
+                                    contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                    )
 
-                // Save Password / Remember Credentials Option
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.onSavePasswordChange(!savePassword) }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = savePassword,
-                        onCheckedChange = viewModel::onSavePasswordChange,
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = Color(0xFF386FA4)
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Column {
-                        Text(
-                            text = "Save password",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Save credentials for easy access",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-                
-                // Login Button
-                SwayogButton(
-                    text = "Login",
-                    onClick = viewModel::login,
-                    isLoading = loginState is LoginState.Loading,
-                    enabled = (loginState !is LoginState.Loading) && email.isNotBlank() && password.isNotBlank()
-                )
-                
-                // Biometric Login
-                if (isBiometricAvailable) {
-                    SwayogButton(
-                        text = "Login with Biometric",
-                        onClick = { triggerBiometricPrompt() },
-                        variant = ButtonVariant.Secondary
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Error Message
-                if (loginState is LoginState.Error) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                    // Save Password / Remember Credentials Option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.onSavePasswordChange(!savePassword) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = (loginState as LoginState.Error).message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(16.dp)
+                        Checkbox(
+                            checked = savePassword,
+                            onCheckedChange = viewModel::onSavePasswordChange,
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color(0xFF386FA4)
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Column {
+                            Text(
+                                text = "Save password",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Save credentials for easy access",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                    
+                    // Login Button
+                    SwayogButton(
+                        text = "Login",
+                        onClick = viewModel::login,
+                        isLoading = loginState is LoginState.Loading,
+                        enabled = (loginState !is LoginState.Loading) && email.isNotBlank() && password.isNotBlank()
+                    )
+                    
+                    // Biometric Login
+                    if (isBiometricAvailable) {
+                        SwayogButton(
+                            text = "Login with Biometric",
+                            onClick = { triggerBiometricPrompt() },
+                            variant = ButtonVariant.Secondary
                         )
                     }
+                    
+                    // Error Message
+                    if (loginState is LoginState.Error) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = (loginState as LoginState.Error).message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Version Info
+                    Text(
+                        text = "Version 1.0.0",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
                 }
-                
-                Spacer(modifier = Modifier.weight(1f))
-                
-                // Version Info
-                Text(
-                    text = "Version 1.0.0",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                )
             }
         }
     }

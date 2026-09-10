@@ -162,30 +162,35 @@ fun TasksScreen(
                 }
             )
             
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-            ) {   // Search Bar
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("Search tasks by name, type, address...") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+            val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
+
+            com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
+                maxWidth = if (windowSize.isTablet) 860.dp else androidx.compose.ui.unit.Dp.Unspecified
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // Search Bar
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = windowSize.contentPadding, vertical = 8.dp),
+                        placeholder = { Text("Search tasks by name, type, address...") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                }
                             }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
-                )
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
 
                 // Tabs with count badges
                 TabRow(selectedTabIndex = selectedTab) {
@@ -278,10 +283,10 @@ fun TasksScreen(
                                 onViewDetails = { selectedTask = task }
                             )
                         }
-                        item { Spacer(modifier = Modifier.height(8.dp)) }
                     }
                 }
             }
+        }
 
             // Loading Indicator Overlay
             if (tasksState is TasksState.Loading) {

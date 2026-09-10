@@ -62,8 +62,9 @@ fun AddEditInventoryItemDialog(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp)
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.9f)
         ) {
             Column(
                 modifier = Modifier

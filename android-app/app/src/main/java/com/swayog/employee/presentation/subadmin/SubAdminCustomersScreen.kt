@@ -52,6 +52,8 @@ fun SubAdminCustomersScreen(
         }
     }
 
+    val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -91,13 +93,17 @@ fun SubAdminCustomersScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+            contentAlignment = Alignment.TopCenter
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Search Input
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { viewModel.setSearchQuery(it) },
+            com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
+                maxWidth = if (windowSize.isTablet) 880.dp else androidx.compose.ui.unit.Dp.Unspecified
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Search Input
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { viewModel.setSearchQuery(it) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -173,6 +179,7 @@ fun SubAdminCustomersScreen(
                 }
             }
         }
+    }
     }
 
     // Delete Confirmation Dialog

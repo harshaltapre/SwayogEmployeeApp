@@ -10,6 +10,8 @@ import androidx.activity.result.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -160,12 +162,17 @@ fun ProfileScreen(
                 }
             } else {
                 val currentUser = user
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
+                com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
+                    maxWidth = if (windowSize.isTablet) 640.dp else androidx.compose.ui.unit.Dp.Unspecified
                 ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = windowSize.contentPadding, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)
+                    ) {
                     // Profile Header
                     SwayogCard {
                         Column(
@@ -313,6 +320,7 @@ fun ProfileScreen(
             }
         }
     }
+}
 }
 
 @Composable

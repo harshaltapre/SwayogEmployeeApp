@@ -34,6 +34,8 @@ import com.swayog.employee.presentation.common.components.SwayogCard
 import com.swayog.employee.presentation.common.components.SwayogTopBar
 import com.swayog.employee.presentation.common.utils.ImageUtils
 
+import com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubAdminEmployeesScreen(
@@ -101,19 +103,24 @@ fun SubAdminEmployeesScreen(
             }
         }
     ) { paddingValues ->
-        Column(
+        ResponsiveContentContainer(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFFF8FAFC))
-                .padding(paddingValues)
-                .padding(16.dp)
+                .padding(paddingValues),
+            maxWidth = 920.dp
         ) {
-            Text(
-                text = "Manage staff and track assigned tasks.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF64748B),
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "Manage staff and track assigned tasks.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF64748B),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
 
             TabRow(
                 selectedTabIndex = selectedTabIndex,
@@ -193,6 +200,7 @@ fun SubAdminEmployeesScreen(
             }
         }
     }
+}
 }
 
 @Composable
@@ -352,15 +360,20 @@ fun EmployeeDetailContent(
             )
         }
     ) { paddingValues ->
-        Column(
+        ResponsiveContentContainer(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(paddingValues),
+            maxWidth = 840.dp
         ) {
-            // Employee Profile Card
-            SwayogCard {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Employee Profile Card
+                SwayogCard {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -500,6 +513,7 @@ fun EmployeeDetailContent(
             }
         }
     }
+}
 }
 
 @Composable
@@ -673,8 +687,9 @@ fun AssignedTasksTab(
         Dialog(onDismissRequest = { selectedTaskForPreview = null }) {
             Card(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.85f),
+                    .widthIn(max = 600.dp)
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.88f),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(

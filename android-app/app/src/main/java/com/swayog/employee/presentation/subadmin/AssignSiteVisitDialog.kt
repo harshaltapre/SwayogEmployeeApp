@@ -53,7 +53,8 @@ fun AssignSiteVisitDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
-                .fillMaxWidth()
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.9f),
             shape = RoundedCornerShape(16.dp)
         ) {

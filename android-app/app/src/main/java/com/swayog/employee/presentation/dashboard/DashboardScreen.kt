@@ -248,16 +248,21 @@ fun DashboardScreen(
                         }
                     }
                 } else {
+                    val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(paddingValues)
+                            .padding(paddingValues),
+                        contentAlignment = Alignment.TopCenter
                     ) {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
+                        com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
+                            maxWidth = if (windowSize.isTablet) 840.dp else androidx.compose.ui.unit.Dp.Unspecified
+                        ) {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(windowSize.contentPadding),
+                                verticalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)
+                            ) {
                         // Welcome Section with Live Clock & Profile Avatar
                         item {
                             val context = LocalContext.current
@@ -708,7 +713,8 @@ fun DashboardScreen(
             }
         }
     }
-    }
+}
+}
 }
 
 @Composable

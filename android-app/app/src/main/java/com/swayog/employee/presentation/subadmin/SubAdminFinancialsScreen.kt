@@ -32,6 +32,8 @@ import com.swayog.employee.presentation.common.components.SwayogTopBar
 import java.text.SimpleDateFormat
 import java.util.*
 
+import com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubAdminFinancialsScreen(
@@ -88,36 +90,42 @@ fun SubAdminFinancialsScreen(
             }
         }
     ) { paddingValues ->
-        Column(
+        ResponsiveContentContainer(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(paddingValues),
+            maxWidth = 880.dp
         ) {
-            // Search Bar
-            SwayogTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                label = "Search payments...",
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Search Bar
+                SwayogTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = "Search payments...",
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            if (isLoading && invoices.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else if (invoices.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No payment records found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(invoices, key = { it.id }) { invoice ->
-                        InvoiceCard(invoice = invoice)
+                if (isLoading && invoices.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (invoices.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No payment records found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(invoices, key = { it.id }) { invoice ->
+                            InvoiceCard(invoice = invoice)
+                        }
                     }
                 }
             }

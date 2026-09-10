@@ -54,9 +54,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 normalizedJob.contains("inventory") || normalizedRole.contains("inventory")
             }
 
+            val windowSizeInfo = com.swayog.employee.presentation.common.responsive.rememberWindowSizeInfo()
+
             CompositionLocalProvider(
                 LocalCompactViewEnabled provides compactViewEnabled,
-                LocalAnimationsEnabled provides animationsEnabled
+                LocalAnimationsEnabled provides animationsEnabled,
+                com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo provides windowSizeInfo
             ) {
                 SwayogEmployeeAppTheme(darkTheme = darkMode) {
                     Surface(

@@ -146,7 +146,10 @@ fun EditCustomerDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+            modifier = Modifier
+                .widthIn(max = 580.dp)
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.9f)
         ) {
             Column(
                 modifier = Modifier

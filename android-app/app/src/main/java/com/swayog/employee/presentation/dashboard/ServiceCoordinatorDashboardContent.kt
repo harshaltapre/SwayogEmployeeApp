@@ -192,16 +192,22 @@ fun ServiceCoordinatorDashboardContent(
         }
     }
 
+    val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
+            maxWidth = if (windowSize.isTablet) 960.dp else androidx.compose.ui.unit.Dp.Unspecified
         ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(windowSize.contentPadding),
+                verticalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)
+            ) {
             // Section 1: Top Welcome Portal Header
             item {
                 Row(
@@ -1332,6 +1338,7 @@ fun ServiceCoordinatorDashboardContent(
                 }
             }
         }
+    }
 
         // Overlay Loading indicator during pull to refresh or page initial sync
         AnimatedVisibility(

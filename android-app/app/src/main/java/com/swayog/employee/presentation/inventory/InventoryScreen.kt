@@ -25,6 +25,10 @@ import com.swayog.employee.data.model.UpdateInventoryRequest
 import com.swayog.employee.presentation.common.components.SwayogCard
 import com.swayog.employee.presentation.common.components.SwayogTopBar
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InventoryScreen(
@@ -69,56 +73,61 @@ fun InventoryScreen(
             }
         }
     ) { paddingValues ->
-        Column(
+        ResponsiveContentContainer(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+            maxWidth = 880.dp
         ) {
-            if (inventoryState is InventoryState.Loading && inventoryItems.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            } else if (inventoryItems.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.Inventory,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "No inventory items",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (inventoryState is InventoryState.Loading && inventoryItems.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
                     }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(inventoryItems, key = { it.id }) { item ->
-                        InventoryItemCard(
-                            item = item,
-                            onEditClick = {
-                                itemToEdit = item
-                                showEditDialog = true
-                            },
-                            onDeleteClick = {
-                                itemToDelete = item
-                                showDeleteDialog = true
-                            }
-                        )
+                } else if (inventoryItems.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Inventory,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "No inventory items",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(inventoryItems, key = { it.id }) { item ->
+                            InventoryItemCard(
+                                item = item,
+                                onEditClick = {
+                                    itemToEdit = item
+                                    showEditDialog = true
+                                },
+                                onDeleteClick = {
+                                    itemToDelete = item
+                                    showDeleteDialog = true
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -350,48 +359,60 @@ fun AddInventoryItemDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Inventory Item") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedTextField(
                     value = sku,
                     onValueChange = { sku = it },
                     label = { Text("SKU") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Name") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = category,
                     onValueChange = { category = it },
                     label = { Text("Category") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = inStock,
                     onValueChange = { inStock = it },
                     label = { Text("In Stock") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = minThreshold,
                     onValueChange = { minThreshold = it },
                     label = { Text("Min Threshold") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = supplier,
                     onValueChange = { supplier = it },
                     label = { Text("Supplier") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = pricePerUnit,
                     onValueChange = { pricePerUnit = it },
                     label = { Text("Price Per Unit") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         },
@@ -443,48 +464,60 @@ fun EditInventoryItemDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Inventory Item") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedTextField(
                     value = sku,
                     onValueChange = { sku = it },
                     label = { Text("SKU") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Name") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = category,
                     onValueChange = { category = it },
                     label = { Text("Category") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = inStock,
                     onValueChange = { inStock = it },
                     label = { Text("In Stock") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = minThreshold,
                     onValueChange = { minThreshold = it },
                     label = { Text("Min Threshold") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = supplier,
                     onValueChange = { supplier = it },
                     label = { Text("Supplier") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = pricePerUnit,
                     onValueChange = { pricePerUnit = it },
                     label = { Text("Price Per Unit") },
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         },

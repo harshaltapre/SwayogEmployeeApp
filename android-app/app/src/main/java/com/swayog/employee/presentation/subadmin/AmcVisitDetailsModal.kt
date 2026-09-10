@@ -53,8 +53,9 @@ fun AmcVisitDetailsModal(
         Card(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
+                .widthIn(max = 580.dp)
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.9f)
         ) {
             Column(
                 modifier = Modifier

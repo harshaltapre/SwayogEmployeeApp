@@ -314,6 +314,8 @@ fun AttendanceScreen(
         )
     }
 
+    val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
+
     Scaffold(
         topBar = {
             SwayogTopBar(
@@ -331,7 +333,8 @@ fun AttendanceScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             PendingSyncBanner(
                 pendingCount = pendingSyncCount,
@@ -341,12 +344,15 @@ fun AttendanceScreen(
                 }
             )
             
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
+                maxWidth = if (windowSize.isTablet) 840.dp else androidx.compose.ui.unit.Dp.Unspecified
             ) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = windowSize.contentPadding, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)
+                ) {
                     // Live Clock + Work Timer Card
                     item {
                         SwayogCard {
@@ -1363,6 +1369,7 @@ fun AttendanceScreen(
                 }
             }
         }
+    }
     }
 }
 

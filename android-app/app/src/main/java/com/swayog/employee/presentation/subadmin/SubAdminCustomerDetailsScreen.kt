@@ -26,6 +26,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.data.model.*
 import com.swayog.employee.presentation.common.components.*
+import com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer
 
 // Helper function to parse brand and connection type for display (matching web logic)
 private fun parseBrandAndTypeForDisplay(brandStr: String?): Pair<String, String> {
@@ -96,12 +97,13 @@ fun SubAdminCustomerDetailsScreen(
     LaunchedEffect(updateState) {
         when (updateState) {
             is CustomerUpdateState.Success -> {
-                Toast.makeText(context, "Customer details updated successfully!", Toast.LENGTH_SHORT).show()
-                isEditOpen = false
+                Toast.makeText(context, "Customer updated successfully!", Toast.LENGTH_SHORT).show()
                 viewModel.resetUpdateState()
+                isEditOpen = false
             }
             is CustomerUpdateState.Error -> {
-                Toast.makeText(context, (updateState as CustomerUpdateState.Error).message, Toast.LENGTH_LONG).show()
+                val msg = (updateState as CustomerUpdateState.Error).message
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 viewModel.resetUpdateState()
             }
             else -> {}
@@ -170,41 +172,45 @@ fun SubAdminCustomerDetailsScreen(
                     modifier = Modifier.padding(paddingValues)
                 )
             }
-            is CustomerDetailsState.Success -> {
+            is CustomerDetailsState.Success<CustomerSummary> -> {
                 val customerSummary = state.data
                 val customer = customerSummary.customer
                 
-                Column(
+                ResponsiveContentContainer(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(paddingValues)
+                        .padding(paddingValues),
+                    maxWidth = 920.dp
                 ) {
-                    // Header Card
-                    CustomerHeader(customer = customer)
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // Header Card
+                        CustomerHeader(customer = customer)
 
-                    // Tabs
-                    TabRow(selectedTabIndex = selectedTab) {
-                        Tab(
-                            selected = selectedTab == 0,
-                            onClick = { selectedTab = 0 },
-                            text = { Text("Overview") }
-                        )
-                        Tab(
-                            selected = selectedTab == 1,
-                            onClick = { selectedTab = 1 },
-                            text = { Text("Inverter") }
-                        )
-                        Tab(
-                            selected = selectedTab == 2,
-                            onClick = { selectedTab = 2 },
-                            text = { Text("AMC") }
-                        )
-                        Tab(
-                            selected = selectedTab == 3,
-                            onClick = { selectedTab = 3 },
-                            text = { Text("Invoices") }
-                        )
-                    }
+                        // Tabs
+                        TabRow(selectedTabIndex = selectedTab) {
+                            Tab(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                text = { Text("Overview") }
+                            )
+                            Tab(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                text = { Text("Inverter") }
+                            )
+                            Tab(
+                                selected = selectedTab == 2,
+                                onClick = { selectedTab = 2 },
+                                text = { Text("AMC") }
+                            )
+                            Tab(
+                                selected = selectedTab == 3,
+                                onClick = { selectedTab = 3 },
+                                text = { Text("Invoices") }
+                            )
+                        }
 
                     // Content Area
                     Box(
@@ -287,6 +293,7 @@ fun SubAdminCustomerDetailsScreen(
             }
         }
     }
+}
 }
 
 @Composable

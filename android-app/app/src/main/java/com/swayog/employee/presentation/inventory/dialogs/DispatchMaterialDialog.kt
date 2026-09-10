@@ -57,9 +57,9 @@ fun DispatchMaterialDialog(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier
-                .fillMaxWidth()
+                .widthIn(max = 600.dp)
+                .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.9f)
-                .padding(vertical = 12.dp)
         ) {
             Column(
                 modifier = Modifier

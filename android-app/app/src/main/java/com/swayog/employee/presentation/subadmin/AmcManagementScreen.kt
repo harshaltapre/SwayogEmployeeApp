@@ -140,6 +140,8 @@ fun AmcManagementScreen(
         }
     }
 
+    val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
+
     Scaffold(
         topBar = {
             SwayogTopBar(
@@ -154,11 +156,18 @@ fun AmcManagementScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+            contentAlignment = Alignment.TopCenter
         ) {
+            com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
+                maxWidth = if (windowSize.isTablet) 920.dp else androidx.compose.ui.unit.Dp.Unspecified
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
             // Top Tab Row
             TabRow(
                 selectedTabIndex = selectedTab,
@@ -407,6 +416,8 @@ fun AmcManagementScreen(
             }
         }
     }
+}
+}
 
     // Individual Customer AMC Settings Dialog
     if (isAmcSettingsOpen && selectedCustomer != null) {

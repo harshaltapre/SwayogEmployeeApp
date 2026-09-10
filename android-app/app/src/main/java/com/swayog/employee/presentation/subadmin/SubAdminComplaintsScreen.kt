@@ -69,6 +69,8 @@ fun SubAdminComplaintsScreen(
         }
     }
 
+    val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -84,13 +86,20 @@ fun SubAdminComplaintsScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+            contentAlignment = Alignment.TopCenter
         ) {
-            // Tab Row
-            TabRow(selectedTabIndex = selectedTab) {
+            com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
+                maxWidth = if (windowSize.isTablet) 880.dp else androidx.compose.ui.unit.Dp.Unspecified
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // Tab Row
+                    TabRow(selectedTabIndex = selectedTab) {
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("All") })
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Pending") })
                 Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Scheduled") })
@@ -141,6 +150,8 @@ fun SubAdminComplaintsScreen(
                 }
             }
         }
+        }
+    }
 
         // Details Modal Dialog
         selectedComplaint?.let { complaint ->
@@ -378,11 +389,14 @@ fun ScheduleVisitDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+            modifier = Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(0.92f)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {

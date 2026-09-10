@@ -78,6 +78,7 @@ fun AmcSettingsDialog(
     ) {
         Surface(
             modifier = Modifier
+                .widthIn(max = 620.dp)
                 .fillMaxWidth(0.95f)
                 .fillMaxHeight(0.9f)
                 .padding(16.dp),

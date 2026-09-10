@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,6 +29,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.swayog.employee.data.model.Customer
 import com.swayog.employee.presentation.common.components.SwayogCard
 import com.swayog.employee.presentation.common.components.SwayogTopBar
+
+import com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,19 +91,23 @@ fun SubAdminCalendarScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        ResponsiveContentContainer(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+            maxWidth = 880.dp
         ) {
-            // Filter Bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Column(
+                modifier = Modifier.fillMaxSize()
             ) {
+                // Filter Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                 val filters = listOf(
                     "Complaints" to events.count { it.type.contains("complaint", ignoreCase = true) },
                     "AMC Visits" to events.count { it.type.contains("amc", ignoreCase = true) },
@@ -194,7 +201,7 @@ fun SubAdminCalendarScreen(
                 }
             }
         }
-
+        }
 
         selectedEventForUpdate?.let { event ->
             UpdateAmcVisitDialog(
@@ -252,12 +259,13 @@ fun CalendarEventDetailsDialog(
         Card(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp)
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(0.92f)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -363,11 +371,14 @@ fun UpdateAmcVisitDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            modifier = Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(0.92f)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
