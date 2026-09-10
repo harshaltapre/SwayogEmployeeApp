@@ -54,6 +54,11 @@ class DataStoreManager @Inject constructor(
         val RULE_OFFICE_LNG = stringPreferencesKey("rule_office_lng")
         val RULE_OFFICE_RADIUS = stringPreferencesKey("rule_office_radius")
         val RULE_FACE_MATCH_THRESHOLD = stringPreferencesKey("rule_face_match_threshold")
+
+        // Saved Credentials for Autofill & Quick Access
+        val SAVED_LOGIN_ID = stringPreferencesKey("saved_login_id")
+        val SAVED_PASSWORD = stringPreferencesKey("saved_password")
+        val REMEMBER_CREDENTIALS = booleanPreferencesKey("remember_credentials")
     }
 
     val attendanceRule: Flow<com.swayog.employee.data.model.AttendanceRule> = context.dataStore.data.map { preferences ->
@@ -409,6 +414,43 @@ class DataStoreManager @Inject constructor(
                 settings.showStatusEnabled?.let { preferences[PreferencesKeys.SHOW_STATUS_ENABLED] = it }
                 settings.activitySharingEnabled?.let { preferences[PreferencesKeys.ACTIVITY_SHARING_ENABLED] = it }
                 settings.language?.let { preferences[PreferencesKeys.LANGUAGE] = it }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // Saved Credentials for Autofill & Quick Login
+    val savedLoginId: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.SAVED_LOGIN_ID]
+    }
+
+    val savedPassword: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.SAVED_PASSWORD]
+    }
+
+    val rememberCredentials: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.REMEMBER_CREDENTIALS] ?: true
+    }
+
+    suspend fun saveLoginCredentials(identifier: String, pass: String, remember: Boolean = true) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SAVED_LOGIN_ID] = identifier
+                preferences[PreferencesKeys.SAVED_PASSWORD] = pass
+                preferences[PreferencesKeys.REMEMBER_CREDENTIALS] = remember
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun clearSavedLoginCredentials() {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences.remove(PreferencesKeys.SAVED_LOGIN_ID)
+                preferences.remove(PreferencesKeys.SAVED_PASSWORD)
+                preferences[PreferencesKeys.REMEMBER_CREDENTIALS] = false
             }
         } catch (e: Exception) {
             e.printStackTrace()

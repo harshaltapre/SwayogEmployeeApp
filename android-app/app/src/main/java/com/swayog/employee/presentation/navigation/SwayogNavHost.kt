@@ -47,6 +47,11 @@ fun SwayogNavHost(
             navController.navigate(Screen.Login.route) {
                 popUpTo(navController.graph.id) { inclusive = true }
             }
+        } else if (isLoggedIn && navController.currentDestination?.route == Screen.Login.route) {
+            val dest = if (isInventoryCoordinator) Screen.InventoryCoordinator.route else Screen.Dashboard.route
+            navController.navigate(dest) {
+                popUpTo(Screen.Login.route) { inclusive = true }
+            }
         }
     }
 

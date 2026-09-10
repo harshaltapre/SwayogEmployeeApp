@@ -30,6 +30,11 @@ import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.swayog.employee.presentation.common.components.*
 import kotlinx.coroutines.launch
 
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.autofill.AutofillType
+
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
@@ -38,6 +43,7 @@ fun LoginScreen(
     val loginState by viewModel.loginState.collectAsState()
     val email by viewModel.email.collectAsState()
     val password by viewModel.password.collectAsState()
+    val savePassword by viewModel.savePassword.collectAsState()
     val isPasswordVisible by viewModel.isPasswordVisible.collectAsState()
     val isBiometricAvailable by viewModel.isBiometricAvailable.collectAsState()
     val context = LocalContext.current
@@ -90,6 +96,12 @@ fun LoginScreen(
     
     LaunchedEffect(loginState) {
         if (loginState is LoginState.Success) {
+            try {
+                val autofillManager = context.getSystemService(android.view.autofill.AutofillManager::class.java)
+                autofillManager?.commit()
+            } catch (e: Exception) {
+                // Ignore if autofill service unavailable
+            }
             onLoginSuccess()
         }
     }
@@ -156,6 +168,7 @@ fun LoginScreen(
                     label = "Email / Login ID",
                     placeholder = "Enter email or EMP-XXXXXX",
                     keyboardType = KeyboardType.Email,
+                    autofillTypes = listOf(AutofillType.EmailAddress, AutofillType.Username),
                     trailingIcon = {
                         Icon(
                             imageVector = Icons.Default.Email,
@@ -172,6 +185,7 @@ fun LoginScreen(
                     label = "Password",
                     placeholder = "Enter your password",
                     keyboardType = KeyboardType.Password,
+                    autofillTypes = listOf(AutofillType.Password),
                     visualTransformation = if (isPasswordVisible) {
                         VisualTransformation.None
                     } else {
@@ -191,6 +205,37 @@ fun LoginScreen(
                         }
                     }
                 )
+
+                // Save Password / Remember Credentials Option
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.onSavePasswordChange(!savePassword) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = savePassword,
+                        onCheckedChange = viewModel::onSavePasswordChange,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = Color(0xFF386FA4)
+                        )
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Column {
+                        Text(
+                            text = "Save password",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Save credentials for easy access",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
                 
                 // Login Button
                 SwayogButton(
