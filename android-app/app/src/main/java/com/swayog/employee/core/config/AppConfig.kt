@@ -15,10 +15,7 @@ object AppConfig {
      * Defaults to production URL if BuildConfig is blank.
      */
     val API_BASE_URL: String
-        get() {
-            val url = BuildConfig.API_BASE_URL.takeIf { it.isNotBlank() } ?: PRODUCTION_API_BASE_URL
-            return if (url.endsWith("/")) url else "$url/"
-        }
+        get() = PRODUCTION_API_BASE_URL
 
     /**
      * Base URL without '/api/v1' suffix for resolving static assets and uploads.

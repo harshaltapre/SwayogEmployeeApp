@@ -90,5 +90,60 @@ object ImageUtils {
             }
         }
     }
+
+    /**
+     * Crops bitmap to center square, resizes to max 480x480, and saves to compressed JPEG file.
+     */
+    fun createAvatarFileFromBitmap(context: Context, bitmap: android.graphics.Bitmap): java.io.File {
+        val dimension = Math.min(bitmap.width, bitmap.height)
+        val xOffset = (bitmap.width - dimension) / 2
+        val yOffset = (bitmap.height - dimension) / 2
+        val squareBitmap = android.graphics.Bitmap.createBitmap(bitmap, xOffset, yOffset, dimension, dimension)
+        val scaled = if (dimension > 480) {
+            android.graphics.Bitmap.createScaledBitmap(squareBitmap, 480, 480, true)
+        } else {
+            squareBitmap
+        }
+        val tempFile = java.io.File(context.cacheDir, "profile_upload_${System.currentTimeMillis()}.jpg")
+        java.io.FileOutputStream(tempFile).use { out ->
+            scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+        }
+        return tempFile
+    }
+
+    /**
+     * Reads image URI, applies EXIF rotation if needed, center-crops, and saves as compact JPEG avatar file.
+     */
+    fun createAvatarFileFromUri(context: Context, uri: android.net.Uri): java.io.File? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream) ?: return null
+            
+            var rotatedBitmap = bitmap
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val exif = android.media.ExifInterface(stream)
+                    val orientation = exif.getAttributeInt(
+                        android.media.ExifInterface.TAG_ORIENTATION,
+                        android.media.ExifInterface.ORIENTATION_NORMAL
+                    )
+                    val matrix = android.graphics.Matrix()
+                    when (orientation) {
+                        android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                        android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                        android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                    }
+                    if (orientation != android.media.ExifInterface.ORIENTATION_NORMAL && orientation != android.media.ExifInterface.ORIENTATION_UNDEFINED) {
+                        rotatedBitmap = android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                    }
+                }
+            } catch (_: Exception) {}
+
+            createAvatarFileFromBitmap(context, rotatedBitmap)
+        } catch (e: Exception) {
+            android.util.Log.e("IMAGE_UTILS", "Failed to create avatar from URI: ${e.message}", e)
+            null
+        }
+    }
 }
 

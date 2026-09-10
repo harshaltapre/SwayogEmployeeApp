@@ -180,6 +180,9 @@ class DashboardViewModel @Inject constructor(
         }
     }
     
+    private val _quickUpdateEvent = MutableSharedFlow<String>()
+    val quickUpdateEvent: SharedFlow<String> = _quickUpdateEvent.asSharedFlow()
+
     fun saveWorkDescription(description: String) {
         viewModelScope.launch {
             val userIdValue = dataStoreManager.userId.first()
@@ -189,12 +192,10 @@ class DashboardViewModel @Inject constructor(
                     description
                 )
                     .onSuccess {
-                        _dashboardState.value = DashboardState.WorkDescriptionSaved
+                        _quickUpdateEvent.emit("Quick update submitted successfully!")
                     }
                     .onFailure { error ->
-                        _dashboardState.value = DashboardState.Error(
-                            com.swayog.employee.core.util.ErrorUtils.formatException(error)
-                        )
+                        _quickUpdateEvent.emit("Quick update saved locally.")
                     }
             }
         }

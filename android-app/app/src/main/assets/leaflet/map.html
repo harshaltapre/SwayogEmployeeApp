@@ -116,10 +116,11 @@
         // Add zoom control at top-right
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-        // Standard High-Def OpenStreetMap Tiles (No watermark, free)
-        var osmLayer = L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
+        // High-Def CartoDB Voyager & OpenStreetMap Tiles (Crisp, fast, no watermark)
+        var osmLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             maxZoom: 19,
-            attribution: '© OpenStreetMap contributors'
+            subdomains: 'abcd',
+            attribution: '© OpenStreetMap contributors © CARTO'
         }).addTo(map);
 
         var markersLayer = L.layerGroup().addTo(map);

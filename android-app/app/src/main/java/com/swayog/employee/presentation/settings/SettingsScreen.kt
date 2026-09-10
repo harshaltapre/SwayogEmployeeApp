@@ -80,11 +80,7 @@ fun SettingsScreen(
 
     val processBitmapAndUpload = { bitmap: Bitmap ->
         try {
-            val scaled = Bitmap.createScaledBitmap(bitmap, 480, 480, true)
-            val tempFile = java.io.File(context.cacheDir, "profile_upload_${System.currentTimeMillis()}.jpg")
-            java.io.FileOutputStream(tempFile).use { out ->
-                scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
-            }
+            val tempFile = com.swayog.employee.presentation.common.utils.ImageUtils.createAvatarFileFromBitmap(context, bitmap)
             android.util.Log.d("PROFILE_UPLOAD", "Image file saved to: ${tempFile.absolutePath}, size: ${tempFile.length()} bytes")
             viewModel.uploadProfilePhotoFile(tempFile)
         } catch (e: Exception) {
@@ -118,36 +114,12 @@ fun SettingsScreen(
     ) { uri: Uri? ->
         uri?.let {
             try {
-                // Decode bounds safely first
-                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                context.contentResolver.openInputStream(it)?.use { stream ->
-                    BitmapFactory.decodeStream(stream, null, options)
-                }
-
-                // Calculate inSampleSize
-                var inSampleSize = 1
-                val reqWidth = 480
-                val reqHeight = 480
-                val height = options.outHeight
-                val width = options.outWidth
-                if (height > reqHeight || width > reqWidth) {
-                    val halfHeight = height / 2
-                    val halfWidth = width / 2
-                    while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
-                        inSampleSize *= 2
-                    }
-                }
-
-                // Decode the downsampled image
-                options.inSampleSize = inSampleSize
-                options.inJustDecodeBounds = false
-                context.contentResolver.openInputStream(it)?.use { stream ->
-                    val bitmap = BitmapFactory.decodeStream(stream, null, options)
-                    if (bitmap != null) {
-                        processBitmapAndUpload(bitmap)
-                    } else {
-                        Toast.makeText(context, "Failed to read image", Toast.LENGTH_SHORT).show()
-                    }
+                val tempFile = com.swayog.employee.presentation.common.utils.ImageUtils.createAvatarFileFromUri(context, it)
+                if (tempFile != null) {
+                    android.util.Log.d("PROFILE_UPLOAD", "Gallery avatar saved to: ${tempFile.absolutePath}, size: ${tempFile.length()} bytes")
+                    viewModel.uploadProfilePhotoFile(tempFile)
+                } else {
+                    Toast.makeText(context, "Failed to read image from gallery", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 Toast.makeText(context, "Error loading image: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()

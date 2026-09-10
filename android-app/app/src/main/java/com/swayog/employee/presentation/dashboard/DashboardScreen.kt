@@ -36,6 +36,9 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -56,6 +59,7 @@ fun DashboardScreen(
 
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val dashboardState by viewModel.dashboardState.collectAsState()
     val userName by viewModel.userName.collectAsState()
     val userRole by viewModel.userRole.collectAsState()
@@ -75,6 +79,12 @@ fun DashboardScreen(
     var currentTab by remember { mutableIntStateOf(0) }
 
     var workDescription by remember { mutableStateOf("") }
+
+    LaunchedEffect(viewModel) {
+        viewModel.quickUpdateEvent.collect { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Snapshot time (removes continuous 1-second recomposition lag)
     val currentTime = remember { System.currentTimeMillis() }

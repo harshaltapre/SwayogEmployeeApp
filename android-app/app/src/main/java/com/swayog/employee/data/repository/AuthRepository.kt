@@ -305,68 +305,86 @@ class AuthRepository @Inject constructor(
             }
             android.util.Log.d(TAG, "[STEP 1] Image MIME type detected = $mimeType")
 
+            // 1. Prepare Base64 payload (standard for serverless & Vercel)
+            val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+            val base64Str = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            val dataUrl = "data:$mimeType;base64,$base64Str"
+            val jsonRequest = UpdateProfilePhotoRequest(photoDataUrl = dataUrl, photo = dataUrl)
+
+            // 2. Prepare Multipart payload as secondary fallback
             val requestBody = file.asRequestBody(mimeType.toMediaTypeOrNull())
             val multipartBody = okhttp3.MultipartBody.Part.createFormData("file", file.name, requestBody)
 
-            android.util.Log.d(TAG, "[STEP 2] Target endpoint: MULTIPART POST /api/v1/users/me/profile-image")
+            android.util.Log.d(TAG, "[STEP 2] Attempting primary upload via attendance/profile-photo (JSON DataURL)...")
             
-            var uploadResponse = try {
-                apiService.uploadProfileImageMultipart(multipartBody)
+            var uploadResponse: Response<ApiResponse<User>>? = null
+            var lastError: Exception? = null
+
+            // Primary: JSON Base64 to POST /attendance/profile-photo
+            try {
+                val res = apiService.uploadProfilePhotoJson(jsonRequest)
+                uploadResponse = res
+                android.util.Log.d(TAG, "[STEP 2.1] JSON attendance/profile-photo HTTP ${res.code()}")
             } catch (e: Exception) {
-                android.util.Log.d(TAG, "[STEP 2.5] Primary endpoint failed, attempting fallback...")
-                apiService.uploadProfilePhotoMultipart(multipartBody)
+                android.util.Log.w(TAG, "[STEP 2.1] JSON attendance/profile-photo threw: ${e.message}")
+                lastError = e
             }
 
-            if (!uploadResponse.isSuccessful && uploadResponse.code() == 404) {
-                android.util.Log.d(TAG, "[STEP 2.5] Primary endpoint returned 404, attempting fallback...")
+            // Fallback 1: Multipart to POST /attendance/profile-photo
+            if (uploadResponse == null || (!uploadResponse.isSuccessful && uploadResponse.code() != 400 && uploadResponse.code() != 413)) {
                 try {
-                    uploadResponse = apiService.uploadProfilePhotoMultipart(multipartBody)
+                    android.util.Log.d(TAG, "[STEP 2.2] Fallback via attendance/profile-photo (Multipart)...")
+                    val res = apiService.uploadProfilePhotoMultipart(multipartBody)
+                    uploadResponse = res
+                    android.util.Log.d(TAG, "[STEP 2.2] Multipart attendance/profile-photo HTTP ${res.code()}")
                 } catch (e: Exception) {
-                    android.util.Log.e(TAG, "[STEP 2.5 ERROR] Fallback also failed: ${e.message}")
+                    android.util.Log.w(TAG, "[STEP 2.2] Multipart attendance/profile-photo threw: ${e.message}")
+                    if (lastError == null) lastError = e
                 }
             }
-            android.util.Log.d(TAG, "[STEP 3] Upload response received: HTTP status code = ${uploadResponse.code()}, message = ${uploadResponse.message()}")
 
-            if (uploadResponse.isSuccessful && uploadResponse.body() != null) {
+            // Fallback 2: JSON to POST /users/me/profile-image
+            if (uploadResponse == null || (!uploadResponse.isSuccessful && uploadResponse.code() == 404)) {
+                try {
+                    android.util.Log.d(TAG, "[STEP 2.3] Fallback via users/me/profile-image (JSON)...")
+                    val res = apiService.uploadProfileImageJson(jsonRequest)
+                    uploadResponse = res
+                    android.util.Log.d(TAG, "[STEP 2.3] JSON users/me/profile-image HTTP ${res.code()}")
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "[STEP 2.3] JSON users/me/profile-image threw: ${e.message}")
+                }
+            }
+
+            // Fallback 3: Multipart to POST /users/me/profile-image
+            if (uploadResponse == null || (!uploadResponse.isSuccessful && uploadResponse.code() == 404)) {
+                try {
+                    android.util.Log.d(TAG, "[STEP 2.4] Fallback via users/me/profile-image (Multipart)...")
+                    val res = apiService.uploadProfileImageMultipart(multipartBody)
+                    uploadResponse = res
+                    android.util.Log.d(TAG, "[STEP 2.4] Multipart users/me/profile-image HTTP ${res.code()}")
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "[STEP 2.4] Multipart users/me/profile-image threw: ${e.message}")
+                }
+            }
+
+            if (uploadResponse != null && uploadResponse.isSuccessful && uploadResponse.body() != null) {
                 val apiBody = uploadResponse.body()!!
                 val serverUser = apiBody.data
-                val rawPhoto = serverUser?.profileImageUrl ?: apiBody.photo ?: ""
+                val rawPhoto = serverUser?.profileImageUrl ?: apiBody.photo ?: dataUrl
                 val returnedPhoto = if (rawPhoto.startsWith("http")) {
                     val sep = if (rawPhoto.contains("?")) "&" else "?"
                     "${rawPhoto}${sep}v=${System.currentTimeMillis()}"
                 } else {
                     rawPhoto
                 }
-                android.util.Log.d(TAG, "[STEP 4] Returned image URL = ${returnedPhoto.take(60)}...")
+                android.util.Log.d(TAG, "[STEP 3] Upload succeeded! Image photo length = ${returnedPhoto.length}")
 
-                if (returnedPhoto.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
                     dataStoreManager.saveProfilePhoto(returnedPhoto)
                     val userIdToUse = serverUser?.id ?: dataStoreManager.userId.first() ?: ""
                     if (userIdToUse.isNotEmpty()) {
-                        val existingUser = userDao.getUserById(userIdToUse)
-                        userDao.insertUser(
-                            UserEntity(
-                                id = userIdToUse,
-                                loginId = serverUser?.loginId ?: existingUser?.loginId ?: userIdToUse,
-                                employeeCode = serverUser?.employeeCode ?: existingUser?.employeeCode,
-                                email = serverUser?.email ?: existingUser?.email ?: "",
-                                phoneNumber = serverUser?.phoneNumber ?: existingUser?.phoneNumber,
-                                fullName = serverUser?.fullName ?: existingUser?.fullName ?: "",
-                                role = serverUser?.role ?: existingUser?.role ?: "EMPLOYEE",
-                                designationTitle = serverUser?.designationTitle ?: existingUser?.designationTitle,
-                                departmentId = serverUser?.departmentId ?: existingUser?.departmentId,
-                                reportingManagerId = serverUser?.reportingManagerId ?: existingUser?.reportingManagerId,
-                                isActive = serverUser?.isActive ?: existingUser?.isActive ?: true,
-                                createdAt = serverUser?.createdAt ?: existingUser?.createdAt ?: "",
-                                jobRole = serverUser?.employeeProfile?.jobRole ?: existingUser?.jobRole,
-                                zone = serverUser?.employeeProfile?.zone ?: existingUser?.zone,
-                                monthlySalaryInr = serverUser?.employeeProfile?.monthlySalaryInr ?: existingUser?.monthlySalaryInr,
-                                profilePhotoUrl = returnedPhoto,
-                                rating = existingUser?.rating
-                            )
-                        )
+                        userDao.updateProfilePhotoUrl(userIdToUse, returnedPhoto)
                     }
-                    android.util.Log.d(TAG, "[STEP 6] Local DataStore & Room DB saved profile photo successfully!")
                 }
 
                 getCurrentUser()
@@ -380,8 +398,12 @@ class AuthRepository @Inject constructor(
                     profileImageUrl = returnedPhoto
                 ))
             } else {
-                val errorMsg = parseErrorMessage(uploadResponse)
-                android.util.Log.e(TAG, "[STEP 3 ERROR] Backend upload failed = $errorMsg")
+                val errorMsg = if (uploadResponse != null) {
+                    parseErrorMessage(uploadResponse)
+                } else {
+                    lastError?.message ?: "Unknown network error during upload"
+                }
+                android.util.Log.e(TAG, "[STEP 3 ERROR] Backend upload failed: $errorMsg")
                 Result.failure(Exception("Failed to upload profile photo: $errorMsg"))
             }
         } catch (e: Exception) {

@@ -160,6 +160,8 @@ app.use("/api/v1/auth", authRoutes);
 
 // Legacy routes (kept for backward compatibility)
 app.get("/api/v1/users/me", authenticateAccessToken, asyncHandler(meHandler));
+app.post("/api/v1/users/me/profile-image", attendanceRoutes);
+app.use("/api/v1/users", attendanceRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/customers", customerRoutes);
 app.use("/api/v1/tasks", taskRoutes);

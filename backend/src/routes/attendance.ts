@@ -175,6 +175,69 @@ router.get("/performance", authenticateAccessToken, asyncHandler(async (req, res
   res.json({ snapshot });
 }));
 
+router.post("/work-description", authenticateAccessToken, asyncHandler(async (req, res) => {
+  const userId = req.auth!.userId;
+  const description = req.body.description || req.body.workDescription || req.body.notes || "";
+
+  if (!description || !description.trim()) {
+    res.status(400).json({ error: "Work description cannot be empty" });
+    return;
+  }
+
+  // 1. Update today's CheckIn attendance record notes if it exists
+  const now = new Date();
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+  const checkIn = await prisma.checkIn.findFirst({
+    where: {
+      employeeId: userId,
+      checkInTime: { gte: startOfDay, lte: endOfDay },
+    },
+    orderBy: { checkInTime: "desc" },
+  });
+
+  if (checkIn) {
+    await prisma.checkIn.update({
+      where: { id: checkIn.id },
+      data: { notes: description },
+    }).catch(() => {});
+  }
+
+  // 2. Also log/update DailyCommit record so Super Admin and Admin can see it on their dashboard
+  const commitDate = startOfDay;
+  const existingCommit = await prisma.dailyCommit.findUnique({
+    where: {
+      employeeId_commitDate: {
+        employeeId: userId,
+        commitDate,
+      },
+    },
+  });
+
+  if (existingCommit) {
+    const combinedSummary = existingCommit.workSummary
+      ? `${existingCommit.workSummary}\n[Quick Update]: ${description}`
+      : description;
+    await prisma.dailyCommit.update({
+      where: { id: existingCommit.id },
+      data: { workSummary: combinedSummary },
+    }).catch(() => {});
+  } else {
+    await prisma.dailyCommit.create({
+      data: {
+        employeeId: userId,
+        commitDate,
+        taskWorkedOn: "Quick Update",
+        workSummary: description,
+        hoursSpent: 1.0,
+      },
+    }).catch(() => {});
+  }
+
+  res.json({ success: true, message: "Work description saved successfully" });
+}));
+
 router.post("/work-submissions", employeeAuth, asyncHandler(async (req, res) => {
   const { title, description, proofUrl, proofNotes, hoursSpent, taskId } = req.body;
   const submission = await prisma.workSubmission.create({

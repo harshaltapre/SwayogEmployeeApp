@@ -30,11 +30,25 @@ interface ApiService {
     @GET("attendance/profile-photo")
     suspend fun getProfilePhoto(): Response<ProfilePhotoResponse>
 
-
+    @POST("attendance/profile-photo")
+    suspend fun uploadProfilePhotoJson(
+        @Body request: UpdateProfilePhotoRequest
+    ): Response<ApiResponse<User>>
 
     @Multipart
     @POST("attendance/profile-photo")
     suspend fun uploadProfilePhotoMultipart(
+        @Part file: okhttp3.MultipartBody.Part
+    ): Response<ApiResponse<User>>
+
+    @POST("users/me/profile-image")
+    suspend fun uploadProfileImageJson(
+        @Body request: UpdateProfilePhotoRequest
+    ): Response<ApiResponse<User>>
+
+    @Multipart
+    @POST("users/me/profile-image")
+    suspend fun uploadProfileImageMultipart(
         @Part file: okhttp3.MultipartBody.Part
     ): Response<ApiResponse<User>>
 
@@ -418,14 +432,6 @@ interface ApiService {
     suspend fun updateMyProfile(
         @Body request: Map<String, String>
     ): Response<ApiResponse<User>>
-
-    @Multipart
-    @POST("users/me/profile-image")
-    suspend fun uploadProfileImageMultipart(
-        @Part file: okhttp3.MultipartBody.Part
-    ): Response<ApiResponse<User>>
-
-
 
     @GET("users/me/preferences")
     suspend fun getUserPreferences(): Response<ApiResponse<UserSettingsDto>>
