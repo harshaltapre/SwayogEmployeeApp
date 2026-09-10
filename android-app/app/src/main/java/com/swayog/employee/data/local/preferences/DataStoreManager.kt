@@ -118,15 +118,6 @@ class DataStoreManager @Inject constructor(
         }
     }
 
-    suspend fun isSessionExpiredDueToInactivity(maxInactiveDays: Long = 10L): Boolean {
-        val loggedIn = isLoggedIn.first()
-        if (!loggedIn) return false
-        val lastActive = lastActiveTime.first() ?: return false
-        val maxInactiveDurationMs = maxInactiveDays * 24L * 60L * 60L * 1000L
-        val elapsed = System.currentTimeMillis() - lastActive
-        return elapsed > maxInactiveDurationMs
-    }
-    
     val biometricEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.BIOMETRIC_ENABLED] ?: false
     }
@@ -163,12 +154,10 @@ class DataStoreManager @Inject constructor(
         preferences[PreferencesKeys.LANGUAGE] ?: "en"
     }
 
-    val serverUrl: Flow<String?> = context.dataStore.data.map { preferences ->
-        preferences[PreferencesKeys.SERVER_URL]
-    }
+    val serverUrl: Flow<String?> = kotlinx.coroutines.flow.flowOf(com.swayog.employee.core.config.AppConfig.API_BASE_URL)
 
     fun getServerUrlBlocking(): String? {
-        return runBlocking { serverUrl.first() }
+        return com.swayog.employee.core.config.AppConfig.API_BASE_URL
     }
     
     suspend fun saveAuthToken(token: String) {

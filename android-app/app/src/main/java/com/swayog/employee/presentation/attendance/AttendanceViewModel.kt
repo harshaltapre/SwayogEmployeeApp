@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.swayog.employee.data.local.preferences.DataStoreManager
 import java.util.Calendar
@@ -90,31 +93,33 @@ class AttendanceViewModel @Inject constructor(
 
     fun loadData() {
         viewModelScope.launch {
-            _attendanceState.value = AttendanceState.Loading
+            _attendanceState.value = AttendanceState.Success
             
-            // Sync Face Enrollment status & Attendance Rules from server
-            attendanceRepository.syncFaceEnrollment()
-            attendanceRepository.getAttendanceRules()
+            withContext(Dispatchers.IO) {
+                try {
+                    val calendar = Calendar.getInstance()
+                    val month = calendar.get(Calendar.MONTH) + 1
+                    val year = calendar.get(Calendar.YEAR)
 
-            // 1. Fetch today's record (saves to Room DB, which automatically updates getTodayAttendanceFlow)
-            attendanceRepository.getTodayAttendance()
-                
-            // 2. Fetch monthly performance details
-            val calendar = Calendar.getInstance()
-            val month = calendar.get(Calendar.MONTH) + 1
-            val year = calendar.get(Calendar.YEAR)
-            
-            // Sync monthly attendance history to Room cache in the background
-            attendanceRepository.syncMonthlyAttendance(month, year)
+                    val faceDeferred = async { attendanceRepository.syncFaceEnrollment() }
+                    val rulesDeferred = async { attendanceRepository.getAttendanceRules() }
+                    val todayDeferred = async { attendanceRepository.getTodayAttendance() }
+                    val monthlyDeferred = async { attendanceRepository.syncMonthlyAttendance(month, year) }
+                    val perfDeferred = async { attendanceRepository.getPerformance(month, year) }
 
-            attendanceRepository.getPerformance(month, year)
-                .onSuccess { snapshot ->
-                    _performance.value = snapshot
-                    _attendanceState.value = AttendanceState.Success
+                    todayDeferred.await()
+                    monthlyDeferred.await()
+                    rulesDeferred.await()
+                    faceDeferred.await()
+                    
+                    val perfResult = perfDeferred.await()
+                    perfResult.onSuccess { snapshot ->
+                        _performance.value = snapshot
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AttendanceViewModel", "Attendance background sync error: ${e.message}")
                 }
-                .onFailure { error ->
-                    _attendanceState.value = AttendanceState.Error(error.message ?: "Failed to load performance stats")
-                }
+            }
         }
     }
 

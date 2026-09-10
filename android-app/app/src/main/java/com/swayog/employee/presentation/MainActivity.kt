@@ -40,32 +40,50 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 normalizedJob.contains("inventory") || normalizedRole.contains("inventory")
             }
 
-            CompositionLocalProvider(
-                LocalCompactViewEnabled provides compactViewEnabled,
-                LocalAnimationsEnabled provides animationsEnabled
-            ) {
+            if (isLoggedIn == null) {
                 SwayogEmployeeAppTheme(darkTheme = darkMode) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        SwayogNavHost(
-                            isLoggedIn = isLoggedIn,
-                            userRole = userRole,
-                            jobRole = jobRole,
-                            startDestination = if (isLoggedIn) {
-                                if (isInventoryCoordinator) {
-                                    com.swayog.employee.presentation.navigation.Screen.InventoryCoordinator.route
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = androidx.compose.ui.Alignment.Center
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            } else {
+                CompositionLocalProvider(
+                    LocalCompactViewEnabled provides compactViewEnabled,
+                    LocalAnimationsEnabled provides animationsEnabled
+                ) {
+                    SwayogEmployeeAppTheme(darkTheme = darkMode) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.background
+                        ) {
+                            SwayogNavHost(
+                                isLoggedIn = isLoggedIn == true,
+                                userRole = userRole,
+                                jobRole = jobRole,
+                                startDestination = if (isLoggedIn == true) {
+                                    if (isInventoryCoordinator) {
+                                        com.swayog.employee.presentation.navigation.Screen.InventoryCoordinator.route
+                                    } else {
+                                        com.swayog.employee.presentation.navigation.Screen.Dashboard.route
+                                    }
                                 } else {
-                                    com.swayog.employee.presentation.navigation.Screen.Dashboard.route
+                                    com.swayog.employee.presentation.navigation.Screen.Login.route
+                                },
+                                onLogout = {
+                                    mainViewModel.logout()
                                 }
-                            } else {
-                                com.swayog.employee.presentation.navigation.Screen.Login.route
-                            },
-                            onLogout = {
-                                mainViewModel.logout()
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }

@@ -1391,7 +1391,7 @@ class TaskRepository @Inject constructor(
     fun resolveImageUrl(urlOrKey: String?): String? {
         if (urlOrKey.isNullOrBlank()) return null
         val trimmed = urlOrKey.trim()
-        val baseUrl = com.swayog.employee.BuildConfig.API_BASE_URL.removeSuffix("/").removeSuffix("/api/v1")
+        val baseUrl = com.swayog.employee.core.config.AppConfig.BASE_URL_WITHOUT_API
         return when {
             trimmed.startsWith("data:") || trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
             trimmed.startsWith("tasks/") -> {

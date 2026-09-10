@@ -17,12 +17,7 @@ object ImageUtils {
         if (photoUrl.isNullOrBlank()) return null
 
         val trimmed = photoUrl.trim()
-        val currentServerUrl = serverUrl
-        val base = if (!currentServerUrl.isNullOrBlank()) {
-            currentServerUrl.removeSuffix("/").removeSuffix("/api/v1")
-        } else {
-            com.swayog.employee.BuildConfig.API_BASE_URL.removeSuffix("/").removeSuffix("/api/v1")
-        }
+        val base = com.swayog.employee.core.config.AppConfig.BASE_URL_WITHOUT_API
 
         if (trimmed.startsWith("data:") || trimmed.startsWith("/9j/") || trimmed.startsWith("iVBORw") || trimmed.startsWith("R0lGOD") || trimmed.startsWith("UklGR")) {
             val base64Clean = if (trimmed.startsWith("data:")) {

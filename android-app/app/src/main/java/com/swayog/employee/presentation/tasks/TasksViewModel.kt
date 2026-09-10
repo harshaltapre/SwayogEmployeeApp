@@ -70,13 +70,20 @@ class TasksViewModel @Inject constructor(
                 // Observe local database tasks flow
                 taskRepository.getTasksByEmployeeId(id).collect { localTasks ->
                     _tasks.value = localTasks
+                    if (_tasksState.value is TasksState.Initial || _tasksState.value is TasksState.Loading) {
+                        _tasksState.value = TasksState.Success
+                    }
                 }
+            }
+        }
+        viewModelScope.launch {
+            userId.filterNotNull().firstOrNull()?.let { id ->
+                taskRepository.refreshTasks(id)
             }
         }
         viewModelScope.launch {
             try { employeeRepository.getInternalUsers() } catch (_: Exception) {}
         }
-        refresh()
     }
 
     fun syncPending(onResult: (com.swayog.employee.data.repository.SyncResultSummary) -> Unit) {
@@ -92,14 +99,20 @@ class TasksViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            val id = userId.value ?: return@launch
-            _tasksState.value = TasksState.Loading
+            val id = userId.value ?: dataStoreManager.userId.filterNotNull().first()
+            if (_tasks.value.isEmpty()) {
+                _tasksState.value = TasksState.Loading
+            }
             taskRepository.refreshTasks(id)
                 .onSuccess {
                     _tasksState.value = TasksState.Success
                 }
                 .onFailure { error ->
-                    _tasksState.value = TasksState.Error(error.message ?: "Failed to refresh tasks")
+                    if (_tasks.value.isEmpty()) {
+                        _tasksState.value = TasksState.Error(error.message ?: "Failed to refresh tasks")
+                    } else {
+                        _tasksState.value = TasksState.Success
+                    }
                 }
         }
     }

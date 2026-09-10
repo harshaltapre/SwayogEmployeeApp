@@ -126,26 +126,14 @@ fun LoginScreen(
             ) {
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // Logo/Icon placeholder
-                Card(
-                    modifier = Modifier.size(100.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF386FA4) // BrandBlue
-                    )
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        Text(
-                            text = "SE",
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
+                // App Logo
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = com.swayog.employee.R.drawable.app_logo),
+                    contentDescription = "SWAYOG Logo",
+                    modifier = Modifier
+                        .size(110.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                )
                 
                 Text(
                     text = "Welcome Back",
@@ -269,43 +257,27 @@ fun LoginScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Enter the API server URL. Use your PC's local IP for development.",
+                        text = "Connected Production Server:",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                     OutlinedTextField(
-                        value = serverUrlInput,
-                        onValueChange = { serverUrlInput = it },
-                        label = { Text("Server URL") },
-                        placeholder = { Text("https://swayog-dashboard.vercel.app/api/v1/") },
+                        value = com.swayog.employee.core.config.AppConfig.API_BASE_URL,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Production Server URL") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         shape = RoundedCornerShape(8.dp)
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        TextButton(onClick = {
-                            serverUrlInput = BuildConfig.API_BASE_URL
-                            viewModel.saveServerUrl(BuildConfig.API_BASE_URL)
-                            Toast.makeText(context, "Reset to default. Restart app to apply.", Toast.LENGTH_SHORT).show()
+                        Button(onClick = {
                             showServerDialog = false
                         }) {
-                            Text("Reset")
-                        }
-                        Button(onClick = {
-                            val url = serverUrlInput.trim()
-                            if (url.startsWith("http://") || url.startsWith("https://")) {
-                                viewModel.saveServerUrl(url)
-                                Toast.makeText(context, "Server URL saved! Changes take effect immediately.", Toast.LENGTH_SHORT).show()
-                                showServerDialog = false
-                            } else {
-                                Toast.makeText(context, "URL must start with http:// or https://", Toast.LENGTH_SHORT).show()
-                            }
-                        }) {
-                            Text("Save")
+                            Text("Close")
                         }
                     }
                 }

@@ -59,9 +59,6 @@ fun SettingsScreen(
     val jobRole by viewModel.jobRole.collectAsState()
 
     var showLanguageDialog by remember { mutableStateOf(false) }
-    var showServerUrlDialog by remember { mutableStateOf(false) }
-    var serverUrlInputText by remember { mutableStateOf("") }
-    val currentServerUrl by viewModel.serverUrl.collectAsState()
     var cacheSize by remember { mutableStateOf(viewModel.getCacheSize()) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showPhotoPickerChoice by remember { mutableStateOf(false) }
@@ -633,37 +630,10 @@ fun SettingsScreen(
                             title = "Software Build ID",
                             value = "102"
                         )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    serverUrlInputText = currentServerUrl ?: com.swayog.employee.BuildConfig.API_BASE_URL
-                                    showServerUrlDialog = true
-                                }
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Target Backend Server",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                )
-                                Text(
-                                    text = currentServerUrl ?: com.swayog.employee.BuildConfig.API_BASE_URL,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = "Edit Server URL",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                        SettingItem(
+                            title = "Target Backend Server",
+                            value = com.swayog.employee.core.config.AppConfig.API_BASE_URL
+                        )
                     }
                 }
             }
@@ -748,55 +718,6 @@ fun SettingsScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showLogoutConfirm = false }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-
-        // Server URL Configuration Dialog
-        if (showServerUrlDialog) {
-            AlertDialog(
-                onDismissRequest = { showServerUrlDialog = false },
-                title = { Text("Backend Server URL") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(
-                            text = "Enter backend server API URL (e.g. https://swayog-dashboard.vercel.app/api/v1/):",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        OutlinedTextField(
-                            value = serverUrlInputText,
-                            onValueChange = { serverUrlInputText = it },
-                            label = { Text("Server Base URL") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        TextButton(
-                            onClick = {
-                                serverUrlInputText = com.swayog.employee.BuildConfig.API_BASE_URL
-                            }
-                        ) {
-                            Text("Reset to Default (${com.swayog.employee.BuildConfig.API_BASE_URL})")
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val url = serverUrlInputText.trim()
-                            if (url.isNotEmpty()) {
-                                viewModel.saveServerUrl(url)
-                                Toast.makeText(context, "Server URL updated and syncing...", Toast.LENGTH_SHORT).show()
-                            }
-                            showServerUrlDialog = false
-                        }
-                    ) {
-                        Text("Save & Sync")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showServerUrlDialog = false }) {
                         Text("Cancel")
                     }
                 }

@@ -3,6 +3,7 @@ package com.swayog.employee.di
 import android.content.Context
 import android.util.Log
 import com.swayog.employee.BuildConfig
+import com.swayog.employee.core.config.AppConfig
 import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.local.preferences.DataStoreManager
 import dagger.Module
@@ -52,9 +53,6 @@ object NetworkModule {
         return Interceptor { chain ->
             val originalRequest = chain.request()
 
-            val savedUrl = dataStoreManager.getServerUrlBlocking()?.trim()
-            val defaultBaseUrl = BuildConfig.API_BASE_URL.trim()
-
             val requestBuilder = originalRequest.newBuilder()
                 .header("Content-Type", "application/json")
                 .header("bypass-tunnel-reminder", "true")
@@ -62,24 +60,6 @@ object NetworkModule {
             val authToken = runBlocking { dataStoreManager.authToken.first() }
             if (!authToken.isNullOrBlank()) {
                 requestBuilder.header("Authorization", "Bearer $authToken")
-            }
-
-            if (!savedUrl.isNullOrBlank() && savedUrl.removeSuffix("/") != defaultBaseUrl.removeSuffix("/")) {
-                try {
-                    val customBaseUrl = if (savedUrl.endsWith("/")) savedUrl else "$savedUrl/"
-                    val newHttpUrl = customBaseUrl.toHttpUrl()
-
-                    val updatedUrl = originalRequest.url.newBuilder()
-                        .scheme(newHttpUrl.scheme)
-                        .host(newHttpUrl.host)
-                        .port(newHttpUrl.port)
-                        .build()
-
-                    Log.d("NetworkModule", "Using custom server URL: $updatedUrl")
-                    requestBuilder.url(updatedUrl)
-                } catch (e: Exception) {
-                    Log.e("NetworkModule", "Failed to apply custom server URL: $savedUrl", e)
-                }
             }
 
             val request = requestBuilder.build()
@@ -110,16 +90,7 @@ object NetworkModule {
                         // This thread performs the single refresh
                         val refreshToken = runBlocking { dataStoreManager.refreshToken.first() }
                         if (refreshToken != null) {
-                            val currentBaseUrl = request.url.newBuilder()
-                                .encodedPath("/")
-                                .query(null)
-                                .build()
-                                .toString()
-                            val refreshUrl = if (currentBaseUrl.endsWith("/")) {
-                                "${currentBaseUrl}api/v1/auth/refresh"
-                            } else {
-                                "${currentBaseUrl}/api/v1/auth/refresh"
-                            }
+                            val refreshUrl = "${AppConfig.API_BASE_URL}auth/refresh"
                             
                             val refreshJson = JSONObject().put("refreshToken", refreshToken).toString()
                             val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
@@ -133,6 +104,7 @@ object NetworkModule {
                                 .connectTimeout(30, TimeUnit.SECONDS)
                                 .readTimeout(30, TimeUnit.SECONDS)
                                 .writeTimeout(30, TimeUnit.SECONDS)
+                                .retryOnConnectionFailure(true)
                                 .build()
                             
                             try {
@@ -154,13 +126,10 @@ object NetworkModule {
                                     }
                                 } else {
                                     val code = refreshResponse.code
-                                    if (code == 401 || code == 403) {
-                                        Log.w("NetworkModule", "Refresh token expired or invalid (HTTP $code). Clearing session.")
-                                        runBlocking { dataStoreManager.clearAuthData() }
-                                    }
+                                    Log.w("NetworkModule", "Token refresh attempt returned HTTP $code")
                                 }
                             } catch (e: Exception) {
-                                Log.e("NetworkModule", "Token refresh network error", e)
+                                Log.e("NetworkModule", "Token refresh network error: ${e.message}")
                             }
                         }
                     }
@@ -186,13 +155,14 @@ object NetworkModule {
         loggingInterceptor: HttpLoggingInterceptor,
         authInterceptor: Interceptor
     ): OkHttpClient {
-        val cacheSize = (10 * 1024 * 1024).toLong() // 10 MB
+        val cacheSize = (20 * 1024 * 1024).toLong() // 20 MB cache
         val cache = okhttp3.Cache(context.cacheDir, cacheSize)
 
         return OkHttpClient.Builder()
             .cache(cache)
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
+            .retryOnConnectionFailure(true)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)   // Increased: site visits can have 10+ large photos
             .writeTimeout(120, TimeUnit.SECONDS)  // Increased: large base64 payloads need more time
@@ -230,11 +200,8 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient, gson: com.google.gson.Gson): Retrofit {
-        val baseUrl = BuildConfig.API_BASE_URL.let { url ->
-            if (url.endsWith("/")) url else "$url/"
-        }
         return Retrofit.Builder()
-            .baseUrl(baseUrl)
+            .baseUrl(AppConfig.API_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()

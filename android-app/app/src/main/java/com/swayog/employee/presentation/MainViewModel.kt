@@ -17,10 +17,10 @@ class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository
 ) : ViewModel() {
 
-    val isLoggedIn: StateFlow<Boolean> = dataStoreManager.isLoggedIn.stateIn(
+    val isLoggedIn: StateFlow<Boolean?> = dataStoreManager.isLoggedIn.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = false
+        initialValue = null
     )
 
     val userRole: StateFlow<String?> = dataStoreManager.userRole.stateIn(
@@ -54,22 +54,15 @@ class MainViewModel @Inject constructor(
     )
 
     init {
-        checkInactivitySession()
-    }
-
-    fun checkInactivitySession() {
         viewModelScope.launch {
-            if (dataStoreManager.isSessionExpiredDueToInactivity(maxInactiveDays = 10L)) {
-                android.util.Log.w("MainViewModel", "Session expired due to 10+ days of inactivity. Logging out.")
-                authRepository.logout()
-            } else {
-                dataStoreManager.recordUserActive()
-            }
+            dataStoreManager.recordUserActive()
         }
     }
 
     fun onAppForegrounded() {
-        checkInactivitySession()
+        viewModelScope.launch {
+            dataStoreManager.recordUserActive()
+        }
     }
 
     fun logout() {

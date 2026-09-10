@@ -66,18 +66,7 @@ fun SwayogNavHost(
         }
         
         composable(Screen.Dashboard.route) {
-            // Obtain the ViewModel here so we can call refreshTodayAttendance() every time
-            // the Dashboard destination resumes (i.e. the user pops back from Attendance etc.).
             val dashboardViewModel: com.swayog.employee.presentation.dashboard.DashboardViewModel = hiltViewModel()
-
-            // currentBackStackEntry changes whenever this destination comes to the top.
-            val navBackStackEntry by navController.currentBackStackEntryAsState()
-            LaunchedEffect(navBackStackEntry) {
-                if (navController.currentDestination?.route == Screen.Dashboard.route) {
-                    dashboardViewModel.refreshTodayAttendance()
-                    dashboardViewModel.retryLoading()
-                }
-            }
 
             DashboardScreen(
                 viewModel = dashboardViewModel,
