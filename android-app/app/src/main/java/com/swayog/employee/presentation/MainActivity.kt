@@ -15,7 +15,7 @@ import com.swayog.employee.ui.theme.SwayogEmployeeAppTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 import androidx.compose.runtime.CompositionLocalProvider
-import com.swayog.employee.presentation.common.   LocalCompactViewEnabled
+import com.swayog.employee.presentation.common.LocalCompactViewEnabled
 import com.swayog.employee.presentation.common.LocalAnimationsEnabled
 
 import androidx.activity.viewModels

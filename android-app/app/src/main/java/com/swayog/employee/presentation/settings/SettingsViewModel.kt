@@ -25,13 +25,32 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
+    sealed interface UpdateEvent {
+        data class UpdateFound(val versionName: String) : UpdateEvent
+        data class UpToDate(val versionName: String) : UpdateEvent
+        data class Error(val message: String) : UpdateEvent
+    }
+
+    private val _updateEvent = kotlinx.coroutines.flow.MutableSharedFlow<UpdateEvent>(extraBufferCapacity = 1)
+    val updateEvent: kotlinx.coroutines.flow.SharedFlow<UpdateEvent> = _updateEvent
+
     val updateState: StateFlow<com.swayog.employee.data.model.AppUpdateState> = appUpdateManager.updateState
     val installedVersionName: String get() = appUpdateManager.installedVersionName
     val installedVersionCode: Long get() = appUpdateManager.installedVersionCode
 
     fun checkForUpdates() {
         viewModelScope.launch {
-            appUpdateManager.checkForUpdates(force = true)
+            when (val result = appUpdateManager.checkForUpdates(force = true, autoDownload = true)) {
+                is com.swayog.employee.core.update.AppUpdateManager.CheckResult.UpdateAvailable -> {
+                    _updateEvent.emit(UpdateEvent.UpdateFound(result.manifest.versionName))
+                }
+                is com.swayog.employee.core.update.AppUpdateManager.CheckResult.UpToDate -> {
+                    _updateEvent.emit(UpdateEvent.UpToDate(installedVersionName))
+                }
+                is com.swayog.employee.core.update.AppUpdateManager.CheckResult.Error -> {
+                    _updateEvent.emit(UpdateEvent.Error(result.message))
+                }
+            }
         }
     }
 

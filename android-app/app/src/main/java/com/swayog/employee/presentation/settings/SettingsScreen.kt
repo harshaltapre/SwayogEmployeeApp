@@ -68,7 +68,6 @@ fun SettingsScreen(
     var cacheSize by remember { mutableStateOf(viewModel.getCacheSize()) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showPhotoPickerChoice by remember { mutableStateOf(false) }
-    var showUpdateDetailsModal by remember { mutableStateOf(false) }
 
     val updateState by viewModel.updateState.collectAsState()
 
@@ -84,6 +83,22 @@ fun SettingsScreen(
         if (uploadError != null) {
             Toast.makeText(context, uploadError, Toast.LENGTH_SHORT).show()
             viewModel.clearUploadError()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.updateEvent.collect { event ->
+            when (event) {
+                is SettingsViewModel.UpdateEvent.UpdateFound -> {
+                    Toast.makeText(context, "New update v${event.versionName} found! Starting download...", Toast.LENGTH_LONG).show()
+                }
+                is SettingsViewModel.UpdateEvent.UpToDate -> {
+                    Toast.makeText(context, "App is up to date (v${event.versionName})", Toast.LENGTH_SHORT).show()
+                }
+                is SettingsViewModel.UpdateEvent.Error -> {
+                    Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -651,28 +666,37 @@ fun SettingsScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
+                                        .background(
+                                            Color(0xFF16A34A).copy(alpha = 0.08f),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = null,
+                                        contentDescription = "Up to date",
                                         tint = Color(0xFF16A34A),
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(24.dp)
                                     )
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "You are using the latest version.",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Medium,
+                                            text = "Up to date",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
                                             color = Color(0xFF16A34A)
+                                        )
+                                        Text(
+                                            text = "You are using the latest version (v${state.installedVersionName}).",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                         )
                                         if (state.lastCheckedTimeMillis > 0) {
                                             val dateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                                             Text(
                                                 text = "Last checked: ${dateFormat.format(Date(state.lastCheckedTimeMillis))}",
-                                                style = MaterialTheme.typography.bodySmall,
+                                                style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                             )
                                         }
@@ -907,14 +931,6 @@ fun SettingsScreen(
                 }
             )
         }
-
-        // App Update Dialog modal
-        AppUpdateDialog(
-            updateState = updateState,
-            onDownloadClick = { manifest -> viewModel.downloadAndInstallUpdate(manifest) },
-            onInstallClick = { file -> viewModel.installApk(file) },
-            onDismissClick = { viewModel.dismissUpdate() }
-        )
     }
 }
 

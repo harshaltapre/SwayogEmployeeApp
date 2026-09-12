@@ -12,10 +12,13 @@ import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.model.AppUpdateManifest
 import com.swayog.employee.data.model.AppUpdateState
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -34,6 +37,14 @@ class AppUpdateManager @Inject constructor(
     private val apiService: ApiService,
     private val okHttpClient: OkHttpClient
 ) {
+    sealed interface CheckResult {
+        data class UpdateAvailable(val manifest: AppUpdateManifest, val downloading: Boolean) : CheckResult
+        data class UpToDate(val installedVersionName: String, val lastCheckedTimeMillis: Long) : CheckResult
+        data class Error(val message: String) : CheckResult
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val _updateState = MutableStateFlow<AppUpdateState>(AppUpdateState.Idle)
     val updateState: StateFlow<AppUpdateState> = _updateState.asStateFlow()
 
@@ -58,23 +69,26 @@ class AppUpdateManager @Inject constructor(
     /**
      * Checks for updates if the throttle interval (6 hours) has elapsed,
      * or immediately if [force] is true (e.g. manual user check in Settings).
+     * If [autoDownload] is true and an update is available, download and install will be initiated automatically.
      */
-    suspend fun checkForUpdates(force: Boolean = false) {
+    suspend fun checkForUpdates(force: Boolean = false, autoDownload: Boolean = false): CheckResult {
         val now = System.currentTimeMillis()
         if (!force && (now - lastAutoCheckTimestamp < CHECK_INTERVAL_MILLIS)) {
             Log.d(TAG, "Skipping auto update check: within 6h window (elapsed: ${(now - lastAutoCheckTimestamp) / 1000}s)")
-            return
+            return CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
         }
 
         // Don't interrupt an ongoing download or verification
         val currentState = _updateState.value
-        if (currentState is AppUpdateState.Downloading || currentState is AppUpdateState.Verifying) {
-            return
+        if (currentState is AppUpdateState.Downloading) {
+            return CheckResult.UpdateAvailable(currentState.manifest, downloading = true)
+        } else if (currentState is AppUpdateState.Verifying) {
+            return CheckResult.UpdateAvailable(currentState.manifest, downloading = true)
         }
 
         _updateState.value = AppUpdateState.Checking
 
-        withContext(Dispatchers.IO) {
+        return withContext(Dispatchers.IO) {
             try {
                 val response = apiService.getLatestAppUpdate()
                 lastAutoCheckTimestamp = System.currentTimeMillis()
@@ -89,27 +103,39 @@ class AppUpdateManager @Inject constructor(
 
                     if (serverCode > currentCode) {
                         val isMandatory = manifest.mandatory || (currentCode < minCode)
-                        _updateState.value = AppUpdateState.UpdateAvailable(
-                            manifest = manifest,
-                            isMandatory = isMandatory,
-                            installedVersionName = installedVersionName,
-                            installedVersionCode = currentCode
-                        )
+                        if (autoDownload) {
+                            Log.i(TAG, "Update available and autoDownload=true. Initiating direct download & install.")
+                            scope.launch {
+                                downloadAndInstall(manifest)
+                            }
+                            CheckResult.UpdateAvailable(manifest, downloading = true)
+                        } else {
+                            _updateState.value = AppUpdateState.UpdateAvailable(
+                                manifest = manifest,
+                                isMandatory = isMandatory,
+                                installedVersionName = installedVersionName,
+                                installedVersionCode = currentCode
+                            )
+                            CheckResult.UpdateAvailable(manifest, downloading = false)
+                        }
                     } else {
                         _updateState.value = AppUpdateState.UpToDate(
                             installedVersionName = installedVersionName,
                             installedVersionCode = currentCode,
                             lastCheckedTimeMillis = lastAutoCheckTimestamp
                         )
+                        CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                     }
                 } else {
                     val errorMsg = "Update check returned HTTP ${response.code()}"
                     Log.w(TAG, errorMsg)
                     if (force) {
+                        val displayError = "Could not check for updates. Please try again later."
                         _updateState.value = AppUpdateState.Error(
-                            message = "Could not check for updates. Please try again later.",
+                            message = displayError,
                             isNetworkError = true
                         )
+                        CheckResult.Error(displayError)
                     } else {
                         // Silent fallback for background check
                         _updateState.value = AppUpdateState.UpToDate(
@@ -117,21 +143,25 @@ class AppUpdateManager @Inject constructor(
                             installedVersionCode = installedVersionCode,
                             lastCheckedTimeMillis = lastAutoCheckTimestamp
                         )
+                        CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Network exception during update check: ${e.message}", e)
+                val displayError = "Network error while checking for updates. Please check your connection."
                 if (force) {
                     _updateState.value = AppUpdateState.Error(
-                        message = "Network error while checking for updates. Please check your connection.",
+                        message = displayError,
                         isNetworkError = true
                     )
+                    CheckResult.Error(displayError)
                 } else {
                     _updateState.value = AppUpdateState.UpToDate(
                         installedVersionName = installedVersionName,
                         installedVersionCode = installedVersionCode,
                         lastCheckedTimeMillis = lastAutoCheckTimestamp
                     )
+                    CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                 }
             }
         }
@@ -141,6 +171,12 @@ class AppUpdateManager @Inject constructor(
      * Downloads the APK specified by the manifest, verifying its SHA-256 hash.
      */
     suspend fun downloadAndInstall(manifest: AppUpdateManifest) {
+        val currentState = _updateState.value
+        if (currentState is AppUpdateState.Downloading || currentState is AppUpdateState.Verifying) {
+            Log.d(TAG, "Download/verification already in progress. Ignoring duplicate call.")
+            return
+        }
+
         val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
         val targetApkFile = File(updatesDir, "swayog-v${manifest.versionName}-${manifest.versionCode}.apk")
 
@@ -151,7 +187,9 @@ class AppUpdateManager @Inject constructor(
             if (existingChecksum.equals(manifest.sha256, ignoreCase = true)) {
                 Log.i(TAG, "Existing cached APK matches checksum. Ready to install.")
                 _updateState.value = AppUpdateState.ReadyToInstall(targetApkFile, manifest)
-                installApk(targetApkFile)
+                withContext(Dispatchers.Main) {
+                    installApk(targetApkFile)
+                }
                 return
             } else {
                 targetApkFile.delete()
@@ -289,6 +327,20 @@ class AppUpdateManager @Inject constructor(
             _updateState.value = AppUpdateState.Error(
                 message = "Failed to launch installer: ${e.localizedMessage}"
             )
+        }
+    }
+
+    /**
+     * Resumes installer if an update is already downloaded and verified,
+     * particularly when the user returns after granting the unknown app install permission.
+     */
+    fun resumeInstallIfReady() {
+        val current = _updateState.value
+        if (current is AppUpdateState.ReadyToInstall) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()) {
+                Log.i(TAG, "Permissions satisfied: automatically resuming APK installation.")
+                installApk(current.apkFile)
+            }
         }
     }
 

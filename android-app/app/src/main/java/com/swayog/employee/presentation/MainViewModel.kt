@@ -113,6 +113,9 @@ class MainViewModel @Inject constructor(
         // changes made on the web propagate as soon as the user opens the app
         refreshUserProfile()
 
+        // If an update was already downloaded and we were waiting for package install permission, resume it
+        appUpdateManager.resumeInstallIfReady()
+
         // Check for updates if last check was > 6 hours ago
         viewModelScope.launch {
             appUpdateManager.checkForUpdates(force = false)
