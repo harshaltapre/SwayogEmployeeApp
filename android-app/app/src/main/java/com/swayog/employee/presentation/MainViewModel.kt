@@ -16,8 +16,11 @@ import javax.inject.Inject
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val appUpdateManager: com.swayog.employee.core.update.AppUpdateManager
 ) : ViewModel() {
+
+    val updateState: StateFlow<com.swayog.employee.data.model.AppUpdateState> = appUpdateManager.updateState
 
     val isLoggedIn: StateFlow<Boolean?> = dataStoreManager.isLoggedIn
         .map<Boolean, Boolean?> { it }
@@ -62,6 +65,10 @@ class MainViewModel @Inject constructor(
             // Keep session alive and track activity timestamp without logging out automatically
             dataStoreManager.recordUserActive()
         }
+        // Automatic update check on application startup (cached 6h)
+        viewModelScope.launch {
+            appUpdateManager.checkForUpdates(force = false)
+        }
         // Fetch latest designation from server periodically so web changes propagate in real time
         startPeriodicProfileSync()
     }
@@ -105,6 +112,25 @@ class MainViewModel @Inject constructor(
         // Immediately refresh profile when app comes to foreground so designation
         // changes made on the web propagate as soon as the user opens the app
         refreshUserProfile()
+
+        // Check for updates if last check was > 6 hours ago
+        viewModelScope.launch {
+            appUpdateManager.checkForUpdates(force = false)
+        }
+    }
+
+    fun downloadAndInstallUpdate(manifest: com.swayog.employee.data.model.AppUpdateManifest) {
+        viewModelScope.launch {
+            appUpdateManager.downloadAndInstall(manifest)
+        }
+    }
+
+    fun installApk(file: java.io.File) {
+        appUpdateManager.installApk(file)
+    }
+
+    fun dismissUpdate() {
+        appUpdateManager.dismissUpdate()
     }
 
     fun logout() {

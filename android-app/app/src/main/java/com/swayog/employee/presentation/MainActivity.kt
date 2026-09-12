@@ -71,51 +71,63 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo provides windowSizeInfo
             ) {
                 SwayogEmployeeAppTheme(darkTheme = darkMode) {
+                    val updateState by mainViewModel.updateState.collectAsState()
+
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        if (!isReady) {
-                            // Show loading until session + role data is fully resolved
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (!isReady) {
+                                // Show loading until session + role data is fully resolved
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    androidx.compose.foundation.Image(
-                                        painter = androidx.compose.ui.res.painterResource(id = com.swayog.employee.R.drawable.app_logo),
-                                        contentDescription = "SWAYOG Logo",
-                                        modifier = Modifier
-                                            .size(90.dp)
-                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                                    )
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(28.dp),
-                                        strokeWidth = 2.5.dp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        } else {
-                            SwayogNavHost(
-                                isLoggedIn = isLoggedIn == true,
-                                userRole = userRole,
-                                jobRole = jobRole,
-                                startDestination = if (isLoggedIn == true) {
-                                    if (isInventoryCoordinator) {
-                                        com.swayog.employee.presentation.navigation.Screen.InventoryCoordinator.route
-                                    } else {
-                                        com.swayog.employee.presentation.navigation.Screen.Dashboard.route
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        androidx.compose.foundation.Image(
+                                            painter = androidx.compose.ui.res.painterResource(id = com.swayog.employee.R.drawable.app_logo),
+                                            contentDescription = "SWAYOG Logo",
+                                            modifier = Modifier
+                                                .size(90.dp)
+                                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                                        )
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(28.dp),
+                                            strokeWidth = 2.5.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
                                     }
-                                } else {
-                                    com.swayog.employee.presentation.navigation.Screen.Login.route
-                                },
-                                onLogout = {
-                                    mainViewModel.logout()
                                 }
+                            } else {
+                                SwayogNavHost(
+                                    isLoggedIn = isLoggedIn == true,
+                                    userRole = userRole,
+                                    jobRole = jobRole,
+                                    startDestination = if (isLoggedIn == true) {
+                                        if (isInventoryCoordinator) {
+                                            com.swayog.employee.presentation.navigation.Screen.InventoryCoordinator.route
+                                        } else {
+                                            com.swayog.employee.presentation.navigation.Screen.Dashboard.route
+                                        }
+                                    } else {
+                                        com.swayog.employee.presentation.navigation.Screen.Login.route
+                                    },
+                                    onLogout = {
+                                        mainViewModel.logout()
+                                    }
+                                )
+                            }
+
+                            // Global In-App Update Dialog (Mandatory or Available)
+                            com.swayog.employee.presentation.components.AppUpdateDialog(
+                                updateState = updateState,
+                                onDownloadClick = { manifest -> mainViewModel.downloadAndInstallUpdate(manifest) },
+                                onInstallClick = { file -> mainViewModel.installApk(file) },
+                                onDismissClick = { mainViewModel.dismissUpdate() }
                             )
                         }
                     }

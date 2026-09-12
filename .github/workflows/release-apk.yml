@@ -1,0 +1,166 @@
+name: Build and Deploy Android Release APK
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags like v1.1.0, v2.5.0
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version Name (e.g. 2.5.0)'
+        required: true
+        default: '2.5.0'
+      version_code:
+        description: 'Version Code (numeric, e.g. 25)'
+        required: true
+        default: '25'
+      minimum_version_code:
+        description: 'Minimum Supported Version Code (numeric, e.g. 23)'
+        required: false
+        default: '23'
+      mandatory:
+        description: 'Is this a mandatory update?'
+        type: boolean
+        default: false
+      release_notes:
+        description: 'Release notes (comma or newline separated)'
+        required: false
+        default: 'Performance improvements and bug fixes'
+
+jobs:
+  build-and-deploy:
+    name: Build Signed APK & Deploy to Cloudflare R2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Determine Versioning
+        id: versioning
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION_NAME="${{ github.event.inputs.version_name }}"
+            VERSION_CODE="${{ github.event.inputs.version_code }}"
+            MIN_VERSION_CODE="${{ github.event.inputs.minimum_version_code }}"
+            MANDATORY="${{ github.event.inputs.mandatory }}"
+          else
+            # Extract from git tag (e.g. v2.5.0 -> 2.5.0)
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION_NAME="${TAG#v}"
+            # Compute a monotonically increasing version code or use run number
+            VERSION_CODE="${{ github.run_number }}"
+            MIN_VERSION_CODE="${VERSION_CODE}"
+            MANDATORY="false"
+          fi
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "MIN_VERSION_CODE=$MIN_VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "MANDATORY=$MANDATORY" >> $GITHUB_OUTPUT
+          echo "Building Swayog App release v$VERSION_NAME (build $VERSION_CODE)"
+
+      - name: Decode Release Keystore
+        if: env.RELEASE_KEYSTORE_BASE64 != ''
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p android-app/keystore
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > android-app/keystore/release.jks
+          echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/android-app/keystore/release.jks" >> $GITHUB_ENV
+
+      - name: Make Gradlew Executable
+        run: chmod +x android-app/gradlew
+
+      - name: Build Release APK
+        working-directory: android-app
+        env:
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard.vercel.app/api/v1/' }}
+          WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard.vercel.app' }}
+        run: |
+          ./gradlew assembleRelease \
+            -PversionName="${{ steps.versioning.outputs.VERSION_NAME }}" \
+            -PversionCode="${{ steps.versioning.outputs.VERSION_CODE }}" \
+            --no-daemon --stacktrace
+
+      - name: Verify Built APK & Calculate SHA-256
+        id: apk_info
+        run: |
+          APK_PATH="android-app/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            # Minified / unsigned fallback check
+            APK_PATH=$(find android-app/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          fi
+          if [ ! -f "$APK_PATH" ]; then
+            echo "Error: Release APK not found!"
+            exit 1
+          fi
+          
+          SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
+          FILE_SIZE=$(stat -c%s "$APK_PATH")
+          
+          echo "Found APK at $APK_PATH ($FILE_SIZE bytes)"
+          echo "SHA-256: $SHA256"
+          
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "SHA256=$SHA256" >> $GITHUB_OUTPUT
+          echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_OUTPUT
+
+      - name: Prepare Release Notes File
+        run: |
+          cat << 'EOF' > release_notes.txt
+          ${{ github.event.inputs.release_notes || 'Official Swayog Employee App Release' }}
+          EOF
+
+      - name: Deploy to Cloudflare R2
+        working-directory: backend
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME || 'swayog-dashboard' }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: |
+          npm ci
+          npx tsx scripts/deploy-release.ts \
+            "../${{ steps.apk_info.outputs.APK_PATH }}" \
+            "${{ steps.versioning.outputs.VERSION_NAME }}" \
+            "${{ steps.versioning.outputs.VERSION_CODE }}" \
+            "${{ steps.versioning.outputs.MIN_VERSION_CODE }}" \
+            "${{ steps.versioning.outputs.MANDATORY }}" \
+            "../release_notes.txt"
+
+      - name: Upload APK to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ steps.versioning.outputs.VERSION_NAME }}
+          path: ${{ steps.apk_info.outputs.APK_PATH }}
+          retention-days: 30
+
+      - name: Deployment Summary
+        run: |
+          echo "### 🚀 Release Deployed Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version Name:** ${{ steps.versioning.outputs.VERSION_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version Code:** ${{ steps.versioning.outputs.VERSION_CODE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Minimum Supported Code:** ${{ steps.versioning.outputs.MIN_VERSION_CODE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mandatory Update:** ${{ steps.versioning.outputs.MANDATORY }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA-256:** \`${{ steps.apk_info.outputs.SHA256 }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **R2 Key:** \`releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/app-release.apk\`" >> $GITHUB_STEP_SUMMARY

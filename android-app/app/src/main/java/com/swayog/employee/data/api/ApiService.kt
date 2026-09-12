@@ -54,6 +54,13 @@ interface ApiService {
 
     @GET("health")
     suspend fun checkHealth(): Response<Unit>
+
+    // In-App Update Manifest endpoint
+    @GET("app/update/latest")
+    suspend fun getLatestAppUpdate(): Response<AppUpdateManifest>
+
+    @GET
+    suspend fun getAppUpdateFromUrl(@Url url: String): Response<AppUpdateManifest>
     
     // Employee endpoints
     @GET("employee/tasks")
