@@ -33,6 +33,12 @@ import java.io.ByteArrayOutputStream
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import androidx.compose.ui.layout.ContentScale
+import com.swayog.employee.presentation.components.AppUpdateDialog
+import com.swayog.employee.data.model.AppUpdateState
+import com.swayog.employee.data.model.AppUpdateManifest
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +68,9 @@ fun SettingsScreen(
     var cacheSize by remember { mutableStateOf(viewModel.getCacheSize()) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showPhotoPickerChoice by remember { mutableStateOf(false) }
+    var showUpdateDetailsModal by remember { mutableStateOf(false) }
+
+    val updateState by viewModel.updateState.collectAsState()
 
     
     val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
@@ -593,6 +602,199 @@ fun SettingsScreen(
                 }
             }
 
+            // App Updates Section
+            item {
+                SwayogCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "App Updates",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Divider()
+
+                        SettingItem(
+                            title = "Current Version",
+                            value = "v${viewModel.installedVersionName} (Build ${viewModel.installedVersionCode})"
+                        )
+
+                        when (val state = updateState) {
+                            is AppUpdateState.Checking -> {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Text(
+                                        text = "Checking server for updates...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                            is AppUpdateState.UpToDate -> {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF16A34A),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "You are using the latest version.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF16A34A)
+                                        )
+                                        if (state.lastCheckedTimeMillis > 0) {
+                                            val dateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+                                            Text(
+                                                text = "Last checked: ${dateFormat.format(Date(state.lastCheckedTimeMillis))}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            is AppUpdateState.UpdateAvailable -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.NewReleases,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = "New version available: v${state.manifest.versionName}",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    if (state.manifest.releaseNotes.isNotEmpty()) {
+                                        Text(
+                                            text = "• " + state.manifest.releaseNotes.take(2).joinToString("\n• "),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    SwayogButton(
+                                        text = "Download & Update",
+                                        onClick = { viewModel.downloadAndInstallUpdate(state.manifest) },
+                                        variant = ButtonVariant.Primary
+                                    )
+                                }
+                            }
+                            is AppUpdateState.Downloading -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    LinearProgressIndicator(
+                                        progress = state.progressPercent / 100f,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(6.dp)
+                                            .clip(RoundedCornerShape(3.dp))
+                                    )
+                                    Text(
+                                        text = "Downloading... ${state.progressPercent}%",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            is AppUpdateState.Verifying -> {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Text(
+                                        text = "Verifying package integrity...",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                            is AppUpdateState.ReadyToInstall -> {
+                                SwayogButton(
+                                    text = "Install Now",
+                                    onClick = { viewModel.installApk(state.apkFile) },
+                                    variant = ButtonVariant.Primary
+                                )
+                            }
+                            is AppUpdateState.Error -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ErrorOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = state.message,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                            else -> {}
+                        }
+
+                        SwayogButton(
+                            text = "Check for Updates",
+                            onClick = { viewModel.checkForUpdates() },
+                            isLoading = updateState is AppUpdateState.Checking,
+                            variant = ButtonVariant.Secondary
+                        )
+                    }
+                }
+            }
+
             // Software details Info Section
             item {
                 SwayogCard {
@@ -605,11 +807,11 @@ fun SettingsScreen(
                         Divider()
                         SettingItem(
                             title = "Application Version",
-                            value = "1.1.0-beta"
+                            value = "v${viewModel.installedVersionName}"
                         )
                         SettingItem(
                             title = "Software Build ID",
-                            value = "102"
+                            value = "${viewModel.installedVersionCode}"
                         )
                         SettingItem(
                             title = "Target Backend Server",
@@ -705,6 +907,14 @@ fun SettingsScreen(
                 }
             )
         }
+
+        // App Update Dialog modal
+        AppUpdateDialog(
+            updateState = updateState,
+            onDownloadClick = { manifest -> viewModel.downloadAndInstallUpdate(manifest) },
+            onInstallClick = { file -> viewModel.installApk(file) },
+            onDismissClick = { viewModel.dismissUpdate() }
+        )
     }
 }
 

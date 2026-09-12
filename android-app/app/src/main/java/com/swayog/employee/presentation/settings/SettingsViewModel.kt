@@ -21,8 +21,33 @@ class SettingsViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
     private val authRepository: AuthRepository,
     private val apiService: ApiService,
+    private val appUpdateManager: com.swayog.employee.core.update.AppUpdateManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
+
+    val updateState: StateFlow<com.swayog.employee.data.model.AppUpdateState> = appUpdateManager.updateState
+    val installedVersionName: String get() = appUpdateManager.installedVersionName
+    val installedVersionCode: Long get() = appUpdateManager.installedVersionCode
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            appUpdateManager.checkForUpdates(force = true)
+        }
+    }
+
+    fun downloadAndInstallUpdate(manifest: com.swayog.employee.data.model.AppUpdateManifest) {
+        viewModelScope.launch {
+            appUpdateManager.downloadAndInstall(manifest)
+        }
+    }
+
+    fun installApk(file: java.io.File) {
+        appUpdateManager.installApk(file)
+    }
+
+    fun dismissUpdate() {
+        appUpdateManager.dismissUpdate()
+    }
 
     init {
         syncWithServer()

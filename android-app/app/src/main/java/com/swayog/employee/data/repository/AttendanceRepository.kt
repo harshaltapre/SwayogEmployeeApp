@@ -10,6 +10,7 @@ import com.swayog.employee.data.local.entity.OutboxQueueEntity
 import com.swayog.employee.data.model.*
 import com.swayog.employee.core.util.ErrorUtils
 import com.swayog.employee.core.util.OfflinePendingException
+import com.swayog.employee.core.util.OnlineSubmissionFailedException
 import com.swayog.employee.core.util.LocalFileHelper
 import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.data.sync.SyncWorker
@@ -132,14 +133,24 @@ class AttendanceRepository @Inject constructor(
                     
                     Result.success(checkInResponse)
                 } else {
-                    // API call failed - save for offline sync
-                    saveCheckInToOutbox(selfie, latitude, longitude, matchConfidence)
-                    Result.failure(OfflinePendingException())
+                    // Online but server rejected/failed the request — do NOT save to outbox.
+                    // Return the actual server error so the user sees the real problem.
+                    val errorMsg = ErrorUtils.formatResponseError(response)
+                    android.util.Log.e("AttendanceRepository", "Check-in rejected by server (online): $errorMsg")
+                    Result.failure(OnlineSubmissionFailedException(errorMsg))
                 }
             } catch (e: Exception) {
-                // Network error - save for offline sync
-                saveCheckInToOutbox(selfie, latitude, longitude, matchConfidence)
-                Result.failure(OfflinePendingException())
+                // Check if this is a genuine connectivity/network exception.
+                // If so, save to the outbox for automatic retry when back online.
+                // If it's a different kind of exception (e.g. parsing error), report it as-is.
+                if (ErrorUtils.isNetworkException(e)) {
+                    android.util.Log.w("AttendanceRepository", "Check-in network exception (saving to outbox): ${e.message}")
+                    saveCheckInToOutbox(selfie, latitude, longitude, matchConfidence)
+                    Result.failure(OfflinePendingException())
+                } else {
+                    android.util.Log.e("AttendanceRepository", "Check-in unexpected exception (online): ${e.message}")
+                    Result.failure(OnlineSubmissionFailedException(e.message ?: "An unexpected error occurred during check-in."))
+                }
             }
         } else {
             // Offline — save to outbox queue and create a local attendance record so the

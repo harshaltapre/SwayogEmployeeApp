@@ -167,26 +167,6 @@ fun AttendanceScreen(
     val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.getDefault()) }
     val formattedTime = timeFormat.format(Date(currentTime))
 
-    // Work duration timer
-    val workDurationText = remember(todayAttendance, currentTime) {
-        val attendance = todayAttendance ?: return@remember null
-        val checkInStr = attendance.checkInTime ?: return@remember null
-        try {
-            val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-            val checkInDate = isoFormat.parse(checkInStr.substringBefore(".")) ?: return@remember null
-            val endTime = if (attendance.checkOutTime != null) {
-                isoFormat.parse(attendance.checkOutTime.substringBefore("."))?.time ?: currentTime
-            } else {
-                currentTime
-            }
-            val diffMs = endTime - checkInDate.time
-            val hours = (diffMs / 3600000).toInt()
-            val minutes = ((diffMs % 3600000) / 60000).toInt()
-            val seconds = ((diffMs % 60000) / 1000).toInt()
-            Triple(hours, minutes, seconds)
-        } catch (_: Exception) { null }
-    }
-
     // Permission launchers
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -353,12 +333,12 @@ fun AttendanceScreen(
                         .padding(horizontal = windowSize.contentPadding, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)
                 ) {
-                    // Live Clock + Work Timer Card
+                    // Live Clock Card
                     item {
                         SwayogCard {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.Start,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column {
@@ -374,25 +354,6 @@ fun AttendanceScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                     )
-                                }
-                                if (workDurationText != null) {
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        val (h, m, s) = workDurationText
-                                        Text(
-                                            text = String.format("%02d:%02d:%02d", h, m, s),
-                                            style = MaterialTheme.typography.headlineMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (todayAttendance?.checkOutTime != null)
-                                                Color(0xFF0B6E4F) // BrandGreen
-                                            else
-                                                Color(0xFF386FA4) // BrandBlue
-                                        )
-                                        Text(
-                                            text = if (todayAttendance?.checkOutTime != null) "Total Worked" else "Working...",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -1349,7 +1310,12 @@ fun AttendanceScreen(
                                                         if (result.isSuccess) {
                                                             Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
                                                         } else {
-                                                            Toast.makeText(context, "Check-in failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                                            val exception = result.exceptionOrNull()
+                                                            if (exception is OfflinePendingException) {
+                                                                Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                                                            } else {
+                                                                Toast.makeText(context, "Check-in failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                                                            }
                                                         }
                                                     }
                                                     showCamera = false

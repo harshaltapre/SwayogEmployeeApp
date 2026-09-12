@@ -32,6 +32,7 @@ import { isphereGreenRoutes } from "./modules/isphere-green/isphere-green.routes
 import { meHandler } from "./modules/auth/auth.controller.js";
 import { authenticateAccessToken } from "./middleware/auth.js";
 import { asyncHandler } from "./middleware/async-handler.js";
+import { appUpdateRoutes } from "./routes/appUpdate.routes.js";
 
 export const app = express();
 
@@ -157,6 +158,8 @@ app.get('/api/v1/debug/env', (req, res) => {
 
 app.use("/api/v1/health", healthRoutes);
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/app/update", appUpdateRoutes);
+app.use("/app/update", appUpdateRoutes);
 
 // Legacy routes (kept for backward compatibility)
 app.get("/api/v1/users/me", authenticateAccessToken, asyncHandler(meHandler));
