@@ -315,11 +315,12 @@ class AttendanceRepository @Inject constructor(
         }
     }
 
-    suspend fun syncMonthlyAttendance(month: Int, year: Int): Result<List<AttendanceRecord>> {
+    suspend fun getMonthlyAttendanceData(month: Int, year: Int): Result<MonthlyAttendanceResponse> {
         return try {
             val response = apiService.getMonthlyAttendance(month, year)
             if (response.isSuccessful && response.body() != null) {
-                val records = response.body()!!.records
+                val data = response.body()!!
+                val records = data.records
                 val entities = records.map { record ->
                     AttendanceEntity(
                         id = record.id,
@@ -336,13 +337,30 @@ class AttendanceRepository @Inject constructor(
                     )
                 }
                 attendanceDao.insertAll(entities)
-                Result.success(records)
+                Result.success(data)
             } else {
                 Result.failure(Exception("Failed to sync monthly attendance: ${response.message()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun getHolidays(month: Int? = null, year: Int? = null): Result<List<HolidayItem>> {
+        return try {
+            val response = apiService.getHolidays(month, year)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!.holidays)
+            } else {
+                Result.failure(Exception("Failed to fetch holidays: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun syncMonthlyAttendance(month: Int, year: Int): Result<List<AttendanceRecord>> {
+        return getMonthlyAttendanceData(month, year).map { it.records }
     }
 
     val attendanceRuleFlow: Flow<AttendanceRule> = dataStoreManager.attendanceRule

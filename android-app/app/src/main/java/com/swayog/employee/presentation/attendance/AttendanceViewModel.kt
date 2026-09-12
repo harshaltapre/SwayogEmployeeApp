@@ -3,8 +3,11 @@ package com.swayog.employee.presentation.attendance
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.AttendanceRecord
+import com.swayog.employee.data.model.HolidayItem
+import com.swayog.employee.data.model.MonthlyAttendanceResponse
 import com.swayog.employee.data.model.PerformanceSnapshot
 import com.swayog.employee.data.model.Task
+
 import com.swayog.employee.data.repository.AttendanceRepository
 import com.swayog.employee.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -50,6 +53,12 @@ class AttendanceViewModel @Inject constructor(
     private val _monthlyRecords = MutableStateFlow<List<AttendanceRecord>>(emptyList())
     val monthlyRecords: StateFlow<List<AttendanceRecord>> = _monthlyRecords.asStateFlow()
 
+    private val _holidays = MutableStateFlow<List<HolidayItem>>(emptyList())
+    val holidays: StateFlow<List<HolidayItem>> = _holidays.asStateFlow()
+
+    private val _monthlySummary = MutableStateFlow<MonthlyAttendanceResponse?>(null)
+    val monthlySummary: StateFlow<MonthlyAttendanceResponse?> = _monthlySummary.asStateFlow()
+
     private val _currentTask = MutableStateFlow<Task?>(null)
     val currentTask: StateFlow<Task?> = _currentTask.asStateFlow()
 
@@ -91,6 +100,35 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
+    fun loadMonth(month: Int, year: Int) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    // Only use holidays declared by admin via the backend.
+                    // Static government festivals (INDIAN_FESTIVALS_2026) are intentionally
+                    // excluded — the calendar must stay in sync with the web attendance
+                    // calendar, which only shows admin-declared holidays from the database.
+                    val result = attendanceRepository.getMonthlyAttendanceData(month, year)
+
+                    result.onSuccess { data ->
+                        _monthlySummary.value = data
+                        // Use only admin-declared holidays returned by the backend
+                        _holidays.value = data.holidays
+                    }.onFailure {
+                        // If monthly data fetch failed, try fetching holidays directly
+                        // as a fallback so the calendar still reflects declared holidays.
+                        val holidayResult = attendanceRepository.getHolidays(month, year)
+                        holidayResult.onSuccess { holidayList ->
+                            _holidays.value = holidayList
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AttendanceViewModel", "loadMonth error: ${e.message}")
+                }
+            }
+        }
+    }
+
     fun loadData() {
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Success
@@ -101,14 +139,14 @@ class AttendanceViewModel @Inject constructor(
                     val month = calendar.get(Calendar.MONTH) + 1
                     val year = calendar.get(Calendar.YEAR)
 
+                    loadMonth(month, year)
+
                     val faceDeferred = async { attendanceRepository.syncFaceEnrollment() }
                     val rulesDeferred = async { attendanceRepository.getAttendanceRules() }
                     val todayDeferred = async { attendanceRepository.getTodayAttendance() }
-                    val monthlyDeferred = async { attendanceRepository.syncMonthlyAttendance(month, year) }
                     val perfDeferred = async { attendanceRepository.getPerformance(month, year) }
 
                     todayDeferred.await()
-                    monthlyDeferred.await()
                     rulesDeferred.await()
                     faceDeferred.await()
                     

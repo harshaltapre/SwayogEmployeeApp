@@ -44,7 +44,6 @@ fun LoginScreen(
     val loginState by viewModel.loginState.collectAsState()
     val email by viewModel.email.collectAsState()
     val password by viewModel.password.collectAsState()
-    val selectedRole by viewModel.selectedRole.collectAsState()
     val savePassword by viewModel.savePassword.collectAsState()
     val isPasswordVisible by viewModel.isPasswordVisible.collectAsState()
     val isBiometricAvailable by viewModel.isBiometricAvailable.collectAsState()
@@ -173,30 +172,7 @@ fun LoginScreen(
                     
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Role Selector
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            "EMPLOYEE" to "Employee",
-                            "SUB_ADMIN" to "AMC Mgmt",
-                            "AMC_COORDINATOR" to "Coordinator"
-                        ).forEach { (role, label) ->
-                            val isSelected = selectedRole == role
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { viewModel.onRoleChange(role) },
-                                label = { Text(label, fontSize = 12.sp) },
-                                modifier = Modifier.weight(1f),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF386FA4).copy(alpha = 0.15f),
-                                    selectedLabelColor = Color(0xFF386FA4)
-                                )
-                            )
-                        }
-                    }
-                    
+
                     // Email / Login ID Field
                     SwayogTextField(
                         value = email,

@@ -124,6 +124,12 @@ interface ApiService {
         @Query("year") year: Int
     ): Response<MonthlyAttendanceResponse>
     
+    @GET("employee/attendance/holidays")
+    suspend fun getHolidays(
+        @Query("month") month: Int? = null,
+        @Query("year") year: Int? = null
+    ): Response<HolidaysResponse>
+    
     @GET("daily-commits/mine")
     suspend fun getDailyCommits(): Response<ApiResponse<List<DailyCommit>>>
     

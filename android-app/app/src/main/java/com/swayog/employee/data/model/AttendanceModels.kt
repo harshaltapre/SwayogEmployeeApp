@@ -96,13 +96,26 @@ data class PerformanceResponse(
     val snapshot: PerformanceSnapshot?
 )
 
+data class HolidayItem(
+    val id: String? = null,
+    val date: String? = null,
+    val dateStr: String? = null,
+    val name: String? = null,
+    val description: String? = null
+)
+
+data class HolidaysResponse(
+    val holidays: List<HolidayItem> = emptyList()
+)
+
 data class MonthlyAttendanceResponse(
-    val records: List<AttendanceRecord>,
-    val present: Int,
-    val absent: Int,
-    val halfDays: Int,
-    val workingDays: Int,
-    val attendancePercent: Double
+    val records: List<AttendanceRecord> = emptyList(),
+    val present: Int = 0,
+    val absent: Int = 0,
+    val halfDays: Int = 0,
+    val workingDays: Int = 0,
+    val attendancePercent: Double = 0.0,
+    val holidays: List<HolidayItem> = emptyList()
 )
 
 data class AttendanceRule(
