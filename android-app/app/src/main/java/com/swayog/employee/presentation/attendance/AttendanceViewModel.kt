@@ -7,7 +7,7 @@ import com.swayog.employee.data.model.HolidayItem
 import com.swayog.employee.data.model.MonthlyAttendanceResponse
 import com.swayog.employee.data.model.PerformanceSnapshot
 import com.swayog.employee.data.model.Task
-import com.swayog.employee.data.model.INDIAN_FESTIVALS_2026
+
 import com.swayog.employee.data.repository.AttendanceRepository
 import com.swayog.employee.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -104,40 +104,24 @@ class AttendanceViewModel @Inject constructor(
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 try {
+                    // Only use holidays declared by admin via the backend.
+                    // Static government festivals (INDIAN_FESTIVALS_2026) are intentionally
+                    // excluded — the calendar must stay in sync with the web attendance
+                    // calendar, which only shows admin-declared holidays from the database.
                     val result = attendanceRepository.getMonthlyAttendanceData(month, year)
-                    val monthStr = String.format("%04d-%02d", year, month)
-
-                    // Convert matching festivals from INDIAN_FESTIVALS_2026 into HolidayItem
-                    val staticFestivals = INDIAN_FESTIVALS_2026
-                        .filter { it.date.startsWith(monthStr) }
-                        .map { f ->
-                            HolidayItem(
-                                id = f.id,
-                                date = f.date,
-                                dateStr = f.date,
-                                name = f.name,
-                                description = f.type
-                            )
-                        }
-
-                    val combinedMap = linkedMapOf<String, HolidayItem>()
-                    // Static festivals first
-                    staticFestivals.forEach { item ->
-                        item.dateStr?.let { combinedMap[it] = item }
-                    }
 
                     result.onSuccess { data ->
                         _monthlySummary.value = data
-                        // Backend declared holidays take priority
-                        data.holidays.forEach { item ->
-                            val key = item.dateStr ?: item.date?.take(10)
-                            if (key != null) {
-                                combinedMap[key] = item
-                            }
+                        // Use only admin-declared holidays returned by the backend
+                        _holidays.value = data.holidays
+                    }.onFailure {
+                        // If monthly data fetch failed, try fetching holidays directly
+                        // as a fallback so the calendar still reflects declared holidays.
+                        val holidayResult = attendanceRepository.getHolidays(month, year)
+                        holidayResult.onSuccess { holidayList ->
+                            _holidays.value = holidayList
                         }
                     }
-
-                    _holidays.value = combinedMap.values.toList()
                 } catch (e: Exception) {
                     android.util.Log.e("AttendanceViewModel", "loadMonth error: ${e.message}")
                 }

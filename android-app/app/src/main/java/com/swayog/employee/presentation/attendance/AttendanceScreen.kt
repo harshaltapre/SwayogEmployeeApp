@@ -1075,7 +1075,7 @@ fun AttendanceScreen(
                                                 val subtitleText = when {
                                                     isHoliday -> {
                                                         val name = matchedHoliday?.name.orEmpty()
-                                                        if (name.isNotBlank()) "🚩 $name" else "🚩 Holiday"
+                                                        if (name.isNotBlank()) "🎉 $name" else "🎉 Holiday"
                                                     }
                                                     isSunday -> "Sun Off"
                                                     else -> null
