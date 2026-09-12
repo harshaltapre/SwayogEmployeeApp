@@ -3,8 +3,11 @@ package com.swayog.employee.presentation.attendance
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.AttendanceRecord
+import com.swayog.employee.data.model.HolidayItem
+import com.swayog.employee.data.model.MonthlyAttendanceResponse
 import com.swayog.employee.data.model.PerformanceSnapshot
 import com.swayog.employee.data.model.Task
+import com.swayog.employee.data.model.INDIAN_FESTIVALS_2026
 import com.swayog.employee.data.repository.AttendanceRepository
 import com.swayog.employee.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -50,6 +53,12 @@ class AttendanceViewModel @Inject constructor(
     private val _monthlyRecords = MutableStateFlow<List<AttendanceRecord>>(emptyList())
     val monthlyRecords: StateFlow<List<AttendanceRecord>> = _monthlyRecords.asStateFlow()
 
+    private val _holidays = MutableStateFlow<List<HolidayItem>>(emptyList())
+    val holidays: StateFlow<List<HolidayItem>> = _holidays.asStateFlow()
+
+    private val _monthlySummary = MutableStateFlow<MonthlyAttendanceResponse?>(null)
+    val monthlySummary: StateFlow<MonthlyAttendanceResponse?> = _monthlySummary.asStateFlow()
+
     private val _currentTask = MutableStateFlow<Task?>(null)
     val currentTask: StateFlow<Task?> = _currentTask.asStateFlow()
 
@@ -91,6 +100,51 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
+    fun loadMonth(month: Int, year: Int) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    val result = attendanceRepository.getMonthlyAttendanceData(month, year)
+                    val monthStr = String.format("%04d-%02d", year, month)
+
+                    // Convert matching festivals from INDIAN_FESTIVALS_2026 into HolidayItem
+                    val staticFestivals = INDIAN_FESTIVALS_2026
+                        .filter { it.date.startsWith(monthStr) }
+                        .map { f ->
+                            HolidayItem(
+                                id = f.id,
+                                date = f.date,
+                                dateStr = f.date,
+                                name = f.name,
+                                description = f.type
+                            )
+                        }
+
+                    val combinedMap = linkedMapOf<String, HolidayItem>()
+                    // Static festivals first
+                    staticFestivals.forEach { item ->
+                        item.dateStr?.let { combinedMap[it] = item }
+                    }
+
+                    result.onSuccess { data ->
+                        _monthlySummary.value = data
+                        // Backend declared holidays take priority
+                        data.holidays.forEach { item ->
+                            val key = item.dateStr ?: item.date?.take(10)
+                            if (key != null) {
+                                combinedMap[key] = item
+                            }
+                        }
+                    }
+
+                    _holidays.value = combinedMap.values.toList()
+                } catch (e: Exception) {
+                    android.util.Log.e("AttendanceViewModel", "loadMonth error: ${e.message}")
+                }
+            }
+        }
+    }
+
     fun loadData() {
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Success
@@ -101,14 +155,14 @@ class AttendanceViewModel @Inject constructor(
                     val month = calendar.get(Calendar.MONTH) + 1
                     val year = calendar.get(Calendar.YEAR)
 
+                    loadMonth(month, year)
+
                     val faceDeferred = async { attendanceRepository.syncFaceEnrollment() }
                     val rulesDeferred = async { attendanceRepository.getAttendanceRules() }
                     val todayDeferred = async { attendanceRepository.getTodayAttendance() }
-                    val monthlyDeferred = async { attendanceRepository.syncMonthlyAttendance(month, year) }
                     val perfDeferred = async { attendanceRepository.getPerformance(month, year) }
 
                     todayDeferred.await()
-                    monthlyDeferred.await()
                     rulesDeferred.await()
                     faceDeferred.await()
                     

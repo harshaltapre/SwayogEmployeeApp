@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -69,6 +70,8 @@ fun AttendanceScreen(
 
     val todayAttendance by viewModel.todayAttendance.collectAsState()
     val monthlyRecords by viewModel.monthlyRecords.collectAsState()
+    val holidays by viewModel.holidays.collectAsState()
+    val monthlySummary by viewModel.monthlySummary.collectAsState()
     val state by viewModel.attendanceState.collectAsState()
     val faceDescriptors by viewModel.faceDescriptors.collectAsState()
     val performance by viewModel.performance.collectAsState()
@@ -87,6 +90,10 @@ fun AttendanceScreen(
     // Calendar month navigation state
     var calendarMonth by remember { mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH)) }
     var calendarYear by remember { mutableIntStateOf(Calendar.getInstance().get(Calendar.YEAR)) }
+
+    LaunchedEffect(calendarMonth, calendarYear) {
+        viewModel.loadMonth(calendarMonth + 1, calendarYear)
+    }
 
     val attendanceRules by viewModel.attendanceRules.collectAsState()
     var useGoogleMaps by remember { mutableStateOf(false) }
@@ -851,8 +858,8 @@ fun AttendanceScreen(
                         val currentMonth = calendarMonth
 
                         // Calculate working days up to today for the displayed month
-                        // Company works 6 days/week (Mon–Sat); only Sunday is a day off
-                        val workingDays: Int = remember(currentYear, currentMonth) {
+                        // Company works 6 days/week (Mon–Sat); Sundays and declared holidays are off
+                        val workingDays: Int = remember(currentYear, currentMonth, holidays) {
                             var count = 0
                             val today = Calendar.getInstance()
                             val target = Calendar.getInstance()
@@ -860,12 +867,14 @@ fun AttendanceScreen(
                             target.set(Calendar.MONTH, currentMonth)
                             target.set(Calendar.DAY_OF_MONTH, 1)
                             val daysInMonth = target.getActualMaximum(Calendar.DAY_OF_MONTH)
+                            val holidayDateSet = holidays.mapNotNull { it.dateStr ?: it.date?.take(10) }.toSet()
                             var day = 1
                             while (day <= daysInMonth) {
                                 target.set(Calendar.DAY_OF_MONTH, day)
                                 if (target.after(today)) break
                                 val dow = target.get(Calendar.DAY_OF_WEEK)
-                                if (dow != Calendar.SUNDAY) count++ // only Sunday off
+                                val dateStr = String.format(Locale.getDefault(), "%04d-%02d-%02d", currentYear, currentMonth + 1, day)
+                                if (dow != Calendar.SUNDAY && !holidayDateSet.contains(dateStr)) count++
                                 day++
                             }
                             count
@@ -971,6 +980,7 @@ fun AttendanceScreen(
                                         } else {
                                             calendarMonth--
                                         }
+                                        viewModel.loadMonth(calendarMonth + 1, calendarYear)
                                     }) {
                                         Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Month")
                                     }
@@ -990,6 +1000,7 @@ fun AttendanceScreen(
                                         } else {
                                             calendarMonth++
                                         }
+                                        viewModel.loadMonth(calendarMonth + 1, calendarYear)
                                     }) {
                                         Icon(Icons.Default.ChevronRight, contentDescription = "Next Month")
                                     }
@@ -1041,43 +1052,105 @@ fun AttendanceScreen(
                                                 val cellCal = Calendar.getInstance().apply {
                                                     set(calendarYear, calendarMonth, day)
                                                 }
+                                                val isSunday = col == 0 || cellCal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY
                                                 val dateStr = dateFormat.format(cellCal.time)
                                                 val record = monthlyRecords.find { it.date.substringBefore("T") == dateStr }
+                                                val matchedHoliday = holidays.find { (it.dateStr ?: it.date?.take(10)) == dateStr }
+                                                val isHoliday = matchedHoliday != null
 
-                                                val dotColor = when (record?.status?.uppercase()) {
-                                                    "PRESENT" -> Color(0xFF0B6E4F) // BrandGreen
-                                                    "ABSENT" -> Color(0xFFF44336)
-                                                    "LATE" -> Color(0xFFD1603D) // BrandOrange
-                                                    "LEAVE" -> Color(0xFF386FA4) // BrandBlue
-                                                    "HALF_DAY", "HALF-DAY" -> Color(0xFF3A2417) // BrandBrown
+                                                val hasRecord = record != null
+                                                val recordStatus = record?.status?.uppercase()
+
+                                                val dotColor = when {
+                                                    recordStatus == "PRESENT" -> Color(0xFF0B6E4F)
+                                                    recordStatus == "LATE" -> Color(0xFFD1603D)
+                                                    recordStatus == "ABSENT" -> Color(0xFFF44336)
+                                                    recordStatus == "LEAVE" -> Color(0xFF386FA4)
+                                                    recordStatus == "HALF_DAY" || recordStatus == "HALF-DAY" -> Color(0xFF7E22CE)
+                                                    !hasRecord && isHoliday -> Color(0xFFF43F5E) // Festival Holiday
+                                                    !hasRecord && isSunday -> Color(0xFFF59E0B) // Sunday Holiday
                                                     else -> null
+                                                }
+
+                                                val subtitleText = when {
+                                                    isHoliday -> {
+                                                        val name = matchedHoliday?.name.orEmpty()
+                                                        if (name.isNotBlank()) "🚩 $name" else "🚩 Holiday"
+                                                    }
+                                                    isSunday -> "Sun Off"
+                                                    else -> null
+                                                }
+
+                                                val cellBgColor = when {
+                                                    isHoliday -> Color(0xFFFFF1F2)
+                                                    isSunday -> Color(0xFFFFFBEB)
+                                                    hasRecord -> Color(0xFFF8FAFC).copy(alpha = 0.5f)
+                                                    else -> Color.Transparent
+                                                }
+
+                                                val cellBorderColor = when {
+                                                    isToday -> Color(0xFFD1603D)
+                                                    isHoliday -> Color(0xFFFECDD3)
+                                                    isSunday -> Color(0xFFFDE68A)
+                                                    else -> Color.Transparent
+                                                }
+
+                                                val dayTextColor = when {
+                                                    isToday -> Color(0xFFD1603D)
+                                                    isHoliday -> Color(0xFFBE123C)
+                                                    isSunday -> Color(0xFFB45309)
+                                                    else -> MaterialTheme.colorScheme.onSurface
+                                                }
+
+                                                val subtitleColor = when {
+                                                    isHoliday -> Color(0xFFE11D48)
+                                                    isSunday -> Color(0xFFD97706)
+                                                    else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                                 }
 
                                                 Box(
                                                     modifier = Modifier
                                                         .weight(1f)
-                                                        .aspectRatio(1f)
-                                                        .padding(2.dp)
-                                                        .then(
-                                                            if (isToday) Modifier.border(
-                                                                2.dp,
-                                                                Color(0xFFD1603D), // BrandOrange
-                                                                RoundedCornerShape(8.dp)
-                                                            ) else Modifier
+                                                        .height(52.dp)
+                                                        .padding(1.5.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(cellBgColor)
+                                                        .border(
+                                                            width = if (isToday) 2.dp else if (cellBorderColor != Color.Transparent) 1.dp else 0.dp,
+                                                            color = cellBorderColor,
+                                                            shape = RoundedCornerShape(6.dp)
                                                         ),
                                                     contentAlignment = Alignment.Center
                                                 ) {
-                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center,
+                                                        modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 2.dp)
+                                                    ) {
                                                         Text(
                                                             text = day.toString(),
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                                                            color = if (isToday) Color(0xFFD1603D) else MaterialTheme.colorScheme.onSurface
+                                                            fontSize = 11.sp,
+                                                            fontWeight = if (isToday || isSunday || isHoliday) FontWeight.Bold else FontWeight.Medium,
+                                                            color = dayTextColor,
+                                                            lineHeight = 13.sp
                                                         )
+                                                        if (subtitleText != null) {
+                                                            Text(
+                                                                text = subtitleText,
+                                                                fontSize = 7.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = subtitleColor,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                textAlign = TextAlign.Center,
+                                                                lineHeight = 8.sp
+                                                            )
+                                                        }
                                                         if (dotColor != null) {
+                                                            Spacer(modifier = Modifier.height(1.dp))
                                                             Box(
                                                                 modifier = Modifier
-                                                                    .size(6.dp)
+                                                                    .size(5.dp)
                                                                     .clip(CircleShape)
                                                                     .background(dotColor)
                                                             )
@@ -1091,16 +1164,26 @@ fun AttendanceScreen(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(8.dp))
-                                // Legend
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceEvenly
-                                ) {
-                                    CalendarLegendItem(color = Color(0xFF0B6E4F), label = "Present")
-                                    CalendarLegendItem(color = Color(0xFFF44336), label = "Absent")
-                                    CalendarLegendItem(color = Color(0xFFD1603D), label = "Late")
-                                    CalendarLegendItem(color = Color(0xFF386FA4), label = "Leave")
+                                Spacer(modifier = Modifier.height(12.dp))
+                                // Legend (matches web dashboard statusConfig)
+                                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        CalendarLegendItem(color = Color(0xFF0B6E4F), label = "Present")
+                                        CalendarLegendItem(color = Color(0xFFD1603D), label = "Late")
+                                        CalendarLegendItem(color = Color(0xFFF44336), label = "Absent")
+                                        CalendarLegendItem(color = Color(0xFF386FA4), label = "Leave")
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        CalendarLegendItem(color = Color(0xFF7E22CE), label = "Half Day")
+                                        CalendarLegendItem(color = Color(0xFFF59E0B), label = "Sunday Holiday")
+                                        CalendarLegendItem(color = Color(0xFFF43F5E), label = "Festival Holiday")
+                                    }
                                 }
                             }
                         }
