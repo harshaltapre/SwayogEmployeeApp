@@ -12,21 +12,30 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.swayog.employee.core.util.NetworkUtils
 
 @Composable
 fun PendingSyncBanner(
     pendingCount: Int,
-    onClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    val isOnline by produceState(initialValue = NetworkUtils.isNetworkAvailable(context)) {
+        NetworkUtils.observeNetworkStatus(context).collect { value = it }
+    }
+
     AnimatedVisibility(
-        visible = pendingCount > 0,
+        visible = pendingCount > 0 && !isOnline,
         enter = expandVertically(),
         exit = shrinkVertically(),
         modifier = modifier

@@ -195,7 +195,7 @@ export async function listCustomers(auth: AuthContext, query: ListCustomersQuery
       },
     },
     orderBy: { createdAt: "desc" },
-    take: query.limit ?? 100,
+    take: query.limit ? Number(query.limit) : undefined,
   });
 
   return customers.map(serializeCustomer);
@@ -529,16 +529,61 @@ export async function updateCustomer(auth: AuthContext, id: number, input: Updat
 export async function deleteCustomer(auth: AuthContext, id: number) {
   const partnerScopeId = await getPartnerScopeId(auth);
 
-  const result = await prisma.customer.deleteMany({
+  const customer = await prisma.customer.findFirst({
     where: {
       id,
       ...(partnerScopeId ? { partnerId: partnerScopeId } : {}),
     },
+    select: { id: true, userId: true, email: true, customerCode: true },
   });
 
-  if (result.count === 0) {
+  if (!customer) {
     throw new ApiError(404, "Customer not found");
   }
+
+  await prisma.$transaction(async (tx: any) => {
+    // 1. Delete all related customer child records
+    await tx.customerNotification.deleteMany({ where: { customerId: id } }).catch(() => {});
+    await tx.serviceRequest.deleteMany({ where: { customerId: id } }).catch(() => {});
+    await tx.amcVisit.deleteMany({ where: { customerId: id } }).catch(() => {});
+    await tx.amcContract.deleteMany({ where: { customerId: id } }).catch(() => {});
+    await tx.invoice.deleteMany({ where: { customerId: id } }).catch(() => {});
+    await tx.dispatchRecord.deleteMany({ where: { customerId: id } }).catch(() => {});
+    await tx.payment.deleteMany({ where: { customerId: id } }).catch(() => {});
+    await tx.task.updateMany({ where: { customerId: id }, data: { customerId: null } }).catch(() => {});
+
+    // 2. Delete the customer record
+    await tx.customer.delete({ where: { id } });
+
+    // 3. Delete associated user if any (by customer.userId or customer.customerCode / email where role is CUSTOMER)
+    const userConditions: any[] = [];
+    if (customer.userId) {
+      userConditions.push({ id: customer.userId });
+    }
+    if (customer.customerCode) {
+      userConditions.push({ loginId: customer.customerCode, role: UserRole.CUSTOMER });
+    }
+    if (customer.email) {
+      userConditions.push({ email: { equals: customer.email, mode: "insensitive" }, role: UserRole.CUSTOMER });
+    }
+
+    if (userConditions.length > 0) {
+      const usersToDelete = await tx.user.findMany({
+        where: { OR: userConditions },
+        select: { id: true },
+      });
+
+      for (const u of usersToDelete) {
+        await tx.attendanceRecord.deleteMany({ where: { employeeId: u.id } }).catch(() => {});
+        await tx.checkIn.deleteMany({ where: { employeeId: u.id } }).catch(() => {});
+        await tx.performanceSnapshot.deleteMany({ where: { employeeId: u.id } }).catch(() => {});
+        await tx.workSubmission.deleteMany({ where: { employeeId: u.id } }).catch(() => {});
+        await tx.dailyCommit.deleteMany({ where: { employeeId: u.id } }).catch(() => {});
+        await tx.refreshToken.deleteMany({ where: { userId: u.id } }).catch(() => {});
+        await tx.user.delete({ where: { id: u.id } }).catch(() => {});
+      }
+    }
+  });
 
   await prisma.auditLog.create({
     data: {
@@ -547,7 +592,7 @@ export async function deleteCustomer(auth: AuthContext, id: number) {
       entity: "Customer",
       entityId: String(id),
     },
-  });
+  }).catch(() => {});
 
   return { success: true };
 }

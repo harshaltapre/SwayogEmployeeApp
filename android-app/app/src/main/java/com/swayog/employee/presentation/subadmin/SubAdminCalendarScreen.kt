@@ -45,7 +45,7 @@ fun SubAdminCalendarScreen(
     val actionState by viewModel.actionState.collectAsState()
     val employees by viewModel.employees.collectAsState()
 
-    var selectedFilters by remember { mutableStateOf(setOf("Complaints", "AMC Visits", "Tasks")) }
+    var selectedFilters by remember { mutableStateOf(setOf("Complaints", "AMC Visits", "Tasks", "Holidays & Festivals")) }
     var selectedEventForUpdate by remember { mutableStateOf<CalendarEvent?>(null) }
     var selectedEventForDetails by remember { mutableStateOf<CalendarEvent?>(null) }
 
@@ -56,6 +56,7 @@ fun SubAdminCalendarScreen(
                 type.contains("complaint") -> selectedFilters.contains("Complaints")
                 type.contains("amc") -> selectedFilters.contains("AMC Visits")
                 type.contains("task") -> selectedFilters.contains("Tasks")
+                type.contains("holiday") || type.contains("festival") -> selectedFilters.contains("Holidays & Festivals")
                 else -> true
             }
         }
@@ -111,7 +112,10 @@ fun SubAdminCalendarScreen(
                 val filters = listOf(
                     "Complaints" to events.count { it.type.contains("complaint", ignoreCase = true) },
                     "AMC Visits" to events.count { it.type.contains("amc", ignoreCase = true) },
-                    "Tasks" to events.count { it.type.contains("task", ignoreCase = true) }
+                    "Tasks" to events.count { it.type.contains("task", ignoreCase = true) },
+                    "Holidays & Festivals" to events.count {
+                        it.type.contains("holiday", ignoreCase = true) || it.type.contains("festival", ignoreCase = true)
+                    }
                 )
                 
                 filters.forEach { (name, count) ->

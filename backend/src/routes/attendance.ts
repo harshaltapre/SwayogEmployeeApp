@@ -6,9 +6,8 @@ import { prisma } from "../lib/prisma.js";
 import * as AttendanceService from "../services/attendanceService.js";
 import fs from "fs";
 import path from "path";
-import multer from "multer";
 
-const upload = multer({ storage: multer.memoryStorage() });
+
 
 const router = Router();
 
@@ -54,6 +53,72 @@ router.post("/rules", adminAuth, asyncHandler(async (req, res) => {
   }
 }));
 
+// ── Festival Holidays ───────────────────────────────────────────────────────
+// GET  /holidays              → list holidays (optionally filtered by year/month)
+// POST /holidays              → (adminAuth) create/set festival holiday
+// PATCH /holidays/:id         → (adminAuth) update festival holiday
+// DELETE /holidays/:id        → (adminAuth) delete festival holiday
+router.get("/holidays", authenticateAccessToken, asyncHandler(async (req, res) => {
+  const year = req.query.year ? parseInt(req.query.year as string) : undefined;
+  const month = req.query.month ? parseInt(req.query.month as string) : undefined;
+
+  let startDate: Date | undefined;
+  let endDate: Date | undefined;
+
+  if (year && month) {
+    startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+    endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+  } else if (year) {
+    startDate = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
+    endDate = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+  }
+
+  const holidays = await AttendanceService.getHolidaysAsync(startDate, endDate);
+  const formatted = holidays.map((h) => {
+    const d = new Date(h.date);
+    const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    return {
+      ...h,
+      dateStr,
+    };
+  });
+  res.json({ holidays: formatted });
+}));
+
+router.post("/holidays", adminAuth, asyncHandler(async (req, res) => {
+  const { date, name, description } = req.body;
+  if (!date) {
+    res.status(400).json({ error: "Holiday date is required." });
+    return;
+  }
+  if (!name || typeof name !== "string" || name.trim().length === 0) {
+    res.status(400).json({ error: "Festival / Holiday name is required." });
+    return;
+  }
+
+  const holiday = await AttendanceService.createHolidayAsync({
+    date,
+    name,
+    description,
+    createdBy: req.auth!.userId,
+  });
+
+  res.json({ success: true, holiday });
+}));
+
+router.patch("/holidays/:id", adminAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { date, name, description } = req.body;
+  const holiday = await AttendanceService.updateHolidayAsync(id, { date, name, description });
+  res.json({ success: true, holiday });
+}));
+
+router.delete("/holidays/:id", adminAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await AttendanceService.deleteHolidayAsync(id);
+  res.json({ success: true, message: "Holiday deleted successfully." });
+}));
+
 // ── Profile Photo (syncs across devices) ─────────────────────────────────────
 // GET  /profile-photo        → returns the current user's photo
 // POST /profile-photo        → saves/updates the current user's photo
@@ -66,50 +131,23 @@ router.get("/profile-photo", authenticateAccessToken, asyncHandler(async (req, r
   res.json({ photo: user?.profileImageUrl || null });
 }));
 
-router.post("/profile-photo", authenticateAccessToken, upload.single("file"), asyncHandler(async (req, res) => {
+router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, res) => {
   const userId = req.auth!.userId;
-  let imageData: string | null = null;
-
-  if (req.file) {
-    const mimeType = req.file.mimetype || "image/jpeg";
-    imageData = `data:${mimeType};base64,${req.file.buffer.toString("base64")}`;
-  } else {
-    const { photo, photoDataUrl } = (req.body || {}) as { photo?: string; photoDataUrl?: string };
-    imageData = photo || photoDataUrl || null;
-  }
-
-  if (!imageData || !imageData.startsWith("data:image/")) {
-    res.status(400).json({ error: "Invalid image data. Must be a base64 data URL or uploaded file." });
+  const { photo } = req.body as { photo: string };
+  if (!photo || !photo.startsWith("data:image/")) {
+    res.status(400).json({ error: "Invalid image data. Must be a base64 data URL." });
     return;
   }
-
-  // Rough size check – base64 of a 4 MB image ≈ 5.5 MB string
-  if (imageData.length > 6 * 1024 * 1024) {
-    res.status(413).json({ error: "Image too large. Please upload a photo under 4 MB." });
+  // Rough size check – base64 of a 2 MB image ≈ 2.7 MB string
+  if (photo.length > 4 * 1024 * 1024) {
+    res.status(413).json({ error: "Image too large. Please upload a photo under 2 MB." });
     return;
   }
-
-  const updatedUser = await prisma.user.update({
+  await prisma.user.update({
     where: { id: userId },
-    data: { profileImageUrl: imageData },
-    select: {
-      id: true,
-      fullName: true,
-      email: true,
-      role: true,
-      isActive: true,
-      profileImageUrl: true,
-      loginId: true,
-      employeeCode: true,
-      phoneNumber: true,
-      designationTitle: true,
-      departmentId: true,
-      reportingManagerId: true,
-      createdAt: true,
-    },
+    data: { profileImageUrl: photo },
   });
-
-  res.json({ success: true, photo: imageData, data: updatedUser });
+  res.json({ success: true });
 }));
 
 
@@ -173,69 +211,6 @@ router.get("/performance", authenticateAccessToken, asyncHandler(async (req, res
     where: { employeeId_month_year: { employeeId: req.auth!.userId, month, year } },
   });
   res.json({ snapshot });
-}));
-
-router.post("/work-description", authenticateAccessToken, asyncHandler(async (req, res) => {
-  const userId = req.auth!.userId;
-  const description = req.body.description || req.body.workDescription || req.body.notes || "";
-
-  if (!description || !description.trim()) {
-    res.status(400).json({ error: "Work description cannot be empty" });
-    return;
-  }
-
-  // 1. Update today's CheckIn attendance record notes if it exists
-  const now = new Date();
-  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000 - 1);
-
-  const checkIn = await prisma.checkIn.findFirst({
-    where: {
-      employeeId: userId,
-      checkInTime: { gte: startOfDay, lte: endOfDay },
-    },
-    orderBy: { checkInTime: "desc" },
-  });
-
-  if (checkIn) {
-    await prisma.checkIn.update({
-      where: { id: checkIn.id },
-      data: { notes: description },
-    }).catch(() => {});
-  }
-
-  // 2. Also log/update DailyCommit record so Super Admin and Admin can see it on their dashboard
-  const commitDate = startOfDay;
-  const existingCommit = await prisma.dailyCommit.findUnique({
-    where: {
-      employeeId_commitDate: {
-        employeeId: userId,
-        commitDate,
-      },
-    },
-  });
-
-  if (existingCommit) {
-    const combinedSummary = existingCommit.workSummary
-      ? `${existingCommit.workSummary}\n[Quick Update]: ${description}`
-      : description;
-    await prisma.dailyCommit.update({
-      where: { id: existingCommit.id },
-      data: { workSummary: combinedSummary },
-    }).catch(() => {});
-  } else {
-    await prisma.dailyCommit.create({
-      data: {
-        employeeId: userId,
-        commitDate,
-        taskWorkedOn: "Quick Update",
-        workSummary: description,
-        hoursSpent: 1.0,
-      },
-    }).catch(() => {});
-  }
-
-  res.json({ success: true, message: "Work description saved successfully" });
 }));
 
 router.post("/work-submissions", employeeAuth, asyncHandler(async (req, res) => {
@@ -669,6 +644,58 @@ router.patch(
     res.json({ success: true, checkIn: updated });
   }),
 );
+
+/**
+ * POST /admin/apply & /admin/attendance/apply
+ * Admin/SuperAdmin: manually apply or update attendance for an employee who forgot to check in.
+ * Requires mandatory remark explaining why the employee forgot.
+ */
+const handleAdminApplyAttendance = asyncHandler(async (req, res) => {
+  const { employeeId, date, status, checkInTime, checkOutTime, remark } = req.body;
+
+  if (!employeeId) {
+    res.status(400).json({ error: "Employee ID is required." });
+    return;
+  }
+  if (!date) {
+    res.status(400).json({ error: "Date (YYYY-MM-DD) is required." });
+    return;
+  }
+  if (!status) {
+    res.status(400).json({ error: "Attendance status is required." });
+    return;
+  }
+  if (!remark || typeof remark !== "string" || remark.trim().length < 3) {
+    res.status(400).json({ error: "A remark explaining why the employee forgot or why attendance is being updated is required (at least 3 characters)." });
+    return;
+  }
+
+  const validStatuses = ["PRESENT", "LATE", "HALF_DAY", "ABSENT", "LEAVE"];
+  if (!validStatuses.includes(status)) {
+    res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+    return;
+  }
+
+  const result = await AttendanceService.applyOrUpdateAttendanceRecord({
+    employeeId,
+    date,
+    status,
+    checkInTime,
+    checkOutTime,
+    remark,
+    adminUserId: req.auth!.userId,
+  });
+
+  res.json({
+    success: true,
+    message: "Attendance recorded successfully.",
+    attendance: result.attendance,
+    performance: result.performance,
+  });
+});
+
+router.post("/admin/apply", adminAuth, handleAdminApplyAttendance);
+router.post("/admin/attendance/apply", adminAuth, handleAdminApplyAttendance);
 
 router.get(
   "/download-data",

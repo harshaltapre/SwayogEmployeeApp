@@ -701,6 +701,25 @@ class CustomerRepository @Inject constructor(
         }
     }
 
+    suspend fun deleteAmcVisit(visitId: String): Result<Unit> {
+        return try {
+            val response = apiService.deleteAmcVisit(visitId)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                val errorMsg = try {
+                    response.errorBody()?.string()?.let { body ->
+                        val json = JSONObject(body)
+                        json.optString("error", json.optString("message", "Failed to delete AMC visit (${response.code()})"))
+                    }
+                } catch (_: Exception) { null } ?: "Failed to delete AMC visit (${response.code()})"
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun markAmcVisitDone(visitId: String, visitNotes: String?, beforeImageUrl: String?, afterImageUrl: String?): Result<AmcVisit> {
         return try {
             val body = mapOf(

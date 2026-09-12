@@ -114,7 +114,7 @@ export async function getAllUsers(req: Request, res: Response): Promise<void> {
   const skip = parseInt(offset as string) || 0;
 
   try {
-    const [users, total, roleCountsRaw] = await Promise.all([
+    const [users, total, roleCountsRaw, totalCustomerCount] = await Promise.all([
       prisma.user.findMany({
         where,
         select: {
@@ -140,12 +140,14 @@ export async function getAllUsers(req: Request, res: Response): Promise<void> {
       }),
       prisma.user.count({ where }),
       prisma.user.groupBy({ by: ["role"], _count: true }),
+      prisma.customer.count(),
     ]);
 
     const roleCounts = roleCountsRaw.reduce((acc: Record<string, number>, row: any) => {
       acc[row.role] = row._count;
       return acc;
     }, {});
+    roleCounts["CUSTOMER"] = Math.max(roleCounts["CUSTOMER"] || 0, totalCustomerCount);
 
     res.status(200).json({ data: { users, pagination: { total, limit: take, offset: skip }, roleCounts } });
   } catch (error) {
@@ -400,13 +402,52 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
 
   if (userId === auth.userId) throw new ApiError(400, "You cannot delete your own account");
 
-  const existing = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, loginId: true } });
+  const existing = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, loginId: true, role: true } });
   if (!existing) throw new ApiError(404, "User not found");
 
-  await prisma.user.delete({ where: { id: userId } });
+  // Delete all related records in a transaction to avoid FK constraint violations
+  await prisma.$transaction(async (tx: any) => {
+    // 1. Delete attendance-related records (these don't have onDelete: Cascade in older schema)
+    await tx.attendanceRecord.deleteMany({ where: { employeeId: userId } }).catch(() => {});
+    await tx.checkIn.deleteMany({ where: { employeeId: userId } }).catch(() => {});
+    await tx.performanceSnapshot.deleteMany({ where: { employeeId: userId } }).catch(() => {});
+    await tx.workSubmission.deleteMany({ where: { employeeId: userId } }).catch(() => {});
+    await tx.dailyCommit.deleteMany({ where: { employeeId: userId } }).catch(() => {});
+
+    // 2. If this user is linked to any customer records, clean them up
+    const customerConditions: any[] = [{ userId }];
+    if (existing.loginId) {
+      customerConditions.push({ customerCode: existing.loginId });
+    }
+    if (existing.email) {
+      customerConditions.push({ email: { equals: existing.email, mode: "insensitive" } });
+    }
+
+    const linkedCustomers = await tx.customer.findMany({
+      where: { OR: customerConditions },
+      select: { id: true },
+    });
+
+    if (linkedCustomers.length > 0) {
+      const customerIds = linkedCustomers.map((c: any) => c.id);
+      await tx.customerNotification.deleteMany({ where: { customerId: { in: customerIds } } }).catch(() => {});
+      await tx.serviceRequest.deleteMany({ where: { customerId: { in: customerIds } } }).catch(() => {});
+      await tx.amcVisit.deleteMany({ where: { customerId: { in: customerIds } } }).catch(() => {});
+      await tx.amcContract.deleteMany({ where: { customerId: { in: customerIds } } }).catch(() => {});
+      await tx.invoice.deleteMany({ where: { customerId: { in: customerIds } } }).catch(() => {});
+      await tx.dispatchRecord.deleteMany({ where: { customerId: { in: customerIds } } }).catch(() => {});
+      await tx.payment.deleteMany({ where: { customerId: { in: customerIds } } }).catch(() => {});
+      await tx.task.updateMany({ where: { customerId: { in: customerIds } }, data: { customerId: null } }).catch(() => {});
+      await tx.customer.deleteMany({ where: { id: { in: customerIds } } });
+    }
+
+    // 3. Delete the user (cascade handles: refreshTokens, employeeProfile, partnerProfile,
+    // faceEnrollment, messages, imageRecords, taskAssignees, tasks)
+    await tx.user.delete({ where: { id: userId } });
+  });
 
   await prisma.auditLog.create({
-    data: { actorId: auth.userId, action: "SUPERADMIN_USER_DELETE", entity: "User", entityId: userId, metadata: { email: existing.email, loginId: existing.loginId } },
+    data: { actorId: auth.userId, action: "SUPERADMIN_USER_DELETE", entity: "User", entityId: userId, metadata: { email: existing.email, loginId: existing.loginId, role: existing.role } },
   }).catch(() => {});
 
   res.status(200).json({ data: { success: true, message: `User ${existing.email} deleted` } });

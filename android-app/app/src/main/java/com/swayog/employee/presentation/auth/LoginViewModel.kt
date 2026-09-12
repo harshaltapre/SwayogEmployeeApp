@@ -33,6 +33,9 @@ class LoginViewModel @Inject constructor(
     private val _savePassword = MutableStateFlow(true)
     val savePassword: StateFlow<Boolean> = _savePassword.asStateFlow()
 
+    private val _selectedRole = MutableStateFlow("EMPLOYEE")
+    val selectedRole: StateFlow<String> = _selectedRole.asStateFlow()
+
     val serverUrl: Flow<String?> = dataStoreManager.serverUrl
 
     init {
@@ -74,6 +77,10 @@ class LoginViewModel @Inject constructor(
     fun onPasswordChange(newPassword: String) {
         _password.value = newPassword
     }
+
+    fun onRoleChange(newRole: String) {
+        _selectedRole.value = newRole
+    }
     
     fun togglePasswordVisibility() {
         _isPasswordVisible.value = !_isPasswordVisible.value
@@ -90,6 +97,7 @@ class LoginViewModel @Inject constructor(
     fun login() {
         val emailValue = _email.value.trim()
         val passwordValue = _password.value
+        val roleValue = _selectedRole.value
 
         if (emailValue.isBlank() || passwordValue.isBlank()) {
             _loginState.value = LoginState.Error("Please enter email / login ID and password")
@@ -99,7 +107,7 @@ class LoginViewModel @Inject constructor(
         _loginState.value = LoginState.Loading
 
         viewModelScope.launch {
-            authRepository.login(emailValue, passwordValue)
+            authRepository.login(emailValue, passwordValue, roleValue)
                 .onSuccess { authResponse ->
                     if (_savePassword.value) {
                         dataStoreManager.saveLoginCredentials(emailValue, passwordValue, true)

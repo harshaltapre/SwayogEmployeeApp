@@ -1,6 +1,6 @@
 import { Search, Plus, MapPin, Phone, Mail, Zap, Download, LayoutGrid, List, ChevronRight, IndianRupee, Shield, Copy, Check, Upload, Building2, User, Loader2 } from "lucide-react";
 import { C, Pill, StatCard, Card } from "./shared";
-import { useListCustomers, useListApartments, useCreateApartment } from "@/lib/api-client";
+import { useListCustomers, useListApartments, useCreateApartment, useGetAdminDashboardSummary } from "@/lib/api-client";
 import { useState, Fragment, useEffect } from "react";
 import { format } from "date-fns";
 import { CustomerDetailContent } from "@/components/customers/CustomerDetailContent";
@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ExcelImportDialog } from "@/components/ExcelImportDialog";
 import { useBulkCustomerImport } from "@/hooks/use-bulk-import";
 import { exportCustomersToExcel } from "@/lib/excel-parser";
+import { subscribeCustomerDataChanged } from "@/lib/entity-sync";
  
 export default function CustomersTab() {
   const [search, setSearch] = useState("");
@@ -23,9 +24,18 @@ export default function CustomersTab() {
     return () => clearTimeout(handler);
   }, [search]);
 
+  const { data: summary, refetch: refetchSummary } = useGetAdminDashboardSummary();
   const { data: customers, isLoading, refetch } = useListCustomers({ search: debouncedSearch || undefined });
   const { data: apartments, isLoading: isApartmentsLoading, refetch: refetchApartments } = useListApartments();
   const createApartmentMutation = useCreateApartment();
+
+  useEffect(() => {
+    return subscribeCustomerDataChanged(() => {
+      refetch();
+      refetchApartments();
+      refetchSummary();
+    });
+  }, [refetch, refetchApartments, refetchSummary]);
 
   const [viewMode, setViewMode] = useState<"grid" | "table">("table");
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
@@ -655,7 +665,12 @@ export default function CustomersTab() {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-          <StatCard title="Total Customers" value={isLoading ? "..." : (customers?.length || 0).toString()} icon={<Zap size={20} color={C.amber} />} accent={C.amber} />
+          {(() => {
+            const totalCustomersCount = summary?.totalCustomers !== undefined 
+              ? summary.totalCustomers.toString() 
+              : (customers?.length || 0).toString();
+            return <StatCard title="Total Customers" value={isLoading && !summary ? "..." : totalCustomersCount} icon={<Zap size={20} color={C.amber} />} accent={C.amber} />;
+          })()}
           <StatCard title="Total Capacity"  value={isLoading ? "..." : `${totalKw.toFixed(1)} kW`} icon={<Zap size={20} color={C.sky} />} sub="Solar installation base" accent={C.sky} />
           <StatCard title="Active AMC"      value={isLoading ? "..." : activeAmc.toString()} icon={<Shield size={20} color={C.emerald} />} accent={C.emerald} />
           <StatCard title="Project Value"   value={isLoading ? "..." : formattedProjectValue} icon={<IndianRupee size={20} color={C.rose} />} sub="Est. revenue" accent={C.rose} />

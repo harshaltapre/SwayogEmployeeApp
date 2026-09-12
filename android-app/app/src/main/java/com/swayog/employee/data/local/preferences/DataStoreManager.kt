@@ -38,6 +38,7 @@ class DataStoreManager @Inject constructor(
         val LANGUAGE = stringPreferencesKey("language")
         val SERVER_URL = stringPreferencesKey("server_url")
         val PROFILE_PHOTO_URL = stringPreferencesKey("profile_photo_url")
+        val PROFILE_PHOTO_CACHE_KEY = longPreferencesKey("profile_photo_cache_key")
         val LAST_ACTIVE_TIME = longPreferencesKey("last_active_time")
         
         // Face recognition
@@ -104,7 +105,23 @@ class DataStoreManager @Inject constructor(
     val profilePhotoUrl: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.PROFILE_PHOTO_URL]
     }
-    
+
+    /** Shared cache-busting key. Bumped after every successful profile photo upload so all
+     *  active screens (ProfileScreen, SettingsScreen, etc.) discard Coil's stale image. */
+    val profilePhotoCacheKey: Flow<Long> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.PROFILE_PHOTO_CACHE_KEY] ?: 0L
+    }
+
+    suspend fun bumpPhotoCacheKey() {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.PROFILE_PHOTO_CACHE_KEY] = System.currentTimeMillis()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     val isLoggedIn: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.IS_LOGGED_IN] ?: false
     }

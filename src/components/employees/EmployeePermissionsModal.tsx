@@ -21,6 +21,7 @@ import {
 } from "@/lib/section-permissions";
 import { superAdminApi, type SAUser } from "@/lib/superadmin-api";
 import { notifyEmployeeDataChanged } from "@/lib/entity-sync";
+import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -104,7 +105,21 @@ export function EmployeePermissionsModal({
     setError(null);
     try {
       const updated = await superAdminApi.updateUserPermissions(user.id, selectedPermissions);
-      notifyEmployeeDataChanged();
+      
+      // If current logged-in session belongs to this user, update immediately
+      const currentAuthUser = useAuth.getState().user;
+      if (
+        currentAuthUser &&
+        (String(currentAuthUser.id) === String(user.id) ||
+         (currentAuthUser.email && user.email && currentAuthUser.email.toLowerCase() === user.email.toLowerCase()) ||
+         (currentAuthUser.loginId && user.loginId && currentAuthUser.loginId.toLowerCase() === user.loginId.toLowerCase()))
+      ) {
+        useAuth.getState().updateUser({
+          permissions: selectedPermissions,
+        });
+      }
+
+      notifyEmployeeDataChanged({ userId: user.id, permissions: selectedPermissions });
       toast({
         title: "Permissions Updated",
         description: `Successfully configured ${selectedPermissions.length} sidebar sections for ${user.fullName}.`,
@@ -118,7 +133,20 @@ export function EmployeePermissionsModal({
         const fallbackUpdated = await superAdminApi.updateUser(user.id, {
           permissions: selectedPermissions,
         });
-        notifyEmployeeDataChanged();
+
+        const currentAuthUser = useAuth.getState().user;
+        if (
+          currentAuthUser &&
+          (String(currentAuthUser.id) === String(user.id) ||
+           (currentAuthUser.email && user.email && currentAuthUser.email.toLowerCase() === user.email.toLowerCase()) ||
+           (currentAuthUser.loginId && user.loginId && currentAuthUser.loginId.toLowerCase() === user.loginId.toLowerCase()))
+        ) {
+          useAuth.getState().updateUser({
+            permissions: selectedPermissions,
+          });
+        }
+
+        notifyEmployeeDataChanged({ userId: user.id, permissions: selectedPermissions });
         toast({
           title: "Permissions Updated",
           description: `Successfully configured ${selectedPermissions.length} sidebar sections for ${user.fullName}.`,

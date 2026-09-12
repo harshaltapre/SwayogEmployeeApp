@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth, type UserRole } from "@/lib/auth";
 import { getEmployeeServicesMap, getMatchedEmployeeIds, setEmployeeServices } from "@/lib/service-routing";
-import { notifyEmployeeDataChanged } from "@/lib/entity-sync";
+import { notifyEmployeeDataChanged, notifyCustomerDataChanged } from "@/lib/entity-sync";
 import { format } from "date-fns";
 
 import { resolveConfiguredApiBaseUrl } from "@/lib/resolve-api-base-url";
@@ -100,6 +100,7 @@ export type CustomerRecord = {
   amcStatus: CustomerAmcStatus;
   amcExpiryDate: string | null;
   status: CustomerStatus;
+  userId?: string | null;
   partnerId?: string | null;
   loginId?: string;
   generatedPassword?: string;
@@ -1076,6 +1077,7 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
     amcStatus: String(raw?.amcStatus ?? "none").toLowerCase() as CustomerAmcStatus,
     amcExpiryDate: normalizeDateValue(raw?.amcExpiryDate),
     status: String(raw?.status ?? "active").toLowerCase() as CustomerStatus,
+    userId: typeof raw?.userId === "string" ? raw.userId : null,
     partnerId: typeof raw?.partnerId === "string" ? raw.partnerId : null,
     loginId: typeof raw?.loginId === "string" ? raw.loginId : undefined,
     generatedPassword: typeof raw?.generatedPassword === "string" ? raw.generatedPassword : undefined,
@@ -1846,8 +1848,15 @@ export function useDeleteCustomer(opts?: any) {
       });
     },
     onSuccess: (data, variables, context) => {
+      // Optimistically remove the customer from any cached customer lists
+      queryClient.setQueriesData({ queryKey: ["customers"] }, (old: any) => {
+        return Array.isArray(old) ? old.filter((c: any) => c.id !== variables.id) : old;
+      });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["adminDashboardSummary"] });
       queryClient.removeQueries({ queryKey: getGetCustomerQueryKey(variables.id) });
+      queryClient.removeQueries({ queryKey: getGetSubadminCustomerSummaryQueryKey(variables.id) });
+      notifyCustomerDataChanged({ customerId: variables.id });
       onSuccess?.(data, variables, context);
     },
     ...restMutationOptions,
@@ -3922,62 +3931,4 @@ export function useMarkCustomerNotificationRead(opts?: any) {
     ...restMutationOptions,
   });
 }
-
-export const getEmployeeNotificationsQueryKey = () => ["employee", "notifications"] as const;
-export const getEmployeeUnreadNotificationsCountQueryKey = () => ["employee", "notifications", "unread-count"] as const;
-
-export function useGetEmployeeNotifications(opts?: any) {
-  return useQuery<any[]>({
-    queryKey: getEmployeeNotificationsQueryKey(),
-    queryFn: async () => {
-      const apiBaseUrl = getEffectiveApiBaseUrl();
-      if (!apiBaseUrl) return [];
-      const response = await requestApi<any[]>("/employee/notifications");
-      return Array.isArray(response) ? response : (response as any)?.data || [];
-    },
-    ...opts?.query,
-  });
-}
-
-export function useGetEmployeeUnreadNotificationsCount(opts?: any) {
-  return useQuery<{ count: number }>({
-    queryKey: getEmployeeUnreadNotificationsCountQueryKey(),
-    queryFn: async () => {
-      const apiBaseUrl = getEffectiveApiBaseUrl();
-      if (!apiBaseUrl) return { count: 0 };
-      const response = await requestApi<any>("/employee/notifications/unread-count");
-      if (response && typeof response === "object") {
-        if ("count" in response) return response;
-        if ("data" in response && response.data && typeof response.data === "object" && "count" in response.data) return response.data;
-      }
-      return { count: 0 };
-    },
-    ...opts?.query,
-  });
-}
-
-export function useMarkEmployeeNotificationRead(opts?: any) {
-  const queryClient = useQueryClient();
-  const mutationOptions = opts?.mutation ?? {};
-  const { onSuccess, ...restMutationOptions } = mutationOptions;
-
-  return useMutation({
-    mutationFn: async (notificationId: string) => {
-      const apiBaseUrl = getEffectiveApiBaseUrl();
-      if (!apiBaseUrl) {
-        throw { error: "Backend API URL is required." };
-      }
-      return await requestApi<any>(`/employee/notifications/${notificationId}/read`, {
-        method: "POST",
-      });
-    },
-    onSuccess: (data, variables, context) => {
-      queryClient.invalidateQueries({ queryKey: getEmployeeNotificationsQueryKey() });
-      queryClient.invalidateQueries({ queryKey: getEmployeeUnreadNotificationsCountQueryKey() });
-      onSuccess?.(data, variables, context);
-    },
-    ...restMutationOptions,
-  });
-}
-
 

@@ -11,7 +11,8 @@ import {
   type SAUser, type UserRole, type CreateUserInput,
   type UpdateUserInput, type LoginHistoryEntry, type ImportUserRow,
 } from "../../lib/superadmin-api";
-import { notifyEmployeeDataChanged, subscribeEmployeeDataChanged } from "@/lib/entity-sync";
+import { notifyEmployeeDataChanged, subscribeEmployeeDataChanged, notifyCustomerDataChanged } from "@/lib/entity-sync";
+import { useQueryClient } from "@tanstack/react-query";
 import { EmployeePermissionsModal } from "@/components/employees/EmployeePermissionsModal";
 
 // ─── Role Config ──────────────────────────────────────────────────────────────
@@ -510,6 +511,7 @@ export default function UsersTab() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
 
   const { toasts, push } = useToast();
+  const queryClient = useQueryClient();
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -624,7 +626,28 @@ export default function UsersTab() {
           }}
         />
       )}
-      {deleteUser && <DeleteModal user={deleteUser} onClose={() => setDeleteUser(null)} onDeleted={() => { if (deleteUser.role === "EMPLOYEE") { notifyEmployeeDataChanged(); } load(); push(`User deleted`); }} />}
+      {deleteUser && (
+        <DeleteModal
+          user={deleteUser}
+          onClose={() => setDeleteUser(null)}
+          onDeleted={() => {
+            if (deleteUser.role === "EMPLOYEE") {
+              notifyEmployeeDataChanged();
+            }
+            // Notify customer sync and optimistically update customer queries
+            notifyCustomerDataChanged({ userId: deleteUser.id });
+            queryClient.setQueriesData({ queryKey: ["customers"] }, (old: any) => {
+              return Array.isArray(old)
+                ? old.filter((c: any) => c.userId !== deleteUser.id && c.email?.toLowerCase() !== deleteUser.email?.toLowerCase() && c.customerCode !== deleteUser.loginId)
+                : old;
+            });
+            queryClient.invalidateQueries({ queryKey: ["customers"] });
+            queryClient.invalidateQueries({ queryKey: ["adminDashboardSummary"] });
+            load();
+            push(`User deleted`);
+          }}
+        />
+      )}
       {resetPwUser && <ResetPasswordModal user={resetPwUser} onClose={() => setResetPwUser(null)} onDone={() => push("Password reset successfully")} />}
       {historyUser && <LoginHistoryModal user={historyUser} onClose={() => setHistoryUser(null)} />}
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} onDone={() => { load(); }} />}

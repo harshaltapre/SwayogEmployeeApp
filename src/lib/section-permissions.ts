@@ -260,7 +260,22 @@ export function hasSectionAccess(
 
   // Check explicit permissions array first
   const userPermissions = Array.isArray(user.permissions) ? user.permissions : [];
-  if (userPermissions.includes(sectionId)) return true;
+  if (
+    userPermissions.includes(sectionId) ||
+    userPermissions.includes("*") ||
+    userPermissions.includes("all_access") ||
+    userPermissions.includes("all")
+  ) {
+    return true;
+  }
+
+  // Check preset-based permissions if any preset key was assigned directly
+  for (const perm of userPermissions) {
+    const preset = PERMISSION_PRESETS[perm];
+    if (preset && preset.ids.includes(sectionId)) {
+      return true;
+    }
+  }
 
   // Check role-based defaults
   const normalizedRole = (user.role || "").toLowerCase();

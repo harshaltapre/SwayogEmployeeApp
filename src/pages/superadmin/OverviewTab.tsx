@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   BarChart, Bar, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis,
@@ -6,6 +6,7 @@ import {
 import { Users, Zap, IndianRupee, AlertTriangle, Globe, TrendingUp, Package, MapPin, ChevronRight } from "lucide-react";
 import { C, ZONES, MONTHLY_REV, YEARLY_REV, COMPLAINT_PIE, PERF_RADAR, INSTALLATIONS_DATA, StatCard, Card, Pill } from "./shared";
 import { useListCustomers, useListEmployees, useGetAdminDashboardSummary, useGetComplaintStats, useListPartners, useListInventory } from "@/lib/api-client";
+import { subscribeCustomerDataChanged } from "@/lib/entity-sync";
 
 interface OverviewTabProps {
   onNavigate?: (tabId: string) => void;
@@ -14,12 +15,19 @@ interface OverviewTabProps {
 export default function OverviewTab({ onNavigate }: OverviewTabProps) {
   const [revView, setRevView] = useState<"monthly" | "yearly">("monthly");
   const chartData = revView === "monthly" ? MONTHLY_REV : YEARLY_REV;
-  const { data: summary, isLoading: summaryLoading } = useGetAdminDashboardSummary();
+  const { data: summary, isLoading: summaryLoading, refetch: refetchSummary } = useGetAdminDashboardSummary();
   const { data: complaintStats, isLoading: statsLoading } = useGetComplaintStats();
-  const { data: customers, isLoading: customersLoading } = useListCustomers();
+  const { data: customers, isLoading: customersLoading, refetch: refetchCustomers } = useListCustomers();
   const { data: employees, isLoading: employeesLoading } = useListEmployees();
   const { data: partners, isLoading: partnersLoading } = useListPartners();
   const { data: inventory, isLoading: inventoryLoading } = useListInventory();
+
+  useEffect(() => {
+    return subscribeCustomerDataChanged(() => {
+      refetchCustomers();
+      refetchSummary();
+    });
+  }, [refetchCustomers, refetchSummary]);
 
   const totalEmployees = employees?.length || 0;
   const inactiveEmployees = employees?.filter((e) => e.status !== "active").length || 0;
@@ -41,11 +49,15 @@ export default function OverviewTab({ onNavigate }: OverviewTabProps) {
     ? `₹${(monthlyRev / 100000).toFixed(1)}L`
     : `₹${(monthlyRev / 1000).toFixed(1)}k`;
 
+  const totalCustomersDisplay = summary?.totalCustomers !== undefined 
+    ? summary.totalCustomers.toString() 
+    : (customers?.length || 0).toString();
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
-        <StatCard title="Total Customers"        value={customersLoading ? "..." : (customers?.length || 0).toString()}  icon={<Users size={20} color={C.gold} />}          trend={8.4}   accent={C.gold} />
+        <StatCard title="Total Customers"        value={customersLoading && summaryLoading ? "..." : totalCustomersDisplay}  icon={<Users size={20} color={C.gold} />}          trend={8.4}   accent={C.gold} />
         <StatCard title="Project Value (Est.)"   value={customersLoading ? "..." : formattedProjectValue}  icon={<IndianRupee size={20} color={C.emerald} />} trend={34.8}  accent={C.emerald} />
         <StatCard title="Active Installations"   value={summaryLoading ? "..." : (summary?.activeInstallations || "0")}  icon={<Zap size={20} color={C.sky} />}            trend={12.1}  accent={C.sky} />
         <StatCard title="Open Complaints"        value={statsLoading ? "..." : realPendingComplaints.toString()}     icon={<AlertTriangle size={20} color={C.rose} />}  trend={-6.2}  accent={C.rose} />

@@ -95,6 +95,84 @@ export async function saveRulesAsync(rules: any) {
   }
 }
 
+export async function getHolidaysAsync(startDate?: Date, endDate?: Date) {
+  try {
+    const where: any = {};
+    if (startDate && endDate) {
+      where.date = { gte: startDate, lte: endDate };
+    } else if (startDate) {
+      where.date = { gte: startDate };
+    }
+    return await prisma.holiday.findMany({
+      where,
+      orderBy: { date: "asc" },
+    });
+  } catch (err) {
+    console.error("Failed to fetch holidays:", err);
+    return [];
+  }
+}
+
+export async function createHolidayAsync(data: {
+  date: string | Date;
+  name: string;
+  description?: string | null;
+  createdBy?: string | null;
+}) {
+  let targetDate: Date;
+  if (typeof data.date === "string") {
+    const clean = data.date.split("T")[0];
+    const parts = clean.split("-").map(Number);
+    targetDate = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0));
+  } else {
+    targetDate = new Date(Date.UTC(data.date.getFullYear(), data.date.getMonth(), data.date.getDate(), 0, 0, 0, 0));
+  }
+
+  return await prisma.holiday.upsert({
+    where: { date: targetDate },
+    create: {
+      date: targetDate,
+      name: data.name.trim(),
+      description: data.description ? data.description.trim() : null,
+      createdBy: data.createdBy ?? null,
+    },
+    update: {
+      name: data.name.trim(),
+      description: data.description ? data.description.trim() : null,
+      createdBy: data.createdBy ?? null,
+    },
+  });
+}
+
+export async function updateHolidayAsync(
+  id: string,
+  data: { date?: string | Date; name?: string; description?: string | null }
+) {
+  const updateData: any = {};
+  if (data.name !== undefined) updateData.name = data.name.trim();
+  if (data.description !== undefined) updateData.description = data.description ? data.description.trim() : null;
+  if (data.date !== undefined) {
+    if (typeof data.date === "string") {
+      const clean = data.date.split("T")[0];
+      const parts = clean.split("-").map(Number);
+      updateData.date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0));
+    } else {
+      updateData.date = new Date(Date.UTC(data.date.getFullYear(), data.date.getMonth(), data.date.getDate(), 0, 0, 0, 0));
+    }
+  }
+
+  return await prisma.holiday.update({
+    where: { id },
+    data: updateData,
+  });
+}
+
+export async function deleteHolidayAsync(id: string) {
+  return await prisma.holiday.delete({
+    where: { id },
+  });
+}
+
 function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371e3; // metres
   const phi1 = (lat1 * Math.PI) / 180;
@@ -248,46 +326,61 @@ export async function checkOut(employeeId: string) {
 }
 
 export async function getTodayAttendance(employeeId: string) {
-  const today = startOfDay(new Date());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const record = await prisma.attendanceRecord.findUnique({
-    where: { employeeId_date: { employeeId, date: today } },
+  return prisma.attendanceRecord.findUnique({
+    where: { employeeId_date: { employeeId, date: startOfDay(new Date()) } },
   });
-
-  if (!record) return null;
-
-  const checkIn = await prisma.checkIn.findFirst({
-    where: {
-      employeeId,
-      createdAt: { gte: today, lt: tomorrow },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  return {
-    ...record,
-    latitude: checkIn?.latitude ?? null,
-    longitude: checkIn?.longitude ?? null,
-  };
 }
 
 export async function getMonthlyAttendance(employeeId: string, month: number, year: number) {
   const start = startOfMonth(new Date(year, month - 1));
   const end = endOfMonth(new Date(year, month - 1));
 
-  const records = await prisma.attendanceRecord.findMany({
-    where: { employeeId, date: { gte: start, lte: end } },
-    orderBy: { date: "asc" },
+  const [records, checkIns, holidays] = await Promise.all([
+    prisma.attendanceRecord.findMany({
+      where: { employeeId, date: { gte: start, lte: end } },
+      orderBy: { date: "asc" },
+    }),
+    prisma.checkIn.findMany({
+      where: { employeeId, createdAt: { gte: start, lte: end } },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.holiday.findMany({
+      where: { date: { gte: start, lte: end } },
+      orderBy: { date: "asc" },
+    }),
+  ]);
+
+  // Enrich records with reviewer name if manualOverride / reviewedBy is present
+  const reviewerIds = [...new Set(records.map((r) => r.reviewedBy).filter(Boolean))] as string[];
+  const reviewers = reviewerIds.length > 0
+    ? await prisma.user.findMany({
+        where: { id: { in: reviewerIds } },
+        select: { id: true, fullName: true },
+      })
+    : [];
+  const reviewerMap = new Map(reviewers.map((u) => [u.id, u.fullName]));
+
+  const enrichedRecords = records.map((r) => ({
+    ...r,
+    reviewerName: r.reviewedBy ? reviewerMap.get(r.reviewedBy) || "Admin" : null,
+  }));
+
+  // Build a set of festival holiday date strings (YYYY-MM-DD)
+  const holidayDateSet = new Set<string>();
+  const holidayList = holidays.map((h) => {
+    const d = new Date(h.date);
+    const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    holidayDateSet.add(dateStr);
+    return {
+      id: h.id,
+      date: h.date,
+      dateStr,
+      name: h.name,
+      description: h.description,
+    };
   });
 
-  const checkIns = await prisma.checkIn.findMany({
-    where: { employeeId, createdAt: { gte: start, lte: end } },
-    orderBy: { createdAt: "asc" },
-  });
-
-  const workingDays = getWorkingDays(start, end);
+  const workingDays = getWorkingDays(start, end, holidayDateSet);
   const presentCount = records.filter((record) => record.status === "PRESENT" || record.status === "LATE").length;
   const halfDays = records.filter((record) => record.status === "HALF_DAY").length;
   const absent = Math.max(0, workingDays - presentCount - halfDays);
@@ -295,24 +388,216 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
     ? Math.round(((presentCount + halfDays * 0.5) / workingDays) * 100)
     : 0;
 
-  return { records, checkIns, present: presentCount, absent, halfDays, workingDays, attendancePercent };
+  return {
+    records: enrichedRecords,
+    checkIns,
+    holidays: holidayList,
+    present: presentCount,
+    absent,
+    halfDays,
+    workingDays,
+    attendancePercent,
+  };
+}
+
+export async function applyOrUpdateAttendanceRecord(params: {
+  employeeId: string;
+  date: string | Date;
+  status: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE";
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
+  remark: string;
+  adminUserId: string;
+}) {
+  const { employeeId, date, status, checkInTime, checkOutTime, remark, adminUserId } = params;
+
+  if (!remark || remark.trim().length < 3) {
+    throw new Error("A remark explaining why the employee forgot or why attendance is being updated is required (at least 3 characters).");
+  }
+
+  // Parse date - handles YYYY-MM-DD cleanly in UTC for @db.Date
+  let targetDay: Date;
+  if (typeof date === "string") {
+    const cleanDateStr = date.split("T")[0];
+    const parts = cleanDateStr.split("-").map(Number);
+    if (parts.length === 3) {
+      targetDay = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0));
+    } else {
+      targetDay = new Date(date);
+    }
+  } else {
+    targetDay = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0));
+  }
+
+  let checkInDateTime: Date | null = null;
+  let checkOutDateTime: Date | null = null;
+
+  // Helper to convert time strings (e.g. "10:30", "06:30", "6:30 PM", ISO) to UTC timestamps in IST (+5:30)
+  const parseTimeToUtcDate = (timeInput: string, isCheckOut = false): Date => {
+    const clean = timeInput.trim();
+    if (clean.includes("T")) {
+      return new Date(clean);
+    }
+
+    let isPm = false;
+    let isAm = false;
+    let timeOnly = clean;
+
+    if (/pm/i.test(clean)) {
+      isPm = true;
+      timeOnly = clean.replace(/pm/i, "").trim();
+    } else if (/am/i.test(clean)) {
+      isAm = true;
+      timeOnly = clean.replace(/am/i, "").trim();
+    }
+
+    const parts = timeOnly.split(":").map((p) => parseInt(p, 10));
+    let hours = isNaN(parts[0]) ? 0 : parts[0];
+    const minutes = isNaN(parts[1]) ? 0 : parts[1];
+
+    if (isPm && hours < 12) {
+      hours += 12;
+    } else if (isAm && hours === 12) {
+      hours = 0;
+    } else if (!isPm && !isAm) {
+      // For check-out in work shift, if hour is 1-7 (e.g. 6:30 or 06:30), admin intended afternoon/evening PM (18:30)
+      if (isCheckOut && hours >= 1 && hours <= 7) {
+        hours += 12;
+      }
+    }
+
+    // Convert Indian Standard Time (IST = UTC+5:30) to UTC
+    const totalMinutesIst = hours * 60 + minutes;
+    let totalMinutesUtc = totalMinutesIst - 330; // 5 hours 30 min
+
+    let dayOffset = 0;
+    if (totalMinutesUtc < 0) {
+      totalMinutesUtc += 24 * 60;
+      dayOffset = -1;
+    } else if (totalMinutesUtc >= 24 * 60) {
+      totalMinutesUtc -= 24 * 60;
+      dayOffset = 1;
+    }
+
+    const utcHours = Math.floor(totalMinutesUtc / 60);
+    const utcMinutes = totalMinutesUtc % 60;
+
+    const result = new Date(targetDay);
+    if (dayOffset !== 0) {
+      result.setUTCDate(result.getUTCDate() + dayOffset);
+    }
+    result.setUTCHours(utcHours, utcMinutes, 0, 0);
+    return result;
+  };
+
+  // Save ONLY the times explicitly included by admin - no shift timing fallbacks
+  if (checkInTime && typeof checkInTime === "string" && checkInTime.trim() !== "" && status !== "ABSENT" && status !== "LEAVE") {
+    checkInDateTime = parseTimeToUtcDate(checkInTime, false);
+  }
+
+  if (checkOutTime && typeof checkOutTime === "string" && checkOutTime.trim() !== "" && status !== "ABSENT" && status !== "LEAVE") {
+    checkOutDateTime = parseTimeToUtcDate(checkOutTime, true);
+  }
+
+  let totalMinutes: number | null = null;
+  if (checkInDateTime && checkOutDateTime) {
+    totalMinutes = differenceInMinutes(checkOutDateTime, checkInDateTime);
+  }
+
+  const attendance = await prisma.attendanceRecord.upsert({
+    where: {
+      employeeId_date: {
+        employeeId,
+        date: targetDay,
+      },
+    },
+    create: {
+      employeeId,
+      date: targetDay,
+      status: status as any,
+      checkInTime: checkInDateTime,
+      checkOutTime: checkOutDateTime,
+      totalMinutes,
+      manualOverride: true,
+      overrideReason: remark.trim(),
+      notes: remark.trim(),
+      reviewedBy: adminUserId,
+      flagged: false,
+    },
+    update: {
+      status: status as any,
+      checkInTime: checkInDateTime,
+      checkOutTime: checkOutDateTime,
+      totalMinutes,
+      manualOverride: true,
+      overrideReason: remark.trim(),
+      notes: remark.trim(),
+      reviewedBy: adminUserId,
+      flagged: false,
+    },
+  });
+
+  // If a CheckIn record exists for this day, update its override status
+  const nextDay = new Date(targetDay.getTime() + 24 * 60 * 60 * 1000);
+  const existingCheckIn = await prisma.checkIn.findFirst({
+    where: {
+      employeeId,
+      createdAt: {
+        gte: targetDay,
+        lt: nextDay,
+      },
+    },
+  });
+
+  if (existingCheckIn) {
+    await prisma.checkIn.update({
+      where: { id: existingCheckIn.id },
+      data: {
+        manualOverride: true,
+        overrideReason: remark.trim(),
+        reviewedBy: adminUserId,
+        flagged: false,
+        status: status === "ABSENT" || status === "LEAVE" ? "CHECKED_OUT" : "CHECKED_IN",
+      },
+    }).catch(() => {});
+  } else if (status !== "ABSENT" && status !== "LEAVE") {
+    await prisma.checkIn.create({
+      data: {
+        employeeId,
+        status: "CHECKED_IN",
+        manualOverride: true,
+        overrideReason: remark.trim(),
+        reviewedBy: adminUserId,
+        createdAt: checkInDateTime || targetDay,
+      },
+    }).catch(() => {});
+  }
+
+  // Recalculate monthly performance for that employee
+  const targetMonth = targetDay.getMonth() + 1;
+  const targetYear = targetDay.getFullYear();
+  const performance = await recalculateMonthlyPerformance(employeeId, targetMonth, targetYear);
+
+  return { attendance, performance };
 }
 
 
 /**
  * Counts working days between start and end (inclusive), up to today.
- * Company policy: 6-day work week (Monday–Saturday). Only Sunday is a holiday.
- * Sunday = 0 in JS Date.getDay(), so we skip only day === 0.
+ * Company policy: 6-day work week (Monday–Saturday).
+ * Mandatory weekly holiday: Every Sunday is excluded.
+ * Declared festival holidays: Any date matching a configured festival holiday is excluded.
  */
-function getWorkingDays(start: Date, end: Date) {
+function getWorkingDays(start: Date, end: Date, holidayDateSet?: Set<string>) {
   let count = 0;
   const current = new Date(start);
   const today = new Date();
 
   while (current <= end && current <= today) {
     const day = current.getDay();
-    // Skip only Sunday (0). Saturday (6) is a working day.
-    if (day !== 0) {
+    const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+    // Skip Sunday (day === 0) and any declared festival holidays
+    if (day !== 0 && (!holidayDateSet || !holidayDateSet.has(dateStr))) {
       count += 1;
     }
     current.setDate(current.getDate() + 1);

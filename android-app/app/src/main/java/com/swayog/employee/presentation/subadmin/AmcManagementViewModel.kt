@@ -164,6 +164,20 @@ class AmcManagementViewModel @Inject constructor(
             }
         }
     }
+
+    fun deleteAmcVisit(visitId: String, onComplete: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val result = customerRepository.deleteAmcVisit(visitId)
+                onComplete(result)
+                if (result.isSuccess) {
+                    loadAmcVisits(currentCustomerId)
+                }
+            } catch (e: Exception) {
+                onComplete(Result.failure(e))
+            }
+        }
+    }
     
     fun markAmcVisitDone(visitId: String, visitNotes: String?, beforeImageUrl: String?, afterImageUrl: String?, onComplete: (Result<Unit>) -> Unit) {
         viewModelScope.launch {

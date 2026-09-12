@@ -1,7 +1,8 @@
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isSubAdminJobRole } from "@/lib/auth";
+import { hasSectionAccess } from "@/lib/section-permissions";
 import {
   LayoutDashboard,
   ClipboardList,
@@ -21,14 +22,24 @@ import {
 import { Button } from "../ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "../ui/sheet";
 import { Avatar, AvatarFallback } from "../ui/avatar";
+import { SidebarLayout } from "../SidebarLayout";
 
 interface SubAdminLayoutProps {
   children: ReactNode;
 }
 
 export function SubAdminLayout({ children }: SubAdminLayoutProps) {
+  const { user } = useAuth();
+
+  // If the logged-in user is an employee/intern/team_lead (not a dedicated sub_admin),
+  // render within their standard SidebarLayout so they stay on the exact same place
+  // with their authentic role badge, regular employee links, and only assigned permissions.
+  if (user && user.role !== "sub_admin" && !isSubAdminJobRole(user.jobRole)) {
+    return <SidebarLayout>{children}</SidebarLayout>;
+  }
+
   const [location] = useLocation();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const [, setLocation] = useLocation();
 
   const [tourOpen, setTourOpen] = useState(false);
@@ -71,7 +82,19 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
 
   if (!user) return null;
 
-  const navItems = [
+  const isStandardEmployee = user.role === "employee" && !isSubAdminJobRole(user.jobRole);
+
+  const subAdminSectionMap: Record<string, string> = {
+    "/subadmin/dashboard": "service_dashboard",
+    "/subadmin/partner-leads": "service_partner_leads",
+    "/subadmin/customers": "service_customers",
+    "/subadmin/complaints": "service_complaints",
+    "/subadmin/amc-management": "service_amc",
+    "/subadmin/employees": "service_employees",
+    "/subadmin/calendar": "service_calendar",
+  };
+
+  const rawSubAdminItems = [
     { name: "Dashboard", href: "/subadmin/dashboard", icon: LayoutDashboard },
     { name: "Partners Lead", href: "/subadmin/partner-leads", icon: Users },
     { name: "Customers", href: "/subadmin/customers", icon: Users },
@@ -84,6 +107,17 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
     { name: "Daily Commit", href: "/subadmin/daily-commit", icon: FileText },
     { name: "Settings", href: "/subadmin/settings", icon: Settings },
   ];
+
+  const navItems = isStandardEmployee
+    ? [
+        { name: "← Employee Dashboard", href: "/employee/dashboard", icon: LayoutDashboard },
+        { name: "My Tasks", href: "/employee/tasks", icon: ClipboardList },
+        ...rawSubAdminItems.filter((item) => {
+          const secId = subAdminSectionMap[item.href];
+          return secId ? hasSectionAccess(user, secId) : true;
+        }),
+      ]
+    : rawSubAdminItems;
 
 
   const handleLogout = () => {
