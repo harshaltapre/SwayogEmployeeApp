@@ -34,8 +34,13 @@ class ProfileViewModel @Inject constructor(
         initialValue = null
     )
 
-    private val _profilePhotoCacheKey = MutableStateFlow(0L)
-    val profilePhotoCacheKey: StateFlow<Long> = _profilePhotoCacheKey.asStateFlow()
+    /** Shared cache-busting key from DataStore — bumped after every successful upload so
+     *  both ProfileScreen and SettingsScreen reload the image via Coil simultaneously. */
+    val profilePhotoCacheKey: StateFlow<Long> = dataStoreManager.profilePhotoCacheKey.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0L
+    )
 
     private val _uploadingPhoto = MutableStateFlow(false)
     val uploadingPhoto: StateFlow<Boolean> = _uploadingPhoto.asStateFlow()
@@ -73,7 +78,7 @@ class ProfileViewModel @Inject constructor(
 
             val result = authRepository.uploadProfilePhotoFile(file)
             if (result.isSuccess) {
-                _profilePhotoCacheKey.value = System.currentTimeMillis()
+                dataStoreManager.bumpPhotoCacheKey()
                 authRepository.getCurrentUser()
             } else {
                 _uploadError.value = result.exceptionOrNull()?.message ?: "Failed to upload photo"

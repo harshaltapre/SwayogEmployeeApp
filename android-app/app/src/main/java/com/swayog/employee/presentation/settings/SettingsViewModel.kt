@@ -155,10 +155,13 @@ class SettingsViewModel @Inject constructor(
     private val _uploadError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val uploadError: StateFlow<String?> = _uploadError
 
-    // Cache-busting key: incremented (as current timestamp) after every successful photo upload.
-    // The UI passes this to Coil's ImageRequest so stale cached images are discarded immediately.
-    private val _profilePhotoCacheKey = kotlinx.coroutines.flow.MutableStateFlow(0L)
-    val profilePhotoCacheKey: StateFlow<Long> = _profilePhotoCacheKey
+    // Cache-busting key: shared via DataStore so every active screen (ProfileScreen,
+    // SettingsScreen, etc.) refreshes its Coil image after any successful photo upload.
+    val profilePhotoCacheKey: StateFlow<Long> = dataStoreManager.profilePhotoCacheKey.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0L
+    )
 
     fun syncWithServer() {
         viewModelScope.launch {
@@ -255,9 +258,10 @@ class SettingsViewModel @Inject constructor(
 
             val result = authRepository.uploadProfilePhotoFile(file)
             if (result.isSuccess) {
-                // Bump cache key so Coil discards its cached (stale) image immediately
-                _profilePhotoCacheKey.value = System.currentTimeMillis()
-                android.util.Log.d("SETTINGS_VM", "Photo file upload succeeded — bumping cache key to ${_profilePhotoCacheKey.value}")
+                // Bump the shared DataStore cache key so ALL active screens (ProfileScreen,
+                // SettingsScreen, etc.) discard Coil's stale image immediately.
+                dataStoreManager.bumpPhotoCacheKey()
+                android.util.Log.d("SETTINGS_VM", "Photo file upload succeeded — bumped shared cache key")
             } else {
                 _uploadError.value = result.exceptionOrNull()?.message ?: "Failed to upload photo"
                 android.util.Log.e("SETTINGS_VM", "Photo file upload failed: ${result.exceptionOrNull()?.message}")
