@@ -376,11 +376,13 @@ export async function getInternalUser(actorRole: InternalUserRole, targetUserId:
     reportingManagerId: true,
     isActive: true,
     createdAt: true,
+    permissions: true,
     employeeProfile: {
       select: {
         zone: true,
         jobRole: true,
         monthlySalaryInr: true,
+        permissions: true,
       },
     },
     partnerProfile: {
@@ -410,7 +412,14 @@ export async function getInternalUser(actorRole: InternalUserRole, targetUserId:
     throw new ApiError(403, "You are not allowed to view this user");
   }
 
-  let enrichedUser: any = user;
+  const effectivePermissions = Array.isArray(user.permissions) && user.permissions.length > 0
+    ? user.permissions
+    : (Array.isArray(user.employeeProfile?.permissions) ? user.employeeProfile.permissions : []);
+
+  let enrichedUser: any = {
+    ...user,
+    permissions: effectivePermissions,
+  };
 
   // Enrich with stats for employees
   if (user.role === ROLE.EMPLOYEE) {
@@ -678,6 +687,9 @@ export async function updateInternalUser(
   if (input.employeeCode !== undefined) {
     userData.employeeCode = input.employeeCode;
   }
+  if (Array.isArray(input.permissions)) {
+    userData.permissions = input.permissions;
+  }
 
   if (Object.keys(userData).length > 0) {
     await prisma.user.update({
@@ -712,6 +724,9 @@ export async function updateInternalUser(
     }
     if (input.monthlySalaryInr !== undefined) {
       employeeData.monthlySalaryInr = input.monthlySalaryInr;
+    }
+    if (Array.isArray(input.permissions)) {
+      employeeData.permissions = input.permissions;
     }
 
     await prisma.employeeProfile.upsert({

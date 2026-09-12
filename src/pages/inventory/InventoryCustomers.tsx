@@ -8,6 +8,7 @@ import {
   useListDispatchedMaterials,
   useUpdateDispatchRecord,
   useDeleteDispatchRecord,
+  useListApartments,
   type CustomerRecord,
   type InventoryRecord,
   type DispatchedMaterialRecord
@@ -43,7 +44,8 @@ import {
   Check,
   Boxes,
   Layers,
-  Filter
+  Filter,
+  Building2
 } from "lucide-react";
 import { 
   Dialog, 
@@ -99,6 +101,13 @@ export default function InventoryCustomers() {
   const { data: customers, isLoading: isLoadingCustomers } = useListCustomers({ search: search || undefined });
   const { data: inventory } = useListInventory();
   const { data: allDispatches } = useListDispatchedMaterials();
+  const { data: apartments } = useListApartments();
+
+  // Group customers: individual (no apartment) vs apartment-grouped
+  const individualCustomers = (customers || []).filter(c => !c.apartmentId);
+  const apartmentsToDisplay = (apartments || []).filter(apt => {
+    return (customers || []).some(c => c.apartmentId === apt.id);
+  });
 
   const createDispatch = useCreateDispatchRecord();
   const updateDispatch = useUpdateDispatchRecord();
@@ -324,74 +333,206 @@ export default function InventoryCustomers() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  customers?.map((customer) => {
-                    const customerDispatchesCount = allDispatches?.filter(d => d.customerId === customer.id).length ?? 0;
-                    return (
-                      <TableRow key={customer.id} className="hover:bg-slate-50 transition-colors">
-                        <TableCell>
-                          <div className="font-medium text-slate-900">{customer.name}</div>
-                          <div className="text-xs text-slate-500 mt-0.5 font-mono">{customer.customerCode || `CUST-${String(customer.id).padStart(4, '0')}`}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center text-sm text-slate-700">
-                            <MapPin className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
-                            {customer.city}
-                          </div>
-                          <div className="text-xs text-slate-500 truncate max-w-[200px] mt-0.5">{customer.address}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center text-xs text-slate-600">
-                            <Phone className="w-3 h-3 mr-1.5 text-slate-400" />
-                            {customer.phone}
-                          </div>
-                          <div className="flex items-center text-xs text-slate-500 mt-1">
-                            <Mail className="w-3 h-3 mr-1.5 text-slate-400" />
-                            {customer.email}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {customerDispatchesCount > 0 ? (
-                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 gap-1 font-medium">
-                              <ArrowRightLeft size={10} /> {customerDispatchesCount} Item{customerDispatchesCount > 1 ? 's' : ''} Dispatched
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-slate-400 italic">No items dispatched</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            {canManage && (
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="h-8 text-xs gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50"
-                                onClick={() => handleOpenHistory(customer)}
-                              >
-                                <RotateCcw size={14} /> Return / Edit
-                              </Button>
-                            )}
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="h-8 text-xs gap-1.5"
-                              onClick={() => handleOpenHistory(customer)}
-                            >
-                              <History size={14} /> History
-                            </Button>
-                            {canManage && (
-                              <Button 
-                                size="sm" 
-                                className="h-8 text-xs gap-1.5 bg-slate-900 text-white"
-                                onClick={() => handleOpenDispatch(customer)}
-                              >
-                                <Plus size={14} /> Add Dispatch
-                              </Button>
-                            )}
+                  <>
+                    {/* Individual customers (not in any apartment) */}
+                    {individualCustomers.length > 0 && apartmentsToDisplay.length > 0 && (
+                      <TableRow className="bg-slate-100">
+                        <TableCell colSpan={5} className="py-2 px-4">
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            <MapPin size={13} className="text-slate-400" />
+                            Individual / Unlinked Customers ({individualCustomers.length})
                           </div>
                         </TableCell>
                       </TableRow>
-                    );
-                  })
+                    )}
+                    {individualCustomers.map((customer) => {
+                      const customerDispatchesCount = allDispatches?.filter(d => d.customerId === customer.id).length ?? 0;
+                      return (
+                        <TableRow key={customer.id} className="hover:bg-slate-50 transition-colors">
+                          <TableCell>
+                            <div className="font-medium text-slate-900">{customer.name}</div>
+                            <div className="text-xs text-slate-500 mt-0.5 font-mono">{customer.customerCode || `CUST-${String(customer.id).padStart(4, '0')}`}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center text-sm text-slate-700">
+                              <MapPin className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
+                              {customer.city}
+                            </div>
+                            <div className="text-xs text-slate-500 truncate max-w-[200px] mt-0.5">{customer.address}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center text-xs text-slate-600">
+                              <Phone className="w-3 h-3 mr-1.5 text-slate-400" />
+                              {customer.phone}
+                            </div>
+                            <div className="flex items-center text-xs text-slate-500 mt-1">
+                              <Mail className="w-3 h-3 mr-1.5 text-slate-400" />
+                              {customer.email}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {customerDispatchesCount > 0 ? (
+                              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 gap-1 font-medium">
+                                <ArrowRightLeft size={10} /> {customerDispatchesCount} Item{customerDispatchesCount > 1 ? 's' : ''} Dispatched
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic">No items dispatched</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              {canManage && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-8 text-xs gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50"
+                                  onClick={() => handleOpenHistory(customer)}
+                                >
+                                  <RotateCcw size={14} /> Return / Edit
+                                </Button>
+                              )}
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-8 text-xs gap-1.5"
+                                onClick={() => handleOpenHistory(customer)}
+                              >
+                                <History size={14} /> History
+                              </Button>
+                              {canManage && (
+                                <Button 
+                                  size="sm" 
+                                  className="h-8 text-xs gap-1.5 bg-slate-900 text-white"
+                                  onClick={() => handleOpenDispatch(customer)}
+                                >
+                                  <Plus size={14} /> Add Dispatch
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+
+                    {/* Apartment-grouped customers */}
+                    {apartmentsToDisplay.map((apt) => {
+                      const aptCustomers = (customers || []).filter(c => c.apartmentId === apt.id);
+                      const aptDispatchCount = aptCustomers.reduce((acc, c) => {
+                        return acc + (allDispatches?.filter(d => d.customerId === c.id).length ?? 0);
+                      }, 0);
+                      return (
+                        <>
+                          {/* Apartment Header Row */}
+                          <TableRow key={`apt-header-${apt.id}`} className="bg-indigo-50 border-l-4 border-l-indigo-500 hover:bg-indigo-50">
+                            <TableCell colSpan={5} className="py-3 px-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-1.5 bg-indigo-100 rounded-lg">
+                                    <Building2 size={15} className="text-indigo-600" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-sm text-indigo-900">{apt.name}</span>
+                                      <span className="text-[10px] font-bold uppercase bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">
+                                        {aptCustomers.length} {aptCustomers.length === 1 ? "Customer" : "Customers"}
+                                      </span>
+                                      {aptDispatchCount > 0 && (
+                                        <span className="text-[10px] font-bold uppercase bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
+                                          {aptDispatchCount} Dispatch{aptDispatchCount > 1 ? "es" : ""}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1 text-xs text-indigo-500 mt-0.5">
+                                      <MapPin size={10} />
+                                      <span>{apt.address}, {apt.city}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+
+                          {/* Customers in this apartment */}
+                          {aptCustomers.length === 0 ? (
+                            <TableRow key={`apt-empty-${apt.id}`} className="bg-indigo-50/40">
+                              <TableCell colSpan={5} className="py-4 text-center text-xs text-slate-400 italic pl-12">
+                                No customers found in this apartment matching your search.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            aptCustomers.map((customer) => {
+                              const customerDispatchesCount = allDispatches?.filter(d => d.customerId === customer.id).length ?? 0;
+                              return (
+                                <TableRow key={customer.id} className="hover:bg-indigo-50/30 transition-colors border-l-4 border-l-indigo-200">
+                                  <TableCell className="pl-8">
+                                    <div className="font-medium text-slate-900">{customer.name}</div>
+                                    <div className="text-xs text-slate-500 mt-0.5 font-mono">{customer.customerCode || `CUST-${String(customer.id).padStart(4, '0')}`}</div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center text-sm text-slate-700">
+                                      <MapPin className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
+                                      {customer.city}
+                                    </div>
+                                    <div className="text-xs text-slate-500 truncate max-w-[200px] mt-0.5">{customer.address}</div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center text-xs text-slate-600">
+                                      <Phone className="w-3 h-3 mr-1.5 text-slate-400" />
+                                      {customer.phone}
+                                    </div>
+                                    <div className="flex items-center text-xs text-slate-500 mt-1">
+                                      <Mail className="w-3 h-3 mr-1.5 text-slate-400" />
+                                      {customer.email}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    {customerDispatchesCount > 0 ? (
+                                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 gap-1 font-medium">
+                                        <ArrowRightLeft size={10} /> {customerDispatchesCount} Item{customerDispatchesCount > 1 ? 's' : ''} Dispatched
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-xs text-slate-400 italic">No items dispatched</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex justify-end gap-2">
+                                      {canManage && (
+                                        <Button 
+                                          variant="outline" 
+                                          size="sm" 
+                                          className="h-8 text-xs gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50"
+                                          onClick={() => handleOpenHistory(customer)}
+                                        >
+                                          <RotateCcw size={14} /> Return / Edit
+                                        </Button>
+                                      )}
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        className="h-8 text-xs gap-1.5"
+                                        onClick={() => handleOpenHistory(customer)}
+                                      >
+                                        <History size={14} /> History
+                                      </Button>
+                                      {canManage && (
+                                        <Button 
+                                          size="sm" 
+                                          className="h-8 text-xs gap-1.5 bg-slate-900 text-white"
+                                          onClick={() => handleOpenDispatch(customer)}
+                                        >
+                                          <Plus size={14} /> Add Dispatch
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })
+                          )}
+                        </>
+                      );
+                    })}
+                  </>
                 )}
               </TableBody>
             </Table>
@@ -416,6 +557,11 @@ export default function InventoryCustomers() {
                   Dispatched to: <span className="font-semibold text-slate-900">{selectedCustomer?.name}</span>
                   {selectedCustomer?.customerCode && <span className="font-mono ml-1.5 text-slate-500">({selectedCustomer.customerCode})</span>}
                   {selectedCustomer?.city && <span className="ml-2 text-slate-500">• {selectedCustomer.city}</span>}
+                  {selectedCustomer?.apartment && (
+                    <span className="ml-2 inline-flex items-center gap-1 bg-indigo-50 text-indigo-600 border border-indigo-100 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                      <Building2 size={10} /> {selectedCustomer.apartment.name}
+                    </span>
+                  )}
                 </DialogDescription>
               </div>
             </div>

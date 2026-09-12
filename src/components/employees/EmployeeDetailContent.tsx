@@ -1273,6 +1273,10 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                           <tbody className="divide-y divide-slate-100 bg-white text-xs text-slate-600">
                             {attendanceData.records.map((rec: any) => {
                               const dateObj = new Date(rec.date);
+                              const dateKey = `${dateObj.getUTCFullYear()}-${String(dateObj.getUTCMonth() + 1).padStart(2, "0")}-${String(dateObj.getUTCDate()).padStart(2, "0")}`;
+                              const isSunday = dateObj.getUTCDay() === 0;
+                              const matchedHoliday = attendanceData.holidays?.find((h: any) => (h.dateStr || h.date?.slice(0, 10)) === dateKey);
+
                               const matchingCheckin = attendanceData.checkIns?.find((ci: any) => {
                                 const ciDate = new Date(ci.createdAt);
                                 return ciDate.getUTCDate() === dateObj.getUTCDate() &&
@@ -1295,14 +1299,25 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                                     {rec.totalMinutes ? `${Math.floor(rec.totalMinutes / 60)}h ${rec.totalMinutes % 60}m` : "—"}
                                   </td>
                                   <td className="px-4 py-3">
-                                    <Badge className={
-                                      rec.status === "PRESENT" ? "bg-green-50 text-green-700 border-green-200" :
-                                      rec.status === "LATE" ? "bg-amber-50 text-amber-700 border-amber-200" :
-                                      rec.status === "HALF_DAY" ? "bg-purple-50 text-purple-700 border-purple-200" :
-                                      "bg-red-50 text-red-700 border-red-200"
-                                    }>
-                                      {rec.status}
-                                    </Badge>
+                                    {matchedHoliday && !rec.checkInTime ? (
+                                      <Badge className="bg-purple-50 text-purple-700 border-purple-200">
+                                        🎉 Holiday ({matchedHoliday.name})
+                                      </Badge>
+                                    ) : isSunday && !rec.checkInTime ? (
+                                      <Badge className="bg-amber-50 text-amber-700 border-amber-200">
+                                        🏖️ Sunday Holiday
+                                      </Badge>
+                                    ) : (
+                                      <Badge className={
+                                        rec.status === "PRESENT" ? "bg-green-50 text-green-700 border-green-200" :
+                                        rec.status === "LATE" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                        rec.status === "HALF_DAY" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                        rec.status === "HOLIDAY" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                        "bg-red-50 text-red-700 border-red-200"
+                                      }>
+                                        {rec.status === "HOLIDAY" ? "Holiday" : rec.status}
+                                      </Badge>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3">
                                     <div className="flex items-center gap-3">

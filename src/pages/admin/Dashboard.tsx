@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { SidebarLayout } from "@/components/SidebarLayout";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
@@ -43,6 +43,7 @@ import {
 } from "@/lib/api-client";
 import { Users, Zap, Wrench, IndianRupee, AlertTriangle, Package, MapPin, TrendingUp, Calendar, ChevronRight, CheckCircle2, RefreshCw } from "lucide-react";
 import { usePollWithVisibility, useCacheInvalidation } from "@/lib/data-sync";
+import { subscribeCustomerDataChanged } from "@/lib/entity-sync";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -157,6 +158,13 @@ export default function AdminDashboard() {
   const { data: recentActivity, refetch: refetchActivity } = useGetRecentActivity({ query: { queryKey: getGetRecentActivityQueryKey() } });
   // (customers hook moved above useMemo — see line ~76)
   const { data: complaintsData, refetch: refetchServiceComplaints } = useGetAdminComplaints();
+
+  useEffect(() => {
+    return subscribeCustomerDataChanged(() => {
+      refetchCustomers();
+      refetchSummary();
+    });
+  }, [refetchCustomers, refetchSummary]);
 
   // Enable auto-sync with polling
   usePollWithVisibility("admin-dashboard", 30000);

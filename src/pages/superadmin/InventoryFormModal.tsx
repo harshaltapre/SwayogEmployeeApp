@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { X, Package, Tag, Layers, BarChart, Truck, IndianRupee, Calendar, Building2, Scale } from "lucide-react";
 import { C } from "./shared";
 import { DCR_PANEL_COMPANIES, INVERTER_COMPANIES, STOCK_UNITS } from "../admin/AdminInventoryFormModal";
@@ -139,9 +139,37 @@ interface InventoryFormModalProps {
   onAdd: (item: any) => void;
 }
 
+const SUPPLIER_STORAGE_KEY = "swayog_saved_suppliers";
+
+function getSavedSuppliers(): string[] {
+  try {
+    const raw = localStorage.getItem(SUPPLIER_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSupplier(name: string) {
+  if (!name.trim()) return;
+  try {
+    const raw = localStorage.getItem(SUPPLIER_STORAGE_KEY);
+    const saved: string[] = raw ? JSON.parse(raw) : [];
+    if (!saved.includes(name.trim())) {
+      saved.unshift(name.trim());
+      localStorage.setItem(SUPPLIER_STORAGE_KEY, JSON.stringify(saved.slice(0, 50)));
+    }
+  } catch {}
+}
+
 export default function InventoryFormModal({ isOpen, onClose, onAdd }: InventoryFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCustomName, setIsCustomName] = useState(false);
+  const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([]);
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
+  const [savedSuppliers, setSavedSuppliers] = useState<string[]>(getSavedSuppliers);
+  const supplierInputRef = useRef<HTMLInputElement>(null);
+  const supplierDropdownRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState<{
     sku: string;
     name: string;
@@ -173,6 +201,8 @@ export default function InventoryFormModal({ isOpen, onClose, onAdd }: Inventory
   React.useEffect(() => {
     if (isOpen) {
       setIsCustomName(false);
+      setShowSupplierDropdown(false);
+      setSavedSuppliers(getSavedSuppliers());
       setFormData({
         sku: "",
         name: "",
@@ -189,6 +219,21 @@ export default function InventoryFormModal({ isOpen, onClose, onAdd }: Inventory
       });
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        supplierDropdownRef.current &&
+        !supplierDropdownRef.current.contains(e.target as Node) &&
+        supplierInputRef.current &&
+        !supplierInputRef.current.contains(e.target as Node)
+      ) {
+        setShowSupplierDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -223,6 +268,12 @@ export default function InventoryFormModal({ isOpen, onClose, onAdd }: Inventory
         entryDate: formData.entryDate ? new Date(formData.entryDate).toISOString() : new Date().toISOString(),
         supplier: formData.supplier ? formData.supplier.trim() : undefined,
       };
+
+      // Save supplier name for future autocomplete suggestions
+      if (formData.supplier.trim()) {
+        saveSupplier(formData.supplier.trim());
+        setSavedSuppliers(getSavedSuppliers());
+      }
 
       await onAdd(payload);
       onClose();
@@ -531,15 +582,72 @@ export default function InventoryFormModal({ isOpen, onClose, onAdd }: Inventory
               />
             </div>
 
-            <div>
+            <div style={{ position: "relative" }}>
               <label style={labelStyle}><Truck size={14} /> Supplier</label>
               <input
+                ref={supplierInputRef}
                 required
                 style={inputStyle}
                 placeholder="e.g. Adani Solar, Waaree, Swayog"
                 value={formData.supplier}
-                onChange={e => setFormData({ ...formData, supplier: e.target.value })}
+                autoComplete="off"
+                onChange={e => {
+                  const val = e.target.value;
+                  setFormData({ ...formData, supplier: val });
+                  if (val.trim()) {
+                    const filtered = savedSuppliers.filter(s =>
+                      s.toLowerCase().includes(val.toLowerCase()) && s.toLowerCase() !== val.toLowerCase()
+                    );
+                    setSupplierSuggestions(filtered);
+                    setShowSupplierDropdown(filtered.length > 0);
+                  } else {
+                    setSupplierSuggestions(savedSuppliers);
+                    setShowSupplierDropdown(true);
+                  }
+                }}
+                onFocus={() => {
+                  const val = formData.supplier.trim();
+                  const filtered = val
+                    ? savedSuppliers.filter(s => s.toLowerCase().includes(val.toLowerCase()) && s.toLowerCase() !== val.toLowerCase())
+                    : savedSuppliers;
+                  setSupplierSuggestions(filtered);
+                  setShowSupplierDropdown(filtered.length > 0);
+                }}
               />
+              {showSupplierDropdown && supplierSuggestions.length > 0 && (
+                <div
+                  ref={supplierDropdownRef}
+                  style={{
+                    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 9999,
+                    background: "#fff", borderRadius: 10, marginTop: 4,
+                    boxShadow: "0 8px 24px rgba(15,23,42,0.12), 0 2px 6px rgba(15,23,42,0.06)",
+                    border: "1px solid #E2E8F0", maxHeight: 200, overflowY: "auto"
+                  }}
+                >
+                  {supplierSuggestions.map((s, i) => (
+                    <div
+                      key={i}
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        setFormData({ ...formData, supplier: s });
+                        setShowSupplierDropdown(false);
+                      }}
+                      style={{
+                        padding: "10px 14px", cursor: "pointer", fontSize: 13,
+                        display: "flex", alignItems: "center", gap: 8,
+                        color: "#1E293B", fontWeight: 500,
+                        borderBottom: i < supplierSuggestions.length - 1 ? "1px solid #F1F5F9" : "none",
+                        transition: "background 0.12s"
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "#F8FAFC")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <span style={{ color: "#94A3B8", flexShrink: 0 }}>🏭</span>
+                      {s}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

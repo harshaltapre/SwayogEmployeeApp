@@ -210,3 +210,101 @@ export const useAdminCheckIns = () => useQuery({
   queryFn: () => apiClient.get("/attendance/admin/checkins").then((r) => r.data.checkins),
   refetchInterval: 30_000,
 });
+
+export interface ApplyAttendancePayload {
+  employeeId: string;
+  date: string; // "YYYY-MM-DD"
+  status: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE";
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
+  remark: string;
+}
+
+/** Admin/SuperAdmin: manually apply or update attendance with remark */
+export const useApplyAttendance = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ApplyAttendancePayload) =>
+      apiClient.post("/attendance/admin/apply", data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "team-performance"] });
+      qc.invalidateQueries({ queryKey: ["admin", "employee-attendance"] });
+      qc.invalidateQueries({ queryKey: ["admin", "employee-performance"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["performance"] });
+    },
+  });
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FESTIVAL HOLIDAY HOOKS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface HolidayRecord {
+  id: string;
+  date: string;
+  dateStr: string;
+  name: string;
+  description?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Get list of declared festival holidays */
+export const useHolidays = (year?: number, month?: number) => useQuery({
+  queryKey: ["holidays", year, month],
+  queryFn: () => {
+    let url = "/attendance/holidays";
+    const params = new URLSearchParams();
+    if (year) params.append("year", String(year));
+    if (month) params.append("month", String(month));
+    const qs = params.toString();
+    if (qs) url += `?${qs}`;
+    return apiClient.get(url).then((r) => (r.data.holidays || []) as HolidayRecord[]);
+  },
+  staleTime: 30_000,
+});
+
+/** Admin/SuperAdmin: create a festival holiday */
+export const useCreateHoliday = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { date: string; name: string; description?: string }) =>
+      apiClient.post("/attendance/holidays", data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["holidays"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["admin"] });
+    },
+  });
+};
+
+/** Admin/SuperAdmin: update a festival holiday */
+export const useUpdateHoliday = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; date?: string; name?: string; description?: string }) =>
+      apiClient.patch(`/attendance/holidays/${id}`, data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["holidays"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["admin"] });
+    },
+  });
+};
+
+/** Admin/SuperAdmin: delete a festival holiday */
+export const useDeleteHoliday = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient.delete(`/attendance/holidays/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["holidays"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["admin"] });
+    },
+  });
+};
+

@@ -3,6 +3,7 @@ import { SidebarLayout } from "@/components/SidebarLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { useCreateCustomer, useListCustomers, getEffectiveApiBaseUrl } from "@/lib/api-client";
 import { usePollWithVisibility } from "@/lib/data-sync";
+import { subscribeCustomerDataChanged } from "@/lib/entity-sync";
 import { ExcelImportDialog } from "@/components/ExcelImportDialog";
 import { useBulkCustomerImport } from "@/hooks/use-bulk-import";
 import { useAuth } from "@/lib/auth";
@@ -224,6 +225,12 @@ export default function AdminCustomers() {
     amcStatus: amcStatus === "all" ? undefined : amcStatus,
   });
   const customers = customersData ?? [];
+
+  useEffect(() => {
+    return subscribeCustomerDataChanged(() => {
+      refetchCustomers();
+    });
+  }, [refetchCustomers]);
 
 
   const handleManualRefresh = async () => {

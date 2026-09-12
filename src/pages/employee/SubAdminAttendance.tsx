@@ -27,6 +27,9 @@ import {
   Shield,
   Eye,
   Scan,
+  Sun,
+  PartyPopper,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCheckIn, useCheckOut, useAttendanceRules, useFaceEnrollmentStatus, useMonthlyAttendance, useTodayAttendance } from "@/hooks/useAttendance";
@@ -44,7 +47,7 @@ export function resolveStaticUrl(url: string | null | undefined): string {
 
 
 // ───── Types ─────────────────────────────────────────────────────────────────
-type AttendanceStatus = "present" | "absent" | "late" | "leave" | "half-day";
+type AttendanceStatus = "present" | "absent" | "late" | "leave" | "half-day" | "sunday-holiday" | "festival-holiday";
 type BreakType = "short" | "lunch";
 
 interface Break {
@@ -184,21 +187,79 @@ const statusConfig: Record<AttendanceStatus, { label: string; color: string; dot
   absent: { label: "Absent", color: "bg-red-100 text-red-700 border-red-200", dot: "bg-red-500" },
   leave: { label: "Leave", color: "bg-blue-100 text-blue-700 border-blue-200", dot: "bg-blue-500" },
   "half-day": { label: "Half Day", color: "bg-purple-100 text-purple-700 border-purple-200", dot: "bg-purple-500" },
+  "sunday-holiday": { label: "Sunday Holiday", color: "bg-amber-100 text-amber-800 border-amber-200", dot: "bg-amber-500" },
+  "festival-holiday": { label: "Festival Holiday", color: "bg-rose-100 text-rose-800 border-rose-200", dot: "bg-rose-500" },
 };
 
 // ───── Calendar cell ──────────────────────────────────────────────────────────
-function CalendarCell({ record, day, isToday }: { record?: AttendanceRecord; day: number; isToday: boolean }) {
-  const cfg = record ? statusConfig[record.status] : null;
+function CalendarCell({
+  record,
+  day,
+  isToday,
+  isSunday,
+  festivalHolidayName,
+}: {
+  record?: AttendanceRecord;
+  day: number;
+  isToday: boolean;
+  isSunday: boolean;
+  festivalHolidayName?: string;
+}) {
+  let effectiveStatus: AttendanceStatus | null = record ? record.status : null;
+  if (!effectiveStatus) {
+    if (festivalHolidayName) effectiveStatus = "festival-holiday";
+    else if (isSunday) effectiveStatus = "sunday-holiday";
+  }
+
+  const cfg = effectiveStatus ? statusConfig[effectiveStatus] : null;
+
   return (
     <div
+      title={
+        festivalHolidayName
+          ? `🎉 Festival Holiday: ${festivalHolidayName}`
+          : isSunday
+          ? "🏖️ Mandatory Sunday Holiday"
+          : effectiveStatus
+          ? statusConfig[effectiveStatus].label
+          : undefined
+      }
       className={cn(
-        "relative flex flex-col items-center justify-start p-1 rounded-lg text-center min-h-[52px] transition-all",
-        isToday && "ring-2 ring-orange-400 ring-offset-1",
-        record ? "hover:scale-105 cursor-default" : "opacity-40"
+        "relative flex flex-col items-center justify-start p-1 rounded-lg text-center min-h-[54px] transition-all",
+        isToday && "ring-2 ring-orange-500 ring-offset-1 font-bold",
+        festivalHolidayName
+          ? "bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/30"
+          : isSunday
+          ? "bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30"
+          : record
+          ? "hover:scale-105 cursor-default bg-slate-50/50 dark:bg-slate-800/30"
+          : "opacity-40"
       )}
     >
-      <span className={cn("text-xs font-semibold mb-1", isToday ? "text-orange-600" : "text-slate-700")}>{day}</span>
-      {cfg && <span className={cn("w-2 h-2 rounded-full mx-auto", cfg.dot)} />}
+      <span
+        className={cn(
+          "text-xs font-semibold mb-0.5",
+          isToday
+            ? "text-orange-600 dark:text-orange-400 font-extrabold"
+            : festivalHolidayName
+            ? "text-rose-700 dark:text-rose-400 font-bold"
+            : isSunday
+            ? "text-amber-700 dark:text-amber-400 font-bold"
+            : "text-slate-700 dark:text-slate-300"
+        )}
+      >
+        {day}
+      </span>
+      {festivalHolidayName ? (
+        <span className="text-[8px] font-bold text-rose-600 dark:text-rose-400 truncate max-w-full px-0.5" title={festivalHolidayName}>
+          🎉 {festivalHolidayName}
+        </span>
+      ) : isSunday ? (
+        <span className="text-[8px] font-semibold text-amber-600 dark:text-amber-400">
+          Sun Off
+        </span>
+      ) : null}
+      {cfg && <span className={cn("w-2 h-2 rounded-full mx-auto mt-0.5", cfg.dot)} />}
     </div>
   );
 }
@@ -664,10 +725,15 @@ export default function SubAdminAttendance() {
 
   // ── Stats ───────────────────────────────────────────────────────────────────
   const thisMonthRecords = records.filter((r) => r.date.startsWith(`${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}`));
-  const presentCount = thisMonthRecords.filter((r) => r.status === "present" || r.status === "late" || r.status === "half-day").length;
-  const absentCount = thisMonthRecords.filter((r) => r.status === "absent").length;
+  const presentCount = monthlyData?.present ?? thisMonthRecords.filter((r) => r.status === "present" || r.status === "late" || r.status === "half-day").length;
+  const absentCount = monthlyData?.absent ?? thisMonthRecords.filter((r) => r.status === "absent").length;
   const lateCount = thisMonthRecords.filter((r) => r.status === "late").length;
   const totalHours = thisMonthRecords.reduce((acc, r) => acc + r.workHours, 0);
+
+  // Check if today is Sunday or a declared holiday
+  const todayDateObj = new Date();
+  const isTodaySunday = todayDateObj.getDay() === 0;
+  const todayHoliday = monthlyData?.holidays?.find((h: any) => (h.dateStr || h.date?.slice(0, 10)) === today);
 
   // ── Calendar ─────────────────────────────────────────────────────────────────
   const year = currentDate.getFullYear();
@@ -761,6 +827,23 @@ export default function SubAdminAttendance() {
 
                 {/* Right: Button */}
                 <div className="flex flex-col items-center gap-3">
+                  {/* Today Holiday Alert Banner */}
+                  {(isTodaySunday || todayHoliday) && (
+                    <div className="w-full max-w-sm rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-amber-200 flex items-center gap-2.5">
+                      <div className="p-2 bg-amber-500/20 rounded-lg text-amber-300 shrink-0">
+                        {todayHoliday ? <PartyPopper className="h-4 w-4 text-rose-300" /> : <Sun className="h-4 w-4 text-amber-300" />}
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xs font-bold text-amber-300">
+                          {todayHoliday ? `🎉 Today is ${todayHoliday.name} (Holiday)!` : "🏖️ Today is Sunday (Mandatory Holiday)!"}
+                        </p>
+                        <p className="text-[10px] text-amber-200/80">
+                          Official company holiday. Check-in is not required.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Check-in / Check-out */}
                   <div>
                     {!todayChecked?.checkIn ? (
@@ -1160,7 +1243,22 @@ export default function SubAdminAttendance() {
                     const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`;
                     const rec = records.find((r) => r.date === dateStr);
                     const isToday = dateStr === today;
-                    return <CalendarCell key={dateStr} record={rec} day={day} isToday={isToday} />;
+                    const cellDate = new Date(year, month, day);
+                    const isSunday = cellDate.getDay() === 0;
+                    const matchedHoliday = monthlyData?.holidays?.find(
+                      (h: any) => (h.dateStr || h.date?.slice(0, 10)) === dateStr
+                    );
+
+                    return (
+                      <CalendarCell
+                        key={dateStr}
+                        record={rec}
+                        day={day}
+                        isToday={isToday}
+                        isSunday={isSunday}
+                        festivalHolidayName={matchedHoliday?.name}
+                      />
+                    );
                   })}
                 </div>
               </div>

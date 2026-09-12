@@ -42,6 +42,7 @@ export const updateInternalUserSchema = z.object({
   zone: z.string().trim().min(2).max(100).optional(),
   monthlySalaryInr: z.coerce.number().int().nonnegative().max(5000000).nullable().optional(),
   portalPassword: z.string().min(8).optional(),
+  permissions: z.array(z.string()).optional(),
 });
 
 export const transferTeamStrategySchema = z.enum([

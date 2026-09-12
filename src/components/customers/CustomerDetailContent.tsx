@@ -454,9 +454,14 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
           <Button variant="ghost" onClick={onBack}>
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Directory
           </Button>
-          <Button variant="outline" onClick={handleEditClick} disabled={isActionPending} className="border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50 hover:border-indigo-300 font-semibold shadow-sm h-9">
-            <Edit className="w-4 h-4 mr-2" /> Edit Customer
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleEditClick} disabled={isActionPending} className="border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50 hover:border-indigo-300 font-semibold shadow-sm h-9">
+              <Edit className="w-4 h-4 mr-2" /> Edit Customer
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={isActionPending} className="h-9 font-semibold shadow-sm">
+              <Trash2 className="w-4 h-4 mr-2" /> Delete Customer
+            </Button>
+          </div>
         </div>
       )}
 

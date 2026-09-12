@@ -28,9 +28,11 @@ const authUserSelect = {
   designationTitle: true,
   departmentId: true,
   reportingManagerId: true,
+  permissions: true,
   employeeProfile: {
     select: {
       jobRole: true,
+      permissions: true,
     },
   },
   isActive: true,
@@ -54,9 +56,11 @@ const publicUserSelect = {
   designationTitle: true,
   departmentId: true,
   reportingManagerId: true,
+  permissions: true,
   employeeProfile: {
     select: {
       jobRole: true,
+      permissions: true,
     },
   },
   isActive: true,
@@ -102,6 +106,10 @@ async function issueSession(user: AuthUser, requestedRole?: string) {
   }
 
   const publicUser = toPublicUser(user);
+  const effectivePermissions = Array.isArray(user.permissions) && user.permissions.length > 0
+    ? user.permissions
+    : (Array.isArray(user.employeeProfile?.permissions) ? user.employeeProfile.permissions : []);
+
   return {
     accessToken,
     refreshToken,
@@ -109,6 +117,7 @@ async function issueSession(user: AuthUser, requestedRole?: string) {
       ...publicUser,
       role: effectiveRole,
       jobRole: publicUser.employeeProfile?.jobRole || publicUser.designationTitle || undefined,
+      permissions: effectivePermissions,
     },
   };
 }
@@ -356,10 +365,7 @@ export async function login(input: LoginInput) {
       // Specialized cases:
       // 1. SUB_ADMIN users should be allowed to login using the "EMPLOYEE" role selection
       // 2. PARTNER users / EPC Contractor users logging in via "Partner" role selection
-      const isSubAdminLoggingAsEmployee = (
-        (user.role === UserRole.SUB_ADMIN || user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN) &&
-        (input.role as string) === "EMPLOYEE"
-      );
+      const isSubAdminLoggingAsEmployee = (user.role === UserRole.SUB_ADMIN && (input.role as string) === "EMPLOYEE");
       const isPartnerLoggingIn = (
         (user.role === UserRole.PARTNER && ((input.role as string) === "PARTNER" || (input.role as string) === "EMPLOYEE")) ||
         (user.role === UserRole.EMPLOYEE && (input.role as string) === "PARTNER" && (
@@ -471,8 +477,12 @@ export async function refreshSession(rawRefreshToken: string) {
   }
 
   const tokenHash = hashToken(rawRefreshToken);
+  const revokedInCache = await isRefreshTokenRevoked(tokenHash);
+  if (revokedInCache) {
+    throw new ApiError(401, "Refresh token is expired or revoked");
+  }
 
-  let existingToken = await prisma.refreshToken.findFirst({
+  const existingToken = await prisma.refreshToken.findFirst({
     where: {
       userId: payload.sub,
       tokenHash,
@@ -483,32 +493,7 @@ export async function refreshSession(rawRefreshToken: string) {
     },
   });
 
-  // Token rotation grace period: allow recent rotation (within 30 seconds) to return an active session
-  let isGracePeriodReuse = false;
   if (!existingToken) {
-    const graceCutoff = new Date(Date.now() - 30 * 1000);
-    existingToken = await prisma.refreshToken.findFirst({
-      where: {
-        userId: payload.sub,
-        tokenHash,
-        revokedAt: {
-          gte: graceCutoff,
-        },
-        expiresAt: {
-          gt: new Date(),
-        },
-      },
-    });
-    if (existingToken) {
-      isGracePeriodReuse = true;
-    }
-  }
-
-  if (!existingToken) {
-    const revokedInCache = await isRefreshTokenRevoked(tokenHash);
-    if (revokedInCache) {
-      throw new ApiError(401, "Refresh token is expired or revoked");
-    }
     throw new ApiError(401, "Refresh token is expired or revoked");
   }
 
@@ -521,14 +506,12 @@ export async function refreshSession(rawRefreshToken: string) {
     throw new ApiError(401, "User not active");
   }
 
-  if (!isGracePeriodReuse) {
-    await prisma.refreshToken.update({
-      where: { id: existingToken.id },
-      data: { revokedAt: new Date() },
-    });
+  await prisma.refreshToken.update({
+    where: { id: existingToken.id },
+    data: { revokedAt: new Date() },
+  });
 
-    await markRefreshTokenRevoked(tokenHash, existingToken.expiresAt);
-  }
+  await markRefreshTokenRevoked(tokenHash, existingToken.expiresAt);
 
   await prisma.auditLog.create({
     data: {
@@ -597,7 +580,14 @@ export async function getCurrentUser(userId: string) {
     throw new ApiError(404, "User not found");
   }
 
-  return user;
+  const effectivePermissions = Array.isArray(user.permissions) && user.permissions.length > 0
+    ? user.permissions
+    : (Array.isArray(user.employeeProfile?.permissions) ? user.employeeProfile.permissions : []);
+
+  return {
+    ...user,
+    permissions: effectivePermissions,
+  };
 }
 
 export async function changePassword(userId: string, input: { currentPassword: string; newPassword: string }) {

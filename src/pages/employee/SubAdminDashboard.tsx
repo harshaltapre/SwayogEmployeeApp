@@ -221,7 +221,7 @@ export default function SubAdminDashboard() {
               Welcome, <span className="text-secondary">{user?.name}</span>
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Service Coordinator Portal — Select client and city to view active solar generation details.
+              Service Coordinator Dashboard — Select client and city to view active solar generation details.
             </p>
           </div>
           <Button

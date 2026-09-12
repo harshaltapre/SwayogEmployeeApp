@@ -473,7 +473,7 @@ model AttendanceRecord {
   flagged        Boolean          @default(false)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @default(now()) @updatedAt
-  employee       User             @relation(fields: [employeeId], references: [id])
+  employee       User             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, date])
   @@index([date])
@@ -484,7 +484,7 @@ model AttendanceRecord {
 model CheckIn {
   id               String        @id @default(cuid())
   employeeId       String
-  employee         User          @relation(fields: [employeeId], references: [id])
+  employee         User          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   selfieUrl        String?
   latitude         Float?
   longitude        Float?
@@ -558,7 +558,7 @@ model PerformanceSnapshot {
   calculatedAt       DateTime @default(now())
   createdAt          DateTime @default(now())
   updatedAt          DateTime @default(now()) @updatedAt
-  employee           User     @relation(fields: [employeeId], references: [id])
+  employee           User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, month, year])
   @@index([employeeId])
@@ -581,7 +581,7 @@ model WorkSubmission {
   status      WorkStatus @default(PENDING)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @default(now()) @updatedAt
-  employee    User       @relation(fields: [employeeId], references: [id])
+  employee    User       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   task        Task?      @relation(fields: [taskId], references: [id])
 
   @@index([employeeId])
@@ -601,7 +601,7 @@ model DailyCommit {
   submittedAt    DateTime @default(now())
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  employee       User     @relation(fields: [employeeId], references: [id])
+  employee       User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, commitDate])
   @@index([employeeId])
@@ -656,6 +656,7 @@ enum AttendanceStatus {
   HALF_DAY
   LATE
   LEAVE
+  HOLIDAY
 }
 
 enum WorkStatus {
@@ -905,6 +906,18 @@ model AttendanceRule {
   officeRadius       Float    @default(150.0)
   faceMatchThreshold Float    @default(0.55)
   updatedAt          DateTime @updatedAt
+}
+
+model Holiday {
+  id          String   @id @default(uuid())
+  date        DateTime @unique @db.Date
+  name        String
+  description String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
 }
 
 model IsphereGreenEntry {
