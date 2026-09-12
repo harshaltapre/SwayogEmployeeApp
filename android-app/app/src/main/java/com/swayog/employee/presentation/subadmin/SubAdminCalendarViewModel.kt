@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swayog.employee.data.model.AmcVisit
 import com.swayog.employee.data.model.Employee
+import com.swayog.employee.data.model.INDIAN_FESTIVALS_2026
 import com.swayog.employee.data.model.ServiceRequest
 import com.swayog.employee.data.model.UpdateAmcVisitRequest
 import com.swayog.employee.data.model.CreateAmcVisitRequest
@@ -164,6 +165,24 @@ class SubAdminCalendarViewModel @Inject constructor(
                                 rawId = it.id,
                                 assignedEmployeeId = it.employeeUserId,
                                 status = it.status ?: "PENDING"
+                            )
+                        )
+                    }
+
+                    // 4. Indian Holidays & Festivals (local static data — no API call)
+                    INDIAN_FESTIVALS_2026.forEach { festival ->
+                        list.add(
+                            CalendarEvent(
+                                id = "festival_${festival.id}",
+                                type = if (festival.type == "holiday") "Holiday" else "Festival",
+                                title = festival.name,
+                                description = if (festival.type == "holiday") "Public Holiday" else "Indian Festival",
+                                date = festival.date,
+                                time = null,
+                                address = "National",
+                                rawId = festival.id,
+                                assignedEmployeeId = null,
+                                status = null
                             )
                         )
                     }
