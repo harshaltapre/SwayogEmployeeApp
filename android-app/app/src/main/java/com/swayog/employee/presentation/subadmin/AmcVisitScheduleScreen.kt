@@ -87,7 +87,7 @@ fun AmcVisitScheduleScreen(
 
     // Dialog state
     var selectedVisitForAction by remember { mutableStateOf<AmcVisit?>(null) }
-    var actionType by remember { mutableStateOf<String?>(null) } // "EDIT", "MARK_DONE", "VIEW_PHOTOS"
+    var actionType by remember { mutableStateOf<String?>(null) } // "EDIT", "MARK_DONE", "VIEW_PHOTOS", "DELETE"
     var isCreateVisitOpen by remember { mutableStateOf(false) }
     var previewImageUrl by remember { mutableStateOf<String?>(null) }
 
@@ -475,6 +475,10 @@ fun AmcVisitScheduleScreen(
                             } else {
                                 Toast.makeText(context, "No phone number available", Toast.LENGTH_SHORT).show()
                             }
+                        },
+                        onDelete = {
+                            selectedVisitForAction = visit
+                            actionType = "DELETE"
                         }
                     )
                 }
@@ -568,6 +572,44 @@ fun AmcVisitScheduleScreen(
         )
     }
 
+    // Delete Confirmation Dialog
+    if (selectedVisitForAction != null && actionType == "DELETE") {
+        AlertDialog(
+            onDismissRequest = {
+                selectedVisitForAction = null
+                actionType = null
+            },
+            title = { Text("Delete AMC Visit") },
+            text = { Text("Are you sure you want to delete this scheduled AMC visit for ${selectedVisitForAction!!.customer?.fullName ?: "this customer"}? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteAmcVisit(selectedVisitForAction!!.id) { result ->
+                            result.onSuccess {
+                                Toast.makeText(context, "Visit deleted successfully", Toast.LENGTH_SHORT).show()
+                            }.onFailure {
+                                Toast.makeText(context, it.message ?: "Failed to delete visit", Toast.LENGTH_LONG).show()
+                            }
+                            selectedVisitForAction = null
+                            actionType = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("Delete", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    selectedVisitForAction = null
+                    actionType = null
+                }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     // Full Screen Lightbox Preview
     if (previewImageUrl != null) {
         FullScreenImageDialog(
@@ -629,7 +671,8 @@ fun AmcVisitCardItem(
     onEdit: () -> Unit,
     onMarkDone: () -> Unit,
     onViewPhotos: () -> Unit,
-    onCallCustomer: () -> Unit
+    onCallCustomer: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val isCompleted = visit.status.equals("COMPLETED", ignoreCase = true)
     val statusBg = if (isCompleted) Color(0xFFD1FAE5) else if (isOverdue) Color(0xFFFFE4E6) else Color(0xFFFEF3C7)
@@ -785,18 +828,36 @@ fun AmcVisitCardItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Call Button
-                IconButton(
-                    onClick = onCallCustomer,
-                    modifier = Modifier
-                        .size(34.dp)
-                        .background(Color(0xFFF1F5F9), CircleShape)
-                ) {
-                    Icon(
-                        Icons.Default.Phone,
-                        contentDescription = "Call Customer",
-                        modifier = Modifier.size(16.dp),
-                        tint = Color(0xFF0284C7)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = onCallCustomer,
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(Color(0xFFF1F5F9), CircleShape)
+                    ) {
+                        Icon(
+                            Icons.Default.Phone,
+                            contentDescription = "Call Customer",
+                            modifier = Modifier.size(16.dp),
+                            tint = Color(0xFF0284C7)
+                        )
+                    }
+
+                    if (!isCompleted) {
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(Color(0xFFFEE2E2), CircleShape)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete Visit",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFFEF4444)
+                            )
+                        }
+                    }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

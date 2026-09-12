@@ -327,6 +327,11 @@ interface ApiService {
         @Path("visitId") visitId: String,
         @Body request: UpdateAmcVisitRequest
     ): Response<ApiResponse<AmcVisit>>
+
+    @DELETE("subadmin/amc-visits/{visitId}")
+    suspend fun deleteAmcVisit(
+        @Path("visitId") visitId: String
+    ): Response<ApiResponse<Unit>>
     
     @POST("subadmin/amc-visits/{visitId}/complete")
     suspend fun markAmcVisitDone(

@@ -49,6 +49,7 @@ fun SubAdminEmployeesScreen(
     var selectedEmployee by remember { mutableStateOf<Employee?>(null) }
     var viewMode by remember { mutableStateOf("grid") }
     var showCreateEmployeeDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
 
     if (selectedEmployee != null) {
         EmployeeDetailContent(
@@ -78,6 +79,24 @@ fun SubAdminEmployeesScreen(
         )
     }
 
+    if (showImportDialog) {
+        ExcelImportDialog(
+            onDismiss = { showImportDialog = false },
+            onImport = { data ->
+                viewModel.importEmployeesFromExcel(
+                    data = data,
+                    onSuccess = {
+                        showImportDialog = false
+                        Toast.makeText(context, "Employees imported successfully!", Toast.LENGTH_SHORT).show()
+                    },
+                    onError = { err ->
+                        Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                    }
+                )
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             SwayogTopBar(
@@ -85,6 +104,9 @@ fun SubAdminEmployeesScreen(
                 showBackButton = true,
                 onBackClick = onNavigateBack,
                 actions = {
+                    IconButton(onClick = { showImportDialog = true }) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = "Import Staff")
+                    }
                     IconButton(onClick = { showCreateEmployeeDialog = true }) {
                         Icon(Icons.Default.PersonAdd, contentDescription = "Add Employee")
                     }
