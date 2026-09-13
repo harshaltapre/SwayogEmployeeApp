@@ -12,8 +12,20 @@ data class AttendanceRecord(
     val status: String,
     val notes: String?,
     val latitude: Double? = null,
-    val longitude: Double? = null
-)
+    val longitude: Double? = null,
+    val source: String? = null,
+    val manualOverride: Boolean = false,
+    val reviewedBy: String? = null,
+    val reviewerName: String? = null,
+    val isAttendanceCompleted: Boolean = false,
+    val requiresCheckIn: Boolean = false
+) {
+    val isAdminMarked: Boolean
+        get() = manualOverride || source?.startsWith("ADMIN") == true || (status == "PRESENT" && checkInTime == null)
+
+    val isCompleted: Boolean
+        get() = isAttendanceCompleted || isAdminMarked || checkOutTime != null || status == "LEAVE" || status == "HOLIDAY"
+}
 
 data class CheckInRequest(
     val selfie: String?,

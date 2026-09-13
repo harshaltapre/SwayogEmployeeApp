@@ -38,6 +38,7 @@ import java.util.*
 
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +70,20 @@ fun DashboardScreen(
     val performance by viewModel.performance.collectAsState()
     val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
     val serverUrl by viewModel.serverUrl.collectAsState()
+
+    // Automatically refresh today attendance whenever dashboard resumes from background or navigates back
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshTodayAttendance()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val isServiceCoordinator = remember(userRole, jobRole) {
         val r = userRole?.uppercase() ?: ""
@@ -379,8 +394,13 @@ fun DashboardScreen(
                                     val attendance = todayAttendance
                                     val (badgeText, badgeColor) = when {
                                         attendance == null -> "Not Checked In" to MaterialTheme.colorScheme.error
+                                        attendance.isAdminMarked -> "Present ✓" to Color(0xFF0B6E4F)
+                                        attendance.status == "LEAVE" -> "Leave" to MaterialTheme.colorScheme.tertiary
+                                        attendance.status == "HOLIDAY" -> "Holiday" to MaterialTheme.colorScheme.tertiary
+                                        attendance.status == "ABSENT" -> "Absent" to MaterialTheme.colorScheme.error
                                         attendance.checkOutTime != null -> "Checked Out" to MaterialTheme.colorScheme.tertiary
-                                        else -> "Checked In ✓" to MaterialTheme.colorScheme.primary
+                                        attendance.checkInTime != null -> "Checked In ✓" to MaterialTheme.colorScheme.primary
+                                        else -> "Completed ✓" to Color(0xFF0B6E4F)
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
                                         Surface(
@@ -562,13 +582,16 @@ fun DashboardScreen(
                                         val attendance = todayAttendance
                                         if (attendance != null) {
                                             Text(
-                                                text = if (attendance.checkInTime != null) {
-                                                    "Checked in at ${attendance.checkInTime.substringAfter("T").substringBefore(".")}"
-                                                } else {
-                                                    "Not checked in yet"
+                                                text = when {
+                                                    attendance.isAdminMarked -> "Attendance marked by Administrator (${attendance.reviewerName ?: "Admin"})"
+                                                    attendance.status == "LEAVE" -> "On approved leave"
+                                                    attendance.status == "HOLIDAY" -> "Holiday"
+                                                    attendance.status == "ABSENT" -> "Marked absent"
+                                                    attendance.checkInTime != null -> "Checked in at ${attendance.checkInTime.substringAfter("T").substringBefore(".")}"
+                                                    else -> "Attendance recorded"
                                                 },
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                                color = if (attendance.isAdminMarked) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                             )
                                             if (attendance.checkOutTime != null) {
                                                 Text(

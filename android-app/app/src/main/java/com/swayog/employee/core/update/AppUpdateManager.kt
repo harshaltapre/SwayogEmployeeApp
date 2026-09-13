@@ -127,21 +127,34 @@ class AppUpdateManager @Inject constructor(
                         CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                     }
                 } else {
-                    val errorMsg = "Update check failed with HTTP ${response.code()}"
-                    Log.w(TAG, errorMsg)
-                    val displayError = "Unable to check for updates. Please check your internet connection and try again."
+                    val code = response.code()
+                    val errorBody = try { response.errorBody()?.string() } catch (_: Exception) { null }
+                    Log.w(TAG, "Update check failed with HTTP $code, body: $errorBody")
+                    val (displayError, isNet) = when (code) {
+                        404 -> "Update service is unavailable (HTTP 404)." to false
+                        401, 403 -> "Authentication error while checking updates (HTTP $code)." to false
+                        500, 502, 503, 504 -> "Update service is temporarily unavailable (HTTP $code)." to false
+                        else -> "Update service returned an error (HTTP $code)." to false
+                    }
                     _updateState.value = AppUpdateState.Error(
                         message = displayError,
-                        isNetworkError = true
+                        isNetworkError = isNet
                     )
                     CheckResult.Error(displayError)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Network exception during update check: ${e.message}", e)
-                val displayError = "Unable to check for updates. Please check your internet connection and try again."
+                Log.e(TAG, "Exception during update check: ${e.message}", e)
+                val (displayError, isNet) = when (e) {
+                    is java.net.UnknownHostException -> "No internet connection. Please check your network." to true
+                    is java.net.ConnectException -> "Unable to connect to update server. Please check your connection." to true
+                    is java.net.SocketTimeoutException -> "Update check timed out. Please try again." to true
+                    is com.google.gson.JsonSyntaxException, is org.json.JSONException -> "Unable to read update information from server." to false
+                    is javax.net.ssl.SSLException -> "Secure connection to update service failed (SSL/TLS error)." to true
+                    else -> (e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Update check failed.") to false
+                }
                 _updateState.value = AppUpdateState.Error(
                     message = displayError,
-                    isNetworkError = true
+                    isNetworkError = isNet
                 )
                 CheckResult.Error(displayError)
             }

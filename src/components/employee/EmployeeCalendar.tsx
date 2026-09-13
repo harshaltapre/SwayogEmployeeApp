@@ -24,6 +24,9 @@ import {
   Clock,
   Camera,
   Eye,
+  CalendarCheck,
+  CheckCircle2,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -37,6 +40,7 @@ import {
   useUpdateAmcVisit,
   useListTasks,
 } from "@/lib/api-client";
+import { useMonthlyAttendance, useEmployeeMonthlyAttendance } from "@/hooks/useAttendance";
 import { INDIAN_FESTIVALS_2026 } from "@/lib/festivals";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -46,7 +50,7 @@ import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type EventType = "complaint" | "amc" | "festival" | "task";
+type EventType = "complaint" | "amc" | "festival" | "task" | "attendance";
 
 type CalendarEvent = {
   id: string | number;
@@ -160,6 +164,11 @@ const STYLE: Record<EventType, { card: string; text: string; icon: any }> = {
     text: "text-purple-700",
     icon: Wrench,
   },
+  attendance: {
+    card: "bg-teal-50 border-l-[3px] border-teal-600 hover:bg-teal-100",
+    text: "text-teal-800",
+    icon: CalendarCheck,
+  },
 };
 
 // ─── Main Calendar Component ──────────────────────────────────────────────────
@@ -173,9 +182,26 @@ export const EmployeeCalendar = ({
   const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [searchQuery, setSearchQuery] = useState("");
-  const [filters, setFilters] = useState({ complaints: true, amc: true, festivals: true, tasks: true });
+  const [filters, setFilters] = useState({ attendance: true, complaints: true, amc: true, festivals: true, tasks: true });
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  // ─── Data: Monthly Attendance ─────────────────────────────────────────────
+  const currentMonthNum = currentDate.getMonth() + 1;
+  const currentYearNum = currentDate.getFullYear();
+
+  const { data: selfAttendanceData } = useMonthlyAttendance(
+    currentMonthNum,
+    currentYearNum
+  );
+  const { data: adminEmployeeAttendanceData } = useEmployeeMonthlyAttendance(
+    employeeId ? String(employeeId) : "",
+    currentMonthNum,
+    currentYearNum
+  );
+
+  const attendanceData = employeeId ? adminEmployeeAttendanceData : selfAttendanceData;
+  const attendanceRecords = attendanceData?.records ?? [];
 
   // ─── Data: Complaints ─────────────────────────────────────────────────────
   const {
@@ -249,8 +275,20 @@ export const EmployeeCalendar = ({
     // 3. Festivals
     if (filters.festivals) {
       INDIAN_FESTIVALS_2026.forEach((f) => {
-        const start = parseISO(f.date);
-        all.push({ id: f.id, title: f.name, subtitle: "", start, type: "festival" });
+        try {
+          const start = parseDateTimeToDate(f.date, null);
+          all.push({
+            id: `fest-${f.date}`,
+            title: f.name,
+            subtitle: f.description || "Festival / Public Holiday",
+            start,
+            type: "festival",
+            status: "holiday",
+            raw: f,
+          });
+        } catch {
+          // skip bad dates
+        }
       });
     }
 
@@ -274,8 +312,66 @@ export const EmployeeCalendar = ({
       });
     }
 
+    // 5. Attendance Records
+    if (filters.attendance && attendanceRecords.length > 0) {
+      attendanceRecords.forEach((r: any) => {
+        try {
+          const dStr = typeof r.date === "string" ? r.date.substring(0, 10) : format(new Date(r.date), "yyyy-MM-dd");
+          const [y, m, d] = dStr.split("-").map(Number);
+          const start = new Date(y, m - 1, d, 9, 0, 0);
+
+          let title = "Attendance: Present";
+          let subtitle = "Working Day";
+          const isAdmin = r.manualOverride || r.source?.startsWith("ADMIN");
+
+          if (r.status === "PRESENT") {
+            if (isAdmin) {
+              title = "Present (Admin Marked)";
+              subtitle = r.reviewerName ? `By Admin: ${r.reviewerName}` : "Marked by Administrator";
+            } else if (r.checkInTime && !r.checkOutTime && isToday(start)) {
+              title = "Working / Checked In";
+              subtitle = `Checked in at ${format(new Date(r.checkInTime), "hh:mm a")}`;
+            } else if (r.checkInTime) {
+              title = "Present";
+              subtitle = r.totalMinutes ? `${Math.floor(r.totalMinutes / 60)}h ${r.totalMinutes % 60}m logged` : "Check-in recorded";
+            } else {
+              title = "Present";
+              subtitle = "Attendance completed";
+            }
+          } else if (r.status === "HALF_DAY") {
+            title = "Half Day";
+            subtitle = r.totalMinutes ? `${Math.floor(r.totalMinutes / 60)}h ${r.totalMinutes % 60}m logged` : "Half day completed";
+          } else if (r.status === "LATE") {
+            title = "Present (Late Check-in)";
+            subtitle = r.checkInTime ? `Checked in late at ${format(new Date(r.checkInTime), "hh:mm a")}` : "Late arrival";
+          } else if (r.status === "LEAVE") {
+            title = "On Leave";
+            subtitle = r.notes || "Approved Leave";
+          } else if (r.status === "HOLIDAY") {
+            title = "Holiday";
+            subtitle = r.notes || "Office Holiday";
+          } else if (r.status === "ABSENT") {
+            title = "Absent";
+            subtitle = r.notes || "Unexcused absence";
+          }
+
+          all.push({
+            id: `att-${r.id || dStr}`,
+            title,
+            subtitle,
+            start,
+            type: "attendance",
+            status: r.status,
+            raw: r,
+          });
+        } catch {
+          // skip bad dates
+        }
+      });
+    }
+
     return all;
-  }, [serviceRequests, amcVisits, tasks, filters]);
+  }, [serviceRequests, amcVisits, tasks, filters, attendanceRecords]);
 
   // Search filter
   const filtered = useMemo(() => {
@@ -295,6 +391,7 @@ export const EmployeeCalendar = ({
   const festsForDay = (day: Date) => forDay(day).filter((e) => e.type === "festival");
   const timedForDay = (day: Date) => forDay(day).filter((e) => e.type !== "festival");
 
+  const attendanceCount = filtered.filter((e) => e.type === "attendance").length;
   const complaintCount = filtered.filter((e) => e.type === "complaint").length;
   const amcCount = filtered.filter((e) => e.type === "amc").length;
   const taskCount = filtered.filter((e) => e.type === "task").length;
@@ -333,6 +430,7 @@ export const EmployeeCalendar = ({
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Calendars</span>
 
             {[
+              { key: "attendance" as const, label: "Attendance", icon: CalendarCheck, color: "border-teal-500 bg-teal-500", count: attendanceCount },
               { key: "complaints" as const, label: "Complaints", icon: Wrench, color: "border-blue-500 bg-blue-500", count: complaintCount },
               { key: "amc" as const, label: "AMC Visits", icon: ShieldCheck, color: "border-emerald-500 bg-emerald-500", count: amcCount },
               { key: "tasks" as const, label: "Tasks", icon: Wrench, color: "border-purple-500 bg-purple-500", count: taskCount },
@@ -848,6 +946,84 @@ export const EmployeeCalendar = ({
                     )}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Attendance specific details */}
+            {selectedEvent.type === "attendance" && (
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 space-y-2.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Date</span>
+                  <span className="font-semibold text-slate-800">
+                    {format(selectedEvent.start, "dd MMMM yyyy")}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Status</span>
+                  <span className="font-semibold text-emerald-700">
+                    {selectedEvent.title}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Attendance Source</span>
+                  <span className="font-semibold text-slate-800">
+                    {selectedEvent.raw?.manualOverride || selectedEvent.raw?.source?.startsWith("ADMIN")
+                      ? "Admin Marked / Assigned"
+                      : selectedEvent.raw?.source || "Employee Check-in"}
+                  </span>
+                </div>
+                {selectedEvent.raw?.reviewerName && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Marked / Reviewed By</span>
+                    <span className="font-semibold text-indigo-700">
+                      {selectedEvent.raw.reviewerName}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Check-In Time</span>
+                  <span className="font-medium text-slate-700">
+                    {selectedEvent.raw?.checkInTime
+                      ? format(new Date(selectedEvent.raw.checkInTime), "hh:mm a")
+                      : selectedEvent.raw?.manualOverride
+                      ? "Not applicable (Admin marked)"
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Check-Out Time</span>
+                  <span className="font-medium text-slate-700">
+                    {selectedEvent.raw?.checkOutTime
+                      ? format(new Date(selectedEvent.raw.checkOutTime), "hh:mm a")
+                      : "—"}
+                  </span>
+                </div>
+                {selectedEvent.raw?.totalMinutes !== undefined && selectedEvent.raw?.totalMinutes !== null && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Total Hours</span>
+                    <span className="font-semibold text-indigo-700">
+                      {Math.floor(selectedEvent.raw.totalMinutes / 60)}h {selectedEvent.raw.totalMinutes % 60}m
+                    </span>
+                  </div>
+                )}
+                {(selectedEvent.raw?.notes || selectedEvent.raw?.overrideReason) && (
+                  <div className="border-t border-slate-200/50 pt-2 mt-1">
+                    <span className="text-slate-500 block mb-1">Remarks / Reason</span>
+                    <p className="text-slate-700 italic bg-white p-2 rounded border border-slate-100">
+                      "{selectedEvent.raw?.notes || selectedEvent.raw?.overrideReason}"
+                    </p>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-slate-200/50 pt-2 mt-1">
+                  <span className="text-slate-500">Location Verification</span>
+                  <span className="font-medium text-slate-600">
+                    {selectedEvent.raw?.manualOverride || selectedEvent.raw?.source?.startsWith("ADMIN")
+                      ? "Not applicable / Marked by administrator"
+                      : selectedEvent.raw?.checkInTime
+                      ? "GPS Verified"
+                      : "Not applicable"}
+                  </span>
+                </div>
               </div>
             )}
           </div>

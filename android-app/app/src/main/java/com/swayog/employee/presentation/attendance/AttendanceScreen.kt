@@ -95,6 +95,19 @@ fun AttendanceScreen(
         viewModel.loadMonth(calendarMonth + 1, calendarYear)
     }
 
+    // Auto-refresh attendance from backend whenever screen opens or returns from foreground
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadData()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     val attendanceRules by viewModel.attendanceRules.collectAsState()
     var useGoogleMaps by remember { mutableStateOf(false) }
 
@@ -121,9 +134,12 @@ fun AttendanceScreen(
         }
     }
 
-    val isCheckedIn = todayAttendance?.checkInTime != null
-    val checkInLat = todayAttendance?.latitude
-    val checkInLng = todayAttendance?.longitude
+    val record = todayAttendance
+    val isAdminMarked = record?.isAdminMarked == true
+    val isCheckedIn = record?.checkInTime != null
+    val isAttendanceCompleted = record?.isCompleted == true || isAdminMarked || (record != null && (record.status == "PRESENT" || record.status == "LEAVE" || record.status == "HOLIDAY"))
+    val checkInLat = record?.latitude
+    val checkInLng = record?.longitude
     val displayLat = checkInLat ?: currentLatitude ?: attendanceRules.officeLat
     val displayLng = checkInLng ?: currentLongitude ?: attendanceRules.officeLng
 
@@ -377,11 +393,15 @@ fun AttendanceScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
 
-                                val record = todayAttendance
                                 val statusText = when {
                                     record == null -> "Not Checked In"
+                                    record.isAdminMarked -> "Present — Marked by Administrator"
+                                    record.status == "LEAVE" -> "On Leave"
+                                    record.status == "HOLIDAY" -> "Holiday"
+                                    record.status == "ABSENT" -> "Absent"
                                     record.checkOutTime != null -> "Checked Out"
-                                    else -> "Checked In"
+                                    record.checkInTime != null -> "Checked In"
+                                    else -> "Attendance Completed"
                                 }
 
                                 Row(
@@ -389,43 +409,76 @@ fun AttendanceScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = statusText,
                                             style = MaterialTheme.typography.titleLarge,
                                             fontWeight = FontWeight.Bold,
                                             color = when {
                                                 record == null -> MaterialTheme.colorScheme.error
+                                                record.isAdminMarked -> Color(0xFF0B6E4F)
                                                 record.checkOutTime != null -> MaterialTheme.colorScheme.tertiary
                                                 else -> MaterialTheme.colorScheme.primary
                                             }
                                         )
                                         if (record != null) {
-                                            Text(
-                                                text = "In: ${formatUtcToLocalTime(record.checkInTime)}",
-                                                style = MaterialTheme.typography.bodyMedium
-                                            )
-                                            if (record.checkOutTime != null) {
+                                            if (record.isAdminMarked) {
+                                                Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
-                                                    text = "Out: ${formatUtcToLocalTime(record.checkOutTime)}",
-                                                    style = MaterialTheme.typography.bodyMedium
-                                                )
-                                            }
-                                            if (record.totalMinutes != null && record.totalMinutes > 0) {
-                                                val hrs = record.totalMinutes / 60
-                                                val mins = record.totalMinutes % 60
-                                                Text(
-                                                    text = "Total: ${hrs}h ${mins}m",
-                                                    style = MaterialTheme.typography.bodySmall,
+                                                    text = "Source: Admin Marked",
+                                                    style = MaterialTheme.typography.bodyMedium,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    color = Color(0xFF0B6E4F)
                                                 )
+                                                if (!record.reviewerName.isNullOrBlank()) {
+                                                    Text(
+                                                        text = "Reviewed By: ${record.reviewerName}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                                if (!record.notes.isNullOrBlank()) {
+                                                    Text(
+                                                        text = "Note: ${record.notes}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                                Text(
+                                                    text = "Location: Not applicable / Marked by administrator",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                                )
+                                            } else {
+                                                if (record.checkInTime != null) {
+                                                    Text(
+                                                        text = "In: ${formatUtcToLocalTime(record.checkInTime)}",
+                                                        style = MaterialTheme.typography.bodyMedium
+                                                    )
+                                                }
+                                                if (record.checkOutTime != null) {
+                                                    Text(
+                                                        text = "Out: ${formatUtcToLocalTime(record.checkOutTime)}",
+                                                        style = MaterialTheme.typography.bodyMedium
+                                                    )
+                                                }
+                                                if (record.totalMinutes != null && record.totalMinutes > 0) {
+                                                    val hrs = record.totalMinutes / 60
+                                                    val mins = record.totalMinutes % 60
+                                                    Text(
+                                                        text = "Total: ${hrs}h ${mins}m",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
                                             }
                                         }
                                     }
 
                                     val statusIcon = when {
                                         record == null -> Icons.Default.Cancel
+                                        record.isAdminMarked -> Icons.Default.CheckCircle
                                         record.checkOutTime != null -> Icons.Default.Logout
                                         else -> Icons.Default.CheckCircle
                                     }
@@ -434,6 +487,7 @@ fun AttendanceScreen(
                                         contentDescription = null,
                                         tint = when {
                                             record == null -> MaterialTheme.colorScheme.error
+                                            record.isAdminMarked -> Color(0xFF0B6E4F)
                                             record.checkOutTime != null -> MaterialTheme.colorScheme.tertiary
                                             else -> MaterialTheme.colorScheme.primary
                                         },
@@ -495,10 +549,14 @@ fun AttendanceScreen(
                                             }
                                         }
                                         Text(
-                                            text = if (isCheckedIn) "Checked In at $loginTimeFormatted" else "Live GPS verification ready",
+                                            text = when {
+                                                isAdminMarked -> "Marked by Administrator (${record?.reviewerName ?: "Admin"})"
+                                                isCheckedIn -> "Checked In at $loginTimeFormatted"
+                                                else -> "Live GPS verification ready"
+                                            },
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = if (isCheckedIn) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                            fontWeight = if (isCheckedIn) FontWeight.SemiBold else FontWeight.Normal
+                                            color = if (isCheckedIn || isAdminMarked) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            fontWeight = if (isCheckedIn || isAdminMarked) FontWeight.SemiBold else FontWeight.Normal
                                         )
                                     }
 
@@ -685,10 +743,14 @@ fun AttendanceScreen(
                                                 modifier = Modifier.size(14.dp)
                                             )
                                             Text(
-                                                text = if (isCheckedIn) "Check-In: $loginTimeFormatted" else "Live GPS",
+                                                text = when {
+                                                    isAdminMarked -> "Admin Marked"
+                                                    isCheckedIn -> "Check-In: $loginTimeFormatted"
+                                                    else -> "Live GPS"
+                                                },
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.Bold,
-                                                color = if (isCheckedIn) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.primary
+                                                color = if (isCheckedIn || isAdminMarked) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.primary
                                             )
                                         }
                                     }
@@ -771,7 +833,14 @@ fun AttendanceScreen(
                                         )
                                     }
 
-                                    if (attendanceRules.geofenceEnabled) {
+                                    if (isAdminMarked) {
+                                        Text(
+                                            text = "Location: Not applicable / Admin Marked",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFF0B6E4F),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    } else if (attendanceRules.geofenceEnabled) {
                                         val isInside = distFromOffice <= attendanceRules.officeRadius
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
@@ -809,12 +878,47 @@ fun AttendanceScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
 
+                                if (isAdminMarked) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFE8F5E9),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = Color(0xFF2E7D32),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Column {
+                                                Text(
+                                                    text = "✓ Attendance Already Recorded",
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF2E7D32),
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                                Text(
+                                                    text = "Marked by Administrator (${record?.reviewerName ?: "Admin"}). No check-in required.",
+                                                    color = Color(0xFF2E7D32).copy(alpha = 0.85f),
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                }
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     SwayogButton(
-                                        text = "Check In",
+                                        text = if (isAdminMarked) "Attendance Completed" else "Check In",
                                         onClick = {
                                             if (faceDescriptors.isEmpty()) {
                                                 showEnrollmentBlocker = true
@@ -828,7 +932,7 @@ fun AttendanceScreen(
                                                 )
                                             }
                                         },
-                                        enabled = todayAttendance == null,
+                                        enabled = todayAttendance == null && !isAttendanceCompleted,
                                         modifier = Modifier.weight(1f)
                                     )
 
@@ -843,7 +947,7 @@ fun AttendanceScreen(
                                                 }
                                             }
                                         },
-                                        enabled = todayAttendance != null && todayAttendance?.checkOutTime == null,
+                                        enabled = todayAttendance != null && todayAttendance?.checkInTime != null && todayAttendance?.checkOutTime == null && !isAdminMarked,
                                         variant = ButtonVariant.Secondary,
                                         modifier = Modifier.weight(1f)
                                     )

@@ -198,6 +198,11 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
     throw new Error("Already checked in today");
   }
 
+  // Prevent employee check-in if attendance was already recorded/assigned by administrator
+  if (existing && (existing.manualOverride || existing.status === "PRESENT" || existing.status === "LEAVE" || existing.status === "HOLIDAY")) {
+    throw new Error("Attendance has already been recorded for today by administrator.");
+  }
+
   const rules = await getRulesAsync();
 
   // Validate geofence
@@ -299,17 +304,52 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
   return { attendance, checkInRecord };
 }
 
+export function determineAttendanceSource(record: {
+  manualOverride?: boolean;
+  reviewedBy?: string | null;
+  checkInTime?: Date | null;
+  status: string;
+}): string {
+  if (record.manualOverride || record.reviewedBy) {
+    return record.checkInTime ? "ADMIN_CORRECTION" : "ADMIN_MARKED";
+  }
+  if (record.status === "LEAVE") return "LEAVE";
+  if (record.status === "HOLIDAY") return "HOLIDAY";
+  if (record.status === "ABSENT") return "ABSENT";
+  if (record.checkInTime) return "EMPLOYEE_CHECK_IN";
+  return "SYSTEM_GENERATED";
+}
+
+export function isRecordAttendanceCompleted(record: {
+  manualOverride?: boolean;
+  checkInTime?: Date | null;
+  checkOutTime?: Date | null;
+  status: string;
+}): boolean {
+  if (record.manualOverride) return true;
+  if (record.status === "PRESENT" && !record.checkInTime) return true;
+  if (record.checkOutTime != null) return true;
+  if (record.status === "LEAVE" || record.status === "HOLIDAY" || record.status === "ABSENT") return true;
+  return false;
+}
+
 export async function checkOut(employeeId: string) {
   const today = startOfDay(new Date());
   const record = await prisma.attendanceRecord.findUnique({
     where: { employeeId_date: { employeeId, date: today } },
   });
 
-  if (!record?.checkInTime) {
-    throw new Error("No check-in found for today");
+  if (!record) {
+    throw new Error("No attendance record found for today");
   }
   if (record.checkOutTime) {
     throw new Error("Already checked out today");
+  }
+  if (record.manualOverride && !record.checkInTime) {
+    throw new Error("Attendance was completed by administrator; check-out is not required.");
+  }
+  if (!record.checkInTime) {
+    throw new Error("No check-in found for today");
   }
 
   const now = new Date();
@@ -326,9 +366,57 @@ export async function checkOut(employeeId: string) {
 }
 
 export async function getTodayAttendance(employeeId: string) {
-  return prisma.attendanceRecord.findUnique({
-    where: { employeeId_date: { employeeId, date: startOfDay(new Date()) } },
+  const today = startOfDay(new Date());
+  const record = await prisma.attendanceRecord.findUnique({
+    where: { employeeId_date: { employeeId, date: today } },
   });
+  if (!record) return null;
+
+  let reviewerName: string | null = null;
+  if (record.reviewedBy) {
+    const reviewer = await prisma.user.findUnique({
+      where: { id: record.reviewedBy },
+      select: { fullName: true },
+    });
+    reviewerName = reviewer?.fullName || "Administrator";
+  }
+
+  const source = determineAttendanceSource(record);
+  const isAttendanceCompleted = isRecordAttendanceCompleted(record);
+
+  // Fetch CheckIn record for GPS info if employee checked in
+  let latitude: number | null = null;
+  let longitude: number | null = null;
+  let selfieUrl: string | null = null;
+  if (record.checkInTime) {
+    const checkIn = await prisma.checkIn.findFirst({
+      where: {
+        employeeId,
+        createdAt: {
+          gte: today,
+          lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
+        },
+      },
+      orderBy: { createdAt: "asc" },
+      select: { latitude: true, longitude: true, selfieUrl: true },
+    });
+    if (checkIn) {
+      latitude = checkIn.latitude;
+      longitude = checkIn.longitude;
+      selfieUrl = checkIn.selfieUrl;
+    }
+  }
+
+  return {
+    ...record,
+    source,
+    reviewerName,
+    isAttendanceCompleted,
+    requiresCheckIn: !isAttendanceCompleted && record.checkInTime == null,
+    latitude,
+    longitude,
+    selfieUrl,
+  };
 }
 
 export async function getMonthlyAttendance(employeeId: string, month: number, year: number) {
@@ -360,10 +448,17 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
     : [];
   const reviewerMap = new Map(reviewers.map((u) => [u.id, u.fullName]));
 
-  const enrichedRecords = records.map((r) => ({
-    ...r,
-    reviewerName: r.reviewedBy ? reviewerMap.get(r.reviewedBy) || "Admin" : null,
-  }));
+  const enrichedRecords = records.map((r) => {
+    const source = determineAttendanceSource(r);
+    const isAttendanceCompleted = isRecordAttendanceCompleted(r);
+    return {
+      ...r,
+      source,
+      reviewerName: r.reviewedBy ? reviewerMap.get(r.reviewedBy) || "Administrator" : null,
+      isAttendanceCompleted,
+      requiresCheckIn: !isAttendanceCompleted && r.checkInTime == null,
+    };
+  });
 
   // Build a set of festival holiday date strings (YYYY-MM-DD)
   const holidayDateSet = new Set<string>();
