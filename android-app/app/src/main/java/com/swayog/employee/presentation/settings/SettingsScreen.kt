@@ -663,7 +663,7 @@ fun SettingsScreen(
                                 }
                             }
                             is AppUpdateState.UpToDate -> {
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(
@@ -671,35 +671,42 @@ fun SettingsScreen(
                                             RoundedCornerShape(12.dp)
                                         )
                                         .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = "Up to date",
-                                        tint = Color(0xFF16A34A),
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Up to date",
+                                            tint = Color(0xFF16A34A),
+                                            modifier = Modifier.size(20.dp)
+                                        )
                                         Text(
-                                            text = "Up to date",
+                                            text = "Application is up to date",
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFF16A34A)
                                         )
+                                    }
+                                    Text(
+                                        text = "Latest Version: v${state.installedVersionName}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "Build: ${state.installedVersionCode}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    )
+                                    if (state.lastCheckedTimeMillis > 0) {
+                                        val dateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                                         Text(
-                                            text = "You are using the latest version (v${state.installedVersionName}).",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                            text = "Last Checked: ${dateFormat.format(Date(state.lastCheckedTimeMillis))}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                         )
-                                        if (state.lastCheckedTimeMillis > 0) {
-                                            val dateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-                                            Text(
-                                                text = "Last checked: ${dateFormat.format(Date(state.lastCheckedTimeMillis))}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -708,10 +715,10 @@ fun SettingsScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(
-                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
                                             RoundedCornerShape(12.dp)
                                         )
-                                        .padding(12.dp),
+                                        .padding(14.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Row(
@@ -724,23 +731,39 @@ fun SettingsScreen(
                                             tint = MaterialTheme.colorScheme.primary
                                         )
                                         Text(
-                                            text = "New version available: v${state.manifest.versionName}",
+                                            text = "New Update Available",
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary
                                         )
                                     }
-
+                                    Text(
+                                        text = "Version: v${state.manifest.versionName}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Build: ${state.manifest.versionCode}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                     if (state.manifest.releaseNotes.isNotEmpty()) {
                                         Text(
-                                            text = "• " + state.manifest.releaseNotes.take(2).joinToString("\n• "),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            text = "Release notes:",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold
                                         )
+                                        state.manifest.releaseNotes.forEach { note ->
+                                            Text(
+                                                text = "• $note",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
-
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     SwayogButton(
-                                        text = "Download & Update",
+                                        text = "Update Now",
                                         onClick = { viewModel.downloadAndInstallUpdate(state.manifest) },
                                         variant = ButtonVariant.Primary
                                     )
@@ -757,15 +780,29 @@ fun SettingsScreen(
                                         progress = state.progressPercent / 100f,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(6.dp)
-                                            .clip(RoundedCornerShape(3.dp))
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(4.dp))
                                     )
-                                    Text(
-                                        text = "Downloading... ${state.progressPercent}%",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Downloading... ${state.progressPercent}%",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        if (state.totalBytes > 0) {
+                                            val downloadedMb = state.bytesDownloaded / (1024.0 * 1024.0)
+                                            val totalMb = state.totalBytes / (1024.0 * 1024.0)
+                                            Text(
+                                                text = String.format(Locale.getDefault(), "%.1f / %.1f MB", downloadedMb, totalMb),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             is AppUpdateState.Verifying -> {
@@ -788,31 +825,50 @@ fun SettingsScreen(
                                 )
                             }
                             is AppUpdateState.Error -> {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ErrorOutline,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ErrorOutline,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            text = "Update Check Failed",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    }
                                     Text(
                                         text = state.message,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error
+                                        color = MaterialTheme.colorScheme.onErrorContainer
                                     )
                                 }
                             }
                             else -> {}
                         }
 
+                        val isChecking = updateState is AppUpdateState.Checking
+                        val isBusy = isChecking || updateState is AppUpdateState.Downloading || updateState is AppUpdateState.Verifying
                         SwayogButton(
-                            text = "Check for Updates",
+                            text = if (isChecking) "Checking for updates..." else "Check for Updates",
                             onClick = { viewModel.checkForUpdates() },
-                            isLoading = updateState is AppUpdateState.Checking,
+                            isLoading = isChecking,
+                            enabled = !isBusy,
                             variant = ButtonVariant.Secondary
                         )
                     }

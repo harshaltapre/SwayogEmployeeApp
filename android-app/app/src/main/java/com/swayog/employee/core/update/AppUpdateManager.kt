@@ -127,42 +127,23 @@ class AppUpdateManager @Inject constructor(
                         CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                     }
                 } else {
-                    val errorMsg = "Update check returned HTTP ${response.code()}"
+                    val errorMsg = "Update check failed with HTTP ${response.code()}"
                     Log.w(TAG, errorMsg)
-                    if (force) {
-                        val displayError = "Could not check for updates. Please try again later."
-                        _updateState.value = AppUpdateState.Error(
-                            message = displayError,
-                            isNetworkError = true
-                        )
-                        CheckResult.Error(displayError)
-                    } else {
-                        // Silent fallback for background check
-                        _updateState.value = AppUpdateState.UpToDate(
-                            installedVersionName = installedVersionName,
-                            installedVersionCode = installedVersionCode,
-                            lastCheckedTimeMillis = lastAutoCheckTimestamp
-                        )
-                        CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Network exception during update check: ${e.message}", e)
-                val displayError = "Network error while checking for updates. Please check your connection."
-                if (force) {
+                    val displayError = "Unable to check for updates. Please check your internet connection and try again."
                     _updateState.value = AppUpdateState.Error(
                         message = displayError,
                         isNetworkError = true
                     )
                     CheckResult.Error(displayError)
-                } else {
-                    _updateState.value = AppUpdateState.UpToDate(
-                        installedVersionName = installedVersionName,
-                        installedVersionCode = installedVersionCode,
-                        lastCheckedTimeMillis = lastAutoCheckTimestamp
-                    )
-                    CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Network exception during update check: ${e.message}", e)
+                val displayError = "Unable to check for updates. Please check your internet connection and try again."
+                _updateState.value = AppUpdateState.Error(
+                    message = displayError,
+                    isNetworkError = true
+                )
+                CheckResult.Error(displayError)
             }
         }
     }

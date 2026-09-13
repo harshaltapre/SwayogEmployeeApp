@@ -20,6 +20,8 @@ function shouldBypassMaintenance(path: string): boolean {
   return (
     path.startsWith("/api/v1/health") ||
     path.startsWith("/api/v1/auth") ||
+    path.startsWith("/api/v1/app/update") ||
+    path.startsWith("/app/update") ||
     path.startsWith("/api/v1/superadmin")
   );
 }

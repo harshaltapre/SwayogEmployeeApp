@@ -48,8 +48,12 @@ android {
         applicationId = "com.swayog.employee"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
+            ?: (localProperties.getProperty("versionCode"))?.toIntOrNull()
+            ?: 1
+        versionName = (project.findProperty("versionName") as? String)
+            ?: (localProperties.getProperty("versionName"))
+            ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         

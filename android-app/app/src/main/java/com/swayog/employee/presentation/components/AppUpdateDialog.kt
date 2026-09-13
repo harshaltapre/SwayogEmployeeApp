@@ -112,7 +112,7 @@ private fun UpdateContentDialog(
     downloadProgress: AppUpdateState.Downloading?,
     isVerifying: Boolean,
     errorMessage: String?,
-    primaryButtonText: String = "Download & Update",
+    primaryButtonText: String = "Update Now",
     onPrimaryAction: () -> Unit,
     onDismiss: () -> Unit
 ) {

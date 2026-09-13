@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { uploadToR2, isR2Configured, getBucketName } from "../src/services/r2StorageService.js";
+import { uploadToR2, getFromR2, isR2Configured, getBucketName } from "../src/services/r2StorageService.js";
 import { AppUpdateManifest } from "../src/modules/app-update/appUpdate.controller.js";
 
 /**
@@ -91,6 +91,15 @@ async function main() {
   const latestManifestKey = "releases/android/latest.json";
   console.log(`[Deploy] Updating latest manifest: ${latestManifestKey}...`);
   await uploadToR2(manifestBuffer, latestManifestKey, "application/json", "latest.json");
+
+  // Step 11: Verify the upload
+  console.log("[Deploy] Verifying uploaded manifest in R2...");
+  const verifyBuffer = await getFromR2(latestManifestKey);
+  const verifyManifest = JSON.parse(verifyBuffer.toString("utf-8")) as AppUpdateManifest;
+  if (verifyManifest.versionCode !== versionCode || verifyManifest.sha256 !== sha256) {
+    throw new Error(`Verification failed: uploaded manifest content does not match expected release (versionCode: ${verifyManifest.versionCode}, sha: ${verifyManifest.sha256})`);
+  }
+  console.log("✅ Verified: R2 latest manifest accurately reflects release v" + versionName);
 
   console.log("\n========================================================");
   console.log("🚀 RELEASE SUCCESSFULLY DEPLOYED TO R2");

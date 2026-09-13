@@ -29,6 +29,7 @@ import taskImagesRoutes from "./routes/taskImages.js";
 import waareeRoutes from "./routes/waaree.js";
 import { paymentsRoutes } from "./routes/payments.js";
 import { isphereGreenRoutes } from "./modules/isphere-green/isphere-green.routes.js";
+import { appUpdateRoutes } from "./routes/appUpdate.routes.js";
 
 export const app = express();
 
@@ -185,6 +186,9 @@ app.use("/api/v1/messages", messagesRoutes);
 app.use("/api/v1/inventory", inventoryRoutes);
 app.use("/api/v1/apartments", apartmentsRoutes);
 app.use("/api/v1/isphere-green", isphereGreenRoutes);
+app.use("/api/v1/app/update", appUpdateRoutes);
+app.use("/app/update", appUpdateRoutes);
+app.use("/api/app/update", appUpdateRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
