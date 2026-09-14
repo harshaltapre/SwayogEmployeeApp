@@ -30,6 +30,7 @@ import waareeRoutes from "./routes/waaree.js";
 import { paymentsRoutes } from "./routes/payments.js";
 import { isphereGreenRoutes } from "./modules/isphere-green/isphere-green.routes.js";
 import { appUpdateRoutes } from "./routes/appUpdate.routes.js";
+import workforceRoutes from "./routes/workforce.js";
 
 export const app = express();
 
@@ -172,6 +173,8 @@ app.use("/api/waaree", waareeRoutes);
 app.use("/api/v1/tasks", taskImagesRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/v1/payments", paymentsRoutes);
+app.use("/api/v1/workforce", workforceRoutes);
+app.use("/api/workforce", workforceRoutes);
 
 // Role-based protected routes
 app.use("/api/v1/superadmin", superadminRoutes);
