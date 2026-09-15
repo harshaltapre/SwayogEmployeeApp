@@ -1,57 +1,62 @@
 package com.swayog.employee.data.sync
 
 import android.content.Context
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
+import androidx.work.*
 import java.util.concurrent.TimeUnit
 
-/**
- * Utility class to schedule and manage periodic background work using WorkManager.
- * Ensures tasks are refreshed periodically to keep the dashboard synchronized with the backend.
- */
 object WorkManagerScheduler {
     
-    private const val PERIODIC_TASK_REFRESH_WORK = "periodic_task_refresh_work"
-    
     /**
-     * Schedules the periodic task refresh worker to run every 15 minutes.
-     * This ensures the dashboard stays synchronized with the backend without manual refresh.
-     * 
-     * @param context Application context
+     * Schedule periodic task refresh every 15 minutes
+     * This ensures the dashboard stays synchronized with backend changes
      */
     fun schedulePeriodicTaskRefresh(context: Context) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresBatteryNotLow(true)
+            .setRequiresBatteryNotLow(false)
+            .setRequiresCharging(false)
             .build()
         
         val periodicWorkRequest = PeriodicWorkRequestBuilder<PeriodicTaskRefreshWorker>(
-            15, TimeUnit.MINUTES
+            15, TimeUnit.MINUTES // Refresh every 15 minutes
         )
             .setConstraints(constraints)
-            .setInitialDelay(5, TimeUnit.MINUTES) // Initial delay to avoid immediate refresh on app start
+            .setBackoffCriteria(
+                BackoffPolicy.LINEAR,
+                10, TimeUnit.MINUTES
+            )
             .build()
         
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            PERIODIC_TASK_REFRESH_WORK,
-            ExistingPeriodicWorkPolicy.UPDATE, // Preserves enqueue time and doesn't cancel running workers
+            PeriodicTaskRefreshWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE, // Update if already exists
             periodicWorkRequest
         )
         
-        android.util.Log.d("WorkManagerScheduler", "Scheduled periodic task refresh worker (every 15 minutes)")
+        android.util.Log.d("WorkManagerScheduler", "Scheduled periodic task refresh every 15 minutes")
     }
     
     /**
-     * Cancels the periodic task refresh worker.
-     * Use this when the user logs out or when periodic sync should be disabled.
-     * 
-     * @param context Application context
+     * Cancel the periodic task refresh
      */
     fun cancelPeriodicTaskRefresh(context: Context) {
-        WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_TASK_REFRESH_WORK)
-        android.util.Log.d("WorkManagerScheduler", "Cancelled periodic task refresh worker")
+        WorkManager.getInstance(context).cancelUniqueWork(PeriodicTaskRefreshWorker.WORK_NAME)
+        android.util.Log.d("WorkManagerScheduler", "Cancelled periodic task refresh")
+    }
+    
+    /**
+     * Manually trigger an immediate task refresh (for pull-to-refresh scenarios)
+     */
+    fun triggerImmediateTaskRefresh(context: Context) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        
+        val oneTimeWorkRequest = OneTimeWorkRequestBuilder<PeriodicTaskRefreshWorker>()
+            .setConstraints(constraints)
+            .build()
+        
+        WorkManager.getInstance(context).enqueue(oneTimeWorkRequest)
+        android.util.Log.d("WorkManagerScheduler", "Triggered immediate task refresh")
     }
 }

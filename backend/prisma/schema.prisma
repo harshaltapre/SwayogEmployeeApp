@@ -58,6 +58,16 @@ model User {
   dailyCommits        DailyCommit[]
   taskAssignments     TaskAssignment[]
   taskImages          TaskImage[]
+  leaveRequests       LeaveRequest[]
+  leaveBalances       LeaveBalance[]
+  overtimeRequests    OvertimeRequest[]
+  overtimeSessions    OvertimeSession[]
+  salaryRecords       SalaryRecord[]
+  salaryRevisions     SalaryRevision[]
+  advances            Advance[]
+  incentives          Incentive[]
+  attendanceCorrections AttendanceCorrection[]
+  employeeNotifications EmployeeNotification[]
 
   @@index([lockoutUntil])
   @@index([departmentId])
@@ -465,7 +475,9 @@ model AttendanceRecord {
   checkInTime    DateTime?
   checkOutTime   DateTime?
   totalMinutes   Int?
+  overtimeMinutes Int?            @default(0)
   status         AttendanceStatus @default(PRESENT)
+  source         String?          @default("EMPLOYEE") // EMPLOYEE | ADMIN
   notes          String?
   reviewedBy     String?
   manualOverride Boolean          @default(false)
@@ -657,6 +669,8 @@ enum AttendanceStatus {
   LATE
   LEAVE
   HOLIDAY
+  WEEKLY_OFF
+  COMP_OFF
 }
 
 enum WorkStatus {
@@ -1027,4 +1041,324 @@ model GenerationLog {
   @@index([customerId, timestamp])
   @@index([installationId, timestamp])
   @@map("generation_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Workforce Module — Leave Management
+// ---------------------------------------------------------------------------
+
+model LeaveType {
+  id           String         @id @default(uuid())
+  name         String         // e.g. "Paid Leave", "Sick Leave", "Casual Leave"
+  code         String         @unique // e.g. "PL", "SL", "CL", "EL", "UL"
+  isPaid       Boolean        @default(true)
+  annualLimit  Float          @default(0) // 0 = unlimited / as per policy
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  balances     LeaveBalance[]
+  requests     LeaveRequest[]
+}
+
+model LeaveBalance {
+  id           String    @id @default(uuid())
+  employeeId   String
+  leaveTypeId  String
+  year         Int
+  totalDays    Float     @default(0)
+  usedDays     Float     @default(0)
+  pendingDays  Float     @default(0)
+  remainingDays Float    @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  employee     User      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType    LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@index([employeeId])
+  @@index([leaveTypeId])
+}
+
+model LeaveRequest {
+  id          String            @id @default(uuid())
+  employeeId  String
+  leaveTypeId String
+  startDate   DateTime          @db.Date
+  endDate     DateTime          @db.Date
+  isHalfDay   Boolean           @default(false)
+  halfDayPart String?           // MORNING | AFTERNOON
+  totalDays   Float             @default(1)
+  reason      String
+  status      LeaveRequestStatus @default(PENDING)
+  adminNote   String?
+  approvedBy  String?
+  approvedAt  DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  employee    User              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType         @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([startDate])
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Workforce Module — Overtime Management
+// ---------------------------------------------------------------------------
+
+model OvertimeRequest {
+  id              String              @id @default(uuid())
+  employeeId      String
+  date            DateTime            @db.Date
+  otType          OvertimeType        @default(AFTER_SHIFT)
+  startTime       DateTime            // Full ISO8601 timestamp
+  expectedEndTime DateTime?           // Full ISO8601 timestamp
+  actualEndTime   DateTime?           // Full ISO8601 timestamp (set when session ends)
+  durationMinutes Int?                // Computed from actual times
+  reason          String
+  status          OvertimeStatus      @default(PENDING)
+  adminNote       String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  approvedMinutes Int?                // Admin may approve partial duration
+  otRate          Float?              // Rate per hour (provided by backend)
+  otMultiplier    Float?              // e.g. 1.5, 2.0
+  otAmount        Float?              // Calculated OT amount
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  employee        User                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  sessions        OvertimeSession[]
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([date])
+}
+
+model OvertimeSession {
+  id              String          @id @default(uuid())
+  employeeId      String
+  otRequestId     String
+  sessionStart    DateTime        // Full ISO8601 — handles midnight crossing
+  sessionEnd      DateTime?       // Full ISO8601
+  durationMinutes Int?            // Computed on stop
+  status          String          @default("ACTIVE") // ACTIVE | COMPLETED
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  employee        User            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  otRequest       OvertimeRequest @relation(fields: [otRequestId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([otRequestId])
+}
+
+enum OvertimeType {
+  AFTER_SHIFT
+  SUNDAY
+  HOLIDAY
+  NIGHT
+  WEEKLY_OFF
+}
+
+enum OvertimeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Workforce Module — Salary / Payroll
+// ---------------------------------------------------------------------------
+
+model SalaryRecord {
+  id               String        @id @default(uuid())
+  employeeId       String
+  month            Int
+  year             Int
+  baseSalary       Float         @default(0)
+  regularPay       Float         @default(0)
+  overtimePay      Float         @default(0)
+  incentivesTotal  Float         @default(0)
+  deductions       Float         @default(0)
+  advanceDeduction Float         @default(0)
+  netPayable       Float         @default(0)
+  status           SalaryStatus  @default(ESTIMATED)
+  finalizedAt      DateTime?
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  employee         User          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, month, year])
+  @@index([employeeId])
+  @@index([status])
+}
+
+model SalaryRevision {
+  id              String   @id @default(uuid())
+  employeeId      String
+  effectiveDate   DateTime @db.Date
+  previousSalary  Float    @default(0)
+  newSalary       Float
+  incrementAmount Float    @default(0)
+  incrementPercent Float   @default(0)
+  reason          String?
+  approvedBy      String?
+  createdAt       DateTime @default(now())
+  employee        User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([effectiveDate])
+}
+
+enum SalaryStatus {
+  ESTIMATED
+  PROCESSING
+  CONFIRMED
+  PAID
+}
+
+// ---------------------------------------------------------------------------
+// Workforce Module — Advances
+// ---------------------------------------------------------------------------
+
+model Advance {
+  id                   String              @id @default(uuid())
+  employeeId           String
+  amount               Float
+  reason               String
+  status               AdvanceStatus       @default(PENDING)
+  approvedBy           String?
+  approvedAt           DateTime?
+  adminNote            String?
+  totalRecovered       Float               @default(0)
+  remainingAmount      Float               @default(0)
+  currentMonthDeduction Float              @default(0)
+  requestedAt          DateTime            @default(now())
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  employee             User                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  installments         AdvanceInstallment[]
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+model AdvanceInstallment {
+  id         String   @id @default(uuid())
+  advanceId  String
+  month      Int
+  year       Int
+  amount     Float
+  status     String   @default("PENDING") // PENDING | DEDUCTED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  advance    Advance  @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+
+  @@index([advanceId])
+}
+
+enum AdvanceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+  PARTIALLY_RECOVERED
+  FULLY_RECOVERED
+}
+
+// ---------------------------------------------------------------------------
+// Workforce Module — Incentives
+// ---------------------------------------------------------------------------
+
+model Incentive {
+  id         String   @id @default(uuid())
+  employeeId String
+  name       String   // e.g. "Attendance Incentive", "Project Incentive"
+  amount     Float
+  month      Int
+  year       Int
+  reason     String?
+  status     String   @default("CONFIRMED") // ESTIMATED | CONFIRMED | PAID
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  employee   User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([month, year])
+}
+
+// ---------------------------------------------------------------------------
+// Workforce Module — Attendance Corrections
+// ---------------------------------------------------------------------------
+
+model AttendanceCorrection {
+  id                 String             @id @default(uuid())
+  employeeId         String
+  date               DateTime           @db.Date
+  requestedCheckIn   DateTime?
+  requestedCheckOut  DateTime?
+  reason             String
+  status             CorrectionStatus   @default(PENDING)
+  adminNote          String?
+  approvedBy         String?
+  approvedAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  employee           User               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([date])
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ---------------------------------------------------------------------------
+// Workforce Module — Employee Notifications
+// ---------------------------------------------------------------------------
+
+model EmployeeNotification {
+  id         String   @id @default(uuid())
+  employeeId String
+  type       String   // LEAVE_APPROVED | LEAVE_REJECTED | OT_APPROVED | OT_REJECTED | SALARY_FINALIZED | ADVANCE_APPROVED | CORRECTION_APPROVED | HOLIDAY_ADDED
+  title      String
+  message    String
+  refId      String?  // ID of the related entity
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  employee   User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([type])
+  @@index([read])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Workforce Module — Work Calendar Policy (company-level)
+// ---------------------------------------------------------------------------
+
+model WorkCalendarPolicy {
+  id                 String   @id @default("default")
+  weeklyOffDays      Int[]    @default([0]) // 0=Sunday, 6=Saturday etc.
+  dailyWorkHours     Float    @default(8.0)
+  shiftStartTime     String   @default("09:00")
+  shiftEndTime       String   @default("18:00")
+  overtimeEligible   Boolean  @default(true)
+  otRatePerHour      Float?   // if null, calculated from monthly salary
+  otMultiplier       Float    @default(1.5)
+  updatedAt          DateTime @updatedAt
 }

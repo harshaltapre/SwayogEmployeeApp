@@ -7,6 +7,10 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 
 object ImageUtils {
+    
+    // Simple in-memory cache for failed R2 URLs to avoid repeated failed requests
+    private val failedUrlCache = mutableSetOf<String>()
+    private const val MAX_FAILED_CACHE_SIZE = 100
 
     @Suppress("UNUSED_PARAMETER")
     fun resolveImageModel(
@@ -35,9 +39,16 @@ object ImageUtils {
             // Already a presigned URL
             return trimmed
         } else if (trimmed.contains(".r2.cloudflarestorage.com/")) {
-            // Unsigned raw R2 URL -> Route through backend image view endpoint for presigned access
-            val encoded = java.net.URLEncoder.encode(trimmed, "UTF-8")
-            return "$base/api/v1/tasks/images/view?url=$encoded"
+            // Unsigned raw R2 URL -> Check if it's in failed cache before routing through backend
+            val backendUrl = "$base/api/v1/tasks/images/view?url=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
+            
+            // If we've tried the backend endpoint for this URL and it failed, try direct R2 URL
+            if (failedUrlCache.contains(trimmed)) {
+                android.util.Log.w("IMAGE_UTILS", "Using direct R2 URL fallback for previously failed: ${trimmed.take(50)}")
+                return trimmed
+            }
+            
+            return backendUrl
         } else if (trimmed.startsWith("tasks/") || trimmed.startsWith("users/") || trimmed.startsWith("profiles/") || trimmed.startsWith("uploads/")) {
             // R2 Object Key directly -> Route through backend image view endpoint
             val encoded = java.net.URLEncoder.encode(trimmed, "UTF-8")
@@ -48,6 +59,25 @@ object ImageUtils {
             val cleanPath = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
             return "$base$cleanPath"
         }
+    }
+    
+    /**
+     * Mark a URL as failed to avoid repeated backend requests
+     */
+    fun markUrlAsFailed(url: String) {
+        if (failedUrlCache.size >= MAX_FAILED_CACHE_SIZE) {
+            failedUrlCache.clear()
+        }
+        failedUrlCache.add(url)
+        android.util.Log.d("IMAGE_UTILS", "Marked URL as failed: ${url.take(50)}")
+    }
+    
+    /**
+     * Clear the failed URL cache (call this after successful network recovery)
+     */
+    fun clearFailedUrlCache() {
+        failedUrlCache.clear()
+        android.util.Log.d("IMAGE_UTILS", "Cleared failed URL cache")
     }
 
     /**
@@ -146,4 +176,3 @@ object ImageUtils {
         }
     }
 }
-
