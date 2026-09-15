@@ -17,7 +17,12 @@ data class AttendanceEntity(
     val notes: String?,
     val checkInSelfieUrl: String?,
     val checkInLocation: String?,
-    val isSynced: Boolean = true
+    val isSynced: Boolean = true,
+    val source: String? = null,
+    val manualOverride: Boolean = false,
+    val reviewedBy: String? = null,
+    val reviewerName: String? = null,
+    val isAttendanceCompleted: Boolean = false
 ) {
     fun toAttendanceRecord(): AttendanceRecord {
         var lat: Double? = null
@@ -46,7 +51,12 @@ data class AttendanceEntity(
             status = status,
             notes = notes,
             latitude = lat,
-            longitude = lng
+            longitude = lng,
+            source = source,
+            manualOverride = manualOverride,
+            reviewedBy = reviewedBy,
+            reviewerName = reviewerName,
+            isAttendanceCompleted = isAttendanceCompleted
         )
     }
 }

@@ -11,6 +11,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.swayog.employee.presentation.auth.LoginScreen
 import com.swayog.employee.presentation.dashboard.DashboardScreen
 import com.swayog.employee.presentation.attendance.AttendanceScreen
+import com.swayog.employee.presentation.attendance.WorkforceDashboardScreen
 import com.swayog.employee.presentation.tasks.TasksScreen
 import com.swayog.employee.presentation.profile.ProfileScreen
 import com.swayog.employee.presentation.settings.SettingsScreen
@@ -279,6 +280,7 @@ sealed class Screen(val route: String) {
     data object Login : Screen("login")
     data object Dashboard : Screen("dashboard")
     data object Attendance : Screen("attendance")
+    data object AttendanceTracking : Screen("attendance_tracking")
     data object Tasks : Screen("tasks")
     data object Profile : Screen("profile")
     data object Settings : Screen("settings")

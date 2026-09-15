@@ -1,14 +1,23 @@
 import { Request, Response } from "express";
 import { getFromR2, generatePresignedUrl, isR2Configured, getBucketName } from "../../services/r2StorageService.js";
 
+export interface StructuredReleaseNotes {
+  summary: string;
+  items: string[];
+}
+
+export type ReleaseNotesType = string[] | StructuredReleaseNotes;
+
 export interface AppUpdateManifest {
+  appId?: string;
+  platform?: string;
   versionCode: number;
   versionName: string;
   minimumVersionCode?: number;
   mandatory: boolean;
   releaseDate?: string;
   title?: string;
-  releaseNotes: string[];
+  releaseNotes: ReleaseNotesType;
   apkUrl: string;
   sha256: string;
   fileSize?: number;
@@ -19,44 +28,62 @@ export interface AppUpdateManifest {
  * or for local development environments.
  */
 const DEFAULT_FALLBACK_MANIFEST: AppUpdateManifest = {
+  appId: "com.swayog.employee",
+  platform: "android",
   versionCode: 1,
   versionName: "1.0.0",
   minimumVersionCode: 1,
   mandatory: false,
   releaseDate: new Date().toISOString().split("T")[0],
   title: "Swayog Employee App",
-  releaseNotes: [
-    "Initial production release",
-    "Field attendance with face verification",
-    "Task tracking and management"
-  ],
-  apkUrl: "https://swayog-dashboard.vercel.app/releases/android/app-release.apk",
+  releaseNotes: {
+    summary: "Production release with full attendance and task tracking",
+    items: [
+      "Field attendance with face verification",
+      "Task tracking and management",
+      "Offline sync and performance improvements"
+    ]
+  },
+  apkUrl: "https://swayog-dashboard.vercel.app/api/v1/app/update/download/latest",
   sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 };
 
 /**
  * GET /api/v1/app/update/latest
+ * GET /api/v1/app/update/latest.json
+ * GET /api/v1/app/android/latest.json
+ * GET /app/android/latest.json
  * GET /app/update/latest
  * GET /app/update/latest.json
  *
  * Public endpoint that serves the latest application release manifest.
- * Checks Cloudflare R2 for `releases/android/latest.json`.
+ * Checks Cloudflare R2 for `releases/android/latest.json` (or `app/android/latest.json`).
  * Automatically generates a presigned download URL if R2 storage is private.
  */
 export async function getLatestAppUpdate(req: Request, res: Response): Promise<void> {
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   try {
     let manifest: AppUpdateManifest | null = null;
 
     if (isR2Configured()) {
-      try {
-        const manifestBuffer = await getFromR2("releases/android/latest.json");
-        manifest = JSON.parse(manifestBuffer.toString("utf-8")) as AppUpdateManifest;
-      } catch (err: any) {
-        console.warn("[AppUpdate] Could not load releases/android/latest.json from R2:", err.message);
+      const candidateKeys = [
+        "releases/android/latest.json",
+        "app/android/latest.json",
+        "latest.json"
+      ];
+
+      for (const key of candidateKeys) {
+        try {
+          const manifestBuffer = await getFromR2(key);
+          manifest = JSON.parse(manifestBuffer.toString("utf-8")) as AppUpdateManifest;
+          if (manifest) break;
+        } catch {
+          // try next candidate key
+        }
       }
     }
 
@@ -64,12 +91,19 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
       manifest = { ...DEFAULT_FALLBACK_MANIFEST };
     }
 
-    // Resolve apkUrl: if it refers to an R2 object key (or is relative), generate a presigned URL
+    // Ensure standard metadata defaults
+    if (!manifest.appId) manifest.appId = "com.swayog.employee";
+    if (!manifest.platform) manifest.platform = "android";
+
+    // Resolve apkUrl: if it refers to an R2 object key (or is relative), generate a presigned or public URL
+    const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
+
     if (manifest.apkUrl) {
       const cleanKey = manifest.apkUrl.trim();
-      // If it's an object key path like "releases/android/..." or doesn't start with http
       if (!cleanKey.startsWith("http://") && !cleanKey.startsWith("https://")) {
-        if (isR2Configured()) {
+        if (publicBaseUrl) {
+          manifest.apkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${cleanKey.replace(/^\//, "")}`;
+        } else if (isR2Configured()) {
           try {
             // Presigned URL valid for 24 hours (86400 seconds)
             manifest.apkUrl = await generatePresignedUrl(cleanKey, 86400);
@@ -78,13 +112,14 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
           }
         }
       } else if (cleanKey.includes(".r2.cloudflarestorage.com")) {
-        // If it points to an internal R2 endpoint, presign it securely
+        // If it points to an internal R2 endpoint, rewrite to publicBaseUrl or presign securely
         try {
           const pathSegments = new URL(cleanKey).pathname.split("/").filter(Boolean);
           const bucket = getBucketName();
-          // Remove bucket name if prefixed in pathname
           const objectKey = pathSegments[0] === bucket ? pathSegments.slice(1).join("/") : pathSegments.join("/");
-          if (objectKey && isR2Configured()) {
+          if (publicBaseUrl && objectKey) {
+            manifest.apkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${objectKey}`;
+          } else if (objectKey && isR2Configured()) {
             manifest.apkUrl = await generatePresignedUrl(objectKey, 86400);
           }
         } catch {

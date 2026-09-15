@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.util.UUID
 import javax.inject.Inject
@@ -632,22 +633,42 @@ class TaskRepository @Inject constructor(
                     // can cause issues when the coordinator dashboard tries to display them.
                     val isSiteTask = taskType == "SITE_VISIT" || task.isSiteVisit || task.jobType?.lowercase()?.contains("site") == true || task.jobType?.lowercase()?.contains("visit") == true || !images.isNullOrEmpty()
                     val finalSitePhotos: List<String>? = if (!images.isNullOrEmpty() && isSiteTask) {
-                        try {
-                            android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Uploading ${images.size} site photos via dedicated /photos endpoint for task $cleanTaskId")
-                            val photosResponse = apiService.updateTaskPhotos(
-                                cleanTaskId,
-                                UpdateTaskPhotosRequest(sitePhotos = images)
-                            )
-                            if (photosResponse.isSuccessful && photosResponse.body()?.data != null) {
-                                val updatedTask = photosResponse.body()!!.data!!
-                                android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Photos endpoint returned ${updatedTask.sitePhotos?.size ?: 0} file-path URLs")
-                                updatedTask.sitePhotos ?: task.sitePhotos ?: images
-                            } else {
-                                android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos endpoint returned HTTP ${photosResponse.code()} — falling back to base64 from local")
-                                task.sitePhotos ?: task.images ?: images
+                        var photosResult: List<String>? = null
+                        var retryCount = 0
+                        val maxRetries = 3
+                        
+                        while (retryCount < maxRetries && photosResult == null) {
+                            try {
+                                android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Attempt ${retryCount + 1}/$maxRetries: Uploading ${images.size} site photos via dedicated /photos endpoint for task $cleanTaskId")
+                                val photosResponse = apiService.updateTaskPhotos(
+                                    cleanTaskId,
+                                    UpdateTaskPhotosRequest(sitePhotos = images)
+                                )
+                                if (photosResponse.isSuccessful && photosResponse.body()?.data != null) {
+                                    val updatedTask = photosResponse.body()!!.data!!
+                                    android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Photos endpoint SUCCESS: returned ${updatedTask.sitePhotos?.size ?: 0} file-path URLs")
+                                    photosResult = updatedTask.sitePhotos ?: task.sitePhotos ?: images
+                                } else {
+                                    android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos endpoint returned HTTP ${photosResponse.code()} — attempt ${retryCount + 1}/$maxRetries")
+                                    retryCount++
+                                    if (retryCount < maxRetries) {
+                                        delay(1000L * retryCount)
+                                    }
+                                }
+                            } catch (photoEx: Exception) {
+                                android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos endpoint threw exception on attempt ${retryCount + 1}/$maxRetries: ${photoEx.message}")
+                                retryCount++
+                                if (retryCount < maxRetries) {
+                                    delay(1000L * retryCount)
+                                }
                             }
-                        } catch (photoEx: Exception) {
-                            android.util.Log.w("SiteVisitSync", "[SiteVisitSync] Photos endpoint threw exception: ${photoEx.message} — using local images")
+                        }
+                        
+                        if (photosResult != null) {
+                            android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Successfully uploaded photos after $retryCount attempts")
+                            photosResult
+                        } else {
+                            android.util.Log.e("SiteVisitSync", "[SiteVisitSync] Photos endpoint FAILED after $maxRetries attempts — falling back to base64 from local")
                             task.sitePhotos ?: task.images ?: images
                         }
                     } else {

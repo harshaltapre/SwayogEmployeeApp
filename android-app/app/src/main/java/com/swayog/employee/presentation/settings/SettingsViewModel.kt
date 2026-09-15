@@ -40,7 +40,7 @@ class SettingsViewModel @Inject constructor(
 
     fun checkForUpdates() {
         viewModelScope.launch {
-            when (val result = appUpdateManager.checkForUpdates(force = true, autoDownload = true)) {
+            when (val result = appUpdateManager.checkForUpdates(force = true, autoDownload = false)) {
                 is com.swayog.employee.core.update.AppUpdateManager.CheckResult.UpdateAvailable -> {
                     _updateEvent.emit(UpdateEvent.UpdateFound(result.manifest.versionName))
                 }

@@ -40,7 +40,7 @@ export class InverterProviderRegistry {
       throw new Error(`Provider not available for brand: ${brand}`);
     }
 
-    return new ProviderClass(config);
+    return new (ProviderClass as new (config: ProviderConfig) => BaseInverterProvider)(config);
   }
 
   /**

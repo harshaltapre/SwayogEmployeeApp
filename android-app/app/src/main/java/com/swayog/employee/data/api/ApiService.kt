@@ -59,6 +59,12 @@ interface ApiService {
     @GET("app/update/latest")
     suspend fun getLatestAppUpdate(): Response<AppUpdateManifest>
 
+    @GET("app/android/latest.json")
+    suspend fun getAppUpdateAndroidLatest(): Response<AppUpdateManifest>
+
+    @GET("app/update/latest.json")
+    suspend fun getAppUpdateLatestJson(): Response<AppUpdateManifest>
+
     @GET
     suspend fun getAppUpdateFromUrl(@Url url: String): Response<AppUpdateManifest>
     
@@ -484,5 +490,93 @@ interface ApiService {
     suspend fun updateUserSettings(
         @Body settings: UserSettingsDto
     ): Response<ApiResponse<UserSettingsDto>>
+
+    // Workforce Management endpoints
+    @GET("workforce/dashboard")
+    suspend fun getWorkforceDashboard(
+        @Query("month") month: Int,
+        @Query("year") year: Int
+    ): Response<WorkforceDashboardResponse>
+
+    @GET("workforce/calendar")
+    suspend fun getAuthoritativeCalendar(
+        @Query("month") month: Int,
+        @Query("year") year: Int
+    ): Response<AuthoritativeCalendarResponse>
+
+    @GET("workforce/work-hours")
+    suspend fun getWorkHours(
+        @Query("month") month: Int,
+        @Query("year") year: Int
+    ): Response<ApiResponse<WorkforceSummary>>
+
+    @GET("workforce/leave/balance")
+    suspend fun getLeaveBalance(): Response<LeaveBalanceApiResponse>
+
+    @GET("workforce/leave/history")
+    suspend fun getLeaveHistory(): Response<LeaveHistoryResponse>
+
+    @POST("workforce/leave/request")
+    suspend fun submitLeaveRequest(
+        @Body request: SubmitLeaveRequest
+    ): Response<SubmitLeaveResponse>
+
+    @GET("workforce/overtime/summary")
+    suspend fun getOvertimeSummary(
+        @Query("month") month: Int,
+        @Query("year") year: Int
+    ): Response<OvertimeSummaryResponse>
+
+    @GET("workforce/overtime/history")
+    suspend fun getOvertimeHistory(): Response<OvertimeHistoryResponse>
+
+    @POST("workforce/overtime/request")
+    suspend fun submitOvertimeRequest(
+        @Body request: SubmitOvertimeRequest
+    ): Response<SubmitOvertimeResponse>
+
+    @GET("workforce/overtime/session/active")
+    suspend fun getActiveOvertimeSession(): Response<OvertimeSessionResponse>
+
+    @POST("workforce/overtime/session/start")
+    suspend fun startOvertimeSession(
+        @Body request: StartOvertimeSessionRequest
+    ): Response<OvertimeSessionResponse>
+
+    @POST("workforce/overtime/session/stop")
+    suspend fun stopOvertimeSession(
+        @Body request: StopOvertimeSessionRequest
+    ): Response<OvertimeSessionResponse>
+
+    @GET("workforce/earnings")
+    suspend fun getEarnings(
+        @Query("month") month: Int,
+        @Query("year") year: Int
+    ): Response<EarningsResponse>
+
+    @GET("workforce/salary/history")
+    suspend fun getSalaryHistory(): Response<SalaryHistoryResponse>
+
+    @GET("workforce/advances")
+    suspend fun getAdvances(): Response<AdvancesResponse>
+
+    @POST("workforce/advances/request")
+    suspend fun submitAdvanceRequest(
+        @Body request: SubmitAdvanceRequest
+    ): Response<SubmitAdvanceResponse>
+
+    @GET("workforce/incentives")
+    suspend fun getIncentives(): Response<IncentivesResponse>
+
+    @GET("workforce/attendance-correction/history")
+    suspend fun getAttendanceCorrections(): Response<AttendanceCorrectionsResponse>
+
+    @POST("workforce/attendance-correction")
+    suspend fun submitAttendanceCorrection(
+        @Body request: SubmitAttendanceCorrectionRequest
+    ): Response<SubmitAttendanceCorrectionResponse>
+
+    @GET("workforce/requests")
+    suspend fun getUnifiedRequests(): Response<UnifiedRequestsResponse>
 }
 

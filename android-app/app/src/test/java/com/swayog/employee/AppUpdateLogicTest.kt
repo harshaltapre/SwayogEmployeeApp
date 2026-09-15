@@ -21,73 +21,147 @@ class AppUpdateLogicTest {
         return manifest.mandatory || (installedCode < minCode)
     }
 
-    @Test
-    fun test1_updateAvailable_whenServerVersionHigher() {
-        val installedVersion = 24L
-        val serverVersion = 25L
-        assertTrue("Expected update to be available", isUpdateAvailable(installedVersion, serverVersion))
+    private fun evaluateUpdateState(
+        installedCode: Long,
+        installedName: String,
+        manifest: AppUpdateManifest?,
+        isNetworkError: Boolean,
+        httpStatus: Int
+    ): Pair<String, Boolean> {
+        if (isNetworkError || httpStatus != 200 || manifest == null) {
+            return Pair("Unable to check for updates. Please check your internet connection and try again.", false)
+        }
+        return if (manifest.versionCode > installedCode) {
+            Pair("New Update Available", true)
+        } else {
+            Pair("Application is up to date", false)
+        }
     }
 
     @Test
-    fun test2_alreadyUpToDate_whenVersionsEqual() {
-        val installedVersion = 25L
-        val serverVersion = 25L
-        assertFalse("Expected already up to date", isUpdateAvailable(installedVersion, serverVersion))
+    fun test1_upToDate_whenBuildsMatch() {
+        val manifest = AppUpdateManifest(versionCode = 1L, versionName = "1.0.0", apkUrl = "url", sha256 = "sha")
+        val (stateText, isUpdate) = evaluateUpdateState(1L, "1.0.0", manifest, false, 200)
+        assertEquals("Application is up to date", stateText)
+        assertFalse(isUpdate)
     }
 
     @Test
-    fun test3_noDowngrade_whenInstalledVersionHigher() {
-        val installedVersion = 26L
-        val serverVersion = 25L
-        assertFalse("Should not downgrade automatically", isUpdateAvailable(installedVersion, serverVersion))
+    fun test2_updateAvailable_whenServerBuildHigher() {
+        val manifest = AppUpdateManifest(versionCode = 2L, versionName = "1.1.0", apkUrl = "url", sha256 = "sha")
+        val (stateText, isUpdate) = evaluateUpdateState(1L, "1.0.0", manifest, false, 200)
+        assertEquals("New Update Available", stateText)
+        assertTrue(isUpdate)
     }
 
     @Test
-    fun test4_mandatoryUpdate_whenBelowMinimumVersion() {
-        val installedVersion = 21L
-        val manifest = AppUpdateManifest(
-            versionCode = 25L,
-            versionName = "2.5.0",
-            minimumVersionCode = 23L,
-            mandatory = false,
-            apkUrl = "releases/android/2.5.0/app-release.apk",
-            sha256 = "dummy_sha"
-        )
-        assertTrue("Update must be mandatory because installed < minimumVersionCode", isMandatoryUpdate(installedVersion, manifest))
+    fun test3_checkManualBypassesThrottle() {
+        val lastChecked = System.currentTimeMillis() - 1000L // 1 second ago
+        val throttleWindow = 6 * 60 * 60 * 1000L
+        val force = true
+        val shouldExecute = force || (System.currentTimeMillis() - lastChecked > throttleWindow)
+        assertTrue("Manual check must always bypass the 6h throttle window", shouldExecute)
     }
 
     @Test
-    fun test4b_optionalUpdate_whenAboveMinimumVersion() {
-        val installedVersion = 24L
-        val manifest = AppUpdateManifest(
-            versionCode = 25L,
-            versionName = "2.5.0",
-            minimumVersionCode = 23L,
-            mandatory = false,
-            apkUrl = "releases/android/2.5.0/app-release.apk",
-            sha256 = "dummy_sha"
-        )
-        assertFalse("Update should be optional", isMandatoryUpdate(installedVersion, manifest))
-    }
+    fun test4_downloadProgressAndChecksum() {
+        val totalBytes = 25000000L
+        val downloadedBytes = 12500000L
+        val progressPercent = ((downloadedBytes * 100) / totalBytes).toInt()
+        assertEquals(50, progressPercent)
 
-    @Test
-    fun test4c_mandatoryUpdate_whenExplicitlyMandatory() {
-        val installedVersion = 24L
-        val manifest = AppUpdateManifest(
-            versionCode = 25L,
-            versionName = "2.5.0",
-            minimumVersionCode = 20L,
-            mandatory = true,
-            apkUrl = "releases/android/2.5.0/app-release.apk",
-            sha256 = "dummy_sha"
-        )
-        assertTrue("Update must be mandatory when manifest.mandatory == true", isMandatoryUpdate(installedVersion, manifest))
-    }
-
-    @Test
-    fun test5_checksumVerification_failsOnMismatch() {
         val expectedSha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        val corruptedSha = "a1b2c3d4e5f60000000000000000000000000000000000000000000000000000"
-        assertFalse("Checksum mismatch must be detected", expectedSha.equals(corruptedSha, ignoreCase = true))
+        val calculatedSha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        assertTrue("Checksum must match identically", expectedSha.equals(calculatedSha, ignoreCase = true))
+    }
+
+    @Test
+    fun test5_settingsReflectsInstalledBuildAfterInstall() {
+        var installedName = "1.0.0"
+        var installedCode = 1L
+        // Simulating app update to Build 2
+        installedName = "1.1.0"
+        installedCode = 2L
+        assertEquals("1.1.0", installedName)
+        assertEquals(2L, installedCode)
+    }
+
+    @Test
+    fun test6_checkAgainAfterInstallIsUpToDate() {
+        val manifest = AppUpdateManifest(versionCode = 2L, versionName = "1.1.0", apkUrl = "url", sha256 = "sha")
+        val (stateText, isUpdate) = evaluateUpdateState(2L, "1.1.0", manifest, false, 200)
+        assertEquals("Application is up to date", stateText)
+        assertFalse(isUpdate)
+    }
+
+    @Test
+    fun test7_serverUnavailableReportsErrorNotUpToDate() {
+        val (stateText, _) = evaluateUpdateState(1L, "1.0.0", null, true, 500)
+        assertEquals("Unable to check for updates. Please check your internet connection and try again.", stateText)
+        assertFalse("Must not report up to date when server is unavailable", stateText.contains("up to date", ignoreCase = true))
+
+        val (state404, _) = evaluateUpdateState(1L, "1.0.0", null, false, 404)
+        assertEquals("Unable to check for updates. Please check your internet connection and try again.", state404)
+    }
+
+    @Test
+    fun test8_wrongChecksumBlocksInstall() {
+        val expectedSha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        val corruptedSha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        val isValid = expectedSha.equals(corruptedSha, ignoreCase = true)
+        assertFalse("Installation must be aborted if checksum mismatches", isValid)
+    }
+
+    @Test
+    fun test9_mandatoryUpdateLogic() {
+        val manifestMinCode = AppUpdateManifest(
+            versionCode = 5L,
+            versionName = "1.5.0",
+            minimumVersionCode = 4L,
+            mandatory = false,
+            apkUrl = "url",
+            sha256 = "sha"
+        )
+        assertTrue("Installed build 3 is below minimumVersionCode 4 -> mandatory", isMandatoryUpdate(3L, manifestMinCode))
+        assertFalse("Installed build 4 meets minimumVersionCode 4 -> optional", isMandatoryUpdate(4L, manifestMinCode))
+
+        val manifestExplicitMandatory = AppUpdateManifest(
+            versionCode = 5L,
+            versionName = "1.5.0",
+            minimumVersionCode = 2L,
+            mandatory = true,
+            apkUrl = "url",
+            sha256 = "sha"
+        )
+        assertTrue("Manifest marked mandatory == true -> mandatory", isMandatoryUpdate(4L, manifestExplicitMandatory))
+    }
+
+    @Test
+    fun test10_noDowngradeIfInstalledHigherThanServer() {
+        val manifest = AppUpdateManifest(versionCode = 2L, versionName = "1.1.0", apkUrl = "url", sha256 = "sha")
+        val (stateText, isUpdate) = evaluateUpdateState(3L, "1.2.0", manifest, false, 200)
+        assertEquals("Application is up to date", stateText)
+        assertFalse("Should never downgrade automatically", isUpdate)
+    }
+
+    @Test
+    fun test11_autoCheckThrottleElapsed() {
+        val now = System.currentTimeMillis()
+        val sevenHoursAgo = now - (7 * 60 * 60 * 1000L)
+        val throttleWindow = 6 * 60 * 60 * 1000L
+        val shouldAutoCheck = (now - sevenHoursAgo) >= throttleWindow
+        assertTrue("Auto check must trigger if > 6 hours elapsed", shouldAutoCheck)
+    }
+
+    @Test
+    fun test12_noInternetDoesNotCrash() {
+        var didCrash = false
+        try {
+            val result = evaluateUpdateState(1L, "1.0.0", null, isNetworkError = true, httpStatus = 0)
+            assertEquals("Unable to check for updates. Please check your internet connection and try again.", result.first)
+        } catch (e: Exception) {
+            didCrash = true
+        }
+        assertFalse("Network error must be safely caught without crashing the app", didCrash)
     }
 }

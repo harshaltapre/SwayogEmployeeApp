@@ -1,13 +1,13 @@
 // Inverter management service
 // Handles CRUD operations for inverter installations and integration with provider system
 
-import { prisma } from "./prisma.js";
+import { prisma } from "../lib/prisma.js";
 import {
   InverterProviderRegistry,
   MultiInverterFetcher,
-} from "./inverter-providers/index.js";
+} from "../lib/inverter-providers/index.js";
 import type { InverterProviderType } from "@prisma/client";
-import type { ProviderConfig, RealtimeInverterData } from "./inverter-providers/types.js";
+import type { ProviderConfig, RealtimeInverterData } from "../lib/inverter-providers/types.js";
 
 interface CreateInverterInput {
   customerId: number;

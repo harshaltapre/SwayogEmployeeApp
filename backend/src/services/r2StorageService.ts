@@ -40,10 +40,14 @@ const ALLOWED_MIME_TYPES = [
   "image/png",
   "image/gif",
   "image/webp",
+  "application/vnd.android.package-archive",
+  "application/octet-stream",
+  "application/json",
 ];
 
-// Maximum file size (10MB)
+// Maximum file size (10MB for general uploads, 250MB for release APKs/manifests)
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_RELEASE_FILE_SIZE = 250 * 1024 * 1024;
 
 export interface UploadResult {
   objectKey: string;
@@ -96,8 +100,12 @@ export function validateFileType(mimeType: string): boolean {
 /**
  * Validate file size
  */
-export function validateFileSize(size: number): boolean {
-  return size > 0 && size <= MAX_FILE_SIZE;
+export function validateFileSize(size: number, mimeType?: string, objectKey?: string): boolean {
+  if (size <= 0) return false;
+  const isRelease = (mimeType && (mimeType.includes("package-archive") || mimeType === "application/octet-stream" || mimeType === "application/json")) ||
+    (objectKey && objectKey.startsWith("releases/"));
+  const limit = isRelease ? MAX_RELEASE_FILE_SIZE : MAX_FILE_SIZE;
+  return size <= limit;
 }
 
 /**
@@ -110,6 +118,9 @@ export function getExtensionFromMimeType(mimeType: string): string {
     "image/png": "png",
     "image/gif": "gif",
     "image/webp": "webp",
+    "application/vnd.android.package-archive": "apk",
+    "application/octet-stream": "apk",
+    "application/json": "json",
   };
   return mimeToExt[mimeType] || "jpg";
 }
@@ -132,8 +143,10 @@ export async function uploadToR2(
     throw new Error(`Invalid file type: ${mimeType}. Allowed types: ${ALLOWED_MIME_TYPES.join(", ")}`);
   }
 
-  if (!validateFileSize(buffer.length)) {
-    throw new Error(`File size exceeds maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB`);
+  if (!validateFileSize(buffer.length, mimeType, objectKey)) {
+    const isRelease = objectKey.startsWith("releases/") || mimeType.includes("package-archive");
+    const limitMb = (isRelease ? MAX_RELEASE_FILE_SIZE : MAX_FILE_SIZE) / 1024 / 1024;
+    throw new Error(`File size exceeds maximum allowed size of ${limitMb}MB`);
   }
 
   const bucketName = getBucketName();

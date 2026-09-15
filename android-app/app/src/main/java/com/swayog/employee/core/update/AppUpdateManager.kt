@@ -8,6 +8,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
+import com.swayog.employee.core.config.AppConfig
 import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.model.AppUpdateManifest
 import com.swayog.employee.data.model.AppUpdateState
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import com.google.gson.Gson
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -90,16 +92,60 @@ class AppUpdateManager @Inject constructor(
 
         return withContext(Dispatchers.IO) {
             try {
-                val response = apiService.getLatestAppUpdate()
+                // Try public R2 endpoint first for direct access (faster, no backend dependency)
+                var manifest: AppUpdateManifest? = null
+                var source = "public_r2"
+                
+                try {
+                    val publicUrl = AppConfig.PUBLIC_UPDATE_ENDPOINT
+                    Log.d(TAG, "Attempting to fetch manifest from public R2 endpoint: $publicUrl")
+                    val request = Request.Builder()
+                        .url(publicUrl)
+                        .header("User-Agent", "SwayogEmployeeApp/${installedVersionName}")
+                        .build()
+                    
+                    val response = okHttpClient.newCall(request).execute()
+                    if (response.isSuccessful && response.body != null) {
+                        val json = response.body!!.string()
+                        manifest = Gson().fromJson(json, AppUpdateManifest::class.java)
+                        Log.d(TAG, "Successfully fetched manifest from public R2 endpoint")
+                    } else {
+                        Log.w(TAG, "Public R2 endpoint returned HTTP ${response.code}")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Public R2 endpoint failed: ${e.message}")
+                }
+                
+                // Fallback to backend API if public endpoint fails
+                if (manifest == null) {
+                    source = "backend_api"
+                    Log.d(TAG, "Falling back to backend API endpoint")
+                    var response = apiService.getLatestAppUpdate()
+                    if (!response.isSuccessful && response.code() == 404) {
+                        Log.d(TAG, "Primary update endpoint returned 404, attempting fallback: app/android/latest.json")
+                        try {
+                            val fallbackResponse = apiService.getAppUpdateAndroidLatest()
+                            if (fallbackResponse.isSuccessful && fallbackResponse.body() != null) {
+                                response = fallbackResponse
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Fallback endpoint failed: ${e.message}")
+                        }
+                    }
+
+                    if (response.isSuccessful && response.body() != null) {
+                        manifest = response.body()!!
+                    }
+                }
+
                 lastAutoCheckTimestamp = System.currentTimeMillis()
 
-                if (response.isSuccessful && response.body() != null) {
-                    val manifest = response.body()!!
+                if (manifest != null) {
                     val serverCode = manifest.versionCode
                     val currentCode = installedVersionCode
                     val minCode = manifest.minimumVersionCode ?: 0L
 
-                    Log.d(TAG, "Update check result: serverCode=$serverCode, installedCode=$currentCode, minCode=$minCode, mandatory=${manifest.mandatory}")
+                    Log.d(TAG, "Update check result ($source): serverCode=$serverCode, installedCode=$currentCode, minCode=$minCode, mandatory=${manifest.mandatory}")
 
                     if (serverCode > currentCode) {
                         val isMandatory = manifest.mandatory || (currentCode < minCode)
@@ -127,42 +173,29 @@ class AppUpdateManager @Inject constructor(
                         CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                     }
                 } else {
-                    val errorMsg = "Update check returned HTTP ${response.code()}"
-                    Log.w(TAG, errorMsg)
-                    if (force) {
-                        val displayError = "Could not check for updates. Please try again later."
-                        _updateState.value = AppUpdateState.Error(
-                            message = displayError,
-                            isNetworkError = true
-                        )
-                        CheckResult.Error(displayError)
-                    } else {
-                        // Silent fallback for background check
-                        _updateState.value = AppUpdateState.UpToDate(
-                            installedVersionName = installedVersionName,
-                            installedVersionCode = installedVersionCode,
-                            lastCheckedTimeMillis = lastAutoCheckTimestamp
-                        )
-                        CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Network exception during update check: ${e.message}", e)
-                val displayError = "Network error while checking for updates. Please check your connection."
-                if (force) {
+                    val displayError = "Update service is unavailable. No release manifest found from public or backend endpoints."
+                    Log.w(TAG, displayError)
                     _updateState.value = AppUpdateState.Error(
                         message = displayError,
-                        isNetworkError = true
+                        isNetworkError = false
                     )
                     CheckResult.Error(displayError)
-                } else {
-                    _updateState.value = AppUpdateState.UpToDate(
-                        installedVersionName = installedVersionName,
-                        installedVersionCode = installedVersionCode,
-                        lastCheckedTimeMillis = lastAutoCheckTimestamp
-                    )
-                    CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception during update check: ${e.message}", e)
+                val (displayError, isNet) = when (e) {
+                    is java.net.UnknownHostException -> "No internet connection. Please check your network." to true
+                    is java.net.ConnectException -> "Unable to connect to update server. Please check your connection." to true
+                    is java.net.SocketTimeoutException -> "Update check timed out. Please try again." to true
+                    is com.google.gson.JsonSyntaxException, is org.json.JSONException -> "Unable to read update information from server." to false
+                    is javax.net.ssl.SSLException -> "Secure connection to update service failed (SSL/TLS error)." to true
+                    else -> (e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Update check failed.") to false
+                }
+                _updateState.value = AppUpdateState.Error(
+                    message = displayError,
+                    isNetworkError = isNet
+                )
+                CheckResult.Error(displayError)
             }
         }
     }
@@ -179,6 +212,13 @@ class AppUpdateManager @Inject constructor(
 
         val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
         val targetApkFile = File(updatesDir, "swayog-v${manifest.versionName}-${manifest.versionCode}.apk")
+
+        // Clean up stale APK or temporary files from previous downloads/releases
+        updatesDir.listFiles()?.forEach { file ->
+            if (file != targetApkFile && (file.name.endsWith(".apk") || file.name.endsWith(".tmp"))) {
+                try { file.delete() } catch (_: Exception) {}
+            }
+        }
 
         // If file already exists and passes checksum, jump directly to install
         if (targetApkFile.exists() && targetApkFile.length() > 0) {

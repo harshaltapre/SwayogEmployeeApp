@@ -29,6 +29,8 @@ import taskImagesRoutes from "./routes/taskImages.js";
 import waareeRoutes from "./routes/waaree.js";
 import { paymentsRoutes } from "./routes/payments.js";
 import { isphereGreenRoutes } from "./modules/isphere-green/isphere-green.routes.js";
+import { appUpdateRoutes } from "./routes/appUpdate.routes.js";
+import workforceRoutes from "./routes/workforce.js";
 
 export const app = express();
 
@@ -171,6 +173,8 @@ app.use("/api/waaree", waareeRoutes);
 app.use("/api/v1/tasks", taskImagesRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/v1/payments", paymentsRoutes);
+app.use("/api/v1/workforce", workforceRoutes);
+app.use("/api/workforce", workforceRoutes);
 
 // Role-based protected routes
 app.use("/api/v1/superadmin", superadminRoutes);
@@ -185,6 +189,11 @@ app.use("/api/v1/messages", messagesRoutes);
 app.use("/api/v1/inventory", inventoryRoutes);
 app.use("/api/v1/apartments", apartmentsRoutes);
 app.use("/api/v1/isphere-green", isphereGreenRoutes);
+app.use("/api/v1/app/update", appUpdateRoutes);
+app.use("/app/update", appUpdateRoutes);
+app.use("/api/app/update", appUpdateRoutes);
+app.use("/api/v1/app", appUpdateRoutes);
+app.use("/app", appUpdateRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

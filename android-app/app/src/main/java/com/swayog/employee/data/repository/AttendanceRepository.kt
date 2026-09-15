@@ -80,7 +80,12 @@ class AttendanceRepository @Inject constructor(
                             notes = record.notes,
                             checkInSelfieUrl = null,
                             checkInLocation = locStr,
-                            isSynced = true
+                            isSynced = true,
+                            source = record.source,
+                            manualOverride = record.manualOverride,
+                            reviewedBy = record.reviewedBy,
+                            reviewerName = record.reviewerName,
+                            isAttendanceCompleted = record.isAttendanceCompleted
                         )
                     )
                 }

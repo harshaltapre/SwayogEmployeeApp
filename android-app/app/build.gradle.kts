@@ -48,8 +48,12 @@ android {
         applicationId = "com.swayog.employee"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
+            ?: (localProperties.getProperty("versionCode"))?.toIntOrNull()
+            ?: 1
+        versionName = (project.findProperty("versionName") as? String)
+            ?: (localProperties.getProperty("versionName"))
+            ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
@@ -61,6 +65,7 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard.vercel.app/api/v1/")}\"")
         buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
         buildConfigField("String", "MAPS_API_KEY", "\"${getLocalProperty("MAPS_API_KEY", "")}\"")
+        buildConfigField("String", "PUBLIC_DISTRIBUTION_URL", "\"${getLocalProperty("PUBLIC_DISTRIBUTION_URL", "https://your-public-domain.com")}\"")
     }
 
     signingConfigs {
@@ -140,6 +145,13 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 hilt {
@@ -159,7 +171,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.1")
     
     // Compose
-    implementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    implementation(platform("androidx.compose:compose-bom:2024.04.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -241,9 +253,21 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.04.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+afterEvaluate {
+    tasks.withType<Test>().configureEach {
+        val runtimeJar = layout.buildDirectory.file("intermediates/runtime_app_classes_jar/debug/bundleDebugClassesToRuntimeJar/classes.jar")
+        val compileJar = layout.buildDirectory.file("intermediates/compile_app_classes_jar/debug/bundleDebugClassesToCompileJar/classes.jar")
+        val debugKotlinDir = layout.buildDirectory.dir("tmp/kotlin-classes/debug")
+        classpath = classpath + files(runtimeJar, compileJar, debugKotlinDir)
+    }
+}
+
+
+
 

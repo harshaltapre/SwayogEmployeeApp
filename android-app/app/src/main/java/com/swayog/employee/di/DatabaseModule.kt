@@ -24,6 +24,7 @@ object DatabaseModule {
             "swayog_employee_database"
         )
             .fallbackToDestructiveMigration()
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
     }
     
