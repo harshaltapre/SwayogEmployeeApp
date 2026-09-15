@@ -106,6 +106,7 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional(),
   R2_ENDPOINT: z.string().optional(),
+  R2_PUBLIC_URL: z.string().optional(),
 });
 
 let parsedEnv: any;

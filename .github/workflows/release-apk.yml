@@ -164,6 +164,7 @@ jobs:
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME || 'swayog-dashboard' }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+          PUBLIC_DISTRIBUTION_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL }}
         run: |
           npm ci
           npx tsx scripts/deploy-release.ts \
@@ -176,15 +177,25 @@ jobs:
 
       - name: Verify Public Update Endpoint (Sanity Check)
         env:
-          UPDATE_ENDPOINT: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard.vercel.app/api/v1/' }}
+          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL }}
         run: |
-          CLEAN_BASE="${UPDATE_ENDPOINT%/}"
-          echo "Verifying update endpoints..."
-          for EP in "$CLEAN_BASE/app/update/latest" "$CLEAN_BASE/app/android/latest.json"; do
-            echo "Checking: $EP"
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$EP" || echo "000")
-            echo "Response HTTP status: $HTTP_STATUS"
-          done
+          if [ -n "$PUBLIC_URL" ]; then
+            CLEAN_BASE="${PUBLIC_URL%/}"
+            echo "Verifying public R2 update endpoints..."
+            for EP in "$CLEAN_BASE/releases/android/latest.json" "$CLEAN_BASE/app/android/latest.json"; do
+              echo "Checking: $EP"
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$EP" || echo "000")
+              echo "Response HTTP status: $HTTP_STATUS"
+              if [ "$HTTP_STATUS" = "200" ]; then
+                echo "✅ Public endpoint accessible"
+              else
+                echo "⚠️ Public endpoint returned HTTP $HTTP_STATUS"
+              fi
+            done
+          else
+            echo "⚠️ R2_PUBLIC_URL not configured - skipping public endpoint verification"
+            echo "APK will be available via backend API endpoints instead"
+          fi
 
       - name: Backup APK to Private GitHub Run Artifacts
         uses: actions/upload-artifact@v4
