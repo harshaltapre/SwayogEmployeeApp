@@ -140,14 +140,6 @@ fun SwayogNavHost(
         }
         
         composable(Screen.Attendance.route) {
-            WorkforceDashboardScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
-            )
-        }
-
-        composable(Screen.AttendanceTracking.route) {
             AttendanceScreen(
                 onNavigateBack = {
                     navController.popBackStack()

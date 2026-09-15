@@ -59,6 +59,9 @@ import java.text.SimpleDateFormat
 import java.util.*
 import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.presentation.common.utils.WatermarkHelper
+import com.swayog.employee.data.model.SubmitOvertimeRequest
+import com.swayog.employee.presentation.attendance.components.RequestOvertimeDialog
+import com.swayog.employee.presentation.attendance.components.WorkforceOvertimeSection
 
 @Composable
 fun AttendanceScreen(
@@ -77,7 +80,12 @@ fun AttendanceScreen(
     val performance by viewModel.performance.collectAsState()
     val currentTask by viewModel.currentTask.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
-    
+
+    val overtimeHistory by viewModel.overtimeHistory.collectAsState()
+    val activeOtSession by viewModel.activeOvertimeSession.collectAsState()
+    val liveOtDurationText by viewModel.liveSessionDurationText.collectAsState()
+    val workforceSummary by viewModel.workforceSummary.collectAsState()
+
     // UI State
     var showCamera by remember { mutableStateOf(false) }
     var showEnrollmentBlocker by remember { mutableStateOf(false) }
@@ -86,6 +94,10 @@ fun AttendanceScreen(
     var currentLatitude by remember { mutableStateOf<Double?>(null) }
     var currentLongitude by remember { mutableStateOf<Double?>(null) }
     var resolvedAddress by remember { mutableStateOf<String?>(null) }
+
+    var showRequestOtDialog by remember { mutableStateOf(false) }
+    var selectedOtDate by remember { mutableStateOf<String?>(null) }
+    var selectedCalendarDayInfo by remember { mutableStateOf<CalendarDayDetailInfo?>(null) }
 
     // Calendar month navigation state
     var calendarMonth by remember { mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH)) }
@@ -100,6 +112,7 @@ fun AttendanceScreen(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 viewModel.loadData()
+                viewModel.refreshOvertime()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -319,6 +332,24 @@ fun AttendanceScreen(
 
     val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
 
+    if (showRequestOtDialog) {
+        RequestOvertimeDialog(
+            initialDate = selectedOtDate,
+            onDismiss = { showRequestOtDialog = false },
+            onSubmit = { request ->
+                showRequestOtDialog = false
+                viewModel.submitOvertimeRequest(request) { result ->
+                    result.onSuccess {
+                        Toast.makeText(context, "OT Request submitted", Toast.LENGTH_SHORT).show()
+                    }
+                    result.onFailure {
+                        Toast.makeText(context, "Submission failed: ${it.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             SwayogTopBar(
@@ -462,13 +493,33 @@ fun AttendanceScreen(
                                                         style = MaterialTheme.typography.bodyMedium
                                                     )
                                                 }
-                                                if (record.totalMinutes != null && record.totalMinutes > 0) {
-                                                    val hrs = record.totalMinutes / 60
-                                                    val mins = record.totalMinutes % 60
+                                                val totalWorked = record.totalMinutes ?: if (record.checkOutTime == null) calculateElapsedMinutes(record.checkInTime) else 0
+                                                if (totalWorked > 0) {
+                                                    val regularMins = minOf(totalWorked, 480)
+                                                    val extraMins = maxOf(0, totalWorked - 480)
+                                                    val regH = regularMins / 60
+                                                    val regM = regularMins % 60
+                                                    val extH = extraMins / 60
+                                                    val extM = extraMins % 60
+                                                    val totH = totalWorked / 60
+                                                    val totM = totalWorked % 60
+
+                                                    Spacer(modifier = Modifier.height(4.dp))
                                                     Text(
-                                                        text = "Total: ${hrs}h ${mins}m",
+                                                        text = "Regular: ${regH}h ${"%02d".format(regM)}m",
                                                         style = MaterialTheme.typography.bodySmall,
-                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                                    )
+                                                    Text(
+                                                        text = "Extra: ${extH}h ${"%02d".format(extM)}m",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = if (extraMins > 0) Color(0xFFD97706) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                                    )
+                                                    Text(
+                                                        text = "Total: ${totH}h ${"%02d".format(totM)}m",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontWeight = FontWeight.Bold,
                                                         color = MaterialTheme.colorScheme.primary
                                                     )
                                                 }
@@ -1141,7 +1192,12 @@ fun AttendanceScreen(
                                 val todayMonth = todayCal.get(Calendar.MONTH)
                                 val todayYear = todayCal.get(Calendar.YEAR)
 
-                                val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+                                val recordsByDate = remember(monthlyRecords) {
+                                    monthlyRecords.associateBy { it.date.substringBefore("T") }
+                                }
+                                val holidaysByDate = remember(holidays) {
+                                    holidays.associateBy { it.dateStr ?: it.date?.take(10).orEmpty() }
+                                }
 
                                 val totalCells = firstDayOfWeek + daysInMonth
                                 val rows = (totalCells + 6) / 7
@@ -1153,13 +1209,10 @@ fun AttendanceScreen(
                                             val day = cellIndex - firstDayOfWeek + 1
                                             if (day in 1..daysInMonth) {
                                                 val isToday = day == todayDay && calendarMonth == todayMonth && calendarYear == todayYear
-                                                val cellCal = Calendar.getInstance().apply {
-                                                    set(calendarYear, calendarMonth, day)
-                                                }
-                                                val isSunday = col == 0 || cellCal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY
-                                                val dateStr = dateFormat.format(cellCal.time)
-                                                val record = monthlyRecords.find { it.date.substringBefore("T") == dateStr }
-                                                val matchedHoliday = holidays.find { (it.dateStr ?: it.date?.take(10)) == dateStr }
+                                                val isSunday = col == 0
+                                                val dateStr = String.format(Locale.US, "%04d-%02d-%02d", calendarYear, calendarMonth + 1, day)
+                                                val record = recordsByDate[dateStr]
+                                                val matchedHoliday = holidaysByDate[dateStr]
                                                 val isHoliday = matchedHoliday != null
 
                                                 val hasRecord = record != null
@@ -1223,7 +1276,28 @@ fun AttendanceScreen(
                                                             width = if (isToday) 2.dp else if (cellBorderColor != Color.Transparent) 1.dp else 0.dp,
                                                             color = cellBorderColor,
                                                             shape = RoundedCornerShape(6.dp)
-                                                        ),
+                                                        )
+                                                        .clickable {
+                                                            val totalMins = record?.totalMinutes ?: 0
+                                                            val regMins = minOf(totalMins, 480)
+                                                            val extMins = maxOf(0, totalMins - 480)
+                                                            val statusDisplay = when {
+                                                                record != null -> record.status.replace("_", " ").replace("-", " ")
+                                                                isHoliday -> "Holiday: ${matchedHoliday?.name ?: "Holiday"}"
+                                                                isSunday -> "Weekly Off (Sunday)"
+                                                                else -> "No Record / Off"
+                                                            }
+                                                            selectedCalendarDayInfo = CalendarDayDetailInfo(
+                                                                dateStr = dateStr,
+                                                                status = statusDisplay,
+                                                                checkIn = record?.checkInTime?.let { formatUtcToLocalTime(it) },
+                                                                checkOut = record?.checkOutTime?.let { formatUtcToLocalTime(it) },
+                                                                totalWorkedMinutes = totalMins,
+                                                                regularMinutes = regMins,
+                                                                extraMinutes = extMins,
+                                                                notes = record?.notes ?: (if (isHoliday) matchedHoliday?.name else null)
+                                                            )
+                                                        },
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     Column(
@@ -1292,6 +1366,36 @@ fun AttendanceScreen(
                             }
                         }
                     }
+
+                    // Overtime Tracking & History Section
+                    item {
+                        WorkforceOvertimeSection(
+                            overtimeSummary = null,
+                            overtimeHistory = overtimeHistory,
+                            activeSession = activeOtSession,
+                            liveDurationText = liveOtDurationText,
+                            onRequestOvertimeClick = {
+                                selectedOtDate = null
+                                showRequestOtDialog = true
+                            },
+                            onStartSessionClick = {
+                                viewModel.startOvertimeSession { result ->
+                                    result.onFailure {
+                                        Toast.makeText(context, "Start OT failed: ${it.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            onStopSessionClick = {
+                                viewModel.stopOvertimeSession(null) { result ->
+                                    result.onFailure {
+                                        Toast.makeText(context, "Stop OT failed: ${it.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        )
+                    }
+
+                    item { Spacer(modifier = Modifier.height(8.dp)) }
 
                     // Attendance Logs / History
                     item {
@@ -1520,6 +1624,30 @@ fun AttendanceScreen(
                         }
                     }
                 }
+            }
+
+            // Request Overtime Dialog
+            if (showRequestOtDialog) {
+                RequestOvertimeDialog(
+                    initialDate = selectedOtDate,
+                    onDismiss = { showRequestOtDialog = false },
+                    onSubmit = { request ->
+                        viewModel.submitOvertimeRequest(request)
+                        showRequestOtDialog = false
+                    }
+                )
+            }
+
+            // Calendar Day Details Dialog
+            selectedCalendarDayInfo?.let { dayInfo ->
+                CalendarDayDetailDialog(
+                    dayInfo = dayInfo,
+                    onDismiss = { selectedCalendarDayInfo = null },
+                    onRequestOvertime = { dateStr ->
+                        selectedOtDate = dateStr
+                        showRequestOtDialog = true
+                    }
+                )
             }
         }
     }
@@ -2281,3 +2409,192 @@ private fun buildAttendanceLeafletHtml(
     </html>
     """.trimIndent()
 }
+
+@Composable
+fun CalendarDayDetailDialog(
+    dayInfo: CalendarDayDetailInfo,
+    onDismiss: () -> Unit,
+    onRequestOvertime: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = formatUtcToLocalDate(dayInfo.dateStr),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = when {
+                        dayInfo.status.contains("Present", ignoreCase = true) -> Color(0xFFE8F5E9)
+                        dayInfo.status.contains("Late", ignoreCase = true) -> Color(0xFFFFF3E0)
+                        dayInfo.status.contains("Absent", ignoreCase = true) -> Color(0xFFFFEBEE)
+                        dayInfo.status.contains("Leave", ignoreCase = true) -> Color(0xFFE1F5FE)
+                        dayInfo.status.contains("Half", ignoreCase = true) -> Color(0xFFF3E5F5)
+                        dayInfo.status.contains("Holiday", ignoreCase = true) -> Color(0xFFFFE4E6)
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    }
+                ) {
+                    Text(
+                        text = dayInfo.status,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = when {
+                            dayInfo.status.contains("Present", ignoreCase = true) -> Color(0xFF2E7D32)
+                            dayInfo.status.contains("Late", ignoreCase = true) -> Color(0xFFE65100)
+                            dayInfo.status.contains("Absent", ignoreCase = true) -> Color(0xFFC62828)
+                            dayInfo.status.contains("Leave", ignoreCase = true) -> Color(0xFF0277BD)
+                            dayInfo.status.contains("Half", ignoreCase = true) -> Color(0xFF7B1FA2)
+                            dayInfo.status.contains("Holiday", ignoreCase = true) -> Color(0xFFE11D48)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Timing info
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Check-in:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(dayInfo.checkIn ?: "--:--", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Check-out:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(dayInfo.checkOut ?: "--:--", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+
+                // Hours breakdown
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Regular:", fontSize = 13.sp)
+                            val regH = dayInfo.regularMinutes / 60
+                            val regM = dayInfo.regularMinutes % 60
+                            Text("${regH}h ${regM}m", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Extra / OT:", fontSize = 13.sp)
+                            val extH = dayInfo.extraMinutes / 60
+                            val extM = dayInfo.extraMinutes % 60
+                            Text(
+                                "${extH}h ${extM}m",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (dayInfo.extraMinutes > 0) Color(0xFFD97706) else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Divider(modifier = Modifier.padding(vertical = 2.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Total Worked:", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            val totH = dayInfo.totalWorkedMinutes / 60
+                            val totM = dayInfo.totalWorkedMinutes % 60
+                            Text(
+                                "${totH}h ${totM}m",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+
+                if (!dayInfo.notes.isNullOrBlank()) {
+                    Text(
+                        text = "Note: ${dayInfo.notes}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onDismiss()
+                    onRequestOvertime(dayInfo.dateStr)
+                }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Request Overtime")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+data class CalendarDayDetailInfo(
+    val dateStr: String,
+    val status: String,
+    val checkIn: String?,
+    val checkOut: String?,
+    val totalWorkedMinutes: Int,
+    val regularMinutes: Int,
+    val extraMinutes: Int,
+    val notes: String? = null
+)
+
+fun calculateElapsedMinutes(isoString: String?): Int {
+    if (isoString.isNullOrBlank()) return 0
+    return try {
+        val cleanIso = if (isoString.contains(".")) isoString.substringBefore(".") else isoString.substringBefore("Z")
+        val cleanIsoTime = if (cleanIso.contains("T")) cleanIso else "${cleanIso}T00:00:00"
+        val utcFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault()).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+        val date = utcFormat.parse(cleanIsoTime) ?: return 0
+        val diffMs = System.currentTimeMillis() - date.time
+        if (diffMs > 0) (diffMs / (1000 * 60)).toInt() else 0
+    } catch (e: Exception) {
+        0
+    }
+}
+

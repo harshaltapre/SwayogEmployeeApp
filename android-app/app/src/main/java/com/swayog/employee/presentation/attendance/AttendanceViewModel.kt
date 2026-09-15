@@ -22,6 +22,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.swayog.employee.data.local.preferences.DataStoreManager
+import com.swayog.employee.data.model.OvertimeRequestDto
+import com.swayog.employee.data.model.OvertimeSessionDto
+import com.swayog.employee.data.model.SubmitOvertimeRequest
+import com.swayog.employee.data.model.WorkforceSummary
+import com.swayog.employee.data.model.AuthoritativeCalendarResponse
+import com.swayog.employee.data.repository.WorkforceRepository
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import java.text.SimpleDateFormat
+import java.util.TimeZone
+import java.util.Locale
 import java.util.Calendar
 import javax.inject.Inject
 
@@ -29,11 +40,27 @@ import javax.inject.Inject
 class AttendanceViewModel @Inject constructor(
     private val attendanceRepository: AttendanceRepository,
     private val taskRepository: TaskRepository,
-    private val dataStoreManager: DataStoreManager
+    private val dataStoreManager: DataStoreManager,
+    private val workforceRepository: WorkforceRepository
 ) : ViewModel() {
 
     private val _attendanceState = MutableStateFlow<AttendanceState>(AttendanceState.Initial)
     val attendanceState: StateFlow<AttendanceState> = _attendanceState.asStateFlow()
+
+    private val _overtimeHistory = MutableStateFlow<List<OvertimeRequestDto>>(emptyList())
+    val overtimeHistory: StateFlow<List<OvertimeRequestDto>> = _overtimeHistory.asStateFlow()
+
+    private val _activeOvertimeSession = MutableStateFlow<OvertimeSessionDto?>(null)
+    val activeOvertimeSession: StateFlow<OvertimeSessionDto?> = _activeOvertimeSession.asStateFlow()
+
+    private val _liveSessionDurationText = MutableStateFlow("00:00:00")
+    val liveSessionDurationText: StateFlow<String> = _liveSessionDurationText.asStateFlow()
+
+    private val _workforceSummary = MutableStateFlow<WorkforceSummary?>(null)
+    val workforceSummary: StateFlow<WorkforceSummary?> = _workforceSummary.asStateFlow()
+
+    private val _authoritativeCalendar = MutableStateFlow<AuthoritativeCalendarResponse?>(null)
+    val authoritativeCalendar: StateFlow<AuthoritativeCalendarResponse?> = _authoritativeCalendar.asStateFlow()
 
     val profilePhotoUrl: StateFlow<String?> = dataStoreManager.profilePhotoUrl.stateIn(
         scope = viewModelScope,
@@ -83,6 +110,8 @@ class AttendanceViewModel @Inject constructor(
 
     init {
         loadData()
+        refreshOvertime()
+        startLiveSessionTimer()
         viewModelScope.launch {
             dataStoreManager.userId.filterNotNull().collect { id ->
                 attendanceRepository.getAttendanceByEmployeeId(id).collect { records ->
@@ -97,6 +126,115 @@ class AttendanceViewModel @Inject constructor(
                     _currentTask.value = tasks.firstOrNull()
                 }
             }
+        }
+    }
+
+    private fun startLiveSessionTimer() {
+        viewModelScope.launch {
+            val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            while (isActive) {
+                val session = _activeOvertimeSession.value
+                if (session != null && session.status == "ACTIVE") {
+                    try {
+                        val cleanStartedAt = session.startedAt.substringBefore(".")
+                        val startDate = format.parse(cleanStartedAt)
+                        if (startDate != null) {
+                            val diffMs = Math.max(0, System.currentTimeMillis() - startDate.time)
+                            val hours = diffMs / (1000 * 60 * 60)
+                            val minutes = (diffMs / (1000 * 60)) % 60
+                            val seconds = (diffMs / 1000) % 60
+                            _liveSessionDurationText.value = String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds)
+                        }
+                    } catch (e: Exception) {
+                        _liveSessionDurationText.value = "Active"
+                    }
+                } else {
+                    _liveSessionDurationText.value = "00:00:00"
+                }
+                delay(1000)
+            }
+        }
+    }
+
+    fun refreshOvertime() {
+        val calendar = Calendar.getInstance()
+        val month = calendar.get(Calendar.MONTH) + 1
+        val year = calendar.get(Calendar.YEAR)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            launch {
+                workforceRepository.getOvertimeHistory().onSuccess {
+                    _overtimeHistory.value = it
+                }
+            }
+            launch {
+                workforceRepository.getActiveOvertimeSession().onSuccess {
+                    _activeOvertimeSession.value = it
+                }
+            }
+            launch {
+                workforceRepository.getWorkforceDashboard(month, year).onSuccess {
+                    _workforceSummary.value = it.summary
+                }
+            }
+            launch {
+                workforceRepository.getAuthoritativeCalendar(month, year).onSuccess {
+                    _authoritativeCalendar.value = it
+                }
+            }
+        }
+    }
+
+    fun submitOvertimeRequest(request: SubmitOvertimeRequest, onResult: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            _attendanceState.value = AttendanceState.Loading
+            workforceRepository.submitOvertimeRequest(request)
+                .onSuccess {
+                    refreshOvertime()
+                    _attendanceState.value = AttendanceState.Success
+                    onResult(Result.success(Unit))
+                }
+                .onFailure {
+                    _attendanceState.value = AttendanceState.Success
+                    onResult(Result.failure(it))
+                }
+        }
+    }
+
+    fun startOvertimeSession(requestId: String? = null, onResult: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            _attendanceState.value = AttendanceState.Loading
+            workforceRepository.startOvertimeSession(requestId)
+                .onSuccess { session ->
+                    _activeOvertimeSession.value = session
+                    refreshOvertime()
+                    _attendanceState.value = AttendanceState.Success
+                    onResult(Result.success(Unit))
+                }
+                .onFailure {
+                    _attendanceState.value = AttendanceState.Success
+                    onResult(Result.failure(it))
+                }
+        }
+    }
+
+    fun stopOvertimeSession(notes: String? = null, onResult: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            _attendanceState.value = AttendanceState.Loading
+            workforceRepository.stopOvertimeSession(notes)
+                .onSuccess {
+                    _activeOvertimeSession.value = null
+                    refreshOvertime()
+                    loadData()
+                    _attendanceState.value = AttendanceState.Success
+                    onResult(Result.success(Unit))
+                }
+                .onFailure {
+                    _attendanceState.value = AttendanceState.Success
+                    onResult(Result.failure(it))
+                }
         }
     }
 

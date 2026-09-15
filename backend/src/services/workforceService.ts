@@ -107,6 +107,8 @@ export interface IncentiveRecordItem {
 
 const DATA_DIR = path.join(process.cwd(), "data", "workforce");
 
+const storeCache = new Map<string, any>();
+
 function ensureDirectory() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -114,20 +116,27 @@ function ensureDirectory() {
 }
 
 function readStoreFile<T>(filename: string, defaultVal: T): T {
+  if (storeCache.has(filename)) {
+    return storeCache.get(filename) as T;
+  }
   try {
     ensureDirectory();
     const filePath = path.join(DATA_DIR, filename);
     if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+      storeCache.set(filename, parsed);
+      return parsed;
     }
   } catch (err) {
     console.error(`Failed to read workforce store file ${filename}:`, err);
   }
+  storeCache.set(filename, defaultVal);
   return defaultVal;
 }
 
 function writeStoreFile<T>(filename: string, data: T) {
   try {
+    storeCache.set(filename, data);
     ensureDirectory();
     const filePath = path.join(DATA_DIR, filename);
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
