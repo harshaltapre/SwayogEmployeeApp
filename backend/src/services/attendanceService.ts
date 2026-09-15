@@ -45,6 +45,8 @@ export async function getRulesAsync() {
           officeLng: 73.8567,
           officeRadius: 150.0,
           faceMatchThreshold: parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55"),
+          weeklyOffDays: [0],
+          dailyWorkingHours: 9.0,
         },
       });
     }
@@ -60,6 +62,8 @@ export async function getRulesAsync() {
       officeLng: 73.8567,
       officeRadius: 150.0,
       faceMatchThreshold: parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55"),
+      weeklyOffDays: [0],
+      dailyWorkingHours: 9.0,
     };
   }
 }
@@ -77,6 +81,8 @@ export async function saveRulesAsync(rules: any) {
         officeLng: rules.officeLng != null ? parseFloat(rules.officeLng) : 73.8567,
         officeRadius: rules.officeRadius != null ? parseFloat(rules.officeRadius) : 150.0,
         faceMatchThreshold: rules.faceMatchThreshold != null ? parseFloat(rules.faceMatchThreshold) : 0.55,
+        weeklyOffDays: Array.isArray(rules.weeklyOffDays) ? rules.weeklyOffDays.map(Number) : [0],
+        dailyWorkingHours: rules.dailyWorkingHours != null ? parseFloat(rules.dailyWorkingHours) : 9.0,
       },
       update: {
         shiftStart: rules.shiftStart ?? "09:15",
@@ -86,6 +92,8 @@ export async function saveRulesAsync(rules: any) {
         officeLng: rules.officeLng != null ? parseFloat(rules.officeLng) : 73.8567,
         officeRadius: rules.officeRadius != null ? parseFloat(rules.officeRadius) : 150.0,
         faceMatchThreshold: rules.faceMatchThreshold != null ? parseFloat(rules.faceMatchThreshold) : 0.55,
+        weeklyOffDays: Array.isArray(rules.weeklyOffDays) ? rules.weeklyOffDays.map(Number) : undefined,
+        dailyWorkingHours: rules.dailyWorkingHours != null ? parseFloat(rules.dailyWorkingHours) : undefined,
       },
     });
     return true;
@@ -198,6 +206,14 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
     throw new Error("Already checked in today");
   }
 
+  if (existing && existing.source === "ADMIN_ASSIGNED") {
+    throw new Error("Attendance for today has already been marked or assigned by your administrator.");
+  }
+
+  if (existing && (existing.status === "LEAVE" || existing.status === "ABSENT")) {
+    throw new Error(`Your attendance status for today is already marked as ${existing.status}.`);
+  }
+
   const rules = await getRulesAsync();
 
   // Validate geofence
@@ -223,11 +239,11 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
   graceTime.setHours(sh, sm, 0, 0);
   const status = now > graceTime ? "LATE" : "PRESENT";
 
-  // Upsert attendance record (existing behavior)
+  // Upsert attendance record with source set to EMPLOYEE_CHECK_IN
   const attendance = await prisma.attendanceRecord.upsert({
     where: { employeeId_date: { employeeId, date: today } },
-    create: { employeeId, date: today, checkInTime: now, status },
-    update: { checkInTime: now, status },
+    create: { employeeId, date: today, checkInTime: now, status, source: "EMPLOYEE_CHECK_IN" },
+    update: { checkInTime: now, status, source: "EMPLOYEE_CHECK_IN" },
   });
 
   // Handle selfie upload (data URL) if provided
@@ -335,7 +351,7 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
   const start = startOfMonth(new Date(year, month - 1));
   const end = endOfMonth(new Date(year, month - 1));
 
-  const [records, checkIns, holidays] = await Promise.all([
+  const [records, checkIns, holidays, rules] = await Promise.all([
     prisma.attendanceRecord.findMany({
       where: { employeeId, date: { gte: start, lte: end } },
       orderBy: { date: "asc" },
@@ -348,6 +364,7 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
       where: { date: { gte: start, lte: end } },
       orderBy: { date: "asc" },
     }),
+    getRulesAsync(),
   ]);
 
   // Enrich records with reviewer name if manualOverride / reviewedBy is present
@@ -380,23 +397,44 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
     };
   });
 
-  const workingDays = getWorkingDays(start, end, holidayDateSet);
-  const presentCount = records.filter((record) => record.status === "PRESENT" || record.status === "LATE").length;
-  const halfDays = records.filter((record) => record.status === "HALF_DAY").length;
-  const absent = Math.max(0, workingDays - presentCount - halfDays);
+  const weeklyOffDays: number[] = rules.weeklyOffDays && rules.weeklyOffDays.length > 0 ? rules.weeklyOffDays : [0];
+  const workingDays = getWorkingDays(start, end, holidayDateSet, weeklyOffDays);
+  
+  const presentCount = records.filter((r) => r.status === "PRESENT").length;
+  const lateCount = records.filter((r) => r.status === "LATE").length;
+  const halfDays = records.filter((r) => r.status === "HALF_DAY").length;
+  const leaves = records.filter((r) => r.status === "LEAVE").length;
+  const adminAssignedCount = records.filter((r) => r.source === "ADMIN_ASSIGNED").length;
+  const explicitAbsent = records.filter((r) => r.status === "ABSENT").length;
+
+  const attendedTotal = presentCount + lateCount;
+  const absent = Math.max(explicitAbsent, workingDays - attendedTotal - halfDays - leaves);
   const attendancePercent = workingDays > 0
-    ? Math.round(((presentCount + halfDays * 0.5) / workingDays) * 100)
+    ? Math.round(((attendedTotal + halfDays * 0.5) / workingDays) * 100)
     : 0;
+
+  const totalMinutes = records.reduce((sum, r) => sum + (r.totalMinutes || 0), 0);
+  const totalLoggedHours = Math.round((totalMinutes / 60) * 10) / 10;
 
   return {
     records: enrichedRecords,
     checkIns,
     holidays: holidayList,
-    present: presentCount,
-    absent,
+    present: attendedTotal,
+    onTime: presentCount,
+    late: lateCount,
     halfDays,
+    leaves,
+    absent,
+    adminAssignedCount,
     workingDays,
     attendancePercent,
+    totalLoggedHours,
+    rules: {
+      weeklyOffDays,
+      shiftStart: rules.shiftStart,
+      dailyWorkingHours: rules.dailyWorkingHours ?? 9.0,
+    },
   };
 }
 
@@ -408,8 +446,9 @@ export async function applyOrUpdateAttendanceRecord(params: {
   checkOutTime?: string | null;
   remark: string;
   adminUserId: string;
+  source?: string;
 }) {
-  const { employeeId, date, status, checkInTime, checkOutTime, remark, adminUserId } = params;
+  const { employeeId, date, status, checkInTime, checkOutTime, remark, adminUserId, source } = params;
 
   if (!remark || remark.trim().length < 3) {
     throw new Error("A remark explaining why the employee forgot or why attendance is being updated is required (at least 3 characters).");
@@ -515,6 +554,7 @@ export async function applyOrUpdateAttendanceRecord(params: {
       employeeId,
       date: targetDay,
       status: status as any,
+      source: source || "ADMIN_ASSIGNED",
       checkInTime: checkInDateTime,
       checkOutTime: checkOutDateTime,
       totalMinutes,
@@ -526,6 +566,7 @@ export async function applyOrUpdateAttendanceRecord(params: {
     },
     update: {
       status: status as any,
+      source: source || "ADMIN_ASSIGNED",
       checkInTime: checkInDateTime,
       checkOutTime: checkOutDateTime,
       totalMinutes,
@@ -584,11 +625,10 @@ export async function applyOrUpdateAttendanceRecord(params: {
 
 /**
  * Counts working days between start and end (inclusive), up to today.
- * Company policy: 6-day work week (Monday–Saturday).
- * Mandatory weekly holiday: Every Sunday is excluded.
+ * Weekly offs: Based on configured weeklyOffDays (default: Sunday [0]).
  * Declared festival holidays: Any date matching a configured festival holiday is excluded.
  */
-function getWorkingDays(start: Date, end: Date, holidayDateSet?: Set<string>) {
+function getWorkingDays(start: Date, end: Date, holidayDateSet?: Set<string>, weeklyOffDays: number[] = [0]) {
   let count = 0;
   const current = new Date(start);
   const today = new Date();
@@ -596,8 +636,8 @@ function getWorkingDays(start: Date, end: Date, holidayDateSet?: Set<string>) {
   while (current <= end && current <= today) {
     const day = current.getDay();
     const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
-    // Skip Sunday (day === 0) and any declared festival holidays
-    if (day !== 0 && (!holidayDateSet || !holidayDateSet.has(dateStr))) {
+    // Skip weekly offs and any declared festival holidays
+    if (!weeklyOffDays.includes(day) && (!holidayDateSet || !holidayDateSet.has(dateStr))) {
       count += 1;
     }
     current.setDate(current.getDate() + 1);
@@ -679,4 +719,257 @@ export async function recalculateMonthlyPerformance(employeeId: string, monthOve
   });
 
   return { attendancePercent, performanceScore, taskCompletionRate };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ATTENDANCE REGULARIZATION (FORGOT ATTENDANCE) SERVICES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function createRegularizationRequest(params: {
+  employeeId: string;
+  date: string; // "YYYY-MM-DD"
+  status: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE";
+  checkInTime?: string | null;
+  checkInPeriod?: "AM" | "PM" | null;
+  checkOutTime?: string | null;
+  checkOutPeriod?: "AM" | "PM" | null;
+  reason: string;
+}) {
+  const { employeeId, date, status, checkInTime, checkInPeriod, checkOutTime, checkOutPeriod, reason } = params;
+
+  if (!reason || reason.trim().length < 3) {
+    throw new Error("A mandatory reason explaining why you forgot or missed attendance is required (minimum 3 characters).");
+  }
+
+  // Parse target date to UTC Date
+  const cleanDateStr = date.split("T")[0];
+  const parts = cleanDateStr.split("-").map(Number);
+  if (parts.length !== 3) {
+    throw new Error("Invalid date format. Expected YYYY-MM-DD.");
+  }
+  const targetDay = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0));
+
+  // Check if date is in the future
+  const nowUtc = new Date();
+  const todayUtc = new Date(Date.UTC(nowUtc.getFullYear(), nowUtc.getMonth(), nowUtc.getDate(), 23, 59, 59, 999));
+  if (targetDay.getTime() > todayUtc.getTime()) {
+    throw new Error("Cannot submit attendance regularization for future dates.");
+  }
+
+  // Check if there is already a PENDING request for this employee on this date
+  const existingPending = await prisma.attendanceRegularizationRequest.findFirst({
+    where: {
+      employeeId,
+      date: targetDay,
+      requestStatus: "PENDING",
+    },
+  });
+
+  if (existingPending) {
+    throw new Error(`You already have a pending regularization request for ${cleanDateStr}. Please wait for admin review.`);
+  }
+
+  const employee = await prisma.user.findUnique({
+    where: { id: employeeId },
+    select: { fullName: true, loginId: true },
+  });
+
+  const request = await prisma.attendanceRegularizationRequest.create({
+    data: {
+      employeeId,
+      date: targetDay,
+      status: status as any,
+      checkInTime: checkInTime?.trim() || null,
+      checkInPeriod: checkInPeriod || null,
+      checkOutTime: checkOutTime?.trim() || null,
+      checkOutPeriod: checkOutPeriod || null,
+      reason: reason.trim(),
+      requestStatus: "PENDING",
+    },
+  });
+
+  // Create an Admin Notification so admins get notified
+  try {
+    await prisma.adminNotification.create({
+      data: {
+        type: "ATTENDANCE_REGULARIZATION",
+        message: `${employee?.fullName || "Employee"} submitted a regularization request for ${cleanDateStr} (${status}).`,
+        employeeId,
+      },
+    });
+  } catch (notifErr) {
+    console.error("Failed to create admin notification for regularization request:", notifErr);
+  }
+
+  return request;
+}
+
+export async function getEmployeeRegularizationRequests(employeeId: string) {
+  return await prisma.attendanceRegularizationRequest.findMany({
+    where: { employeeId },
+    include: {
+      reviewer: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+}
+
+export async function getAdminRegularizationRequests(statusFilter?: string) {
+  const where: any = {};
+  if (statusFilter && statusFilter !== "ALL") {
+    where.requestStatus = statusFilter as any;
+  }
+
+  return await prisma.attendanceRegularizationRequest.findMany({
+    where,
+    include: {
+      employee: {
+        select: {
+          id: true,
+          fullName: true,
+          loginId: true,
+          email: true,
+          employeeCode: true,
+          employeeProfile: {
+            select: {
+              jobRole: true,
+              zone: true,
+            },
+          },
+        },
+      },
+      reviewer: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: [
+      { createdAt: "desc" },
+    ],
+    take: 200,
+  });
+}
+
+export async function acceptRegularizationRequest(requestId: string, adminUserId: string, adminNotes?: string) {
+  const request = await prisma.attendanceRegularizationRequest.findUnique({
+    where: { id: requestId },
+  });
+
+  if (!request) {
+    throw new Error("Regularization request not found.");
+  }
+
+  if (request.requestStatus !== "PENDING") {
+    throw new Error(`Request has already been processed (Current status: ${request.requestStatus}).`);
+  }
+
+  // Combine time and period into standardized strings for applyOrUpdateAttendanceRecord
+  let inTimeStr: string | null = null;
+  if (request.checkInTime) {
+    inTimeStr = request.checkInPeriod ? `${request.checkInTime} ${request.checkInPeriod}` : request.checkInTime;
+  }
+
+  let outTimeStr: string | null = null;
+  if (request.checkOutTime) {
+    outTimeStr = request.checkOutPeriod ? `${request.checkOutTime} ${request.checkOutPeriod}` : request.checkOutTime;
+  }
+
+  const remark = request.reason
+    ? `Regularization Approved: ${request.reason}`
+    : "Attendance regularized by admin approval";
+
+  // Automatically allocate attendance for that employee and date
+  const allocationResult = await applyOrUpdateAttendanceRecord({
+    employeeId: request.employeeId,
+    date: request.date,
+    status: request.status as any,
+    checkInTime: inTimeStr,
+    checkOutTime: outTimeStr,
+    remark,
+    adminUserId,
+    source: "CORRECTION_APPROVED",
+  });
+
+  // Mark request as APPROVED
+  const updatedRequest = await prisma.attendanceRegularizationRequest.update({
+    where: { id: requestId },
+    data: {
+      requestStatus: "APPROVED",
+      reviewedBy: adminUserId,
+      reviewedAt: new Date(),
+      adminNotes: adminNotes?.trim() || null,
+    },
+    include: {
+      employee: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+        },
+      },
+      reviewer: {
+        select: {
+          id: true,
+          fullName: true,
+        },
+      },
+    },
+  });
+
+  return {
+    request: updatedRequest,
+    attendance: allocationResult.attendance,
+    performance: allocationResult.performance,
+  };
+}
+
+export async function rejectRegularizationRequest(requestId: string, adminUserId: string, adminNotes?: string) {
+  const request = await prisma.attendanceRegularizationRequest.findUnique({
+    where: { id: requestId },
+  });
+
+  if (!request) {
+    throw new Error("Regularization request not found.");
+  }
+
+  if (request.requestStatus !== "PENDING") {
+    throw new Error(`Request has already been processed (Current status: ${request.requestStatus}).`);
+  }
+
+  const updatedRequest = await prisma.attendanceRegularizationRequest.update({
+    where: { id: requestId },
+    data: {
+      requestStatus: "REJECTED",
+      reviewedBy: adminUserId,
+      reviewedAt: new Date(),
+      adminNotes: adminNotes?.trim() || "Request rejected by admin.",
+    },
+    include: {
+      employee: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+        },
+      },
+      reviewer: {
+        select: {
+          id: true,
+          fullName: true,
+        },
+      },
+    },
+  });
+
+  return updatedRequest;
 }

@@ -30,9 +30,30 @@ import {
   Sun,
   PartyPopper,
   Sparkles,
+  CalendarPlus,
+  FileText,
+  CheckCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCheckIn, useCheckOut, useAttendanceRules, useFaceEnrollmentStatus, useMonthlyAttendance, useTodayAttendance } from "@/hooks/useAttendance";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  useCheckIn,
+  useCheckOut,
+  useAttendanceRules,
+  useFaceEnrollmentStatus,
+  useMonthlyAttendance,
+  useTodayAttendance,
+  useSubmitRegularizationRequest,
+  useMyRegularizationRequests,
+} from "@/hooks/useAttendance";
 import { useFaceApi } from "@/hooks/useFaceApi";
 import { resolveConfiguredApiBaseUrl } from "@/lib/resolve-api-base-url";
 
@@ -47,7 +68,7 @@ export function resolveStaticUrl(url: string | null | undefined): string {
 
 
 // ───── Types ─────────────────────────────────────────────────────────────────
-type AttendanceStatus = "present" | "absent" | "late" | "leave" | "half-day" | "sunday-holiday" | "festival-holiday";
+type AttendanceStatus = "present" | "absent" | "late" | "leave" | "half-day" | "sunday-holiday" | "festival-holiday" | "weekly-off";
 type BreakType = "short" | "lunch";
 
 interface Break {
@@ -62,6 +83,10 @@ interface AttendanceRecord {
   checkIn: string | null; // "HH:MM"
   checkOut: string | null;
   status: AttendanceStatus;
+  source?: string;
+  manualOverride?: boolean;
+  overrideReason?: string | null;
+  reviewerName?: string | null;
   workHours: number;
   breaks: Break[];
   checkInSelfie?: string | null;
@@ -165,6 +190,10 @@ function mapDbRecordToFrontend(dbRecord: any, checkIns: any[]): AttendanceRecord
     checkIn: checkInStr,
     checkOut: checkOutStr,
     status: statusStr,
+    source: dbRecord.source || (dbRecord.manualOverride ? "ADMIN_ASSIGNED" : "EMPLOYEE_CHECK_IN"),
+    manualOverride: !!dbRecord.manualOverride,
+    overrideReason: dbRecord.overrideReason || dbRecord.notes,
+    reviewerName: dbRecord.reviewerName,
     workHours,
     breaks: [],
     checkInSelfie: matchedCheckIn?.selfieUrl ?? null,
@@ -182,6 +211,7 @@ const statusConfig: Record<AttendanceStatus, { label: string; color: string; dot
   leave: { label: "Leave", color: "bg-blue-100 text-blue-700 border-blue-200", dot: "bg-blue-500" },
   "half-day": { label: "Half Day", color: "bg-purple-100 text-purple-700 border-purple-200", dot: "bg-purple-500" },
   "sunday-holiday": { label: "Sunday Holiday", color: "bg-amber-100 text-amber-800 border-amber-200", dot: "bg-amber-500" },
+  "weekly-off": { label: "Weekly Off", color: "bg-amber-100 text-amber-800 border-amber-200", dot: "bg-amber-500" },
   "festival-holiday": { label: "Festival Holiday", color: "bg-rose-100 text-rose-800 border-rose-200", dot: "bg-rose-500" },
 };
 
@@ -190,19 +220,21 @@ function CalendarCell({
   record,
   day,
   isToday,
-  isSunday,
+  isWeeklyOff,
+  weeklyOffLabel = "Off",
   festivalHolidayName,
 }: {
   record?: AttendanceRecord;
   day: number;
   isToday: boolean;
-  isSunday: boolean;
+  isWeeklyOff: boolean;
+  weeklyOffLabel?: string;
   festivalHolidayName?: string;
 }) {
   let effectiveStatus: AttendanceStatus | null = record ? record.status : null;
   if (!effectiveStatus) {
     if (festivalHolidayName) effectiveStatus = "festival-holiday";
-    else if (isSunday) effectiveStatus = "sunday-holiday";
+    else if (isWeeklyOff) effectiveStatus = "weekly-off";
   }
 
   const cfg = effectiveStatus ? statusConfig[effectiveStatus] : null;
@@ -212,8 +244,8 @@ function CalendarCell({
       title={
         festivalHolidayName
           ? `🎉 Festival Holiday: ${festivalHolidayName}`
-          : isSunday
-          ? "🏖️ Mandatory Sunday Holiday"
+          : isWeeklyOff
+          ? `🏖️ ${weeklyOffLabel}`
           : effectiveStatus
           ? statusConfig[effectiveStatus].label
           : undefined
@@ -223,7 +255,7 @@ function CalendarCell({
         isToday && "ring-2 ring-orange-500 ring-offset-1 font-bold",
         festivalHolidayName
           ? "bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/30"
-          : isSunday
+          : isWeeklyOff
           ? "bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30"
           : record
           ? "hover:scale-105 cursor-default bg-slate-50/50 dark:bg-slate-800/30"
@@ -237,7 +269,7 @@ function CalendarCell({
             ? "text-orange-600 dark:text-orange-400 font-extrabold"
             : festivalHolidayName
             ? "text-rose-700 dark:text-rose-400 font-bold"
-            : isSunday
+            : isWeeklyOff
             ? "text-amber-700 dark:text-amber-400 font-bold"
             : "text-slate-700 dark:text-slate-300"
         )}
@@ -248,9 +280,9 @@ function CalendarCell({
         <span className="text-[8px] font-bold text-rose-600 dark:text-rose-400 truncate max-w-full px-0.5" title={festivalHolidayName}>
           🎉 {festivalHolidayName}
         </span>
-      ) : isSunday ? (
+      ) : isWeeklyOff ? (
         <span className="text-[8px] font-semibold text-amber-600 dark:text-amber-400">
-          Sun Off
+          {weeklyOffLabel}
         </span>
       ) : null}
       {cfg && <span className={cn("w-2 h-2 rounded-full mx-auto mt-0.5", cfg.dot)} />}
@@ -287,6 +319,88 @@ export default function EmployeeAttendance() {
   const currentMonthNum = currentDate.getMonth() + 1;
   const currentYearNum = currentDate.getFullYear();
   const { data: monthlyData } = useMonthlyAttendance(currentMonthNum, currentYearNum);
+
+  // ── Regularization (Forgot to Punch) Form State ─────────────────────────────
+  const [regularizeModalOpen, setRegularizeModalOpen] = useState(false);
+  const [regDate, setRegDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [regStatus, setRegStatus] = useState<"PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE">("PRESENT");
+  const [regCheckInTime, setRegCheckInTime] = useState("09:30");
+  const [regCheckInPeriod, setRegCheckInPeriod] = useState<"AM" | "PM">("AM");
+  const [regCheckOutTime, setRegCheckOutTime] = useState("06:30");
+  const [regCheckOutPeriod, setRegCheckOutPeriod] = useState<"AM" | "PM">("PM");
+  const [regReason, setRegReason] = useState("");
+  const [regError, setRegError] = useState("");
+  const [regSuccess, setRegSuccess] = useState("");
+
+  const submitRegularizationMutation = useSubmitRegularizationRequest();
+  const { data: myRegularizationRequests, isLoading: loadingMyRequests } = useMyRegularizationRequests();
+
+  const handleOpenRegularizeModal = () => {
+    setRegError("");
+    setRegSuccess("");
+    const yest = new Date();
+    yest.setDate(yest.getDate() - 1);
+    setRegDate(yest.toISOString().slice(0, 10));
+    setRegStatus("PRESENT");
+    setRegCheckInTime("09:30");
+    setRegCheckInPeriod("AM");
+    setRegCheckOutTime("06:30");
+    setRegCheckOutPeriod("PM");
+    setRegReason("");
+    setRegularizeModalOpen(true);
+  };
+
+  const handleRegStatusChange = (newStatus: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE") => {
+    setRegStatus(newStatus);
+    if (newStatus === "ABSENT" || newStatus === "LEAVE") {
+      setRegCheckInTime("");
+      setRegCheckOutTime("");
+    } else if (!regCheckInTime) {
+      setRegCheckInTime("09:30");
+      setRegCheckInPeriod("AM");
+      setRegCheckOutTime("06:30");
+      setRegCheckOutPeriod("PM");
+    }
+  };
+
+  const handleSubmitRegularization = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setRegError("");
+    setRegSuccess("");
+
+    if (!regDate) {
+      setRegError("Please select the date you forgot attendance for.");
+      return;
+    }
+    if (!regReason.trim() || regReason.trim().length < 3) {
+      setRegError("A reason explaining why you forgot or missed attendance is required (minimum 3 characters).");
+      return;
+    }
+
+    try {
+      await submitRegularizationMutation.mutateAsync({
+        date: regDate,
+        status: regStatus,
+        checkInTime: regStatus !== "ABSENT" && regStatus !== "LEAVE" && regCheckInTime.trim() ? regCheckInTime.trim() : null,
+        checkInPeriod: regCheckInPeriod,
+        checkOutTime: regStatus !== "ABSENT" && regStatus !== "LEAVE" && regCheckOutTime.trim() ? regCheckOutTime.trim() : null,
+        checkOutPeriod: regCheckOutPeriod,
+        reason: regReason.trim(),
+      });
+
+      setRegSuccess("Regularization request submitted! Sent to administrator for approval.");
+      setTimeout(() => {
+        setRegularizeModalOpen(false);
+        setRegSuccess("");
+      }, 1500);
+    } catch (err: any) {
+      setRegError(err.response?.data?.error || err.message || "Failed to submit regularization request.");
+    }
+  };
 
   // Sync attendance from DB monthly data and merge local breaks
   useEffect(() => {
@@ -722,9 +836,13 @@ export default function EmployeeAttendance() {
   const lateCount = thisMonthRecords.filter((r) => r.status === "late").length;
   const totalHours = thisMonthRecords.reduce((acc, r) => acc + r.workHours, 0);
 
-  // Check if today is Sunday or a declared holiday
+  // Check if today is a weekly off or declared festival holiday
+  const weeklyOffDays: number[] = rules?.weeklyOffDays || monthlyData?.rules?.weeklyOffDays || [0];
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayShortNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const todayDateObj = new Date();
-  const isTodaySunday = todayDateObj.getDay() === 0;
+  const isTodayWeeklyOff = weeklyOffDays.includes(todayDateObj.getDay());
+  const todayDayName = dayNames[todayDateObj.getDay()];
   const todayHoliday = monthlyData?.holidays?.find((h: any) => (h.dateStr || h.date?.slice(0, 10)) === today);
 
   // ── Calendar ─────────────────────────────────────────────────────────────────
@@ -775,7 +893,29 @@ export default function EmployeeAttendance() {
 
                 {/* Center: Status */}
                 <div className="flex flex-col items-center gap-2">
-                  {todayChecked ? (
+                  {todayChecked?.source === "ADMIN_ASSIGNED" || todayChecked?.manualOverride ? (
+                    <div className="flex flex-col items-center gap-2 bg-indigo-950/60 border border-indigo-500/40 rounded-2xl p-4 text-center max-w-sm">
+                      <div className="flex items-center gap-2 text-indigo-300 font-semibold text-sm">
+                        <Shield className="h-4 w-4 text-indigo-400" />
+                        <span>Attendance Assigned by Admin</span>
+                      </div>
+                      <Badge className={cn("border text-xs uppercase px-2.5 py-1 font-bold", statusConfig[todayChecked.status]?.color)}>
+                        Status: {statusConfig[todayChecked.status]?.label || todayChecked.status}
+                      </Badge>
+                      {todayChecked.overrideReason && (
+                        <p className="text-xs text-slate-300 italic bg-indigo-900/30 px-3 py-1.5 rounded-lg border border-indigo-700/30">
+                          "{todayChecked.overrideReason}"
+                        </p>
+                      )}
+                      <div className="flex items-center gap-3 text-xs text-slate-300 mt-1">
+                        {todayChecked.checkIn && <span>Check-In: <strong className="text-white">{todayChecked.checkIn}</strong></span>}
+                        {todayChecked.checkOut && <span>Check-Out: <strong className="text-white">{todayChecked.checkOut}</strong></span>}
+                      </div>
+                      {todayChecked.workHours > 0 && (
+                        <span className="text-xs text-emerald-400 font-semibold">{todayChecked.workHours}h logged</span>
+                      )}
+                    </div>
+                  ) : todayChecked ? (
                     <div className="flex flex-col items-center gap-2">
                       <div className="flex items-center gap-3 text-sm text-slate-300">
                         <span className="flex items-center gap-1"><LogIn className="h-4 w-4 text-emerald-400" /> Check-In: <strong className="text-white">{todayChecked.checkIn}</strong></span>
@@ -820,14 +960,14 @@ export default function EmployeeAttendance() {
                 {/* Right: Button */}
                 <div className="flex flex-col items-center gap-3">
                   {/* Today Holiday Alert Banner */}
-                  {(isTodaySunday || todayHoliday) && (
+                  {(isTodayWeeklyOff || todayHoliday) && (
                     <div className="w-full max-w-sm rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-amber-200 flex items-center gap-2.5">
                       <div className="p-2 bg-amber-500/20 rounded-lg text-amber-300 shrink-0">
                         {todayHoliday ? <PartyPopper className="h-4 w-4 text-rose-300" /> : <Sun className="h-4 w-4 text-amber-300" />}
                       </div>
                       <div className="text-left">
                         <p className="text-xs font-bold text-amber-300">
-                          {todayHoliday ? `🎉 Today is ${todayHoliday.name} (Holiday)!` : "🏖️ Today is Sunday (Mandatory Holiday)!"}
+                          {todayHoliday ? `🎉 Today is ${todayHoliday.name} (Holiday)!` : `🏖️ Today is ${todayDayName} (Weekly Off)!`}
                         </p>
                         <p className="text-[10px] text-amber-200/80">
                           Official company holiday. Check-in is not required.
@@ -838,7 +978,18 @@ export default function EmployeeAttendance() {
 
                   {/* Check-in / Check-out */}
                   <div>
-                    {!todayChecked?.checkIn ? (
+                    {todayChecked?.source === "ADMIN_ASSIGNED" || todayChecked?.manualOverride ? (
+                      <div className="flex flex-col items-center gap-1.5 bg-indigo-950/70 border border-indigo-500/30 px-5 py-3 rounded-xl text-center">
+                        <CheckCircle2 className="h-5 w-5 text-indigo-400" />
+                        <span className="text-slate-200 font-semibold text-sm">Regularized by Admin</span>
+                        <span className="text-slate-400 text-xs">Self check-in not required</span>
+                      </div>
+                    ) : todayChecked && (todayChecked.status === "leave" || todayChecked.status === "absent") ? (
+                      <div className="flex flex-col items-center gap-1.5 bg-slate-800/80 border border-slate-700 px-5 py-3 rounded-xl text-center">
+                        <AlertCircle className="h-5 w-5 text-amber-400" />
+                        <span className="text-slate-200 font-medium text-sm">Marked as {statusConfig[todayChecked.status]?.label}</span>
+                      </div>
+                    ) : !todayChecked?.checkIn ? (
                       <>
                         <Button
                           id="btn-check-in"
@@ -1076,6 +1227,296 @@ export default function EmployeeAttendance() {
         </div>
       </div>
 
+      {/* ── Forgot Attendance Banner ─────────────────────────────────────────── */}
+      <div className="mt-6 rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-950/20 dark:via-orange-950/20 dark:to-yellow-950/20 dark:border-amber-700/40 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 shadow-sm">
+        <div className="flex items-center gap-3 flex-1">
+          <div className="p-2.5 bg-amber-500/15 border border-amber-400/30 rounded-xl shrink-0">
+            <CalendarPlus className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-amber-800 dark:text-amber-300">Forgot to Mark Attendance?</p>
+            <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5">
+              Missed a punch-in? Submit a regularization request and your admin will review &amp; allocate attendance upon approval.
+            </p>
+          </div>
+        </div>
+        <Button
+          id="btn-regularize-attendance"
+          onClick={handleOpenRegularizeModal}
+          className="bg-amber-500 hover:bg-amber-400 text-white font-semibold text-sm gap-2 shadow-md shadow-amber-200 dark:shadow-amber-900/50 shrink-0 transition-all hover:scale-105"
+        >
+          <FileText className="h-4 w-4" />
+          Apply for Regularization
+        </Button>
+      </div>
+
+      {/* ── My Regularization Requests History ──────────────────────────────── */}
+      {myRegularizationRequests && myRegularizationRequests.length > 0 && (
+        <Card className="mt-6 shadow-sm overflow-hidden">
+          <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800">
+            <CardTitle className="text-sm font-bold flex items-center gap-2 text-slate-800 dark:text-slate-200">
+              <CheckCheck className="h-4 w-4 text-indigo-500" />
+              My Regularization Requests
+              <span className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-[10px] font-bold text-indigo-700 dark:text-indigo-300">
+                {myRegularizationRequests.length}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-700">
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Status Requested</th>
+                    <th className="px-4 py-3">Check-In / Out</th>
+                    <th className="px-4 py-3">Reason</th>
+                    <th className="px-4 py-3">Review Status</th>
+                    <th className="px-4 py-3">Admin Notes</th>
+                    <th className="px-4 py-3">Submitted</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                  {myRegularizationRequests.map((req: any) => (
+                    <tr key={req.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                        {new Date(req.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                      </td>
+                      <td className="px-4 py-3">
+                        {req.status === "PRESENT" && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">Present</Badge>}
+                        {req.status === "LATE" && <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">Late</Badge>}
+                        {req.status === "HALF_DAY" && <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-[10px]">Half Day</Badge>}
+                        {req.status === "ABSENT" && <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">Absent</Badge>}
+                        {req.status === "LEAVE" && <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-[10px]">Leave</Badge>}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {req.checkInTime ? `${req.checkInTime} ${req.checkInPeriod}` : "—"}
+                        {req.checkOutTime ? ` → ${req.checkOutTime} ${req.checkOutPeriod}` : ""}
+                      </td>
+                      <td className="px-4 py-3 max-w-[200px]">
+                        <p className="truncate text-slate-600 dark:text-slate-400" title={req.reason}>{req.reason}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        {req.requestStatus === "PENDING" && (
+                          <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] gap-1 animate-pulse">
+                            ⏳ Pending Review
+                          </Badge>
+                        )}
+                        {req.requestStatus === "APPROVED" && (
+                          <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] gap-1">
+                            ✅ Approved
+                          </Badge>
+                        )}
+                        {req.requestStatus === "REJECTED" && (
+                          <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] gap-1">
+                            ❌ Rejected
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 max-w-[180px]">
+                        <p className="truncate text-slate-500 dark:text-slate-400 italic" title={req.adminNotes}>
+                          {req.adminNotes || (req.requestStatus === "PENDING" ? "Awaiting admin review" : "—")}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        {new Date(req.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {loadingMyRequests && (
+        <div className="mt-6 flex items-center justify-center gap-2 text-sm text-slate-500 py-4">
+          <div className="w-4 h-4 rounded-full border-2 border-indigo-300 border-t-indigo-600 animate-spin" />
+          Loading your regularization requests...
+        </div>
+      )}
+
+      {/* ── Regularization Request Modal ─────────────────────────────────────── */}
+      <Dialog open={regularizeModalOpen} onOpenChange={setRegularizeModalOpen}>
+        <DialogContent className="max-w-lg sm:max-w-xl dark:bg-slate-900 dark:border-slate-700 overflow-y-auto max-h-[92vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <CalendarPlus className="h-5 w-5 text-amber-500" />
+              Attendance Regularization Request
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Fill in the details for the day you missed punching attendance. Your request will be reviewed by your administrator.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmitRegularization} className="space-y-4 mt-2">
+            {/* Info Banner */}
+            <div className="flex items-start gap-2.5 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+              <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Your request will be sent to the admin for review. Once approved, attendance for the selected date will be automatically allocated to your record.
+              </p>
+            </div>
+
+            {/* Date */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Attendance Date <span className="text-red-500">*</span></label>
+              <input
+                type="date"
+                value={regDate}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setRegDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                required
+              />
+            </div>
+
+            {/* Status */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Attendance Status <span className="text-red-500">*</span></label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {(["PRESENT", "LATE", "HALF_DAY", "ABSENT", "LEAVE"] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => handleRegStatusChange(s)}
+                    className={cn(
+                      "px-3 py-2 rounded-lg text-xs font-semibold border transition-all",
+                      regStatus === s
+                        ? s === "PRESENT" ? "bg-emerald-500 text-white border-emerald-500"
+                          : s === "LATE" ? "bg-amber-500 text-white border-amber-500"
+                          : s === "HALF_DAY" ? "bg-purple-500 text-white border-purple-500"
+                          : s === "ABSENT" ? "bg-red-500 text-white border-red-500"
+                          : "bg-blue-500 text-white border-blue-500"
+                        : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400"
+                    )}
+                  >
+                    {s === "PRESENT" ? "Present (Full Day)" : s === "LATE" ? "Late Arrival" : s === "HALF_DAY" ? "Half Day" : s === "ABSENT" ? "Absent" : "Approved Leave"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Check-In / Check-Out Times */}
+            {regStatus !== "ABSENT" && regStatus !== "LEAVE" && (
+              <div className="grid grid-cols-2 gap-4">
+                {/* Check-In */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Check-In Time</label>
+                  <div className="flex gap-1.5">
+                    <Input
+                      placeholder="09:30"
+                      value={regCheckInTime}
+                      onChange={(e) => setRegCheckInTime(e.target.value)}
+                      className="text-sm dark:bg-slate-800"
+                    />
+                    <div className="flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden text-xs font-semibold">
+                      {(["AM", "PM"] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setRegCheckInPeriod(p)}
+                          className={cn(
+                            "px-2 py-1 transition-colors",
+                            regCheckInPeriod === p ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100"
+                          )}
+                        >{p}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {/* Check-Out */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Check-Out Time</label>
+                  <div className="flex gap-1.5">
+                    <Input
+                      placeholder="06:30"
+                      value={regCheckOutTime}
+                      onChange={(e) => setRegCheckOutTime(e.target.value)}
+                      className="text-sm dark:bg-slate-800"
+                    />
+                    <div className="flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden text-xs font-semibold">
+                      {(["AM", "PM"] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setRegCheckOutPeriod(p)}
+                          className={cn(
+                            "px-2 py-1 transition-colors",
+                            regCheckOutPeriod === p ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100"
+                          )}
+                        >{p}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Time Preview */}
+            {regStatus !== "ABSENT" && regStatus !== "LEAVE" && (regCheckInTime || regCheckOutTime) && (
+              <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-slate-700">
+                ⏱️ Confirmed: Check-In <strong>{regCheckInTime} {regCheckInPeriod}</strong> → Check-Out <strong>{regCheckOutTime} {regCheckOutPeriod}</strong>
+              </div>
+            )}
+
+            {/* Reason */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                Reason for Missed Attendance <span className="text-red-500">*</span>
+              </label>
+              <Textarea
+                placeholder="e.g. Forgot to punch due to an emergency call, was at client site with no network, etc."
+                value={regReason}
+                onChange={(e) => setRegReason(e.target.value)}
+                rows={3}
+                className="text-sm dark:bg-slate-800 resize-none"
+              />
+              <p className="text-[10px] text-slate-400">{regReason.trim().length} characters (min. 3 required)</p>
+            </div>
+
+            {/* Error / Success */}
+            {regError && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-lg">
+                <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-700 dark:text-red-400">{regError}</p>
+              </div>
+            )}
+            {regSuccess && (
+              <div className="flex items-start gap-2 p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-lg">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">{regSuccess}</p>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setRegularizeModalOpen(false)}
+                disabled={submitRegularizationMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={submitRegularizationMutation.isPending}
+                className="bg-amber-500 hover:bg-amber-400 text-white font-semibold gap-1.5"
+              >
+                {submitRegularizationMutation.isPending ? (
+                  <><div className="w-3 h-3 rounded-full border-2 border-white/40 border-t-white animate-spin" /> Submitting...</>
+                ) : (
+                  <><Sparkles className="h-3.5 w-3.5" /> Submit Request</>
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {isCameraOpen && (
         <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-700 p-5 space-y-4">
@@ -1180,12 +1621,13 @@ export default function EmployeeAttendance() {
       )}
 
       {/* ── Stats Row ────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3 mb-6 md:grid-cols-4 md:gap-4 md:mb-8">
+      <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-3 lg:grid-cols-5 md:gap-4 md:mb-8">
         {[
-          { label: "Present Days", value: presentCount, icon: <CalendarCheck className="h-5 w-5 text-emerald-500" />, color: "text-emerald-600" },
-          { label: "Absent Days", value: absentCount, icon: <CalendarX className="h-5 w-5 text-red-500" />, color: "text-red-600" },
-          { label: "Late Arrivals", value: lateCount, icon: <AlertCircle className="h-5 w-5 text-amber-500" />, color: "text-amber-600" },
-          { label: "Total Hours", value: `${totalHours.toFixed(0)}h`, icon: <TrendingUp className="h-5 w-5 text-blue-500" />, color: "text-blue-600" },
+          { label: "Present Days", value: monthlyData?.present ?? presentCount, icon: <CalendarCheck className="h-5 w-5 text-emerald-500" />, color: "text-emerald-600" },
+          { label: "Absent Days", value: monthlyData?.absent ?? absentCount, icon: <CalendarX className="h-5 w-5 text-red-500" />, color: "text-red-600" },
+          { label: "Late Arrivals", value: monthlyData?.late ?? lateCount, icon: <AlertCircle className="h-5 w-5 text-amber-500" />, color: "text-amber-600" },
+          { label: "Half Days & Leaves", value: (monthlyData?.halfDays ?? 0) + (monthlyData?.leaves ?? 0), icon: <Coffee className="h-5 w-5 text-purple-500" />, color: "text-purple-600" },
+          { label: "Attendance Rate", value: `${monthlyData?.attendancePercent ?? 0}%`, icon: <TrendingUp className="h-5 w-5 text-blue-500" />, color: "text-blue-600", sub: `${monthlyData?.workingDays ?? 0} working days` },
         ].map((s) => (
           <Card key={s.label} className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-4 flex flex-col gap-2">
@@ -1194,7 +1636,7 @@ export default function EmployeeAttendance() {
                 {s.icon}
               </div>
               <div className={cn("text-3xl font-bold", s.color)}>{s.value}</div>
-              <div className="text-xs text-slate-400">This month</div>
+              <div className="text-xs text-slate-400">{s.sub ?? "This month"}</div>
             </CardContent>
           </Card>
         ))}
@@ -1236,7 +1678,8 @@ export default function EmployeeAttendance() {
                     const rec = records.find((r) => r.date === dateStr);
                     const isToday = dateStr === today;
                     const cellDate = new Date(year, month, day);
-                    const isSunday = cellDate.getDay() === 0;
+                    const isWeeklyOff = weeklyOffDays.includes(cellDate.getDay());
+                    const weeklyOffLabel = `${dayShortNames[cellDate.getDay()]} Off`;
                     const matchedHoliday = monthlyData?.holidays?.find(
                       (h: any) => (h.dateStr || h.date?.slice(0, 10)) === dateStr
                     );
@@ -1247,7 +1690,8 @@ export default function EmployeeAttendance() {
                         record={rec}
                         day={day}
                         isToday={isToday}
-                        isSunday={isSunday}
+                        isWeeklyOff={isWeeklyOff}
+                        weeklyOffLabel={weeklyOffLabel}
                         festivalHolidayName={matchedHoliday?.name}
                       />
                     );
@@ -1284,6 +1728,7 @@ export default function EmployeeAttendance() {
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Hours</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Selfie</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Location</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
                   </tr>
                 </thead>
@@ -1352,6 +1797,17 @@ export default function EmployeeAttendance() {
                           )}
                         </td>
                         <td className="px-4 py-3">
+                          {r.source === "ADMIN_ASSIGNED" || r.manualOverride ? (
+                            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800 text-[10px] font-semibold" title={r.overrideReason ? `Admin: ${r.overrideReason}` : "Admin Assigned"}>
+                              Admin
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 text-[10px]">
+                              Self
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
                           <Badge className={cn("border text-xs", cfg.color)}>{cfg.label}</Badge>
                         </td>
                       </tr>
@@ -1359,7 +1815,7 @@ export default function EmployeeAttendance() {
                   })}
                   {recentRecords.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="text-center py-8 text-slate-400 text-sm">No attendance records found.</td>
+                      <td colSpan={9} className="text-center py-8 text-slate-400 text-sm">No attendance records found.</td>
                     </tr>
                   )}
                 </tbody>

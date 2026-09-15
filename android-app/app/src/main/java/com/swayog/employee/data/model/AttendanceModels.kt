@@ -154,3 +154,47 @@ data class FaceEnrollmentListResponse(
     val enrollments: List<EmployeeFaceEnrollmentItem>
 )
 
+data class RegularizationRequestPayload(
+    val date: String,
+    val status: String,
+    val checkInTime: String? = null,
+    val checkInPeriod: String? = null,
+    val checkOutTime: String? = null,
+    val checkOutPeriod: String? = null,
+    val reason: String
+)
+
+data class RegularizationReviewer(
+    val id: String,
+    val fullName: String?,
+    val email: String?
+)
+
+data class RegularizationItem(
+    val id: String,
+    val employeeId: String,
+    val date: String,
+    val status: String,
+    val checkInTime: String? = null,
+    val checkInPeriod: String? = null,
+    val checkOutTime: String? = null,
+    val checkOutPeriod: String? = null,
+    val reason: String,
+    val requestStatus: String, // PENDING, APPROVED, REJECTED
+    val adminNotes: String? = null,
+    val reviewedBy: String? = null,
+    val reviewedAt: String? = null,
+    val createdAt: String,
+    val reviewer: RegularizationReviewer? = null
+)
+
+data class RegularizationListResponse(
+    val requests: List<RegularizationItem> = emptyList()
+)
+
+data class RegularizationApiResponse(
+    val success: Boolean,
+    val message: String? = null,
+    val error: String? = null,
+    val request: RegularizationItem? = null
+)

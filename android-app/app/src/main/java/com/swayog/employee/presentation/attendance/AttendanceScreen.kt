@@ -1,5 +1,7 @@
 package com.swayog.employee.presentation.attendance
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.Manifest
 import android.content.Intent
 import android.graphics.Bitmap
@@ -22,12 +24,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.swayog.employee.data.model.RegularizationItem
+import com.swayog.employee.data.model.RegularizationRequestPayload
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -77,6 +83,8 @@ fun AttendanceScreen(
     val performance by viewModel.performance.collectAsState()
     val currentTask by viewModel.currentTask.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
+    val myRegularizationRequests by viewModel.myRegularizationRequests.collectAsState()
+    val isLoadingRegularization by viewModel.isLoadingRegularization.collectAsState()
     
     // UI State
     var showCamera by remember { mutableStateOf(false) }
@@ -86,6 +94,11 @@ fun AttendanceScreen(
     var currentLatitude by remember { mutableStateOf<Double?>(null) }
     var currentLongitude by remember { mutableStateOf<Double?>(null) }
     var resolvedAddress by remember { mutableStateOf<String?>(null) }
+
+    // Attendance Regularization State
+    var showRegularizeDialog by remember { mutableStateOf(false) }
+    var regError by remember { mutableStateOf<String?>(null) }
+    var isSubmittingReg by remember { mutableStateOf(false) }
 
     // Calendar month navigation state
     var calendarMonth by remember { mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH)) }
@@ -852,6 +865,133 @@ fun AttendanceScreen(
                         }
                     }
 
+                    // Forgot Attendance Banner
+                    item {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable {
+                                    regError = null
+                                    showRegularizeDialog = true
+                                },
+                            color = Color(0xFFFFFBEB),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFFFEF3C7)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.EditCalendar,
+                                        contentDescription = "Regularize Attendance",
+                                        tint = Color(0xFFD97706),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Forgot to Mark Attendance?",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF92400E)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Missed a punch-in? Apply for regularization to request admin approval.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFFB45309),
+                                        lineHeight = 16.sp
+                                    )
+                                }
+
+                                Button(
+                                    onClick = {
+                                        regError = null
+                                        showRegularizeDialog = true
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFF59E0B),
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "Apply",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // My Regularization Requests History
+                    if (myRegularizationRequests.isNotEmpty()) {
+                        item {
+                            SwayogCard {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.FactCheck,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Text(
+                                                text = "My Regularization Requests",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            shape = CircleShape
+                                        ) {
+                                            Text(
+                                                text = myRegularizationRequests.size.toString(),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        myRegularizationRequests.take(5).forEach { req ->
+                                            RegularizationRequestCard(req)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Monthly Performance Stats
                     item {
                         val currentYear = calendarYear
@@ -1416,6 +1556,36 @@ fun AttendanceScreen(
                         }
                     }
                 }
+            }
+
+            if (showRegularizeDialog) {
+                AttendanceRegularizationDialog(
+                    onDismiss = {
+                        if (!isSubmittingReg) {
+                            showRegularizeDialog = false
+                            regError = null
+                        }
+                    },
+                    onSubmit = { payload ->
+                        isSubmittingReg = true
+                        regError = null
+                        viewModel.submitRegularizationRequest(payload) { result ->
+                            isSubmittingReg = false
+                            result.onSuccess {
+                                showRegularizeDialog = false
+                                Toast.makeText(
+                                    context,
+                                    "Regularization request submitted! Sent to admin for approval.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }.onFailure { error ->
+                                regError = error.message ?: "Failed to submit regularization request"
+                            }
+                        }
+                    },
+                    isSubmitting = isSubmittingReg,
+                    serverError = regError
+                )
             }
         }
     }
@@ -2176,4 +2346,703 @@ private fun buildAttendanceLeafletHtml(
     </body>
     </html>
     """.trimIndent()
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AttendanceRegularizationDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (RegularizationRequestPayload) -> Unit,
+    isSubmitting: Boolean,
+    serverError: String?
+) {
+    val context = LocalContext.current
+    val calendar = Calendar.getInstance()
+
+    // Default to yesterday
+    val defaultDate = remember {
+        Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, -1) }
+            .let { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(it.time) }
+    }
+
+    var regDate by remember { mutableStateOf(defaultDate) }
+    var regStatus by remember { mutableStateOf("PRESENT") }
+    var regCheckInTime by remember { mutableStateOf("09:30") }
+    var regCheckInPeriod by remember { mutableStateOf("AM") }
+    var regCheckOutTime by remember { mutableStateOf("06:30") }
+    var regCheckOutPeriod by remember { mutableStateOf("PM") }
+    var regReason by remember { mutableStateOf("") }
+    var localError by remember { mutableStateOf<String?>(null) }
+
+    val activeError = localError ?: serverError
+
+    Dialog(
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.88f),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFFFEF3C7)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.EditCalendar,
+                                contentDescription = null,
+                                tint = Color(0xFFD97706),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Regularize Attendance",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Submit missed attendance for admin approval",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = { if (!isSubmitting) onDismiss() },
+                        enabled = !isSubmitting
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Scrollable Form Body
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Info Banner
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFEFF6FF),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = Color(0xFF2563EB),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Your request will be sent to the administrator for review. Once approved, attendance for this date will be automatically allocated to your record.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF1E40AF),
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    // Attendance Date Field
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Attendance Date *",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    val parts = regDate.split("-").mapNotNull { it.toIntOrNull() }
+                                    val y = if (parts.size == 3) parts[0] else calendar.get(Calendar.YEAR)
+                                    val m = if (parts.size == 3) parts[1] - 1 else calendar.get(Calendar.MONTH)
+                                    val d = if (parts.size == 3) parts[2] else calendar.get(Calendar.DAY_OF_MONTH)
+                                    DatePickerDialog(context, { _, selYear, selMonth, selDay ->
+                                        regDate = String.format(Locale.getDefault(), "%04d-%02d-%02d", selYear, selMonth + 1, selDay)
+                                    }, y, m, d).apply {
+                                        datePicker.maxDate = System.currentTimeMillis()
+                                    }.show()
+                                },
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarToday,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = formatUtcToLocalDate(regDate),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                Text(
+                                    text = "Change",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    // Attendance Status Field
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Attendance Status *",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        val statuses = listOf(
+                            "PRESENT" to "Present (Full)",
+                            "LATE" to "Late Arrival",
+                            "HALF_DAY" to "Half Day",
+                            "ABSENT" to "Absent",
+                            "LEAVE" to "Approved Leave"
+                        )
+
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            statuses.forEach { (statusCode, label) ->
+                                val isSelected = regStatus == statusCode
+                                val activeColor = when (statusCode) {
+                                    "PRESENT" -> Color(0xFF0B6E4F)
+                                    "LATE" -> Color(0xFFD97706)
+                                    "HALF_DAY" -> Color(0xFF7E22CE)
+                                    "ABSENT" -> Color(0xFFDC2626)
+                                    else -> Color(0xFF2563EB)
+                                }
+
+                                Surface(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .clickable {
+                                            regStatus = statusCode
+                                            if (statusCode == "ABSENT" || statusCode == "LEAVE") {
+                                                regCheckInTime = ""
+                                                regCheckOutTime = ""
+                                            } else if (regCheckInTime.isBlank()) {
+                                                regCheckInTime = "09:30"
+                                                regCheckInPeriod = "AM"
+                                                regCheckOutTime = "06:30"
+                                                regCheckOutPeriod = "PM"
+                                            }
+                                        },
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = if (isSelected) activeColor else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        width = if (isSelected) 1.5.dp else 1.dp,
+                                        color = if (isSelected) activeColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                    )
+                                ) {
+                                    Text(
+                                        text = label,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Times (if not ABSENT and not LEAVE)
+                    if (regStatus != "ABSENT" && regStatus != "LEAVE") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Check-in Time
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Check-In Time",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            val tParts = regCheckInTime.split(":").mapNotNull { it.toIntOrNull() }
+                                            val initH = if (tParts.isNotEmpty()) tParts[0] else 9
+                                            val initM = if (tParts.size > 1) tParts[1] else 30
+                                            val h24 = if (regCheckInPeriod == "PM" && initH < 12) initH + 12 else if (regCheckInPeriod == "AM" && initH == 12) 0 else initH
+                                            TimePickerDialog(context, { _, h, m ->
+                                                val period = if (h < 12) "AM" else "PM"
+                                                val h12 = when {
+                                                    h == 0 -> 12
+                                                    h > 12 -> h - 12
+                                                    else -> h
+                                                }
+                                                regCheckInTime = String.format(Locale.getDefault(), "%02d:%02d", h12, m)
+                                                regCheckInPeriod = period
+                                            }, h24, initM, false).show()
+                                        },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "$regCheckInTime $regCheckInPeriod",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.Schedule,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Check-out Time
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Check-Out Time",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            val tParts = regCheckOutTime.split(":").mapNotNull { it.toIntOrNull() }
+                                            val initH = if (tParts.isNotEmpty()) tParts[0] else 6
+                                            val initM = if (tParts.size > 1) tParts[1] else 30
+                                            val h24 = if (regCheckOutPeriod == "PM" && initH < 12) initH + 12 else if (regCheckOutPeriod == "AM" && initH == 12) 0 else initH
+                                            TimePickerDialog(context, { _, h, m ->
+                                                val period = if (h < 12) "AM" else "PM"
+                                                val h12 = when {
+                                                    h == 0 -> 12
+                                                    h > 12 -> h - 12
+                                                    else -> h
+                                                }
+                                                regCheckOutTime = String.format(Locale.getDefault(), "%02d:%02d", h12, m)
+                                                regCheckOutPeriod = period
+                                            }, h24, initM, false).show()
+                                        },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "$regCheckOutTime $regCheckOutPeriod",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.Schedule,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Time summary pill
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "⏱️ Confirmed: Check-In $regCheckInTime $regCheckInPeriod → Check-Out $regCheckOutTime $regCheckOutPeriod",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+
+                    // Reason Field
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Reason for Missed Attendance *",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        OutlinedTextField(
+                            value = regReason,
+                            onValueChange = {
+                                regReason = it
+                                localError = null
+                            },
+                            placeholder = {
+                                Text(
+                                    text = "e.g. Forgot to punch due to an emergency client call, site connectivity issue, etc.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            },
+                            minLines = 3,
+                            maxLines = 5,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium
+                        )
+
+                        Text(
+                            text = "${regReason.trim().length} characters (min. 3 required)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (regReason.trim().length in 1..2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
+
+                    // Error Message Banner
+                    if (!activeError.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFFEE2E2),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = Color(0xFFDC2626),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = activeError,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFFB91C1C),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = { if (!isSubmitting) onDismiss() },
+                        enabled = !isSubmitting
+                    ) {
+                        Text("Cancel")
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = {
+                            if (regDate.isBlank()) {
+                                localError = "Please select the date you forgot attendance for."
+                                return@Button
+                            }
+                            if (regReason.trim().length < 3) {
+                                localError = "A reason explaining why you forgot attendance is required (minimum 3 characters)."
+                                return@Button
+                            }
+
+                            localError = null
+                            val isNoTime = regStatus == "ABSENT" || regStatus == "LEAVE"
+                            onSubmit(
+                                RegularizationRequestPayload(
+                                    date = regDate,
+                                    status = regStatus,
+                                    checkInTime = if (!isNoTime && regCheckInTime.isNotBlank()) regCheckInTime.trim() else null,
+                                    checkInPeriod = if (!isNoTime && regCheckInTime.isNotBlank()) regCheckInPeriod else null,
+                                    checkOutTime = if (!isNoTime && regCheckOutTime.isNotBlank()) regCheckOutTime.trim() else null,
+                                    checkOutPeriod = if (!isNoTime && regCheckOutTime.isNotBlank()) regCheckOutPeriod else null,
+                                    reason = regReason.trim()
+                                )
+                            )
+                        },
+                        enabled = !isSubmitting,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFF59E0B),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        if (isSubmitting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Submitting...")
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Submit Request", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RegularizationRequestCard(item: RegularizationItem) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Header Row: Date + Status Requested
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarToday,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = formatUtcToLocalDate(item.date),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                val (statusColor, statusLabel) = when (item.status.uppercase()) {
+                    "PRESENT" -> Color(0xFF0B6E4F) to "Present"
+                    "LATE" -> Color(0xFFD97706) to "Late"
+                    "HALF_DAY" -> Color(0xFF7E22CE) to "Half Day"
+                    "ABSENT" -> Color(0xFFDC2626) to "Absent"
+                    "LEAVE" -> Color(0xFF2563EB) to "Leave"
+                    else -> MaterialTheme.colorScheme.primary to item.status
+                }
+
+                Surface(
+                    color = statusColor.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = statusLabel,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = statusColor
+                    )
+                }
+            }
+
+            // Review Status Badge & Times
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val reviewBg: Color
+                val reviewFg: Color
+                val reviewText: String
+                val reviewIcon: androidx.compose.ui.graphics.vector.ImageVector
+
+                when (item.requestStatus.uppercase()) {
+                    "APPROVED" -> {
+                        reviewBg = Color(0xFFD1FAE5)
+                        reviewFg = Color(0xFF047857)
+                        reviewText = "Approved"
+                        reviewIcon = Icons.Default.CheckCircle
+                    }
+                    "REJECTED" -> {
+                        reviewBg = Color(0xFFFEE2E2)
+                        reviewFg = Color(0xFFB91C1C)
+                        reviewText = "Rejected"
+                        reviewIcon = Icons.Default.Cancel
+                    }
+                    else -> {
+                        reviewBg = Color(0xFFFEF3C7)
+                        reviewFg = Color(0xFFB45309)
+                        reviewText = "Pending Review"
+                        reviewIcon = Icons.Default.HourglassEmpty
+                    }
+                }
+
+                Surface(
+                    color = reviewBg,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = reviewIcon,
+                            contentDescription = null,
+                            tint = reviewFg,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = reviewText,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = reviewFg
+                        )
+                    }
+                }
+
+                if (!item.checkInTime.isNullOrBlank()) {
+                    Text(
+                        text = "${item.checkInTime} ${item.checkInPeriod.orEmpty()} → ${item.checkOutTime.orEmpty()} ${item.checkOutPeriod.orEmpty()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            // Reason
+            Text(
+                text = "Reason: ${item.reason}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // Admin Notes if present
+            if (!item.adminNotes.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Comment,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "Admin: ${item.adminNotes}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

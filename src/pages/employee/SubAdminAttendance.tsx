@@ -47,7 +47,7 @@ export function resolveStaticUrl(url: string | null | undefined): string {
 
 
 // ───── Types ─────────────────────────────────────────────────────────────────
-type AttendanceStatus = "present" | "absent" | "late" | "leave" | "half-day" | "sunday-holiday" | "festival-holiday";
+type AttendanceStatus = "present" | "absent" | "late" | "leave" | "half-day" | "sunday-holiday" | "festival-holiday" | "weekly-off";
 type BreakType = "short" | "lunch";
 
 interface Break {
@@ -62,6 +62,10 @@ interface AttendanceRecord {
   checkIn: string | null; // "HH:MM"
   checkOut: string | null;
   status: AttendanceStatus;
+  source?: string;
+  manualOverride?: boolean;
+  overrideReason?: string | null;
+  reviewerName?: string | null;
   workHours: number;
   breaks: Break[];
   checkInSelfie?: string | null;
@@ -171,6 +175,10 @@ function mapDbRecordToFrontend(dbRecord: any, checkIns: any[]): AttendanceRecord
     checkIn: checkInStr,
     checkOut: checkOutStr,
     status: statusStr,
+    source: dbRecord.source || (dbRecord.manualOverride ? "ADMIN_ASSIGNED" : "EMPLOYEE_CHECK_IN"),
+    manualOverride: !!dbRecord.manualOverride,
+    overrideReason: dbRecord.overrideReason || dbRecord.notes,
+    reviewerName: dbRecord.reviewerName,
     workHours,
     breaks: [],
     checkInSelfie: matchedCheckIn?.selfieUrl ?? null,
@@ -188,6 +196,7 @@ const statusConfig: Record<AttendanceStatus, { label: string; color: string; dot
   leave: { label: "Leave", color: "bg-blue-100 text-blue-700 border-blue-200", dot: "bg-blue-500" },
   "half-day": { label: "Half Day", color: "bg-purple-100 text-purple-700 border-purple-200", dot: "bg-purple-500" },
   "sunday-holiday": { label: "Sunday Holiday", color: "bg-amber-100 text-amber-800 border-amber-200", dot: "bg-amber-500" },
+  "weekly-off": { label: "Weekly Off", color: "bg-amber-100 text-amber-800 border-amber-200", dot: "bg-amber-500" },
   "festival-holiday": { label: "Festival Holiday", color: "bg-rose-100 text-rose-800 border-rose-200", dot: "bg-rose-500" },
 };
 
@@ -196,19 +205,21 @@ function CalendarCell({
   record,
   day,
   isToday,
-  isSunday,
+  isWeeklyOff,
+  weeklyOffLabel = "Off",
   festivalHolidayName,
 }: {
   record?: AttendanceRecord;
   day: number;
   isToday: boolean;
-  isSunday: boolean;
+  isWeeklyOff: boolean;
+  weeklyOffLabel?: string;
   festivalHolidayName?: string;
 }) {
   let effectiveStatus: AttendanceStatus | null = record ? record.status : null;
   if (!effectiveStatus) {
     if (festivalHolidayName) effectiveStatus = "festival-holiday";
-    else if (isSunday) effectiveStatus = "sunday-holiday";
+    else if (isWeeklyOff) effectiveStatus = "weekly-off";
   }
 
   const cfg = effectiveStatus ? statusConfig[effectiveStatus] : null;
@@ -218,8 +229,8 @@ function CalendarCell({
       title={
         festivalHolidayName
           ? `🎉 Festival Holiday: ${festivalHolidayName}`
-          : isSunday
-          ? "🏖️ Mandatory Sunday Holiday"
+          : isWeeklyOff
+          ? `🏖️ ${weeklyOffLabel}`
           : effectiveStatus
           ? statusConfig[effectiveStatus].label
           : undefined
@@ -229,7 +240,7 @@ function CalendarCell({
         isToday && "ring-2 ring-orange-500 ring-offset-1 font-bold",
         festivalHolidayName
           ? "bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/30"
-          : isSunday
+          : isWeeklyOff
           ? "bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30"
           : record
           ? "hover:scale-105 cursor-default bg-slate-50/50 dark:bg-slate-800/30"
@@ -243,7 +254,7 @@ function CalendarCell({
             ? "text-orange-600 dark:text-orange-400 font-extrabold"
             : festivalHolidayName
             ? "text-rose-700 dark:text-rose-400 font-bold"
-            : isSunday
+            : isWeeklyOff
             ? "text-amber-700 dark:text-amber-400 font-bold"
             : "text-slate-700 dark:text-slate-300"
         )}
@@ -254,9 +265,9 @@ function CalendarCell({
         <span className="text-[8px] font-bold text-rose-600 dark:text-rose-400 truncate max-w-full px-0.5" title={festivalHolidayName}>
           🎉 {festivalHolidayName}
         </span>
-      ) : isSunday ? (
+      ) : isWeeklyOff ? (
         <span className="text-[8px] font-semibold text-amber-600 dark:text-amber-400">
-          Sun Off
+          {weeklyOffLabel}
         </span>
       ) : null}
       {cfg && <span className={cn("w-2 h-2 rounded-full mx-auto mt-0.5", cfg.dot)} />}
@@ -730,9 +741,13 @@ export default function SubAdminAttendance() {
   const lateCount = thisMonthRecords.filter((r) => r.status === "late").length;
   const totalHours = thisMonthRecords.reduce((acc, r) => acc + r.workHours, 0);
 
-  // Check if today is Sunday or a declared holiday
+  // Check if today is a weekly off or declared festival holiday
+  const weeklyOffDays: number[] = rules?.weeklyOffDays || monthlyData?.rules?.weeklyOffDays || [0];
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayShortNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const todayDateObj = new Date();
-  const isTodaySunday = todayDateObj.getDay() === 0;
+  const isTodayWeeklyOff = weeklyOffDays.includes(todayDateObj.getDay());
+  const todayDayName = dayNames[todayDateObj.getDay()];
   const todayHoliday = monthlyData?.holidays?.find((h: any) => (h.dateStr || h.date?.slice(0, 10)) === today);
 
   // ── Calendar ─────────────────────────────────────────────────────────────────
@@ -783,7 +798,29 @@ export default function SubAdminAttendance() {
 
                 {/* Center: Status */}
                 <div className="flex flex-col items-center gap-2">
-                  {todayChecked ? (
+                  {todayChecked?.source === "ADMIN_ASSIGNED" || todayChecked?.manualOverride ? (
+                    <div className="flex flex-col items-center gap-2 bg-indigo-950/60 border border-indigo-500/40 rounded-2xl p-4 text-center max-w-sm">
+                      <div className="flex items-center gap-2 text-indigo-300 font-semibold text-sm">
+                        <Shield className="h-4 w-4 text-indigo-400" />
+                        <span>Attendance Assigned by Admin</span>
+                      </div>
+                      <Badge className={cn("border text-xs uppercase px-2.5 py-1 font-bold", statusConfig[todayChecked.status]?.color)}>
+                        Status: {statusConfig[todayChecked.status]?.label || todayChecked.status}
+                      </Badge>
+                      {todayChecked.overrideReason && (
+                        <p className="text-xs text-slate-300 italic bg-indigo-900/30 px-3 py-1.5 rounded-lg border border-indigo-700/30">
+                          "{todayChecked.overrideReason}"
+                        </p>
+                      )}
+                      <div className="flex items-center gap-3 text-xs text-slate-300 mt-1">
+                        {todayChecked.checkIn && <span>Check-In: <strong className="text-white">{todayChecked.checkIn}</strong></span>}
+                        {todayChecked.checkOut && <span>Check-Out: <strong className="text-white">{todayChecked.checkOut}</strong></span>}
+                      </div>
+                      {todayChecked.workHours > 0 && (
+                        <span className="text-xs text-emerald-400 font-semibold">{todayChecked.workHours}h logged</span>
+                      )}
+                    </div>
+                  ) : todayChecked ? (
                     <div className="flex flex-col items-center gap-2">
                       <div className="flex items-center gap-3 text-sm text-slate-300">
                         <span className="flex items-center gap-1"><LogIn className="h-4 w-4 text-emerald-400" /> Check-In: <strong className="text-white">{todayChecked.checkIn}</strong></span>
@@ -828,14 +865,14 @@ export default function SubAdminAttendance() {
                 {/* Right: Button */}
                 <div className="flex flex-col items-center gap-3">
                   {/* Today Holiday Alert Banner */}
-                  {(isTodaySunday || todayHoliday) && (
+                  {(isTodayWeeklyOff || todayHoliday) && (
                     <div className="w-full max-w-sm rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-amber-200 flex items-center gap-2.5">
                       <div className="p-2 bg-amber-500/20 rounded-lg text-amber-300 shrink-0">
                         {todayHoliday ? <PartyPopper className="h-4 w-4 text-rose-300" /> : <Sun className="h-4 w-4 text-amber-300" />}
                       </div>
                       <div className="text-left">
                         <p className="text-xs font-bold text-amber-300">
-                          {todayHoliday ? `🎉 Today is ${todayHoliday.name} (Holiday)!` : "🏖️ Today is Sunday (Mandatory Holiday)!"}
+                          {todayHoliday ? `🎉 Today is ${todayHoliday.name} (Holiday)!` : `🏖️ Today is ${todayDayName} (Weekly Off)!`}
                         </p>
                         <p className="text-[10px] text-amber-200/80">
                           Official company holiday. Check-in is not required.
@@ -846,7 +883,18 @@ export default function SubAdminAttendance() {
 
                   {/* Check-in / Check-out */}
                   <div>
-                    {!todayChecked?.checkIn ? (
+                    {todayChecked?.source === "ADMIN_ASSIGNED" || todayChecked?.manualOverride ? (
+                      <div className="flex flex-col items-center gap-1.5 bg-indigo-950/70 border border-indigo-500/30 px-5 py-3 rounded-xl text-center">
+                        <CheckCircle2 className="h-5 w-5 text-indigo-400" />
+                        <span className="text-slate-200 font-semibold text-sm">Regularized by Admin</span>
+                        <span className="text-slate-400 text-xs">Self check-in not required</span>
+                      </div>
+                    ) : todayChecked && (todayChecked.status === "leave" || todayChecked.status === "absent") ? (
+                      <div className="flex flex-col items-center gap-1.5 bg-slate-800/80 border border-slate-700 px-5 py-3 rounded-xl text-center">
+                        <AlertCircle className="h-5 w-5 text-amber-400" />
+                        <span className="text-slate-200 font-medium text-sm">Marked as {statusConfig[todayChecked.status]?.label}</span>
+                      </div>
+                    ) : !todayChecked?.checkIn ? (
                       <>
                         <Button
                           id="btn-check-in"
@@ -1188,12 +1236,13 @@ export default function SubAdminAttendance() {
       )}
 
       {/* ── Stats Row ────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3 mb-6 md:grid-cols-4 md:gap-4 md:mb-8">
+      <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-3 lg:grid-cols-5 md:gap-4 md:mb-8">
         {[
-          { label: "Present Days", value: presentCount, icon: <CalendarCheck className="h-5 w-5 text-emerald-500" />, color: "text-emerald-600" },
-          { label: "Absent Days", value: absentCount, icon: <CalendarX className="h-5 w-5 text-red-500" />, color: "text-red-600" },
-          { label: "Late Arrivals", value: lateCount, icon: <AlertCircle className="h-5 w-5 text-amber-500" />, color: "text-amber-600" },
-          { label: "Total Hours", value: `${totalHours.toFixed(0)}h`, icon: <TrendingUp className="h-5 w-5 text-blue-500" />, color: "text-blue-600" },
+          { label: "Present Days", value: monthlyData?.present ?? presentCount, icon: <CalendarCheck className="h-5 w-5 text-emerald-500" />, color: "text-emerald-600" },
+          { label: "Absent Days", value: monthlyData?.absent ?? absentCount, icon: <CalendarX className="h-5 w-5 text-red-500" />, color: "text-red-600" },
+          { label: "Late Arrivals", value: monthlyData?.late ?? lateCount, icon: <AlertCircle className="h-5 w-5 text-amber-500" />, color: "text-amber-600" },
+          { label: "Half Days & Leaves", value: (monthlyData?.halfDays ?? 0) + (monthlyData?.leaves ?? 0), icon: <Coffee className="h-5 w-5 text-purple-500" />, color: "text-purple-600" },
+          { label: "Attendance Rate", value: `${monthlyData?.attendancePercent ?? 0}%`, icon: <TrendingUp className="h-5 w-5 text-blue-500" />, color: "text-blue-600", sub: `${monthlyData?.workingDays ?? 0} working days` },
         ].map((s) => (
           <Card key={s.label} className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-4 flex flex-col gap-2">
@@ -1202,7 +1251,7 @@ export default function SubAdminAttendance() {
                 {s.icon}
               </div>
               <div className={cn("text-3xl font-bold", s.color)}>{s.value}</div>
-              <div className="text-xs text-slate-400">This month</div>
+              <div className="text-xs text-slate-400">{s.sub ?? "This month"}</div>
             </CardContent>
           </Card>
         ))}
@@ -1244,7 +1293,8 @@ export default function SubAdminAttendance() {
                     const rec = records.find((r) => r.date === dateStr);
                     const isToday = dateStr === today;
                     const cellDate = new Date(year, month, day);
-                    const isSunday = cellDate.getDay() === 0;
+                    const isWeeklyOff = weeklyOffDays.includes(cellDate.getDay());
+                    const weeklyOffLabel = `${dayShortNames[cellDate.getDay()]} Off`;
                     const matchedHoliday = monthlyData?.holidays?.find(
                       (h: any) => (h.dateStr || h.date?.slice(0, 10)) === dateStr
                     );
@@ -1255,7 +1305,8 @@ export default function SubAdminAttendance() {
                         record={rec}
                         day={day}
                         isToday={isToday}
-                        isSunday={isSunday}
+                        isWeeklyOff={isWeeklyOff}
+                        weeklyOffLabel={weeklyOffLabel}
                         festivalHolidayName={matchedHoliday?.name}
                       />
                     );
@@ -1292,6 +1343,7 @@ export default function SubAdminAttendance() {
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Hours</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Selfie</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Location</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
                   </tr>
                 </thead>
@@ -1360,6 +1412,17 @@ export default function SubAdminAttendance() {
                           )}
                         </td>
                         <td className="px-4 py-3">
+                          {r.source === "ADMIN_ASSIGNED" || r.manualOverride ? (
+                            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800 text-[10px] font-semibold" title={r.overrideReason ? `Admin: ${r.overrideReason}` : "Admin Assigned"}>
+                              Admin
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 text-[10px]">
+                              Self
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
                           <Badge className={cn("border text-xs", cfg.color)}>{cfg.label}</Badge>
                         </td>
                       </tr>
@@ -1367,7 +1430,7 @@ export default function SubAdminAttendance() {
                   })}
                   {recentRecords.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="text-center py-8 text-slate-400 text-sm">No attendance records found.</td>
+                      <td colSpan={9} className="text-center py-8 text-slate-400 text-sm">No attendance records found.</td>
                     </tr>
                   )}
                 </tbody>

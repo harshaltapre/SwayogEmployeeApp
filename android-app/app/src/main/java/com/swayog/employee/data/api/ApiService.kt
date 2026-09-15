@@ -129,6 +129,15 @@ interface ApiService {
         @Query("month") month: Int? = null,
         @Query("year") year: Int? = null
     ): Response<HolidaysResponse>
+
+    // Attendance Regularization (Forgot Attendance) Endpoints
+    @POST("attendance/regularization-request")
+    suspend fun submitRegularizationRequest(
+        @Body request: RegularizationRequestPayload
+    ): Response<RegularizationApiResponse>
+
+    @GET("attendance/my-regularization-requests")
+    suspend fun getMyRegularizationRequests(): Response<RegularizationListResponse>
     
     @GET("daily-commits/mine")
     suspend fun getDailyCommits(): Response<ApiResponse<List<DailyCommit>>>

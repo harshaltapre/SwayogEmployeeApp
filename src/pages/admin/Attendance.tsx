@@ -16,6 +16,10 @@ import {
   useHolidays,
   useCreateHoliday,
   useDeleteHoliday,
+  useAdminTodaySummary,
+  useAdminRegularizationRequests,
+  useAcceptRegularizationRequest,
+  useRejectRegularizationRequest,
   HolidayRecord,
 } from "@/hooks/useAttendance";
 import { resolveConfiguredApiBaseUrl } from "@/lib/resolve-api-base-url";
@@ -71,16 +75,20 @@ interface AttendanceRule {
   officeLng: number;
   officeRadius: number; // in meters
   faceMatchThreshold?: number;
+  weeklyOffDays?: number[];
+  dailyWorkingHours?: number;
 }
 
 const DEFAULT_RULES: AttendanceRule = {
-  shiftStart: "10:30",
+  shiftStart: "09:15",
   faceRequired: true,
   geofenceEnabled: false,
   officeLat: 18.5204, // Default Pune lat
   officeLng: 73.8567, // Default Pune lng
   officeRadius: 150,
   faceMatchThreshold: 0.55,
+  weeklyOffDays: [0],
+  dailyWorkingHours: 9.0,
 };
 
 const ConditionalWrapper = ({ condition, wrapper, children }: { condition: boolean; wrapper: (children: React.ReactNode) => React.ReactNode; children: React.ReactNode }) =>
@@ -135,6 +143,9 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
     selectedYear
   );
 
+  // Today's Live Attendance Summary
+  const { data: todaySummary } = useAdminTodaySummary();
+
   // Manual Attendance Form State (for forgotten punch or corrections)
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [formEmployeeId, setFormEmployeeId] = useState("");
@@ -149,6 +160,19 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
   const [formSuccess, setFormSuccess] = useState("");
 
   const applyAttendanceMutation = useApplyAttendance();
+
+  // Regularization requests
+  const [regTab, setRegTab] = useState<"PENDING" | "APPROVED" | "REJECTED" | "ALL">("PENDING");
+  const { data: regularizationRequests = [], isLoading: loadingRegRequests } = useAdminRegularizationRequests(regTab);
+  const acceptRegMutation = useAcceptRegularizationRequest();
+  const rejectRegMutation = useRejectRegularizationRequest();
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null);
+  const [rejectingEmployeeName, setRejectingEmployeeName] = useState("");
+  const [rejectNotes, setRejectNotes] = useState("");
+  const [rejectError, setRejectError] = useState("");
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [acceptSuccessMsg, setAcceptSuccessMsg] = useState("");
 
   const handleOpenApplyModal = (employee?: any, existingRecord?: any) => {
     setFormError("");
@@ -413,9 +437,10 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
           </Badge>
         );
       case "SUNDAY_HOLIDAY":
+      case "WEEKLY_OFF":
         return (
           <Badge className="bg-amber-100 text-amber-800 border-amber-200 font-semibold gap-1">
-            <Sun className="h-3 w-3 inline text-amber-600" /> Sunday Holiday
+            <Sun className="h-3 w-3 inline text-amber-600" /> Weekly Off
           </Badge>
         );
       default:
@@ -473,6 +498,102 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
 
         {activeTab === "dashboard" && (
           <>
+            {/* ── Today's Live Attendance Overview ─────────────────────────── */}
+            <Card className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white border-0 shadow-lg overflow-hidden">
+              <CardContent className="p-5">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-700/60 pb-4 mb-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <h3 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
+                        Today's Live Attendance
+                      </h3>
+                      {todaySummary?.holiday ? (
+                        <Badge className="bg-purple-500/20 text-purple-300 border-purple-400/40 text-[10px]">
+                          🎉 {todaySummary.holiday.name}
+                        </Badge>
+                      ) : todaySummary?.isWeeklyOff ? (
+                        <Badge className="bg-amber-500/20 text-amber-300 border-amber-400/40 text-[10px]">
+                          🏖️ Weekly Off
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-400/40 text-[10px]">
+                          🟢 Working Day
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} • Shift Starts: {rules.shiftStart} AM
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleOpenApplyModal()}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow gap-1.5 h-8"
+                    >
+                      <CalendarPlus className="h-3.5 w-3.5" /> + Regularize / Apply Attendance
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Live Stats Pill Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Checked In</span>
+                    <div className="text-2xl font-bold text-white mt-0.5">
+                      {todaySummary?.checkedIn ?? 0}
+                      <span className="text-xs text-slate-400 font-normal ml-1">/ {todaySummary?.totalEmployees ?? totalEmpCount}</span>
+                    </div>
+                    <span className="text-[10px] text-emerald-400 font-medium">
+                      {todaySummary?.totalEmployees ? Math.round(((todaySummary.checkedIn) / todaySummary.totalEmployees) * 100) : 0}% attendance
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">On Time</span>
+                    <div className="text-2xl font-bold text-emerald-400 mt-0.5">
+                      {todaySummary?.onTime ?? 0}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-medium">Before {rules.shiftStart}</span>
+                  </div>
+
+                  <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Late Arrivals</span>
+                    <div className="text-2xl font-bold text-amber-400 mt-0.5">
+                      {todaySummary?.late ?? 0}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-medium">Grace exceeded</span>
+                  </div>
+
+                  <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Half Day</span>
+                    <div className="text-2xl font-bold text-purple-400 mt-0.5">
+                      {todaySummary?.halfDay ?? 0}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-medium">&lt; 4 hours</span>
+                  </div>
+
+                  <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Pending / Absent</span>
+                    <div className="text-2xl font-bold text-rose-400 mt-0.5">
+                      {(todaySummary?.notCheckedIn ?? 0) + (todaySummary?.absent ?? 0)}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-medium">Not punched yet</span>
+                  </div>
+
+                  <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Admin Assigned</span>
+                    <div className="text-2xl font-bold text-indigo-400 mt-0.5">
+                      {todaySummary?.adminAssigned ?? 0}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-medium">Manually regularized</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* ── Summary Stat Cards ────────────────────────────────────────── */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Card className="shadow-sm hover:shadow-md transition-shadow">
@@ -687,6 +808,174 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                     </tbody>
                   </table>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Pending Regularization Requests ───────────────────────────── */}
+            <Card className="shadow-sm border border-amber-200/70 dark:border-amber-700/40 overflow-hidden">
+              <CardHeader className="pb-3 border-b border-amber-100 dark:border-amber-900/40 bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-950/20 dark:via-orange-950/20 dark:to-yellow-950/20">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2 text-amber-900 dark:text-amber-300">
+                    <FileCheck className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    Employee Attendance Regularization Requests
+                    {regularizationRequests.filter((r: any) => r.requestStatus === "PENDING").length > 0 && (
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1.5 animate-pulse">
+                        {regularizationRequests.filter((r: any) => r.requestStatus === "PENDING").length}
+                      </span>
+                    )}
+                  </CardTitle>
+                  <div className="flex bg-white dark:bg-slate-800 border border-amber-200 dark:border-slate-700 rounded-lg p-0.5 text-xs font-semibold">
+                    {(["PENDING", "APPROVED", "REJECTED", "ALL"] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setRegTab(tab)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-md transition-all capitalize",
+                          regTab === tab
+                            ? tab === "PENDING" ? "bg-amber-500 text-white shadow"
+                              : tab === "APPROVED" ? "bg-emerald-500 text-white shadow"
+                              : tab === "REJECTED" ? "bg-red-500 text-white shadow"
+                              : "bg-slate-700 text-white shadow"
+                            : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                        )}
+                      >
+                        {tab.toLowerCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {acceptSuccessMsg && (
+                  <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-950/20 border-b border-emerald-200 dark:border-emerald-900/40 text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+                    <CheckCheck className="h-4 w-4" />
+                    {acceptSuccessMsg}
+                  </div>
+                )}
+                {loadingRegRequests ? (
+                  <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500">
+                    <div className="w-4 h-4 rounded-full border-2 border-amber-300 border-t-amber-600 animate-spin" />
+                    Loading regularization requests...
+                  </div>
+                ) : regularizationRequests.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-10 text-slate-400">
+                    <CheckCircle2 className="h-8 w-8 text-emerald-300" />
+                    <p className="text-sm font-medium">
+                      {regTab === "PENDING" ? "No pending regularization requests." : `No ${regTab.toLowerCase()} requests found.`}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-700">
+                          <th className="px-4 py-3">Employee</th>
+                          <th className="px-4 py-3">Requested Date</th>
+                          <th className="px-4 py-3">Status</th>
+                          <th className="px-4 py-3">Check-In / Out</th>
+                          <th className="px-4 py-3">Employee Reason</th>
+                          <th className="px-4 py-3">Submitted</th>
+                          <th className="px-4 py-3">Review Status</th>
+                          {regTab === "PENDING" && <th className="px-4 py-3 text-center">Actions</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                        {regularizationRequests.map((req: any) => (
+                          <tr key={req.id} className="hover:bg-amber-50/40 dark:hover:bg-amber-950/10 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="h-7 w-7 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-[10px] font-bold text-indigo-700 dark:text-indigo-300 shrink-0">
+                                  {(req.employee?.fullName || "?").split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">{req.employee?.fullName || "—"}</p>
+                                  <p className="text-[10px] text-slate-500 truncate">{req.employee?.email || ""}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                              {new Date(req.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                            </td>
+                            <td className="px-4 py-3">
+                              {getStatusBadge(req.status)}
+                            </td>
+                            <td className="px-4 py-3 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                              {req.checkInTime ? `${req.checkInTime} ${req.checkInPeriod}` : "—"}
+                              {req.checkOutTime ? ` → ${req.checkOutTime} ${req.checkOutPeriod}` : ""}
+                            </td>
+                            <td className="px-4 py-3 max-w-[200px]">
+                              <p className="truncate text-slate-600 dark:text-slate-400" title={req.reason}>{req.reason}</p>
+                            </td>
+                            <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                              {new Date(req.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                            </td>
+                            <td className="px-4 py-3">
+                              {req.requestStatus === "PENDING" && (
+                                <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] animate-pulse">⏳ Pending</Badge>
+                              )}
+                              {req.requestStatus === "APPROVED" && (
+                                <div>
+                                  <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">✅ Approved</Badge>
+                                  {req.adminNotes && <p className="text-[10px] text-slate-500 mt-1 italic">{req.adminNotes}</p>}
+                                </div>
+                              )}
+                              {req.requestStatus === "REJECTED" && (
+                                <div>
+                                  <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">❌ Rejected</Badge>
+                                  {req.adminNotes && <p className="text-[10px] text-slate-500 mt-1 italic">{req.adminNotes}</p>}
+                                </div>
+                              )}
+                            </td>
+                            {regTab === "PENDING" && (
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2 justify-center">
+                                  <Button
+                                    size="sm"
+                                    disabled={acceptingId === req.id || acceptRegMutation.isPending}
+                                    onClick={async () => {
+                                      setAcceptSuccessMsg("");
+                                      setAcceptingId(req.id);
+                                      try {
+                                        await acceptRegMutation.mutateAsync({ id: req.id });
+                                        setAcceptSuccessMsg(`✅ Attendance for ${req.employee?.fullName} on ${new Date(req.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} has been automatically allocated!`);
+                                        setTimeout(() => setAcceptSuccessMsg(""), 5000);
+                                      } catch {}
+                                      setAcceptingId(null);
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold gap-1 h-7 px-2.5 shadow-sm"
+                                  >
+                                    {acceptingId === req.id ? (
+                                      <div className="w-3 h-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 className="h-3 w-3" />
+                                    )}
+                                    Accept
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={rejectRegMutation.isPending}
+                                    onClick={() => {
+                                      setRejectingRequestId(req.id);
+                                      setRejectingEmployeeName(req.employee?.fullName || "Employee");
+                                      setRejectNotes("");
+                                      setRejectError("");
+                                      setRejectModalOpen(true);
+                                    }}
+                                    className="border-red-300 text-red-600 hover:bg-red-50 text-[10px] font-bold gap-1 h-7 px-2.5"
+                                  >
+                                    <XCircle className="h-3 w-3" />
+                                    Reject
+                                  </Button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </>
@@ -983,6 +1272,71 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                         </p>
                       </div>
                     )}
+                  </div>
+                </div>
+
+                {/* Weekly Off Days & Working Hours Configuration */}
+                <div className="border-t border-border pt-6 space-y-4">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <Sun className="h-4 w-4 text-amber-500" /> Weekly Non-Working Off Days
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Select which days of the week are considered recurring company holidays. These days are automatically excluded from absent calculations.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {[
+                      { day: 0, label: "Sunday", short: "Sun" },
+                      { day: 1, label: "Monday", short: "Mon" },
+                      { day: 2, label: "Tuesday", short: "Tue" },
+                      { day: 3, label: "Wednesday", short: "Wed" },
+                      { day: 4, label: "Thursday", short: "Thu" },
+                      { day: 5, label: "Friday", short: "Fri" },
+                      { day: 6, label: "Saturday", short: "Sat" },
+                    ].map((d) => {
+                      const currentOffs = rules.weeklyOffDays || [0];
+                      const isSelected = currentOffs.includes(d.day);
+                      return (
+                        <button
+                          key={d.day}
+                          type="button"
+                          onClick={() => {
+                            const next = isSelected
+                              ? currentOffs.filter((x) => x !== d.day)
+                              : [...currentOffs, d.day];
+                            setRules((r) => ({ ...r, weeklyOffDays: next }));
+                          }}
+                          className={cn(
+                            "px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5",
+                            isSelected
+                              ? "bg-amber-500 text-white border-amber-600 shadow-sm"
+                              : "bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+                          )}
+                        >
+                          <Sun className={cn("h-3.5 w-3.5", isSelected ? "text-white" : "text-slate-400")} />
+                          <span>{d.label}</span>
+                          {isSelected && <span className="text-[10px] bg-amber-600/60 px-1 py-0.2 rounded font-mono">OFF</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Required Daily Working Hours</label>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        min="1"
+                        max="24"
+                        value={rules.dailyWorkingHours ?? 9.0}
+                        onChange={(e) => setRules((r) => ({ ...r, dailyWorkingHours: parseFloat(e.target.value) || 9.0 }))}
+                        className="max-w-xs"
+                      />
+                      <p className="text-[11px] text-slate-400">Used as the target work duration per working day (standard is 9 hours).</p>
+                    </div>
                   </div>
                 </div>
 
@@ -1595,6 +1949,72 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                 </Button>
               </div>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Reject Regularization Request Modal ─────────────────────────── */}
+        <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
+          <DialogContent className="max-w-md dark:bg-slate-900 dark:border-slate-700">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base font-bold text-red-700 dark:text-red-400">
+                <XCircle className="h-5 w-5" />
+                Reject Regularization Request
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Rejecting the regularization request from <strong>{rejectingEmployeeName}</strong>. Optionally provide a note explaining the rejection reason.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Admin Notes (Optional)</label>
+                <Textarea
+                  placeholder="e.g. Request cannot be processed as it conflicts with an existing record. Please contact HR."
+                  value={rejectNotes}
+                  onChange={(e) => setRejectNotes(e.target.value)}
+                  rows={3}
+                  className="text-sm dark:bg-slate-800 resize-none"
+                />
+              </div>
+              {rejectError && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-lg">
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                  <p className="text-xs text-red-700 dark:text-red-400">{rejectError}</p>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRejectModalOpen(false)}
+                  disabled={rejectRegMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={rejectRegMutation.isPending}
+                  className="bg-red-600 hover:bg-red-500 text-white font-semibold gap-1.5"
+                  onClick={async () => {
+                    setRejectError("");
+                    if (!rejectingRequestId) return;
+                    try {
+                      await rejectRegMutation.mutateAsync({ id: rejectingRequestId, adminNotes: rejectNotes.trim() || undefined });
+                      setRejectModalOpen(false);
+                    } catch (err: any) {
+                      setRejectError(err?.response?.data?.error || err?.message || "Failed to reject request.");
+                    }
+                  }}
+                >
+                  {rejectRegMutation.isPending ? (
+                    <><div className="w-3 h-3 rounded-full border-2 border-white/40 border-t-white animate-spin" /> Rejecting...</>
+                  ) : (
+                    <><XCircle className="h-3.5 w-3.5" /> Confirm Rejection</>
+                  )}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

@@ -1267,6 +1267,7 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                               <th className="px-4 py-3">Check-Out</th>
                               <th className="px-4 py-3">Total Time</th>
                               <th className="px-4 py-3">Status</th>
+                              <th className="px-4 py-3">Source</th>
                               <th className="px-4 py-3">Details / Selfie / Location</th>
                             </tr>
                           </thead>
@@ -1316,6 +1317,17 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                                         "bg-red-50 text-red-700 border-red-200"
                                       }>
                                         {rec.status === "HOLIDAY" ? "Holiday" : rec.status}
+                                      </Badge>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {rec.source === "ADMIN_ASSIGNED" || rec.manualOverride ? (
+                                      <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-[10px]" title={rec.overrideReason || "Admin Assigned"}>
+                                        Admin Assigned
+                                      </Badge>
+                                    ) : (
+                                      <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+                                        Self Punch
                                       </Badge>
                                     )}
                                   </td>

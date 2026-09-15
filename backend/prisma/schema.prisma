@@ -58,6 +58,8 @@ model User {
   dailyCommits        DailyCommit[]
   taskAssignments     TaskAssignment[]
   taskImages          TaskImage[]
+  attendanceRequests          AttendanceRegularizationRequest[] @relation("employee_attendance_requests")
+  reviewedAttendanceRequests  AttendanceRegularizationRequest[] @relation("admin_reviewed_requests")
 
   @@index([lockoutUntil])
   @@index([departmentId])
@@ -466,6 +468,12 @@ model AttendanceRecord {
   checkOutTime   DateTime?
   totalMinutes   Int?
   status         AttendanceStatus @default(PRESENT)
+  // Source tracks who created/last updated this attendance record
+  // EMPLOYEE_CHECK_IN = employee self check-in
+  // ADMIN_ASSIGNED    = admin manually applied/regularized
+  // SYSTEM_GENERATED  = system automated (future)
+  // CORRECTION_APPROVED = approved attendance correction (future)
+  source         String           @default("EMPLOYEE_CHECK_IN")
   notes          String?
   reviewedBy     String?
   manualOverride Boolean          @default(false)
@@ -479,6 +487,7 @@ model AttendanceRecord {
   @@index([date])
   @@index([employeeId])
   @@index([flagged])
+  @@index([source])
 }
 
 model CheckIn {
@@ -905,6 +914,11 @@ model AttendanceRule {
   officeLng          Float    @default(73.8567)
   officeRadius       Float    @default(150.0)
   faceMatchThreshold Float    @default(0.55)
+  // weeklyOffDays: array of day numbers (0=Sun, 1=Mon, ..., 6=Sat)
+  // Default = [0] means Sunday is the weekly off
+  weeklyOffDays      Int[]    @default([0])
+  // Required daily working hours for expected hours calculation
+  dailyWorkingHours  Float    @default(9.0)
   updatedAt          DateTime @updatedAt
 }
 
@@ -1027,4 +1041,40 @@ model GenerationLog {
   @@index([customerId, timestamp])
   @@index([installationId, timestamp])
   @@map("generation_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Employee Attendance Regularization Requests
+// ---------------------------------------------------------------------------
+
+enum AttendanceRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AttendanceRegularizationRequest {
+  id             String                  @id @default(uuid())
+  employeeId     String
+  date           DateTime                @db.Date
+  status         AttendanceStatus        @default(PRESENT)
+  checkInTime    String?                 // e.g. "10:30"
+  checkInPeriod  String?                 // "AM" | "PM"
+  checkOutTime   String?                 // e.g. "06:30"
+  checkOutPeriod String?                 // "AM" | "PM"
+  reason         String                  // Mandatory explanation why employee forgot
+  requestStatus  AttendanceRequestStatus @default(PENDING) // PENDING, APPROVED, REJECTED
+  adminNotes     String?                 // Optional reviewer notes
+  reviewedBy     String?                 // Admin user ID
+  reviewedAt     DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  employee       User                    @relation("employee_attendance_requests", fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewer       User?                   @relation("admin_reviewed_requests", fields: [reviewedBy], references: [id])
+
+  @@index([employeeId])
+  @@index([date])
+  @@index([requestStatus])
+  @@index([createdAt])
 }

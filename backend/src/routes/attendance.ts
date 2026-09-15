@@ -373,6 +373,111 @@ router.get(
   }),
 );
 
+// Admin: today's attendance summary and statistics
+router.get(
+  "/admin/today-summary",
+  adminAuth,
+  asyncHandler(async (req, res) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [activeEmployees, todayRecords, rules, todayHoliday] = await Promise.all([
+      prisma.user.findMany({
+        where: {
+          role: { in: [UserRole.EMPLOYEE, UserRole.SUB_ADMIN] },
+          isActive: true,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          loginId: true,
+          role: true,
+          employeeProfile: {
+            select: { jobRole: true, zone: true, profilePhoto: true },
+          },
+        },
+        orderBy: { fullName: "asc" },
+      }),
+      prisma.attendanceRecord.findMany({
+        where: { date: today },
+      }),
+      AttendanceService.getRulesAsync(),
+      prisma.holiday.findFirst({
+        where: {
+          date: {
+            gte: today,
+            lt: tomorrow,
+          },
+        },
+      }),
+    ]);
+
+    const weeklyOffDays: number[] = rules.weeklyOffDays && rules.weeklyOffDays.length > 0 ? rules.weeklyOffDays : [0];
+    const isWeeklyOff = weeklyOffDays.includes(new Date().getDay());
+
+    const recordMap = new Map<string, any>(todayRecords.map((r: any) => [r.employeeId, r]));
+
+    let onTimeCount = 0;
+    let lateCount = 0;
+    let halfDayCount = 0;
+    let leaveCount = 0;
+    let explicitAbsentCount = 0;
+    let adminAssignedCount = 0;
+
+    const employeeSummaries = activeEmployees.map((emp) => {
+      const record = recordMap.get(emp.id);
+      let status = "NOT_CHECKED_IN";
+
+      if (record) {
+        status = record.status;
+        if (record.source === "ADMIN_ASSIGNED") adminAssignedCount++;
+        if (record.status === "PRESENT") onTimeCount++;
+        else if (record.status === "LATE") lateCount++;
+        else if (record.status === "HALF_DAY") halfDayCount++;
+        else if (record.status === "LEAVE") leaveCount++;
+        else if (record.status === "ABSENT") explicitAbsentCount++;
+      }
+
+      return {
+        id: emp.id,
+        fullName: emp.fullName,
+        loginId: emp.loginId,
+        role: emp.role,
+        jobRole: emp.employeeProfile?.jobRole || null,
+        zone: emp.employeeProfile?.zone || null,
+        status,
+        checkInTime: record?.checkInTime || null,
+        checkOutTime: record?.checkOutTime || null,
+        source: record?.source || null,
+        totalMinutes: record?.totalMinutes || null,
+        notes: record?.notes || null,
+      };
+    });
+
+    const checkedInCount = onTimeCount + lateCount + halfDayCount;
+    const pendingCount = Math.max(0, activeEmployees.length - checkedInCount - leaveCount - explicitAbsentCount);
+
+    res.json({
+      date: today.toISOString().split("T")[0],
+      totalEmployees: activeEmployees.length,
+      checkedIn: checkedInCount,
+      onTime: onTimeCount,
+      late: lateCount,
+      halfDay: halfDayCount,
+      leave: leaveCount,
+      absent: explicitAbsentCount,
+      notCheckedIn: pendingCount,
+      adminAssigned: adminAssignedCount,
+      isWeeklyOff,
+      holiday: todayHoliday ? { name: todayHoliday.name, description: todayHoliday.description } : null,
+      shiftStart: rules.shiftStart,
+      employees: employeeSummaries,
+    });
+  }),
+);
+
 // Admin: list recent check-ins with face recognition metadata
 router.get("/admin/checkins", adminAuth, asyncHandler(async (req, res) => {
   const start = new Date();
@@ -731,6 +836,127 @@ router.get(
     res.setHeader("Content-Disposition", `attachment; filename="swayog_data_${user.loginId}.json"`);
     res.setHeader("Content-Type", "application/json");
     res.send(JSON.stringify(safeUser, null, 2));
+  }),
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGULARIZATION / MISSED ATTENDANCE REQUEST ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /regularization-request
+ * Employee submits a request for a missed attendance punch.
+ */
+router.post(
+  "/regularization-request",
+  employeeAuth,
+  asyncHandler(async (req, res) => {
+    const employeeId = req.auth!.userId;
+    const { date, status, checkInTime, checkInPeriod, checkOutTime, checkOutPeriod, reason } = req.body;
+
+    if (!date) {
+      res.status(400).json({ error: "Attendance date is required." });
+      return;
+    }
+    if (!status) {
+      res.status(400).json({ error: "Attendance status is required." });
+      return;
+    }
+    if (!reason || typeof reason !== "string" || reason.trim().length < 3) {
+      res.status(400).json({ error: "A mandatory reason of at least 3 characters explaining why you missed attendance is required." });
+      return;
+    }
+
+    const request = await AttendanceService.createRegularizationRequest({
+      employeeId,
+      date,
+      status,
+      checkInTime,
+      checkInPeriod,
+      checkOutTime,
+      checkOutPeriod,
+      reason,
+    });
+
+    res.json({
+      success: true,
+      message: "Attendance regularization request submitted successfully. It has been sent to the administrator for approval.",
+      request,
+    });
+  }),
+);
+
+/**
+ * GET /my-regularization-requests
+ * Employee fetches their submitted regularization requests.
+ */
+router.get(
+  "/my-regularization-requests",
+  employeeAuth,
+  asyncHandler(async (req, res) => {
+    const employeeId = req.auth!.userId;
+    const requests = await AttendanceService.getEmployeeRegularizationRequests(employeeId);
+    res.json({ requests });
+  }),
+);
+
+/**
+ * GET /admin/regularization-requests
+ * Admin fetches all employee regularization requests with optional status filter.
+ */
+router.get(
+  "/admin/regularization-requests",
+  adminAuth,
+  asyncHandler(async (req, res) => {
+    const status = req.query.status as string | undefined;
+    const requests = await AttendanceService.getAdminRegularizationRequests(status);
+    res.json({ requests });
+  }),
+);
+
+/**
+ * POST /admin/regularization-requests/:id/accept
+ * Admin approves request, automatically allocating the attendance record for that date.
+ */
+router.post(
+  "/admin/regularization-requests/:id/accept",
+  adminAuth,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { adminNotes } = req.body;
+    const adminUserId = req.auth!.userId;
+
+    const result = await AttendanceService.acceptRegularizationRequest(id, adminUserId, adminNotes);
+
+    res.json({
+      success: true,
+      message: "Attendance regularization request accepted and attendance successfully allocated to the employee.",
+      request: result.request,
+      attendance: result.attendance,
+      performance: result.performance,
+    });
+  }),
+);
+
+/**
+ * POST /admin/regularization-requests/:id/reject
+ * Admin rejects request with optional notes.
+ */
+router.post(
+  "/admin/regularization-requests/:id/reject",
+  adminAuth,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { adminNotes } = req.body;
+    const adminUserId = req.auth!.userId;
+
+    const request = await AttendanceService.rejectRegularizationRequest(id, adminUserId, adminNotes);
+
+    res.json({
+      success: true,
+      message: "Attendance regularization request rejected.",
+      request,
+    });
   }),
 );
 

@@ -308,3 +308,157 @@ export const useDeleteHoliday = () => {
   });
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// TODAY SUMMARY HOOK (ADMIN / SUPER ADMIN)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface TodaySummaryEmployee {
+  id: string;
+  fullName: string;
+  loginId: string;
+  role: string;
+  jobRole: string | null;
+  zone: string | null;
+  status: string;
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  source: string | null;
+  totalMinutes: number | null;
+  notes: string | null;
+}
+
+export interface TodaySummaryData {
+  date: string;
+  totalEmployees: number;
+  checkedIn: number;
+  onTime: number;
+  late: number;
+  halfDay: number;
+  leave: number;
+  absent: number;
+  notCheckedIn: number;
+  adminAssigned: number;
+  isWeeklyOff: boolean;
+  holiday: { name: string; description?: string | null } | null;
+  shiftStart: string;
+  employees: TodaySummaryEmployee[];
+}
+
+export const useAdminTodaySummary = () => useQuery({
+  queryKey: ["admin", "attendance", "today-summary"],
+  queryFn: () => apiClient.get("/attendance/admin/today-summary").then((r) => r.data as TodaySummaryData),
+  refetchInterval: 15_000,
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ATTENDANCE REGULARIZATION (FORGOT ATTENDANCE) HOOKS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface RegularizationRequestItem {
+  id: string;
+  employeeId: string;
+  date: string;
+  status: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE";
+  checkInTime?: string | null;
+  checkInPeriod?: "AM" | "PM" | null;
+  checkOutTime?: string | null;
+  checkOutPeriod?: "AM" | "PM" | null;
+  reason: string;
+  requestStatus: "PENDING" | "APPROVED" | "REJECTED";
+  adminNotes?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  employee?: {
+    id: string;
+    fullName: string;
+    loginId: string;
+    email: string;
+    employeeCode?: string | null;
+    employeeProfile?: {
+      jobRole?: string | null;
+      zone?: string | null;
+    } | null;
+  };
+  reviewer?: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+}
+
+export interface SubmitRegularizationPayload {
+  date: string; // "YYYY-MM-DD"
+  status: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE";
+  checkInTime?: string | null;
+  checkInPeriod?: "AM" | "PM" | null;
+  checkOutTime?: string | null;
+  checkOutPeriod?: "AM" | "PM" | null;
+  reason: string;
+}
+
+/** Employee: submit a missed attendance regularization request */
+export const useSubmitRegularizationRequest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SubmitRegularizationPayload) =>
+      apiClient.post("/attendance/regularization-request", data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["my-regularization-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin", "regularization-requests"] });
+    },
+  });
+};
+
+/** Employee: list own regularization requests */
+export const useMyRegularizationRequests = () => useQuery({
+  queryKey: ["my-regularization-requests"],
+  queryFn: () =>
+    apiClient.get("/attendance/my-regularization-requests").then((r) => r.data.requests as RegularizationRequestItem[]),
+  refetchInterval: 15_000,
+});
+
+/** Admin: list all regularization requests with optional status filter */
+export const useAdminRegularizationRequests = (status?: string) => useQuery({
+  queryKey: ["admin", "regularization-requests", status || "ALL"],
+  queryFn: () => {
+    const url = status && status !== "ALL"
+      ? `/attendance/admin/regularization-requests?status=${status}`
+      : "/attendance/admin/regularization-requests";
+    return apiClient.get(url).then((r) => r.data.requests as RegularizationRequestItem[]);
+  },
+  refetchInterval: 15_000,
+});
+
+/** Admin: accept regularization request (automatically allocates attendance) */
+export const useAcceptRegularizationRequest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, adminNotes }: { id: string; adminNotes?: string }) =>
+      apiClient.post(`/attendance/admin/regularization-requests/${id}/accept`, { adminNotes }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "regularization-requests"] });
+      qc.invalidateQueries({ queryKey: ["my-regularization-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin", "attendance", "today-summary"] });
+      qc.invalidateQueries({ queryKey: ["admin", "team-performance"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+      qc.invalidateQueries({ queryKey: ["performance"] });
+    },
+  });
+};
+
+/** Admin: reject regularization request */
+export const useRejectRegularizationRequest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, adminNotes }: { id: string; adminNotes?: string }) =>
+      apiClient.post(`/attendance/admin/regularization-requests/${id}/reject`, { adminNotes }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "regularization-requests"] });
+      qc.invalidateQueries({ queryKey: ["my-regularization-requests"] });
+    },
+  });
+};
+

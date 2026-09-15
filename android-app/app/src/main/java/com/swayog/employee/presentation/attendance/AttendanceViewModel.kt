@@ -6,6 +6,8 @@ import com.swayog.employee.data.model.AttendanceRecord
 import com.swayog.employee.data.model.HolidayItem
 import com.swayog.employee.data.model.MonthlyAttendanceResponse
 import com.swayog.employee.data.model.PerformanceSnapshot
+import com.swayog.employee.data.model.RegularizationItem
+import com.swayog.employee.data.model.RegularizationRequestPayload
 import com.swayog.employee.data.model.Task
 
 import com.swayog.employee.data.repository.AttendanceRepository
@@ -74,6 +76,12 @@ class AttendanceViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
+    private val _myRegularizationRequests = MutableStateFlow<List<RegularizationItem>>(emptyList())
+    val myRegularizationRequests: StateFlow<List<RegularizationItem>> = _myRegularizationRequests.asStateFlow()
+
+    private val _isLoadingRegularization = MutableStateFlow<Boolean>(false)
+    val isLoadingRegularization: StateFlow<Boolean> = _isLoadingRegularization.asStateFlow()
+
     val attendanceRules: StateFlow<com.swayog.employee.data.model.AttendanceRule> = attendanceRepository.attendanceRuleFlow
         .stateIn(
             scope = viewModelScope,
@@ -129,9 +137,26 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
+    fun loadRegularizationRequests() {
+        viewModelScope.launch {
+            _isLoadingRegularization.value = true
+            withContext(Dispatchers.IO) {
+                attendanceRepository.getMyRegularizationRequests()
+                    .onSuccess { list ->
+                        _myRegularizationRequests.value = list
+                    }
+                    .onFailure { e ->
+                        android.util.Log.e("AttendanceViewModel", "Failed to load regularization requests: ${e.message}")
+                    }
+            }
+            _isLoadingRegularization.value = false
+        }
+    }
+
     fun loadData() {
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Success
+            loadRegularizationRequests()
             
             withContext(Dispatchers.IO) {
                 try {
@@ -157,6 +182,27 @@ class AttendanceViewModel @Inject constructor(
                 } catch (e: Exception) {
                     android.util.Log.e("AttendanceViewModel", "Attendance background sync error: ${e.message}")
                 }
+            }
+        }
+    }
+
+    fun submitRegularizationRequest(
+        payload: RegularizationRequestPayload,
+        onResult: (Result<RegularizationItem>) -> Unit
+    ) {
+        viewModelScope.launch {
+            _attendanceState.value = AttendanceState.Loading
+            val result = withContext(Dispatchers.IO) {
+                attendanceRepository.submitRegularizationRequest(payload)
+            }
+            _attendanceState.value = AttendanceState.Success
+            result.onSuccess { item ->
+                loadRegularizationRequests()
+                val cal = Calendar.getInstance()
+                loadMonth(cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
+                onResult(Result.success(item))
+            }.onFailure { error ->
+                onResult(Result.failure(error))
             }
         }
     }

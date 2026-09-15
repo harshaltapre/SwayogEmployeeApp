@@ -432,5 +432,50 @@ class AttendanceRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    suspend fun submitRegularizationRequest(
+        payload: RegularizationRequestPayload
+    ): Result<RegularizationItem> {
+        return try {
+            val response = apiService.submitRegularizationRequest(payload)
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                if (body.success && body.request != null) {
+                    Result.success(body.request)
+                } else {
+                    val msg = body.error ?: body.message ?: "Failed to submit regularization request"
+                    Result.failure(Exception(msg))
+                }
+            } else {
+                val errBody = try { response.errorBody()?.string() } catch (_: Exception) { null }
+                val errorMsg = if (!errBody.isNullOrBlank()) {
+                    try {
+                        val json = org.json.JSONObject(errBody)
+                        json.optString("error", json.optString("message", errBody))
+                    } catch (_: Exception) {
+                        errBody
+                    }
+                } else {
+                    response.message().ifEmpty { "Failed to submit regularization request" }
+                }
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getMyRegularizationRequests(): Result<List<RegularizationItem>> {
+        return try {
+            val response = apiService.getMyRegularizationRequests()
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!.requests)
+            } else {
+                Result.failure(Exception("Failed to fetch regularization requests"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
