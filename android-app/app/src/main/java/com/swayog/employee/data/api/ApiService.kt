@@ -59,6 +59,12 @@ interface ApiService {
     @GET("app/update/latest")
     suspend fun getLatestAppUpdate(): Response<AppUpdateManifest>
 
+    @GET("app/android/latest.json")
+    suspend fun getAppUpdateAndroidLatest(): Response<AppUpdateManifest>
+
+    @GET("app/update/latest.json")
+    suspend fun getAppUpdateLatestJson(): Response<AppUpdateManifest>
+
     @GET
     suspend fun getAppUpdateFromUrl(@Url url: String): Response<AppUpdateManifest>
     

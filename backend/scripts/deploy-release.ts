@@ -1,17 +1,22 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { uploadToR2, getFromR2, isR2Configured, getBucketName } from "../src/services/r2StorageService.js";
-import { AppUpdateManifest } from "../src/modules/app-update/appUpdate.controller.js";
+import { uploadToR2, getFromR2, isR2Configured, getBucketName, generatePresignedUrl } from "../src/services/r2StorageService.js";
+import { AppUpdateManifest, StructuredReleaseNotes } from "../src/modules/app-update/appUpdate.controller.js";
 
 /**
- * Script to deploy a built APK release to Cloudflare R2 and update releases/android/latest.json
+ * Script to deploy a built APK release to Cloudflare R2 and update update manifests:
+ * - releases/android/{versionName}/build-{versionCode}/app-release.apk
+ * - releases/android/{versionName}/app-release.apk
+ * - releases/android/latest.apk
+ * - releases/android/{versionName}/build-{versionCode}/release.json
+ * - releases/android/{versionName}/release.json
+ * - releases/android/latest.json
+ * - app/android/latest.json
+ * - latest.json
  *
  * Usage:
  *   npx tsx scripts/deploy-release.ts <path-to-apk> <versionName> <versionCode> [minimumVersionCode] [mandatory: true/false] [releaseNotesFile]
- *
- * Example:
- *   npx tsx scripts/deploy-release.ts ../android-app/app/build/outputs/apk/release/app-release.apk 2.5.0 25 23 false
  */
 async function main() {
   const args = process.argv.slice(2);
@@ -22,7 +27,12 @@ async function main() {
 
   const [apkPath, versionName, versionCodeStr, minVersionCodeStr, mandatoryStr, notesFile] = args;
   const versionCode = parseInt(versionCodeStr, 10);
-  const minimumVersionCode = minVersionCodeStr ? parseInt(minVersionCodeStr, 10) : versionCode;
+  if (isNaN(versionCode) || versionCode <= 0) {
+    console.error(`Error: Invalid versionCode "${versionCodeStr}". Must be a positive integer.`);
+    process.exit(1);
+  }
+
+  const minimumVersionCode = minVersionCodeStr ? parseInt(minVersionCodeStr, 10) : 1;
   const mandatory = mandatoryStr === "true";
 
   if (!fs.existsSync(apkPath)) {
@@ -31,88 +41,152 @@ async function main() {
   }
 
   if (!isR2Configured()) {
-    console.error("Error: Cloudflare R2 is not configured. Check your environment variables (R2_ENDPOINT, R2_ACCESS_KEY_ID, etc.)");
+    console.error("Error: Cloudflare R2 is not configured. Check environment variables (R2_ENDPOINT, R2_ACCESS_KEY_ID, etc.)");
     process.exit(1);
   }
 
-  console.log(`[Deploy] Processing release v${versionName} (build ${versionCode})...`);
+  console.log(`\n========================================================`);
+  console.log(`[Deploy] Initiating Release v${versionName} (Build ${versionCode})`);
+  console.log(`========================================================`);
 
-  // Read APK and calculate SHA-256
+  // Step 1: Read APK and calculate SHA-256 and size
   const apkBuffer = fs.readFileSync(apkPath);
   const sha256 = crypto.createHash("sha256").update(apkBuffer).digest("hex");
   const fileSize = apkBuffer.length;
 
-  console.log(`[Deploy] APK Size: ${(fileSize / (1024 * 1024)).toFixed(2)} MB`);
-  console.log(`[Deploy] SHA-256: ${sha256}`);
+  console.log(`[Deploy] APK Path:    ${apkPath}`);
+  console.log(`[Deploy] APK Size:    ${(fileSize / (1024 * 1024)).toFixed(2)} MB (${fileSize} bytes)`);
+  console.log(`[Deploy] SHA-256:     ${sha256}`);
 
-  // Parse release notes if provided
-  let releaseNotes: string[] = [
-    `Swayog Employee App v${versionName}`,
-    "Performance improvements and bug fixes",
+  // Step 2: Parse user-facing release notes
+  let summary = `Swayog Employee App v${versionName} release`;
+  let items: string[] = [
+    "Improved attendance tracking and calendar sync",
+    "Optimized working-hour calculations",
+    "Performance improvements and bug fixes"
   ];
+
   if (notesFile && fs.existsSync(notesFile)) {
     const rawNotes = fs.readFileSync(notesFile, "utf-8");
-    releaseNotes = rawNotes.split("\n").map(line => line.trim().replace(/^[-*•]\s*/, "")).filter(Boolean);
+    const rawLines = rawNotes.split("\n").map(l => l.trim().replace(/^[-*•]\s*/, "")).filter(Boolean);
+    if (rawLines.length > 0) {
+      if (rawLines[0].length < 80 && !rawLines[0].toLowerCase().startsWith("fix") && !rawLines[0].toLowerCase().startsWith("improve")) {
+        summary = rawLines[0];
+        items = rawLines.slice(1).length > 0 ? rawLines.slice(1) : [rawLines[0]];
+      } else {
+        summary = `Swayog Employee App update v${versionName}`;
+        items = rawLines;
+      }
+    }
   }
 
-  // Upload APK to permanent versioned path: releases/android/{versionName}/app-release.apk
+  const structuredNotes: StructuredReleaseNotes = {
+    summary,
+    items,
+  };
+
+  // Step 3: Upload APK to release hierarchy
+  const buildSpecificApkKey = `releases/android/${versionName}/build-${versionCode}/app-release.apk`;
   const versionedApkKey = `releases/android/${versionName}/app-release.apk`;
-  console.log(`[Deploy] Uploading APK to R2: ${versionedApkKey}...`);
+  const latestApkKey = "releases/android/latest.apk";
+
+  console.log(`\n[Deploy] Uploading APK to R2 targets:`);
+  console.log(`  1. ${buildSpecificApkKey}`);
+  await uploadToR2(apkBuffer, buildSpecificApkKey, "application/vnd.android.package-archive", `swayog-v${versionName}-${versionCode}.apk`);
+
+  console.log(`  2. ${versionedApkKey}`);
   await uploadToR2(apkBuffer, versionedApkKey, "application/vnd.android.package-archive", `app-${versionName}.apk`);
 
-  // Also upload/overwrite latest APK alias: releases/android/latest.apk
-  const latestApkKey = "releases/android/latest.apk";
-  console.log(`[Deploy] Updating latest APK alias: ${latestApkKey}...`);
+  console.log(`  3. ${latestApkKey}`);
   await uploadToR2(apkBuffer, latestApkKey, "application/vnd.android.package-archive", "app-release.apk");
 
-  // Construct manifest
+  // Determine public APK URL
+  const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
+  let publicApkUrl = buildSpecificApkKey;
+  if (publicBaseUrl) {
+    publicApkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${buildSpecificApkKey}`;
+  } else {
+    try {
+      // Fallback: generate presigned URL valid for 7 days
+      publicApkUrl = await generatePresignedUrl(buildSpecificApkKey, 604800);
+    } catch {
+      publicApkUrl = buildSpecificApkKey;
+    }
+  }
+
+  // Step 4: Construct release metadata conforming to Section 5
   const manifest: AppUpdateManifest = {
-    versionCode,
+    appId: "com.swayog.employee",
+    platform: "android",
     versionName,
-    minimumVersionCode,
-    mandatory,
+    versionCode,
     releaseDate: new Date().toISOString().split("T")[0],
-    title: `Swayog v${versionName}`,
-    releaseNotes,
-    apkUrl: versionedApkKey,
+    mandatory,
+    minimumVersionCode,
+    apkUrl: publicApkUrl,
     sha256,
     fileSize,
+    title: `Swayog v${versionName}`,
+    releaseNotes: structuredNotes,
   };
 
   const manifestJson = JSON.stringify(manifest, null, 2);
   const manifestBuffer = Buffer.from(manifestJson, "utf-8");
 
-  // Save versioned release.json: releases/android/{versionName}/release.json
-  const versionedManifestKey = `releases/android/${versionName}/release.json`;
-  console.log(`[Deploy] Uploading versioned manifest: ${versionedManifestKey}...`);
-  await uploadToR2(manifestBuffer, versionedManifestKey, "application/json", "release.json");
+  // Step 5: Upload manifests across all required keys
+  const manifestKeys = [
+    `releases/android/${versionName}/build-${versionCode}/release.json`,
+    `releases/android/${versionName}/release.json`,
+    "releases/android/latest.json",
+    "app/android/latest.json",
+    "latest.json",
+  ];
 
-  // Save latest manifest: releases/android/latest.json
-  const latestManifestKey = "releases/android/latest.json";
-  console.log(`[Deploy] Updating latest manifest: ${latestManifestKey}...`);
-  await uploadToR2(manifestBuffer, latestManifestKey, "application/json", "latest.json");
+  console.log(`\n[Deploy] Uploading update manifests to R2:`);
+  for (const mKey of manifestKeys) {
+    console.log(`  - ${mKey}`);
+    await uploadToR2(manifestBuffer, mKey, "application/json", path.basename(mKey));
+  }
 
-  // Step 11: Verify the upload
-  console.log("[Deploy] Verifying uploaded manifest in R2...");
-  const verifyBuffer = await getFromR2(latestManifestKey);
+  // Step 6: Verify uploaded manifest directly from R2
+  console.log(`\n[Deploy] Verifying uploaded manifest in R2...`);
+  const verifyBuffer = await getFromR2("releases/android/latest.json");
   const verifyManifest = JSON.parse(verifyBuffer.toString("utf-8")) as AppUpdateManifest;
   if (verifyManifest.versionCode !== versionCode || verifyManifest.sha256 !== sha256) {
-    throw new Error(`Verification failed: uploaded manifest content does not match expected release (versionCode: ${verifyManifest.versionCode}, sha: ${verifyManifest.sha256})`);
+    throw new Error(`Verification failed: R2 latest manifest does not match expected release (versionCode: ${verifyManifest.versionCode}, sha: ${verifyManifest.sha256})`);
   }
-  console.log("✅ Verified: R2 latest manifest accurately reflects release v" + versionName);
+  console.log(`✅ Verified: R2 manifest accurately reflects release v${versionName} (Build ${versionCode})`);
+
+  // Step 7: HTTP accessibility verification if a public domain is configured
+  if (publicBaseUrl) {
+    try {
+      const publicManifestUrl = `${publicBaseUrl.replace(/\/$/, "")}/releases/android/latest.json`;
+      console.log(`[Deploy] Testing HTTP fetch from public CDN: ${publicManifestUrl}...`);
+      const httpRes = await fetch(publicManifestUrl, { method: "HEAD" });
+      if (httpRes.ok) {
+        console.log(`✅ Public CDN endpoint is live and accessible (HTTP ${httpRes.status})`);
+      } else {
+        console.warn(`⚠️ Public CDN returned status HTTP ${httpRes.status} for manifest check.`);
+      }
+    } catch (e: any) {
+      console.warn(`⚠️ Could not complete external HTTP check: ${e.message}`);
+    }
+  }
 
   console.log("\n========================================================");
-  console.log("🚀 RELEASE SUCCESSFULLY DEPLOYED TO R2");
-  console.log(`Version:       ${versionName} (${versionCode})`);
+  console.log("🚀 RELEASE SUCCESSFULLY DEPLOYED TO CLOUDFLARE R2");
+  console.log(`App ID:        ${manifest.appId}`);
+  console.log(`Version Name:  ${versionName}`);
+  console.log(`Version Code:  ${versionCode}`);
   console.log(`Minimum Code:  ${minimumVersionCode}`);
   console.log(`Mandatory:     ${mandatory}`);
   console.log(`SHA-256:       ${sha256}`);
   console.log(`Bucket:        ${getBucketName()}`);
-  console.log(`Manifest:      ${latestManifestKey}`);
+  console.log(`APK URL:       ${publicApkUrl}`);
   console.log("========================================================\n");
 }
 
 main().catch(err => {
-  console.error("[Deploy] Fatal release error:", err);
+  console.error("[Deploy] Fatal release deployment error:", err);
   process.exit(1);
 });

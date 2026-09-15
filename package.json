@@ -8,7 +8,7 @@
         "dev:all": "concurrently -n FRONTEND,BACKEND -c cyan,green \"npm run dev:frontend\" \"npm run backend:dev\"",
         "dev:frontend": "vite",
         "dev:ports": "kill-port 3000 4000",
-        "build": "vite build",
+        "build": "npm --prefix backend run bundle:vercel && vite build",
         "vercel-build": "sh ./scripts/vercel-build.sh",
         "preview": "vite preview",
         "typecheck": "tsc --noEmit",

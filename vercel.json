@@ -16,7 +16,11 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/app/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/((?!api/|app/).*)",
       "destination": "/index.html"
     }
   ]

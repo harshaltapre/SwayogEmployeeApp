@@ -193,7 +193,24 @@ private fun UpdateContentDialog(
                     )
                 }
 
+                manifest.releaseDate?.takeIf { it.isNotBlank() }?.let { date ->
+                    Text(
+                        text = "Release Date: $date",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 Divider(modifier = Modifier.padding(vertical = 4.dp))
+
+                manifest.releaseSummary?.takeIf { it.isNotBlank() }?.let { summary ->
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
 
                 // Release Notes Section
                 if (manifest.releaseNotes.isNotEmpty()) {

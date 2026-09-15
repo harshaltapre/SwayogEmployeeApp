@@ -90,7 +90,20 @@ class AppUpdateManager @Inject constructor(
 
         return withContext(Dispatchers.IO) {
             try {
-                val response = apiService.getLatestAppUpdate()
+                // Try primary endpoint first, then fall back to alternate manifest paths if 404
+                var response = apiService.getLatestAppUpdate()
+                if (!response.isSuccessful && response.code() == 404) {
+                    Log.d(TAG, "Primary update endpoint returned 404, attempting fallback: app/android/latest.json")
+                    try {
+                        val fallbackResponse = apiService.getAppUpdateAndroidLatest()
+                        if (fallbackResponse.isSuccessful && fallbackResponse.body() != null) {
+                            response = fallbackResponse
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Fallback endpoint failed: ${e.message}")
+                    }
+                }
+
                 lastAutoCheckTimestamp = System.currentTimeMillis()
 
                 if (response.isSuccessful && response.body() != null) {
@@ -131,7 +144,7 @@ class AppUpdateManager @Inject constructor(
                     val errorBody = try { response.errorBody()?.string() } catch (_: Exception) { null }
                     Log.w(TAG, "Update check failed with HTTP $code, body: $errorBody")
                     val (displayError, isNet) = when (code) {
-                        404 -> "Update service is unavailable (HTTP 404)." to false
+                        404 -> "Update service is unavailable (HTTP 404). No release manifest found." to false
                         401, 403 -> "Authentication error while checking updates (HTTP $code)." to false
                         500, 502, 503, 504 -> "Update service is temporarily unavailable (HTTP $code)." to false
                         else -> "Update service returned an error (HTTP $code)." to false
@@ -173,6 +186,13 @@ class AppUpdateManager @Inject constructor(
 
         val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
         val targetApkFile = File(updatesDir, "swayog-v${manifest.versionName}-${manifest.versionCode}.apk")
+
+        // Clean up stale APK or temporary files from previous downloads/releases
+        updatesDir.listFiles()?.forEach { file ->
+            if (file != targetApkFile && (file.name.endsWith(".apk") || file.name.endsWith(".tmp"))) {
+                try { file.delete() } catch (_: Exception) {}
+            }
+        }
 
         // If file already exists and passes checksum, jump directly to install
         if (targetApkFile.exists() && targetApkFile.length() > 0) {

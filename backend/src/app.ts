@@ -192,6 +192,8 @@ app.use("/api/v1/isphere-green", isphereGreenRoutes);
 app.use("/api/v1/app/update", appUpdateRoutes);
 app.use("/app/update", appUpdateRoutes);
 app.use("/api/app/update", appUpdateRoutes);
+app.use("/api/v1/app", appUpdateRoutes);
+app.use("/app", appUpdateRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

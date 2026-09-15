@@ -747,9 +747,24 @@ fun SettingsScreen(
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    state.manifest.releaseDate?.takeIf { it.isNotBlank() }?.let { date ->
+                                        Text(
+                                            text = "Released: $date",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    state.manifest.releaseSummary?.takeIf { it.isNotBlank() }?.let { summary ->
+                                        Text(
+                                            text = summary,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
                                     if (state.manifest.releaseNotes.isNotEmpty()) {
                                         Text(
-                                            text = "Release notes:",
+                                            text = "What's New:",
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.SemiBold
                                         )
