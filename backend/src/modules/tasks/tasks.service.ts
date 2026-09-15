@@ -363,9 +363,11 @@ export function serializeTask(task: any, options: { scopedEmployeeUserId?: strin
     .map((img: any) => img.url)
     .filter((url: any) => typeof url === "string" && url.trim().length > 0);
 
-  // Use primary sitePhotos column if available; fallback to taskImages table records only if column is empty
-  const rawSitePhotosList = sitePhotosFromColumn.length > 0 ? sitePhotosFromColumn : sitePhotosFromImages;
-  const mergedSitePhotos = Array.from(new Set(rawSitePhotosList));
+  // Fix: Deduplicate by URL string comparison to prevent duplicates when both sources contain the same URLs
+  const mergedSitePhotos = Array.from(new Set([
+    ...sitePhotosFromColumn,
+    ...sitePhotosFromImages
+  ].filter((url: any) => typeof url === "string" && url.trim().length > 0)));
 
   const resolvedTaskType = resolveTaskType(task.taskType, task.jobType);
   const config = getTaskTypeConfig(resolvedTaskType, task.jobType);

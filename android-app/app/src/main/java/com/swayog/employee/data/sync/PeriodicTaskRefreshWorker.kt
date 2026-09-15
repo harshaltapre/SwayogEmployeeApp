@@ -10,48 +10,49 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import android.util.Log
-import kotlinx.coroutines.flow.first
 import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.swayog.employee.data.repository.TaskRepository
-import kotlinx.coroutines.flow.first
 
-/**
- * Periodic worker that refreshes tasks from the backend to ensure dashboard synchronization.
- * Runs on a periodic interval (configured when enqueuing the worker) to keep local data
- * in sync with the backend without requiring manual refresh.
- */
 @HiltWorker
 class PeriodicTaskRefreshWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
-    private val dataStoreManager: DataStoreManager,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val dataStoreManager: DataStoreManager
 ) : CoroutineWorker(appContext, workerParams) {
+
+    companion object {
+        const val WORK_NAME = "periodic_task_refresh"
+        const val TAG = "PeriodicTaskRefresh"
+    }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            Log.d("PeriodicSync", "PeriodicTaskRefreshWorker started")
+            Log.d(TAG, "PeriodicTaskRefreshWorker started")
             
+            // Get current user ID from DataStore
             val userId = dataStoreManager.userId.first()
-            if (userId == null) {
-                Log.w("PeriodicSync", "No user ID found, skipping periodic refresh")
+            if (userId.isNullOrBlank()) {
+                Log.w(TAG, "No user ID found, skipping task refresh")
                 return@withContext Result.success()
             }
             
-            Log.d("PeriodicSync", "Refreshing tasks for user $userId")
+            Log.d(TAG, "Refreshing tasks for user: $userId")
+            
+            // Refresh tasks from backend
             val result = taskRepository.refreshTasks(userId)
             
             if (result.isSuccess) {
-                Log.d("PeriodicSync", "Periodic task refresh successful for user $userId")
+                Log.d(TAG, "Successfully refreshed tasks for user: $userId")
                 Result.success()
             } else {
-                Log.e("PeriodicSync", "Periodic task refresh failed: ${result.exceptionOrNull()?.message}")
-                // Return success to avoid retrying immediately - will retry on next scheduled run
+                Log.w(TAG, "Failed to refresh tasks: ${result.exceptionOrNull()?.message}")
+                // Don't retry immediately - let the periodic schedule handle it
                 Result.success()
             }
         } catch (e: Exception) {
-            Log.e("PeriodicSync", "PeriodicTaskRefreshWorker failed with exception: ${e.message}", e)
-            // Return success to avoid excessive retries
+            Log.e(TAG, "PeriodicTaskRefreshWorker failed with exception: ${e.message}", e)
+            // Don't crash the worker, just return success and let periodic schedule handle retry
             Result.success()
         }
     }

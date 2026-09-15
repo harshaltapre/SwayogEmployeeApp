@@ -212,6 +212,16 @@ router.get(
           return;
         } catch (streamErr) {
           console.error("[R2] Direct stream failed:", streamErr);
+          // Fallback: Try to return the direct R2 public URL if available
+          try {
+            const r2PublicUrl = rawUrl || `https://${process.env.R2_BUCKET_NAME}.${process.env.R2_ENDPOINT}/${objectKey}`;
+            console.log("[R2] Falling back to direct R2 URL:", r2PublicUrl);
+            res.setHeader("Cache-Control", "public, max-age=300");
+            res.redirect(302, r2PublicUrl);
+            return;
+          } catch (fallbackErr) {
+            console.error("[R2] Direct R2 URL fallback failed:", fallbackErr);
+          }
         }
       }
     }
