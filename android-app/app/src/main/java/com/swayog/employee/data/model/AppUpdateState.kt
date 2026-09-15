@@ -2,6 +2,18 @@ package com.swayog.employee.data.model
 
 import java.io.File
 
+enum class UpdateErrorKind {
+    NETWORK_ERROR,
+    MANIFEST_NOT_FOUND,
+    INVALID_MANIFEST,
+    APK_NOT_FOUND,
+    CHECKSUM_MISMATCH,
+    INSTALLATION_FAILED,
+    SERVER_ERROR,
+    INVALID_VERSION_DATA,
+    UNKNOWN
+}
+
 /**
  * Represents the current lifecycle state of in-app updates.
  */
@@ -22,7 +34,8 @@ sealed interface AppUpdateState {
     data class UpToDate(
         val installedVersionName: String,
         val installedVersionCode: Long,
-        val lastCheckedTimeMillis: Long
+        val lastCheckedTimeMillis: Long,
+        val isNewerThanServer: Boolean = false
     ) : AppUpdateState
 
     /**
@@ -66,6 +79,7 @@ sealed interface AppUpdateState {
     data class Error(
         val message: String,
         val isNetworkError: Boolean = false,
+        val kind: UpdateErrorKind = UpdateErrorKind.UNKNOWN,
         val manifest: AppUpdateManifest? = null
     ) : AppUpdateState
 }

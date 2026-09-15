@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -663,11 +665,12 @@ fun SettingsScreen(
                                 }
                             }
                             is AppUpdateState.UpToDate -> {
+                                val isNewerThanServer = state.isNewerThanServer
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(
-                                            Color(0xFF16A34A).copy(alpha = 0.08f),
+                                            if (isNewerThanServer) Color(0xFF3B82F6).copy(alpha = 0.08f) else Color(0xFF16A34A).copy(alpha = 0.08f),
                                             RoundedCornerShape(12.dp)
                                         )
                                         .padding(12.dp),
@@ -678,20 +681,20 @@ fun SettingsScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "Up to date",
-                                            tint = Color(0xFF16A34A),
+                                            imageVector = if (isNewerThanServer) Icons.Default.Info else Icons.Default.CheckCircle,
+                                            contentDescription = if (isNewerThanServer) "Newer version" else "Up to date",
+                                            tint = if (isNewerThanServer) Color(0xFF3B82F6) else Color(0xFF16A34A),
                                             modifier = Modifier.size(20.dp)
                                         )
                                         Text(
-                                            text = "Application is up to date",
+                                            text = if (isNewerThanServer) "You are running a newer version" else "Application is up to date",
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF16A34A)
+                                            color = if (isNewerThanServer) Color(0xFF3B82F6) else Color(0xFF16A34A)
                                         )
                                     }
                                     Text(
-                                        text = "Latest Version: v${state.installedVersionName}",
+                                        text = "Installed Version: v${state.installedVersionName}",
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium
                                     )

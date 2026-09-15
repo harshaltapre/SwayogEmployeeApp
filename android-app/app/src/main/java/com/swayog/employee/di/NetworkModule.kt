@@ -25,7 +25,17 @@ import org.json.JSONObject
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
+import javax.inject.Named
+import javax.inject.Qualifier
 import javax.inject.Singleton
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class ApiOkHttpClient
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class UpdateOkHttpClient
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -101,9 +111,9 @@ object NetworkModule {
                                 .build()
                             
                             val basicClient = OkHttpClient.Builder()
-                                .connectTimeout(30, TimeUnit.SECONDS)
-                                .readTimeout(30, TimeUnit.SECONDS)
-                                .writeTimeout(30, TimeUnit.SECONDS)
+                                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                                .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                                 .retryOnConnectionFailure(true)
                                 .build()
                             
@@ -150,6 +160,7 @@ object NetworkModule {
     
     @Provides
     @Singleton
+    @ApiOkHttpClient
     fun provideOkHttpClient(
         @ApplicationContext context: Context,
         loggingInterceptor: HttpLoggingInterceptor,
@@ -163,9 +174,22 @@ object NetworkModule {
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
             .retryOnConnectionFailure(true)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)   // Increased: site visits can have 10+ large photos
-            .writeTimeout(120, TimeUnit.SECONDS)  // Increased: large base64 payloads need more time
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)   // Increased: site visits can have 10+ large photos
+            .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)  // Increased: large base64 payloads need more time
+            .build()
+    }
+    
+    @Provides
+    @Singleton
+    @UpdateOkHttpClient
+    fun provideUpdateOkHttpClient(): OkHttpClient {
+        // Separate client for update checks without auth interceptor
+        return OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
     }
     
@@ -199,7 +223,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient, gson: com.google.gson.Gson): Retrofit {
+    fun provideRetrofit(
+        @ApiOkHttpClient okHttpClient: OkHttpClient,
+        gson: com.google.gson.Gson
+    ): Retrofit {
         return Retrofit.Builder()
             .baseUrl(AppConfig.API_BASE_URL)
             .client(okHttpClient)

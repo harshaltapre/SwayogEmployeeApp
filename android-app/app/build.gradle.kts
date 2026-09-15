@@ -268,6 +268,14 @@ afterEvaluate {
     }
 }
 
+// Clean task to force Room code regeneration
+tasks.register("cleanRoom") {
+    doLast {
+        delete(file("${project.projectDir}/build/generated"))
+        delete(file("${project.projectDir}/app/build/generated"))
+    }
+}
+
 
 
 

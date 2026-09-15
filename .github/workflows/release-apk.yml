@@ -2,8 +2,12 @@ name: Build and Deploy Android Release APK
 
 on:
   push:
-    tags:
-      - 'v*' # Trigger on version tags like v1.0.0, v1.0.0-build.21, v1.0.1
+    branches:
+      - main
+    paths:
+      - 'android-app/**'
+      - '.github/workflows/release-apk.yml'
+      - 'backend/scripts/deploy-release.ts'
   workflow_dispatch:
     inputs:
       version_name:
@@ -56,7 +60,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
-      - name: Determine Authoritative Versioning
+      - name: Auto-Increment Version Code and Create Tag
         id: versioning
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -64,31 +68,53 @@ jobs:
             VERSION_CODE="${{ github.event.inputs.version_code }}"
             MIN_VERSION_CODE="${{ github.event.inputs.minimum_version_code }}"
             MANDATORY="${{ github.event.inputs.mandatory }}"
+            RELEASE_TAG="v${VERSION_NAME}-build${VERSION_CODE}"
+            RELEASE_TITLE="Swayog Employee App v${VERSION_NAME} — Build ${VERSION_CODE}"
           else
-            # Extract from git tag (e.g. v1.0.0 or v1.0.0-build.21 or v1.0.0-21)
-            TAG="${GITHUB_REF#refs/tags/}"
-            CLEAN_TAG="${TAG#v}"
+            # Auto-increment logic for push to main
+            # Fetch the latest tag matching v*-build*
+            git fetch --tags
+            LATEST_TAG=$(git describe --tags --match 'v*-build*' --abbrev=0 2>/dev/null || echo "")
             
-            if [[ "$CLEAN_TAG" =~ ^([0-9]+\.[0-9]+\.[0-9]+)[-_]build\.?([0-9]+)$ ]]; then
-              VERSION_NAME="${BASH_REMATCH[1]}"
-              VERSION_CODE="${BASH_REMATCH[2]}"
-            elif [[ "$CLEAN_TAG" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)$ ]]; then
-              VERSION_NAME="${BASH_REMATCH[1]}"
-              VERSION_CODE="${BASH_REMATCH[2]}"
+            if [ -n "$LATEST_TAG" ]; then
+              echo "Latest tag found: $LATEST_TAG"
+              # Extract versionCode from tag (e.g., v1.0.0-build20 -> 20)
+              if [[ "$LATEST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-build([0-9]+)$ ]]; then
+                CURRENT_BUILD="${BASH_REMATCH[1]}"
+                VERSION_CODE=$((CURRENT_BUILD + 1))
+                VERSION_NAME="${LATEST_TAG#v}"
+                VERSION_NAME="${VERSION_NAME%-build*}"
+              else
+                # Fallback to commit count if tag format is unexpected
+                VERSION_CODE=$(git rev-list --count HEAD)
+                VERSION_NAME="1.0.0"
+              fi
             else
-              VERSION_NAME="$CLEAN_TAG"
-              # Monotonic commit count fallback to guarantee strictly increasing versionCode
-              COMMIT_COUNT=$(git rev-list --count HEAD)
-              VERSION_CODE="$COMMIT_COUNT"
+              # No tags found - start from build 21 (assuming v1.0.0-build20 exists)
+              VERSION_CODE=21
+              VERSION_NAME="1.0.0"
             fi
+            
             MIN_VERSION_CODE="1"
             MANDATORY="false"
+            RELEASE_TAG="v${VERSION_NAME}-build${VERSION_CODE}"
+            RELEASE_TITLE="Swayog Employee App v${VERSION_NAME} — Build ${VERSION_CODE}"
+            
+            # Create and push the tag
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" -m "$RELEASE_TITLE"
+            git push origin "$RELEASE_TAG"
+            
+            echo "✅ Created and pushed tag: $RELEASE_TAG"
           fi
 
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "MIN_VERSION_CODE=$MIN_VERSION_CODE" >> $GITHUB_OUTPUT
           echo "MANDATORY=$MANDATORY" >> $GITHUB_OUTPUT
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_OUTPUT
           echo "🚀 Building Swayog Release: Version $VERSION_NAME (Build $VERSION_CODE)"
 
       - name: Decode Production Release Keystore
@@ -116,6 +142,7 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard.vercel.app/api/v1/' }}
           WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard.vercel.app' }}
+          PUBLIC_DISTRIBUTION_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://your-public-domain.com' }}
         run: |
           ./gradlew assembleRelease \
             -PversionName="${{ steps.versioning.outputs.VERSION_NAME }}" \
@@ -173,16 +200,30 @@ jobs:
             "${{ steps.versioning.outputs.VERSION_CODE }}" \
             "${{ steps.versioning.outputs.MIN_VERSION_CODE }}" \
             "${{ steps.versioning.outputs.MANDATORY }}" \
-            "../release_notes.txt"
+            "../release_notes.txt" \
+            "${{ steps.versioning.outputs.RELEASE_TAG }}" \
+            "${{ steps.versioning.outputs.RELEASE_TITLE }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.versioning.outputs.RELEASE_TAG }}
+          name: ${{ steps.versioning.outputs.RELEASE_TITLE }}
+          body_path: release_notes.txt
+          files: ${{ steps.apk_info.outputs.APK_PATH }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify Public Update Endpoint (Sanity Check)
         env:
-          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL }}
+          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
         run: |
           if [ -n "$PUBLIC_URL" ]; then
             CLEAN_BASE="${PUBLIC_URL%/}"
-            echo "Verifying public R2 update endpoints..."
-            for EP in "$CLEAN_BASE/releases/android/latest.json" "$CLEAN_BASE/app/android/latest.json"; do
+            echo "Verifying public update endpoints..."
+            for EP in "$CLEAN_BASE/latest.json" "$CLEAN_BASE/releases/android/latest.json" "$CLEAN_BASE/app/android/latest.json"; do
               echo "Checking: $EP"
               HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$EP" || echo "000")
               echo "Response HTTP status: $HTTP_STATUS"
@@ -210,8 +251,10 @@ jobs:
           echo "- **App:** Swayog Employee App" >> $GITHUB_STEP_SUMMARY
           echo "- **Version Name:** \`v${{ steps.versioning.outputs.VERSION_NAME }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Version Code / Build:** \`${{ steps.versioning.outputs.VERSION_CODE }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release Tag:** \`${{ steps.versioning.outputs.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Mandatory Update:** \`${{ steps.versioning.outputs.MANDATORY }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **SHA-256 Checksum:** \`${{ steps.apk_info.outputs.SHA256 }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **File Size:** \`$(( ${{ steps.apk_info.outputs.FILE_SIZE }} / 1024 / 1024 )) MB\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Distribution Layer:** Cloudflare R2 (\`swayog-dashboard\`)" >> $GITHUB_STEP_SUMMARY
           echo "- **Update Manifests:** \`releases/android/latest.json\`, \`app/android/latest.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Release:** Created with tag \`${{ steps.versioning.outputs.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
