@@ -37,6 +37,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SwayogEmployeeApp"
         android:usesCleartextTraffic="true"
+        android:largeHeap="true"
+        android:hardwareAccelerated="true"
         tools:targetApi="31">
 
         <!-- Google Maps API Key -->
