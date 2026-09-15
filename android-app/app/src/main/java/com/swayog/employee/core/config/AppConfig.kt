@@ -19,7 +19,9 @@ object AppConfig {
      * Defaults to production URL if BuildConfig is blank.
      */
     val API_BASE_URL: String
-        get() = PRODUCTION_API_BASE_URL
+        get() = BuildConfig.API_BASE_URL
+            .trim()
+            .let { if (it.endsWith("/")) it else "$it/" }
 
     /**
      * Base URL without '/api/v1' suffix for resolving static assets and uploads.
@@ -54,4 +56,12 @@ object AppConfig {
             }
             return "$effectiveBase/latest.json"
         }
+
+    /**
+     * Backend update endpoint used when the CDN manifest is unavailable.
+     * This keeps updates working even when a custom public distribution domain
+     * is not configured or its cache is temporarily unavailable.
+     */
+    val API_UPDATE_ENDPOINT: String
+        get() = "${API_BASE_URL}app/update/latest.json"
 }

@@ -1764,7 +1764,6 @@ fun AttendanceScreen(
                 }
             }
 
-<<<<<<< HEAD
             if (showRegularizeDialog) {
                 AttendanceRegularizationDialog(
                     onDismiss = {
@@ -1792,7 +1791,9 @@ fun AttendanceScreen(
                     },
                     isSubmitting = isSubmittingReg,
                     serverError = regError
-=======
+                )
+            }
+
             // Request Overtime Dialog
             if (showRequestOtDialog) {
                 RequestOvertimeDialog(
@@ -1814,7 +1815,6 @@ fun AttendanceScreen(
                         selectedOtDate = dateStr
                         showRequestOtDialog = true
                     }
->>>>>>> 7cfc83b430908798e1d0a133dd839c7447dc256c
                 )
             }
         }
@@ -3286,159 +3286,11 @@ fun CalendarDayDetailDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
->>>>>>> 7cfc83b430908798e1d0a133dd839c7447dc256c
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-<<<<<<< HEAD
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CalendarToday,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Text(
-                        text = formatUtcToLocalDate(item.date),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                val (statusColor, statusLabel) = when (item.status.uppercase()) {
-                    "PRESENT" -> Color(0xFF0B6E4F) to "Present"
-                    "LATE" -> Color(0xFFD97706) to "Late"
-                    "HALF_DAY" -> Color(0xFF7E22CE) to "Half Day"
-                    "ABSENT" -> Color(0xFFDC2626) to "Absent"
-                    "LEAVE" -> Color(0xFF2563EB) to "Leave"
-                    else -> MaterialTheme.colorScheme.primary to item.status
-                }
-
-                Surface(
-                    color = statusColor.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = statusLabel,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = statusColor
-                    )
-                }
-            }
-
-            // Review Status Badge & Times
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val reviewBg: Color
-                val reviewFg: Color
-                val reviewText: String
-                val reviewIcon: androidx.compose.ui.graphics.vector.ImageVector
-
-                when (item.requestStatus.uppercase()) {
-                    "APPROVED" -> {
-                        reviewBg = Color(0xFFD1FAE5)
-                        reviewFg = Color(0xFF047857)
-                        reviewText = "Approved"
-                        reviewIcon = Icons.Default.CheckCircle
-                    }
-                    "REJECTED" -> {
-                        reviewBg = Color(0xFFFEE2E2)
-                        reviewFg = Color(0xFFB91C1C)
-                        reviewText = "Rejected"
-                        reviewIcon = Icons.Default.Cancel
-                    }
-                    else -> {
-                        reviewBg = Color(0xFFFEF3C7)
-                        reviewFg = Color(0xFFB45309)
-                        reviewText = "Pending Review"
-                        reviewIcon = Icons.Default.HourglassEmpty
-                    }
-                }
-
-                Surface(
-                    color = reviewBg,
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = reviewIcon,
-                            contentDescription = null,
-                            tint = reviewFg,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = reviewText,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = reviewFg
-                        )
-                    }
-                }
-
-                if (!item.checkInTime.isNullOrBlank()) {
-                    Text(
-                        text = "${item.checkInTime} ${item.checkInPeriod.orEmpty()} → ${item.checkOutTime.orEmpty()} ${item.checkOutPeriod.orEmpty()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            // Reason
-            Text(
-                text = "Reason: ${item.reason}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            // Admin Notes if present
-            if (!item.adminNotes.isNullOrBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Comment,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = "Admin: ${item.adminNotes}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-=======
                 Text(
                     text = formatUtcToLocalDate(dayInfo.dateStr),
                     fontWeight = FontWeight.Bold,
@@ -3612,4 +3464,3 @@ fun calculateElapsedMinutes(isoString: String?): Int {
         0
     }
 }
-
