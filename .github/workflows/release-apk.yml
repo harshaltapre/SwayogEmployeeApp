@@ -39,6 +39,8 @@ jobs:
   build-and-deploy:
     name: Build Signed Release APK & Publish to Cloudflare R2
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Private Repository
