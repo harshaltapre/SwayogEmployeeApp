@@ -71,7 +71,6 @@ fun TasksScreen(
     var selectedTask by remember { mutableStateOf<Task?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var showCreateTaskDialog by remember { mutableStateOf(false) }
-    var showRateTaskDialog by remember { mutableStateOf(false) }
 
     val filteredTasks = remember(tasksList, selectedTab, searchQuery) {
         val tabFiltered = when (selectedTab) {
@@ -380,32 +379,6 @@ fun TasksScreen(
                 )
             }
 
-            // Rate Task Dialog
-            if (showRateTaskDialog && selectedTask != null) {
-                RateTaskDialog(
-                    task = selectedTask!!,
-                    onDismiss = { 
-                        showRateTaskDialog = false
-                        selectedTask = null
-                    },
-                    onRateTask = { rating, feedback, fixCharges ->
-                        viewModel.rateTask(
-                            taskId = selectedTask!!.id,
-                            rating = rating,
-                            feedback = feedback,
-                            fixCharges = fixCharges
-                        ) { result ->
-                            if (result.isSuccess) {
-                                showRateTaskDialog = false
-                                selectedTask = null
-                                Toast.makeText(context, "Task rated successfully!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Failed to rate task: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    }
-                )
-            }
         }
     }
 }
@@ -571,104 +544,6 @@ fun CreateTaskDialog(
 }
 
 @Composable
-fun RateTaskDialog(
-    task: Task,
-    onDismiss: () -> Unit,
-    onRateTask: (rating: Int, feedback: String?, fixCharges: Double?) -> Unit
-) {
-    var rating by remember { mutableIntStateOf(0) }
-    var feedback by remember { mutableStateOf("") }
-    var fixCharges by remember { mutableStateOf("") }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Rate Task",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
-                    }
-                }
-
-                Divider()
-
-                Text(
-                    text = task.description ?: "Task",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-
-                // Star Rating
-                Text("Rating:", style = MaterialTheme.typography.labelLarge)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    repeat(5) { index ->
-                        IconButton(
-                            onClick = { rating = index + 1 },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (index < rating) Icons.Default.Star else Icons.Default.StarBorder,
-                                contentDescription = "Star ${index + 1}",
-                                tint = if (index < rating) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                    }
-                }
-
-                SwayogTextField(
-                    value = feedback,
-                    onValueChange = { feedback = it },
-                    label = "Feedback (Optional)",
-                    placeholder = "Share your experience...",
-                    singleLine = false
-                )
-
-                SwayogTextField(
-                    value = fixCharges,
-                    onValueChange = { fixCharges = it },
-                    label = "Fix Charges (Optional)",
-                    placeholder = "Enter amount if applicable",
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
-                )
-
-                SwayogButton(
-                    text = "Submit Rating",
-                    enabled = rating > 0,
-                    onClick = {
-                        onRateTask(
-                            rating,
-                            feedback.takeIf { it.isNotBlank() },
-                            fixCharges.toDoubleOrNull()
-                        )
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun TaskCard(
     task: Task,
     onViewDetails: () -> Unit
@@ -812,16 +687,6 @@ fun TaskCard(
                 }
             }
 
-            // Rate button for completed tasks
-            if (task.status?.equals("completed", ignoreCase = true) == true) {
-                Spacer(modifier = Modifier.height(8.dp))
-                SwayogButton(
-                    text = "Rate Task",
-                    onClick = onViewDetails,
-                    variant = ButtonVariant.Primary,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
         }
     }
 }

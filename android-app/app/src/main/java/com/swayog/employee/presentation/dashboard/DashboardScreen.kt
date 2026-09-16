@@ -101,8 +101,14 @@ fun DashboardScreen(
         }
     }
 
-    // Snapshot time (removes continuous 1-second recomposition lag)
-    val currentTime = remember { System.currentTimeMillis() }
+    // Keep the clock and the active work-duration timer in sync with the device time.
+    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTime = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
 
     val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.getDefault()) }
     val dateFormat = remember { SimpleDateFormat("EEEE, dd MMMM yyyy", Locale.getDefault()) }
@@ -110,7 +116,7 @@ fun DashboardScreen(
     val formattedDate = dateFormat.format(Date(currentTime))
 
     // Time-aware greeting
-    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    val hour = Calendar.getInstance().apply { timeInMillis = currentTime }.get(Calendar.HOUR_OF_DAY)
     val greeting = when {
         hour < 12 -> "Good Morning"
         hour < 17 -> "Good Afternoon"
