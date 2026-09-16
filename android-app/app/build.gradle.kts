@@ -50,7 +50,7 @@ android {
         targetSdk = 34
         versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
             ?: (localProperties.getProperty("versionCode"))?.toIntOrNull()
-            ?: 1
+            ?: 20 // Use production baseline instead of 1
         versionName = (project.findProperty("versionName") as? String)
             ?: (localProperties.getProperty("versionName"))
             ?: "1.0.0"

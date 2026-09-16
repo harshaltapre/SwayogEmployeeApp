@@ -32,6 +32,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.swayog.employee.data.model.RegularizationItem
 import com.swayog.employee.data.model.RegularizationRequestPayload
 import androidx.compose.ui.Alignment
@@ -1819,8 +1821,6 @@ fun AttendanceScreen(
             }
         }
     }
-    }
-}
 }
 
 @Composable

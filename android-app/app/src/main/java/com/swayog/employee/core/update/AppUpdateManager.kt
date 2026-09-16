@@ -12,6 +12,8 @@ import com.swayog.employee.core.config.AppConfig
 import com.swayog.employee.data.model.AppUpdateManifest
 import com.swayog.employee.data.model.AppUpdateState
 import com.swayog.employee.data.model.UpdateErrorKind
+import com.swayog.employee.BuildConfig
+import com.swayog.employee.data.local.preferences.DataStoreManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -75,10 +77,22 @@ class AppUpdateManager @Inject constructor(
     /**
      * Checks for updates if the throttle interval (6 hours) has elapsed,
      * or immediately if [force] is true (e.g. manual user check in Settings).
-     * If [autoDownload] is true and an update is available, download and install will be initiated automatically.
+     * 
+     * Debug builds: Automatic update checking is suppressed to prevent constant update popups during development.
+     * Release builds: Normal update checking behavior.
+     * 
+     * Normal updates: Only check manifest, do not auto-download.
+     * Mandatory updates: May auto-download (existing behavior preserved).
      */
     suspend fun checkForUpdates(force: Boolean = false, autoDownload: Boolean = false): CheckResult {
         return checkMutex.withLock {
+            // Suppress automatic update checks for debug builds
+            val isDebugBuild = BuildConfig.DEBUG
+            if (!force && isDebugBuild) {
+                Log.d(TAG, "Skipping automatic update check for debug build")
+                return@withLock CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
+            }
+
             val now = System.currentTimeMillis()
             if (!force && (now - lastAutoCheckTimestamp < CHECK_INTERVAL_MILLIS)) {
                 Log.d(TAG, "Skipping auto update check: within 6h window (elapsed: ${(now - lastAutoCheckTimestamp) / 1000}s)")
@@ -239,8 +253,10 @@ class AppUpdateManager @Inject constructor(
                     if (serverCode > currentCode) {
                         Log.i(TAG, "Result: UPDATE_AVAILABLE (server $serverCode > installed $currentCode)")
                         val isMandatory = parsed.mandatory || (currentCode < minCode)
-                        if (autoDownload) {
-                            Log.i(TAG, "autoDownload=true: launching direct download & install.")
+                        
+                        // Only auto-download for mandatory updates or when explicitly requested
+                        if (autoDownload && isMandatory) {
+                            Log.i(TAG, "Mandatory update with autoDownload: launching direct download & install.")
                             scope.launch { downloadAndInstall(parsed) }
                             CheckResult.UpdateAvailable(parsed, downloading = true)
                         } else {
@@ -348,7 +364,14 @@ class AppUpdateManager @Inject constructor(
 
                 val response = okHttpClient.newCall(request).execute()
                 if (!response.isSuccessful || response.body == null) {
-                    throw IllegalStateException("Failed to download APK: HTTP ${response.code}")
+                    val errorType = when (response.code) {
+                        404 -> "Update package is currently unavailable (HTTP 404)."
+                        403 -> "Update package is currently unavailable (HTTP 403)."
+                        401, 403 -> "Update package is currently unavailable."
+                        in 500..599 -> "Update service is temporarily unavailable (HTTP ${response.code})."
+                        else -> "Failed to download update package (HTTP ${response.code})."
+                    }
+                    throw IllegalStateException(errorType)
                 }
 
                 val body = response.body!!

@@ -42,18 +42,19 @@ object AppConfig {
     /**
      * ONE STABLE PERMANENT PUBLIC UPDATE MANIFEST ENDPOINT
      * This URL never changes across builds:
-     * https://<PUBLIC-DOMAIN>/api/v1/app/update/latest.json
+     * https://<PUBLIC-DOMAIN>/latest.json
      */
     val PUBLIC_UPDATE_ENDPOINT: String
         get() {
             val customUrl = BuildConfig.PUBLIC_DISTRIBUTION_URL.trim()
-            val effectiveBase = if (customUrl.isNotBlank() && 
-                !customUrl.contains("your-public-domain.com") && 
-                !customUrl.contains(".r2.cloudflarestorage.com")) {
+            val base = if (
+                customUrl.isNotBlank() &&
+                !customUrl.contains("your-public-domain.com")
+            ) {
                 customUrl.removeSuffix("/")
             } else {
                 PRODUCTION_PUBLIC_URL.removeSuffix("/")
             }
-            return "$effectiveBase/api/v1/app/update/latest.json"
+            return "$base/latest.json"
         }
 }
