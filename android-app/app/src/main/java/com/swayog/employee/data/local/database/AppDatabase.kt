@@ -53,6 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "swayog_employee_database"
                 )
                     .addMigrations(MIGRATION_14_15)
+                    .fallbackToDestructiveMigration()
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

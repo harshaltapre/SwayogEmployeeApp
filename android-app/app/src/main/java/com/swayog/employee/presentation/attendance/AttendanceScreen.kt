@@ -279,7 +279,6 @@ fun AttendanceScreen(
                             Toast.makeText(context, "Check-in failed: ${exception?.message}", Toast.LENGTH_LONG).show()
                         }
                     }
-                    }
                 }
             },
             onVerificationFailed = { error ->
@@ -1819,6 +1818,7 @@ fun AttendanceScreen(
                 )
             }
         }
+    }
     }
 }
 

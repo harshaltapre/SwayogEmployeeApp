@@ -9,7 +9,26 @@
       "includeFiles": "{node_modules/.prisma/client/**,backend/node_modules/.prisma/client/**,backend/dist/vercel-app.cjs}"
     }
   },
+  "headers": [
+    {
+      "source": "/latest.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/latest.json",
+      "destination": "/api/index.ts"
+    },
     {
       "source": "/api/(.*)",
       "destination": "/api/index.ts"
@@ -19,7 +38,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api/|app/).*)",
+      "source": "/((?!api/|app/|latest\\.json).*)",
       "destination": "/index.html"
     }
   ]

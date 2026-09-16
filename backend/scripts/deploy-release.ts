@@ -96,9 +96,9 @@ async function main() {
     publicApkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${buildSpecificApkKey}`;
   } else {
     try {
-      // Generate presigned URL valid for 30 days (2,592,000 seconds)
-      publicApkUrl = await generatePresignedUrl(buildSpecificApkKey, 2592000);
-      console.log(`[Deploy] Generated 30-day presigned download URL for APK`);
+      // Generate presigned URL valid for up to 7 days (604,800 seconds max in AWS SigV4)
+      publicApkUrl = await generatePresignedUrl(buildSpecificApkKey, 604800);
+      console.log(`[Deploy] Generated 7-day presigned download URL for APK`);
     } catch {
       // Fallback to permanent backend redirect endpoint
       publicApkUrl = "https://swayog-dashboard.vercel.app/api/v1/app/update/download/latest";

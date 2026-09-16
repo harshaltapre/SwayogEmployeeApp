@@ -87,8 +87,14 @@
 
 # Keep database entities and DAOs intact for Room DB mappings
 -keep class com.swayog.employee.data.local.entity.** { *; }
+-keepclassmembers class com.swayog.employee.data.local.entity.** { *; }
 -keep class com.swayog.employee.data.local.dao.** { *; }
+-keepclassmembers class com.swayog.employee.data.local.dao.** { *; }
 
-# Optimize: Remove unused methods from data classes
+# Prevent R8 from removing entity getters/setters/constructors
+-keepclassmembers class * extends androidx.room.RoomDatabase { *; }
+-keepclassmembernames class * {
+    @androidx.room.* <methods>;
+}
+
 -allowaccessmodification
--allowshrinking

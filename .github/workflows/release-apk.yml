@@ -226,7 +226,8 @@ jobs:
             for EP in "$CLEAN_BASE/latest.json" "$CLEAN_BASE/releases/android/latest.json" "$CLEAN_BASE/app/android/latest.json"; do
               echo "Checking: $EP"
               HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$EP" || echo "000")
-              echo "Response HTTP status: $HTTP_STATUS"
+              CONTENT_TYPE=$(curl -s -I "$EP" | grep -i "content-type" | tr -d '\r' || echo "")
+              echo "Response HTTP status: $HTTP_STATUS ($CONTENT_TYPE)"
               if [ "$HTTP_STATUS" = "200" ]; then
                 echo "✅ Public endpoint accessible"
               else

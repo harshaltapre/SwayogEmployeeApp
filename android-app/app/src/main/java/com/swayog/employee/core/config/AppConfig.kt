@@ -56,12 +56,4 @@ object AppConfig {
             }
             return "$effectiveBase/latest.json"
         }
-
-    /**
-     * Backend update endpoint used when the CDN manifest is unavailable.
-     * This keeps updates working even when a custom public distribution domain
-     * is not configured or its cache is temporarily unavailable.
-     */
-    val API_UPDATE_ENDPOINT: String
-        get() = "${API_BASE_URL}app/update/latest.json"
 }
