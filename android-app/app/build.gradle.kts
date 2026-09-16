@@ -90,10 +90,15 @@ android {
                 storePassword = storePass
                 keyPassword = keyPass
             } else {
-                // Fallback: warn at configure time so the developer knows signing is not set up.
-                println("⚠️  WARNING: RELEASE_STORE_FILE is not configured in local.properties.")
-                println("   Release APK will be unsigned until you configure a release keystore.")
-                println("   See the comments above the android {} block for setup instructions.")
+                // In CI/CD, this should fail the build. For local development, provide helpful error.
+                val isCI = System.getenv("CI") == "true"
+                if (isCI) {
+                    throw GradleException("RELEASE_STORE_FILE must be configured for production releases in CI/CD")
+                } else {
+                    println("⚠️  WARNING: RELEASE_STORE_FILE is not configured in local.properties.")
+                    println("   Release APK will be unsigned until you configure a release keystore.")
+                    println("   See the comments above the android {} block for setup instructions.")
+                }
             }
         }
     }
@@ -103,7 +108,17 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             val storeFilePath = getLocalProperty("RELEASE_STORE_FILE", System.getenv("RELEASE_STORE_FILE") ?: "")
-            signingConfig = if (storeFilePath.isNotBlank()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            val isCI = System.getenv("CI") == "true"
+            
+            if (storeFilePath.isNotBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else if (isCI) {
+                throw GradleException("RELEASE_STORE_FILE must be configured for production releases in CI/CD")
+            } else {
+                // Local development fallback only
+                signingConfig = signingConfigs.getByName("debug")
+                println("⚠️  WARNING: Using debug signing for local development only")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

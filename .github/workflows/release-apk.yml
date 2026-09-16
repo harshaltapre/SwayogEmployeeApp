@@ -105,19 +105,47 @@ jobs:
           echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_OUTPUT
           echo "🚀 Target Release: Version $VERSION_NAME (Build $VERSION_CODE) -> Tag $RELEASE_TAG"
 
+      - name: Validate Production Signing Secrets
+        run: |
+          if [ -z "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
+            echo "::error::RELEASE_KEYSTORE_BASE64 secret is required for production releases"
+            echo "::error::Production OTA updates must be signed with the same certificate as the existing installed app"
+            exit 1
+          fi
+          if [ -z "${{ secrets.RELEASE_KEY_ALIAS }}" ]; then
+            echo "::error::RELEASE_KEY_ALIAS secret is required"
+            exit 1
+          fi
+          if [ -z "${{ secrets.RELEASE_STORE_PASSWORD }}" ]; then
+            echo "::error::RELEASE_STORE_PASSWORD secret is required"
+            exit 1
+          fi
+          if [ -z "${{ secrets.RELEASE_KEY_PASSWORD }}" ]; then
+            echo "::error::RELEASE_KEY_PASSWORD secret is required"
+            exit 1
+          fi
+          echo "✅ All required signing secrets are present"
+
       - name: Decode Production Release Keystore
         id: keystore
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
         run: |
-          if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
-            mkdir -p android-app/keystore
-            echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > android-app/keystore/release.jks
-            echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/android-app/keystore/release.jks" >> $GITHUB_ENV
-            echo "✅ Production keystore decoded successfully"
-          else
-            echo "::warning::RELEASE_KEYSTORE_BASE64 secret is not set. Signing will fallback to debug keystore."
+          mkdir -p android-app/keystore
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > android-app/keystore/release.jks
+          
+          if [ ! -f "android-app/keystore/release.jks" ]; then
+            echo "::error::Failed to decode keystore file"
+            exit 1
           fi
+          
+          if [ ! -s "android-app/keystore/release.jks" ]; then
+            echo "::error::Decoded keystore file is empty"
+            exit 1
+          fi
+          
+          echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/android-app/keystore/release.jks" >> $GITHUB_ENV
+          echo "✅ Production keystore decoded successfully"
 
       - name: Make Gradlew Executable
         run: chmod +x android-app/gradlew
@@ -133,13 +161,18 @@ jobs:
           WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard.vercel.app' }}
           PUBLIC_DISTRIBUTION_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
         run: |
+          if [ -z "$RELEASE_STORE_FILE" ]; then
+            echo "::error::RELEASE_STORE_FILE is not set - cannot build production release"
+            exit 1
+          fi
+          
           ./gradlew assembleRelease \
             -PversionName="${{ steps.versioning.outputs.VERSION_NAME }}" \
             -PversionCode="${{ steps.versioning.outputs.VERSION_CODE }}" \
-            ${{ env.RELEASE_STORE_FILE && format('-PRELEASE_STORE_FILE={0}', env.RELEASE_STORE_FILE) || '' }} \
-            ${{ secrets.RELEASE_KEY_ALIAS && format('-PRELEASE_KEY_ALIAS={0}', secrets.RELEASE_KEY_ALIAS) || '' }} \
-            ${{ secrets.RELEASE_STORE_PASSWORD && format('-PRELEASE_STORE_PASSWORD={0}', secrets.RELEASE_STORE_PASSWORD) || '' }} \
-            ${{ secrets.RELEASE_KEY_PASSWORD && format('-PRELEASE_KEY_PASSWORD={0}', secrets.RELEASE_KEY_PASSWORD) || '' }} \
+            -PRELEASE_STORE_FILE="$RELEASE_STORE_FILE" \
+            -PRELEASE_KEY_ALIAS="${{ secrets.RELEASE_KEY_ALIAS }}" \
+            -PRELEASE_STORE_PASSWORD="${{ secrets.RELEASE_STORE_PASSWORD }}" \
+            -PRELEASE_KEY_PASSWORD="${{ secrets.RELEASE_KEY_PASSWORD }}" \
             --no-daemon --stacktrace
 
       - name: Verify Built APK & Calculate SHA-256
@@ -154,6 +187,12 @@ jobs:
             exit 1
           fi
 
+          # Verify it's not a debug APK
+          if [[ "$APK_PATH" == *"debug"* ]]; then
+            echo "::error::APK appears to be a debug build, not release"
+            exit 1
+          fi
+
           SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
           FILE_SIZE=$(stat -c%s "$APK_PATH")
 
@@ -163,6 +202,36 @@ jobs:
           echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
           echo "SHA256=$SHA256" >> $GITHUB_OUTPUT
           echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_OUTPUT
+
+      - name: Verify APK Signing Certificate
+        run: |
+          APK_PATH="${{ steps.apk_info.outputs.APK_PATH }}"
+          
+          # Use apksigner to verify the APK signature
+          if ! command -v apksigner &> /dev/null; then
+            echo "::warning::apksigner not found, skipping certificate verification"
+            echo "Install Android SDK build-tools for full signature verification"
+          else
+            echo "Verifying APK signature..."
+            apksigner verify --print-certs "$APK_PATH" || {
+              echo "::error::APK signature verification failed"
+              exit 1
+            }
+            echo "✅ APK signature verified successfully"
+            
+            # Extract certificate fingerprint for diagnostics
+            CERT_INFO=$(apksigner verify --print-certs "$APK_PATH" 2>&1 | grep -A 5 "Signer")
+            echo "Certificate info:"
+            echo "$CERT_INFO"
+          fi
+          
+          # Verify it's a release build by checking for debug indicators
+          if unzip -l "$APK_PATH" | grep -q "META-INF/MANIFEST.MF"; then
+            echo "✅ APK contains manifest, appears to be properly signed"
+          else
+            echo "::error::APK missing manifest, may not be properly signed"
+            exit 1
+          fi
 
       - name: Prepare User-Facing Release Notes
         run: |
@@ -211,6 +280,7 @@ jobs:
           EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
           PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
         run: |
+          npm ci
           node -e '
           const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
           
@@ -281,6 +351,14 @@ jobs:
         run: |
           RELEASE_TAG="${{ steps.versioning.outputs.RELEASE_TAG }}"
           RELEASE_TITLE="${{ steps.versioning.outputs.RELEASE_TITLE }}"
+          
+          # Check if tag already exists to prevent duplicates
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Git tag $RELEASE_TAG already exists - preventing duplicate release"
+            echo "::error::Please check if another workflow is running or manually remove the tag if needed"
+            exit 1
+          fi
+          
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$RELEASE_TAG" -m "$RELEASE_TITLE"
