@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import com.google.gson.Gson
@@ -52,6 +54,7 @@ class AppUpdateManager @Inject constructor(
     val updateState: StateFlow<AppUpdateState> = _updateState.asStateFlow()
 
     private var lastAutoCheckTimestamp: Long = 0L
+    private val updateCheckMutex = Mutex()
 
     val installedVersionCode: Long
         get() = try {
@@ -75,11 +78,22 @@ class AppUpdateManager @Inject constructor(
      * If [autoDownload] is true and an update is available, download and install will be initiated automatically.
      */
     suspend fun checkForUpdates(force: Boolean = false, autoDownload: Boolean = false): CheckResult {
+        return updateCheckMutex.withLock {
+            checkForUpdatesLocked(force, autoDownload)
+        }
+    }
+
+    private suspend fun checkForUpdatesLocked(force: Boolean, autoDownload: Boolean): CheckResult {
         val now = System.currentTimeMillis()
         if (!force && (now - lastAutoCheckTimestamp < CHECK_INTERVAL_MILLIS)) {
             Log.d(TAG, "Skipping auto update check: within 6h window (elapsed: ${(now - lastAutoCheckTimestamp) / 1000}s)")
             return CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
         }
+
+        // Record the attempt before doing I/O. MainViewModel invokes this both
+        // during construction and from Activity.onResume; this prevents a
+        // second startup request even when the first request fails.
+        if (!force) lastAutoCheckTimestamp = now
 
         // Don't interrupt an ongoing download or verification
         val currentState = _updateState.value
@@ -109,36 +123,43 @@ class AppUpdateManager @Inject constructor(
                         .header("Cache-Control", "no-cache, no-store")
                         .build()
 
-                    val response = okHttpClient.newCall(request).execute()
-                    lastHttpCode = response.code
-                    lastResponseBody = try { response.body?.string() } catch (_: Exception) { null }
-                    Log.d(TAG, "Primary URL HTTP status: $lastHttpCode")
-                    Log.d(TAG, "Response body length: ${lastResponseBody?.length ?: 0}")
+                    okHttpClient.newCall(request).execute().use { response ->
+                        lastHttpCode = response.code
+                        lastResponseBody = try { response.body?.string() } catch (_: Exception) { null }
+                        Log.d(TAG, "Primary URL HTTP status: $lastHttpCode")
+                        Log.d(TAG, "Response body length: ${lastResponseBody?.length ?: 0}")
 
-                    if (response.isSuccessful && !lastResponseBody.isNullOrBlank()) {
-                        try {
-                            manifest = Gson().fromJson(lastResponseBody, AppUpdateManifest::class.java)
-                            Log.d(TAG, "Successfully retrieved manifest from primary URL")
-                            Log.d(TAG, "Parsed versionName: ${manifest.versionName}, versionCode: ${manifest.versionCode}")
-                        } catch (parseError: Exception) {
-                            Log.e(TAG, "Failed to parse manifest from primary URL (HTTP 200 but invalid JSON): ${parseError.message}")
-                            Log.e(TAG, "Response body preview: ${lastResponseBody?.take(200)}")
-                            // Don't fall back if primary returned 200 but parse failed - this is a manifest corruption issue
-                            _updateState.value = AppUpdateState.Error(
-                                message = "Update information is corrupted (invalid manifest format).",
-                                isNetworkError = false,
-                                kind = UpdateErrorKind.INVALID_MANIFEST
-                            )
-                            return@withContext CheckResult.Error("Update information is corrupted (invalid manifest format).")
+                        if (response.isSuccessful && !lastResponseBody.isNullOrBlank()) {
+                            try {
+                                val json = com.google.gson.JsonParser().parse(lastResponseBody)
+                                require(json.isJsonObject) { "Manifest must be a JSON object" }
+                                val parsedManifest: AppUpdateManifest? =
+                                    Gson().fromJson(json, AppUpdateManifest::class.java)
+                                manifest = requireNotNull(parsedManifest) { "Manifest is empty" }
+                                Log.d(TAG, "Successfully retrieved manifest from primary URL")
+                                Log.d(TAG, "Parsed versionName: ${manifest!!.versionName}, versionCode: ${manifest!!.versionCode}")
+                            } catch (parseError: Exception) {
+                                Log.e(TAG, "Failed to parse manifest from primary URL: ${parseError.message}")
+                                Log.e(TAG, "Response body preview: ${lastResponseBody?.take(200)}")
+                                _updateState.value = AppUpdateState.Error(
+                                    message = "Update information is temporarily unavailable.",
+                                    isNetworkError = false,
+                                    kind = UpdateErrorKind.INVALID_MANIFEST
+                                )
+                                return@withContext CheckResult.Error("Update information is temporarily unavailable.")
+                            }
                         }
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Primary manifest URL check failed: ${e.message}")
                 }
 
-                if (manifest != null) {
+                // `manifest` is assigned inside the response lambda. Capture an
+                // immutable value before using it in the download coroutine.
+                val resolvedManifest = manifest
+                if (resolvedManifest != null) {
                     // Validate manifest schema
-                    if (manifest.versionCode <= 0) {
+                    if (resolvedManifest.versionCode <= 0) {
                         val errorMsg = "Update information is invalid (invalid build number)."
                         _updateState.value = AppUpdateState.Error(message = errorMsg, isNetworkError = false)
                         return@withContext CheckResult.Error(errorMsg)
@@ -146,34 +167,34 @@ class AppUpdateManager @Inject constructor(
 
                     lastAutoCheckTimestamp = System.currentTimeMillis()
 
-                    val serverCode = manifest.versionCode
+                    val serverCode = resolvedManifest.versionCode
                     val currentCode = installedVersionCode
-                    val minCode = manifest.minimumVersionCode ?: 0L
+                    val minCode = resolvedManifest.minimumVersionCode ?: 0L
 
-                    Log.d(TAG, "Update check result: serverCode=$serverCode, installedCode=$currentCode, minCode=$minCode, mandatory=${manifest.mandatory}")
+                    Log.d(TAG, "Update check result: serverCode=$serverCode, installedCode=$currentCode, minCode=$minCode, mandatory=${resolvedManifest.mandatory}")
 
                     if (serverCode > currentCode) {
-                        if (manifest.apkUrl.isBlank()) {
+                        if (resolvedManifest.apkUrl.isBlank()) {
                             val errorMsg = "New version was found, but the update package is currently unavailable."
                             _updateState.value = AppUpdateState.Error(message = errorMsg, isNetworkError = false, kind = UpdateErrorKind.APK_NOT_FOUND)
                             return@withContext CheckResult.Error(errorMsg)
                         }
 
-                        val isMandatory = manifest.mandatory || (currentCode < minCode)
+                        val isMandatory = resolvedManifest.mandatory || (currentCode < minCode)
                         if (autoDownload) {
                             Log.i(TAG, "Update available and autoDownload=true. Initiating direct download & install.")
                             scope.launch {
-                                downloadAndInstall(manifest)
+                                downloadAndInstall(resolvedManifest)
                             }
-                            CheckResult.UpdateAvailable(manifest, downloading = true)
+                            CheckResult.UpdateAvailable(resolvedManifest, downloading = true)
                         } else {
                             _updateState.value = AppUpdateState.UpdateAvailable(
-                                manifest = manifest,
+                                manifest = resolvedManifest,
                                 isMandatory = isMandatory,
                                 installedVersionName = installedVersionName,
                                 installedVersionCode = currentCode
                             )
-                            CheckResult.UpdateAvailable(manifest, downloading = false)
+                            CheckResult.UpdateAvailable(resolvedManifest, downloading = false)
                         }
                     } else if (serverCode < currentCode) {
                         // Installed version is newer than server version
