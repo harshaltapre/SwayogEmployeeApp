@@ -65,9 +65,11 @@ class MainViewModel @Inject constructor(
             // Keep session alive and track activity timestamp without logging out automatically
             dataStoreManager.recordUserActive()
         }
-        // Automatic update check on application startup (cached 6h)
-        viewModelScope.launch {
-            appUpdateManager.checkForUpdates(force = false)
+        // Automatic update check on application startup (cached 6h, release builds only)
+        if (!com.swayog.employee.BuildConfig.DEBUG) {
+            viewModelScope.launch {
+                appUpdateManager.checkForUpdates(force = false, autoDownload = false)
+            }
         }
         // Initial profile refresh
         refreshUserProfile()
@@ -102,9 +104,11 @@ class MainViewModel @Inject constructor(
         // If an update was already downloaded and we were waiting for package install permission, resume it
         appUpdateManager.resumeInstallIfReady()
 
-        // Check for updates if last check was > 6 hours ago
-        viewModelScope.launch {
-            appUpdateManager.checkForUpdates(force = false)
+        // Check for updates if last check was > 6 hours ago (release builds only)
+        if (!com.swayog.employee.BuildConfig.DEBUG) {
+            viewModelScope.launch {
+                appUpdateManager.checkForUpdates(force = false, autoDownload = false)
+            }
         }
     }
 

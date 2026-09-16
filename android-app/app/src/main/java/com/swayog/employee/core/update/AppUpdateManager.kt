@@ -42,7 +42,8 @@ private const val CHECK_INTERVAL_MILLIS = 6 * 60 * 60 * 1000L // 6 hours
 @Singleton
 class AppUpdateManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    @UpdateOkHttpClient private val okHttpClient: OkHttpClient
+    @UpdateOkHttpClient private val okHttpClient: OkHttpClient,
+    private val dataStoreManager: com.swayog.employee.data.local.preferences.DataStoreManager
 ) {
     sealed interface CheckResult {
         data class UpdateAvailable(val manifest: AppUpdateManifest, val downloading: Boolean) : CheckResult
@@ -253,8 +254,15 @@ class AppUpdateManager @Inject constructor(
                     if (serverCode > currentCode) {
                         Log.i(TAG, "Result: UPDATE_AVAILABLE (server $serverCode > installed $currentCode)")
                         val isMandatory = parsed.mandatory || (currentCode < minCode)
-                        
-                        // Only auto-download for mandatory updates or when explicitly requested
+                        val isDebug = com.swayog.employee.BuildConfig.DEBUG
+                        val dismissedCode = try { dataStoreManager.getDismissedUpdateVersionCode() } catch (_: Exception) { 0L }
+
+                        // In DEBUG builds, automatic checks (force == false) must NOT show the production update popup.
+                        // If the user previously dismissed this release (serverCode <= dismissedCode), also suppress the popup.
+                        val shouldDismissPopup = !isMandatory && ((!force && isDebug) || (!force && serverCode <= dismissedCode))
+
+                        // Normal non-mandatory updates NEVER auto-download.
+                        // Auto-download only runs for mandatory updates when explicitly requested.
                         if (autoDownload && isMandatory) {
                             Log.i(TAG, "Mandatory update with autoDownload: launching direct download & install.")
                             scope.launch { downloadAndInstall(parsed) }
@@ -264,7 +272,8 @@ class AppUpdateManager @Inject constructor(
                                 manifest = parsed,
                                 isMandatory = isMandatory,
                                 installedVersionName = installedVersionName,
-                                installedVersionCode = currentCode
+                                installedVersionCode = currentCode,
+                                isDismissed = shouldDismissPopup
                             )
                             CheckResult.UpdateAvailable(parsed, downloading = false)
                         }
@@ -364,14 +373,21 @@ class AppUpdateManager @Inject constructor(
 
                 val response = okHttpClient.newCall(request).execute()
                 if (!response.isSuccessful || response.body == null) {
-                    val errorType = when (response.code) {
-                        404 -> "Update package is currently unavailable (HTTP 404)."
-                        403 -> "Update package is currently unavailable (HTTP 403)."
-                        401, 403 -> "Update package is currently unavailable."
-                        in 500..599 -> "Update service is temporarily unavailable (HTTP ${response.code})."
-                        else -> "Failed to download update package (HTTP ${response.code})."
+                    val is404 = response.code == 404 || response.code == 403 || response.code == 401
+                    val errorMsg = if (is404) {
+                        "Update package is currently unavailable."
+                    } else if (response.code in 500..599) {
+                        "Update service is temporarily unavailable (HTTP ${response.code})."
+                    } else {
+                        "Failed to download update package (HTTP ${response.code})."
                     }
-                    throw IllegalStateException(errorType)
+                    _updateState.value = AppUpdateState.Error(
+                        message = errorMsg,
+                        isNetworkError = !is404,
+                        kind = if (is404) UpdateErrorKind.APK_NOT_FOUND else UpdateErrorKind.SERVER_ERROR,
+                        manifest = manifest
+                    )
+                    return@withContext
                 }
 
                 val body = response.body!!
@@ -438,9 +454,11 @@ class AppUpdateManager @Inject constructor(
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error downloading APK: ${e.message}", e)
+                val isUnavailable = e.message?.contains("unavailable", ignoreCase = true) == true
                 _updateState.value = AppUpdateState.Error(
-                    message = "Download failed: ${e.localizedMessage ?: "Unknown error"}",
-                    isNetworkError = true,
+                    message = if (isUnavailable) "Update package is currently unavailable." else "Download failed: ${e.localizedMessage ?: "Unknown error"}",
+                    isNetworkError = !isUnavailable,
+                    kind = if (isUnavailable) UpdateErrorKind.APK_NOT_FOUND else UpdateErrorKind.NETWORK_ERROR,
                     manifest = manifest
                 )
             }
@@ -509,11 +527,21 @@ class AppUpdateManager @Inject constructor(
 
     /**
      * Dismisses an optional update or resets error state.
+     * Persists the dismissed version code to DataStore so startup popups are suppressed
+     * for this version while Settings continues to show the update.
      */
     fun dismissUpdate() {
         val current = _updateState.value
         if (current is AppUpdateState.UpdateAvailable && !current.isMandatory) {
-            _updateState.value = AppUpdateState.Idle
+            val serverCode = current.manifest.versionCode
+            scope.launch {
+                try {
+                    dataStoreManager.setDismissedUpdateVersionCode(serverCode)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to persist dismissed update version: ${e.message}")
+                }
+            }
+            _updateState.value = current.copy(isDismissed = true)
         } else if (current is AppUpdateState.Error) {
             _updateState.value = AppUpdateState.Idle
         }

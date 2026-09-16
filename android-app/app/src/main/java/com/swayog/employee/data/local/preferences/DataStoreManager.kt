@@ -60,6 +60,9 @@ class DataStoreManager @Inject constructor(
         val SAVED_LOGIN_ID = stringPreferencesKey("saved_login_id")
         val SAVED_PASSWORD = stringPreferencesKey("saved_password")
         val REMEMBER_CREDENTIALS = booleanPreferencesKey("remember_credentials")
+
+        // OTA Update Dismissed Version
+        val DISMISSED_UPDATE_VERSION_CODE = longPreferencesKey("dismissed_update_version_code")
     }
 
     val attendanceRule: Flow<com.swayog.employee.data.model.AttendanceRule> = context.dataStore.data.map { preferences ->
@@ -478,6 +481,28 @@ class DataStoreManager @Inject constructor(
         try {
             context.dataStore.edit { preferences ->
                 preferences.clear()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    val dismissedUpdateVersionCode: Flow<Long> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.DISMISSED_UPDATE_VERSION_CODE] ?: 0L
+    }
+
+    suspend fun getDismissedUpdateVersionCode(): Long {
+        return try {
+            context.dataStore.data.first()[PreferencesKeys.DISMISSED_UPDATE_VERSION_CODE] ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    suspend fun setDismissedUpdateVersionCode(versionCode: Long) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.DISMISSED_UPDATE_VERSION_CODE] = versionCode
             }
         } catch (e: Exception) {
             e.printStackTrace()

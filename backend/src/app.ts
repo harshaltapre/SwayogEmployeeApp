@@ -189,7 +189,8 @@ app.use("/api/v1/messages", messagesRoutes);
 app.use("/api/v1/inventory", inventoryRoutes);
 app.use("/api/v1/apartments", apartmentsRoutes);
 app.use("/api/v1/isphere-green", isphereGreenRoutes);
-// Canonical app update endpoint - /latest.json
+// Canonical app update endpoints - /latest.json and /releases/...
+app.use("/", appUpdateRoutes);
 app.use("/api/v1/app/update", appUpdateRoutes);
 
 app.use(notFoundHandler);
