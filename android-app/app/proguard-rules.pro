@@ -90,10 +90,20 @@
 -keepclassmembers class com.swayog.employee.data.local.entity.** { *; }
 -keep class com.swayog.employee.data.local.dao.** { *; }
 -keepclassmembers class com.swayog.employee.data.local.dao.** { *; }
+-keep @androidx.room.Entity class * { *; }
+-keepclassmembers @androidx.room.Entity class * { *; }
+-keep @androidx.room.Dao interface * { *; }
+-keepclassmembers @androidx.room.Dao interface * { *; }
+
+# Keep AppUpdate models and deserializers intact
+-keep class com.swayog.employee.data.model.AppUpdateManifest { *; }
+-keepclassmembers class com.swayog.employee.data.model.AppUpdateManifest { *; }
+-keep class com.swayog.employee.data.model.ReleaseNotesDeserializer { *; }
+-keep class com.swayog.employee.data.model.AppUpdateState { *; }
 
 # Prevent R8 from removing entity getters/setters/constructors
 -keepclassmembers class * extends androidx.room.RoomDatabase { *; }
--keepclassmembernames class * {
+-keepclassmembers class * {
     @androidx.room.* <methods>;
 }
 

@@ -19,7 +19,7 @@ import com.swayog.employee.data.local.entity.*
         CustomerEntity::class,
         OutboxQueueEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -34,7 +34,6 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
-
         /**
          * Version 14 introduced the review/source fields on cached attendance
          * records. Versions 13 and 14 were not released with an incremental
@@ -100,7 +99,7 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
         }.toTypedArray()
-        
+
         private val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 // Version 15 has the same Room-managed schema as version 14.
@@ -109,7 +108,18 @@ abstract class AppDatabase : RoomDatabase() {
                 // declared for attendance or outbox_queue.
             }
         }
-        
+
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add source column to attendance table if it doesn't exist
+                try {
+                    database.execSQL("ALTER TABLE attendance ADD COLUMN source TEXT")
+                } catch (e: Exception) {
+                    // Column might already exist, ignore error
+                }
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -119,7 +129,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_12_14)
                     .addMigrations(*ALL_MIGRATIONS)
-                    .addMigrations(MIGRATION_14_15)
+                    .addMigrations(MIGRATION_14_15, MIGRATION_15_16)
                     .fallbackToDestructiveMigration()
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()

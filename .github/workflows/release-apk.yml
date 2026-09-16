@@ -8,6 +8,7 @@ on:
       - 'android-app/**'
       - '.github/workflows/release-apk.yml'
       - 'backend/scripts/deploy-release.ts'
+      - 'web-update/**'
   workflow_dispatch:
     inputs:
       version_name:
@@ -35,6 +36,10 @@ on:
           Improved profile synchronization
           Performance improvements and bug fixes
 
+concurrency:
+  group: release-apk-pipeline
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     name: Build Signed Release APK & Publish to Cloudflare R2
@@ -60,7 +65,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
-      - name: Auto-Increment Version Code and Create Tag
+      - name: Determine Next Build Version
         id: versioning
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -68,46 +73,29 @@ jobs:
             VERSION_CODE="${{ github.event.inputs.version_code }}"
             MIN_VERSION_CODE="${{ github.event.inputs.minimum_version_code }}"
             MANDATORY="${{ github.event.inputs.mandatory }}"
-            RELEASE_TAG="v${VERSION_NAME}-build${VERSION_CODE}"
-            RELEASE_TITLE="Swayog Employee App v${VERSION_NAME} — Build ${VERSION_CODE}"
           else
-            # Auto-increment logic for push to main
-            # Fetch the latest tag matching v*-build*
-            git fetch --tags
-            LATEST_TAG=$(git describe --tags --match 'v*-build*' --abbrev=0 2>/dev/null || echo "")
+            # Fetch tags to evaluate build history
+            git fetch --tags --force 2>/dev/null || true
             
-            if [ -n "$LATEST_TAG" ]; then
-              echo "Latest tag found: $LATEST_TAG"
-              # Extract versionCode from tag (e.g., v1.0.0-build20 -> 20)
-              if [[ "$LATEST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-build([0-9]+)$ ]]; then
-                CURRENT_BUILD="${BASH_REMATCH[1]}"
-                VERSION_CODE=$((CURRENT_BUILD + 1))
-                VERSION_NAME="${LATEST_TAG#v}"
-                VERSION_NAME="${VERSION_NAME%-build*}"
-              else
-                # Fallback to commit count if tag format is unexpected
-                VERSION_CODE=$(git rev-list --count HEAD)
-                VERSION_NAME="1.0.0"
+            # Find the highest existing build number from tags
+            HIGHEST_BUILD=20
+            while read -r TAG; do
+              if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-build([0-9]+)$ ]]; then
+                BUILD_NUM="${BASH_REMATCH[1]}"
+                if [ "$BUILD_NUM" -gt "$HIGHEST_BUILD" ]; then
+                  HIGHEST_BUILD="$BUILD_NUM"
+                fi
               fi
-            else
-              # No tags found - start from build 21 (assuming v1.0.0-build20 exists)
-              VERSION_CODE=21
-              VERSION_NAME="1.0.0"
-            fi
-            
+            done < <(git tag -l "v*-build*")
+
+            VERSION_CODE=$((HIGHEST_BUILD + 1))
+            VERSION_NAME="1.0.0"
             MIN_VERSION_CODE="1"
             MANDATORY="false"
-            RELEASE_TAG="v${VERSION_NAME}-build${VERSION_CODE}"
-            RELEASE_TITLE="Swayog Employee App v${VERSION_NAME} — Build ${VERSION_CODE}"
-            
-            # Create and push the tag
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag -a "$RELEASE_TAG" -m "$RELEASE_TITLE"
-            git push origin "$RELEASE_TAG"
-            
-            echo "✅ Created and pushed tag: $RELEASE_TAG"
           fi
+
+          RELEASE_TAG="v${VERSION_NAME}-build${VERSION_CODE}"
+          RELEASE_TITLE="Swayog Employee App v${VERSION_NAME} — Build ${VERSION_CODE}"
 
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_OUTPUT
@@ -115,7 +103,7 @@ jobs:
           echo "MANDATORY=$MANDATORY" >> $GITHUB_OUTPUT
           echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_OUTPUT
-          echo "🚀 Building Swayog Release: Version $VERSION_NAME (Build $VERSION_CODE)"
+          echo "🚀 Target Release: Version $VERSION_NAME (Build $VERSION_CODE) -> Tag $RELEASE_TAG"
 
       - name: Decode Production Release Keystore
         id: keystore
@@ -126,9 +114,9 @@ jobs:
             mkdir -p android-app/keystore
             echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > android-app/keystore/release.jks
             echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/android-app/keystore/release.jks" >> $GITHUB_ENV
-            echo " Production keystore decoded successfully"
+            echo "✅ Production keystore decoded successfully"
           else
-            echo " RELEASE_KEYSTORE_BASE64 secret is not set. Signing will fallback to debug/local keystore."
+            echo "::warning::RELEASE_KEYSTORE_BASE64 secret is not set. Signing will fallback to debug keystore."
           fi
 
       - name: Make Gradlew Executable
@@ -137,19 +125,24 @@ jobs:
       - name: Build and Sign Release APK
         working-directory: android-app
         env:
+          RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard.vercel.app/api/v1/' }}
           WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard.vercel.app' }}
-          PUBLIC_DISTRIBUTION_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://your-public-domain.com' }}
+          PUBLIC_DISTRIBUTION_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
         run: |
           ./gradlew assembleRelease \
             -PversionName="${{ steps.versioning.outputs.VERSION_NAME }}" \
             -PversionCode="${{ steps.versioning.outputs.VERSION_CODE }}" \
+            ${{ env.RELEASE_STORE_FILE && format('-PRELEASE_STORE_FILE={0}', env.RELEASE_STORE_FILE) || '' }} \
+            ${{ secrets.RELEASE_KEY_ALIAS && format('-PRELEASE_KEY_ALIAS={0}', secrets.RELEASE_KEY_ALIAS) || '' }} \
+            ${{ secrets.RELEASE_STORE_PASSWORD && format('-PRELEASE_STORE_PASSWORD={0}', secrets.RELEASE_STORE_PASSWORD) || '' }} \
+            ${{ secrets.RELEASE_KEY_PASSWORD && format('-PRELEASE_KEY_PASSWORD={0}', secrets.RELEASE_KEY_PASSWORD) || '' }} \
             --no-daemon --stacktrace
 
-      - name: Verify Built APK & Compute SHA-256 Checksum
+      - name: Verify Built APK & Calculate SHA-256
         id: apk_info
         run: |
           APK_PATH="android-app/app/build/outputs/apk/release/app-release.apk"
@@ -160,13 +153,13 @@ jobs:
             echo "::error::Release APK not found after assembleRelease!"
             exit 1
           fi
-          
+
           SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
           FILE_SIZE=$(stat -c%s "$APK_PATH")
-          
-          echo "Found APK at $APK_PATH ($FILE_SIZE bytes)"
-          echo "SHA-256: $SHA256"
-          
+
+          echo "Found APK: $APK_PATH ($FILE_SIZE bytes)"
+          echo "SHA-256:  $SHA256"
+
           echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
           echo "SHA256=$SHA256" >> $GITHUB_OUTPUT
           echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_OUTPUT
@@ -182,7 +175,7 @@ jobs:
           • Bug fixes and performance improvements' }}
           EOF
 
-      - name: Publish APK & Release Manifest to Cloudflare R2
+      - name: Publish APK & Canonical latest.json to Cloudflare R2
         working-directory: backend
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -192,6 +185,7 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
           PUBLIC_DISTRIBUTION_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL }}
+          WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard.vercel.app' }}
         run: |
           npm ci
           npx tsx scripts/deploy-release.ts \
@@ -203,6 +197,95 @@ jobs:
             "../release_notes.txt" \
             "${{ steps.versioning.outputs.RELEASE_TAG }}" \
             "${{ steps.versioning.outputs.RELEASE_TITLE }}"
+
+      - name: Validate Release Before Publishing
+        working-directory: backend
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME || 'swayog-dashboard' }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
+          EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
+          EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
+          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+        run: |
+          node -e '
+          const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
+          
+          async function validate() {
+            const client = new S3Client({
+              region: "auto",
+              endpoint: process.env.R2_ENDPOINT,
+              credentials: {
+                accessKeyId: process.env.R2_ACCESS_KEY_ID,
+                secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+              },
+            });
+
+            console.log("Fetching latest.json from R2...");
+            const res = await client.send(new GetObjectCommand({
+              Bucket: process.env.R2_BUCKET_NAME,
+              Key: "latest.json",
+            }));
+
+            const chunks = [];
+            for await (const chunk of res.Body) chunks.push(chunk);
+            const raw = Buffer.concat(chunks).toString("utf-8");
+            
+            const manifest = JSON.parse(raw);
+            console.log("Validating manifest contract...");
+
+            if (typeof manifest !== "object" || manifest === null) throw new Error("latest.json is not an object");
+            if (manifest.appId !== "com.swayog.employee") throw new Error("appId must be com.swayog.employee");
+            if (manifest.platform !== "android") throw new Error("platform must be android");
+            if (!manifest.versionCode || manifest.versionCode <= 0) throw new Error("versionCode must be > 0");
+            if (!manifest.versionName) throw new Error("versionName must not be empty");
+            if (!manifest.apkUrl || !manifest.apkUrl.startsWith("https://")) throw new Error("apkUrl must be HTTPS: " + manifest.apkUrl);
+            if (!/^[a-fA-F0-9]{64}$/.test(manifest.sha256)) throw new Error("sha256 must be 64 hex chars");
+            
+            if (String(manifest.versionCode) !== process.env.EXPECTED_VERSION_CODE) {
+              throw new Error(`Manifest versionCode (${manifest.versionCode}) does not match expected (${process.env.EXPECTED_VERSION_CODE})`);
+            }
+            if (manifest.sha256.toLowerCase() !== process.env.EXPECTED_SHA256.toLowerCase()) {
+              throw new Error(`Manifest sha256 does not match actual APK sha256`);
+            }
+
+            console.log("✅ All manifest validation checks passed successfully!");
+          }
+
+          validate().catch(err => {
+            console.error("::error::Release Validation Failed: " + err.message);
+            process.exit(1);
+          });
+          '
+
+      - name: Verify Public /latest.json Endpoint
+        env:
+          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+        run: |
+          CLEAN_BASE="${PUBLIC_URL%/}"
+          EP="$CLEAN_BASE/latest.json"
+          echo "Testing public endpoint: $EP"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$EP" || echo "000")
+          CONTENT_TYPE=$(curl -s -I "$EP" | grep -i "content-type" | tr -d '\r' || echo "")
+          echo "Response HTTP status: $HTTP_STATUS ($CONTENT_TYPE)"
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Public /latest.json is live and returned HTTP 200"
+          else
+            echo "⚠️ Public /latest.json returned HTTP $HTTP_STATUS (may take a few moments to propagate if deployed behind CDN)"
+          fi
+
+      - name: Create and Push Git Release Tag
+        run: |
+          RELEASE_TAG="${{ steps.versioning.outputs.RELEASE_TAG }}"
+          RELEASE_TITLE="${{ steps.versioning.outputs.RELEASE_TITLE }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$RELEASE_TAG" -m "$RELEASE_TITLE"
+          git push origin "$RELEASE_TAG"
+          echo "✅ Created and pushed Git tag: $RELEASE_TAG"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -216,39 +299,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify Public Update Endpoint (Sanity Check)
-        env:
-          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
-        run: |
-          if [ -n "$PUBLIC_URL" ]; then
-            CLEAN_BASE="${PUBLIC_URL%/}"
-            echo "Verifying public update endpoints..."
-            for EP in "$CLEAN_BASE/latest.json" "$CLEAN_BASE/releases/android/latest.json" "$CLEAN_BASE/app/android/latest.json"; do
-              echo "Checking: $EP"
-              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$EP" || echo "000")
-              CONTENT_TYPE=$(curl -s -I "$EP" | grep -i "content-type" | tr -d '\r' || echo "")
-              echo "Response HTTP status: $HTTP_STATUS ($CONTENT_TYPE)"
-              if [ "$HTTP_STATUS" = "200" ]; then
-                echo "✅ Public endpoint accessible"
-              else
-                echo "⚠️ Public endpoint returned HTTP $HTTP_STATUS"
-              fi
-            done
-          else
-            echo "⚠️ R2_PUBLIC_URL not configured - skipping public endpoint verification"
-            echo "APK will be available via backend API endpoints instead"
-          fi
-
       - name: Backup APK to Private GitHub Run Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-v${{ steps.versioning.outputs.VERSION_NAME }}-build${{ steps.versioning.outputs.VERSION_CODE }}
+          name: app-release-${{ steps.versioning.outputs.RELEASE_TAG }}
           path: ${{ steps.apk_info.outputs.APK_PATH }}
           retention-days: 60
 
       - name: Release Deployment Summary
         run: |
-          echo "###  Production Release Successfully Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Production Release Successfully Deployed" >> $GITHUB_STEP_SUMMARY
           echo "- **App:** Swayog Employee App" >> $GITHUB_STEP_SUMMARY
           echo "- **Version Name:** \`v${{ steps.versioning.outputs.VERSION_NAME }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Version Code / Build:** \`${{ steps.versioning.outputs.VERSION_CODE }}\`" >> $GITHUB_STEP_SUMMARY
@@ -257,5 +317,7 @@ jobs:
           echo "- **SHA-256 Checksum:** \`${{ steps.apk_info.outputs.SHA256 }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **File Size:** \`$(( ${{ steps.apk_info.outputs.FILE_SIZE }} / 1024 / 1024 )) MB\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Distribution Layer:** Cloudflare R2 (\`swayog-dashboard\`)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Update Manifests:** \`releases/android/latest.json\`, \`app/android/latest.json\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **GitHub Release:** Created with tag \`${{ steps.versioning.outputs.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Canonical Manifest:** \`latest.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **APK Storage Key:** \`releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}/app-release.apk\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Public Endpoint:** \`${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}/latest.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Release:** Published with tag \`${{ steps.versioning.outputs.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY

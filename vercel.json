@@ -30,6 +30,10 @@
       "destination": "/api/index.ts"
     },
     {
+      "source": "/releases/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index.ts"
     },
@@ -38,7 +42,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api/|app/|latest\\.json).*)",
+      "source": "/((?!api/|app/|releases/|latest\\.json).*)",
       "destination": "/index.html"
     }
   ]

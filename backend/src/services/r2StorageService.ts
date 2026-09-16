@@ -336,7 +336,7 @@ export function generatePublicUrl(objectKey: string): string {
     throw new Error("R2_ENDPOINT not configured");
   }
 
-  return `${env.R2_ENDPOINT}/${BUCKET_NAME}/${objectKey}`;
+  return `${env.R2_ENDPOINT}/${getBucketName()}/${objectKey}`;
 }
 
 /**

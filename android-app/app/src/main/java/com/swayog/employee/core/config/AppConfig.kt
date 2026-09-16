@@ -42,7 +42,7 @@ object AppConfig {
     /**
      * ONE STABLE PERMANENT PUBLIC UPDATE MANIFEST ENDPOINT
      * This URL never changes across builds:
-     * https://<PUBLIC-DOMAIN>/latest.json
+     * https://<PUBLIC-DOMAIN>/api/v1/app/update/latest.json
      */
     val PUBLIC_UPDATE_ENDPOINT: String
         get() {
@@ -54,6 +54,6 @@ object AppConfig {
             } else {
                 PRODUCTION_PUBLIC_URL.removeSuffix("/")
             }
-            return "$effectiveBase/latest.json"
+            return "$effectiveBase/api/v1/app/update/latest.json"
         }
 }
