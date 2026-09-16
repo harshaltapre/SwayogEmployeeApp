@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -52,6 +54,7 @@ class AppUpdateManager @Inject constructor(
     val updateState: StateFlow<AppUpdateState> = _updateState.asStateFlow()
 
     private var lastAutoCheckTimestamp: Long = 0L
+    private val checkMutex = Mutex()
 
     val installedVersionCode: Long
         get() = try {
@@ -75,70 +78,79 @@ class AppUpdateManager @Inject constructor(
      * If [autoDownload] is true and an update is available, download and install will be initiated automatically.
      */
     suspend fun checkForUpdates(force: Boolean = false, autoDownload: Boolean = false): CheckResult {
-        val now = System.currentTimeMillis()
-        if (!force && (now - lastAutoCheckTimestamp < CHECK_INTERVAL_MILLIS)) {
-            Log.d(TAG, "Skipping auto update check: within 6h window (elapsed: ${(now - lastAutoCheckTimestamp) / 1000}s)")
-            return CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
-        }
+        return checkMutex.withLock {
+            val now = System.currentTimeMillis()
+            if (!force && (now - lastAutoCheckTimestamp < CHECK_INTERVAL_MILLIS)) {
+                Log.d(TAG, "Skipping auto update check: within 6h window (elapsed: ${(now - lastAutoCheckTimestamp) / 1000}s)")
+                return@withLock CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
+            }
 
-        // Don't interrupt an ongoing download or verification
-        val currentState = _updateState.value
-        if (currentState is AppUpdateState.Downloading) {
-            return CheckResult.UpdateAvailable(currentState.manifest, downloading = true)
-        } else if (currentState is AppUpdateState.Verifying) {
-            return CheckResult.UpdateAvailable(currentState.manifest, downloading = true)
-        }
+            // Don't interrupt an ongoing download or verification
+            val currentState = _updateState.value
+            if (currentState is AppUpdateState.Downloading) {
+                return@withLock CheckResult.UpdateAvailable(currentState.manifest, downloading = true)
+            } else if (currentState is AppUpdateState.Verifying) {
+                return@withLock CheckResult.UpdateAvailable(currentState.manifest, downloading = true)
+            }
 
-        _updateState.value = AppUpdateState.Checking
+            _updateState.value = AppUpdateState.Checking
 
-        return withContext(Dispatchers.IO) {
-            try {
-                Log.d(TAG, "Update check started")
-                val primaryUrl = AppConfig.PUBLIC_UPDATE_ENDPOINT
-                Log.d(TAG, "Primary public manifest URL: $primaryUrl")
-
-                var manifest: AppUpdateManifest? = null
-                var lastHttpCode = 0
-                var lastResponseBody: String? = null
-
-                // 1. Try stable public endpoint first
+            withContext(Dispatchers.IO) {
                 try {
-                    val request = Request.Builder()
-                        .url(primaryUrl)
-                        .header("User-Agent", "SwayogEmployeeApp/${installedVersionName}")
-                        .header("Cache-Control", "no-cache, no-store")
-                        .build()
+                    Log.d(TAG, "Update check started")
+                    val manifestUrls = listOf(
+                        AppConfig.PUBLIC_UPDATE_ENDPOINT,
+                        AppConfig.API_UPDATE_ENDPOINT,
+                        "${AppConfig.API_BASE_URL}app/android/latest.json"
+                    ).distinct()
+                    Log.d(TAG, "Manifest URLs: ${manifestUrls.joinToString()}")
 
-                    val response = okHttpClient.newCall(request).execute()
-                    lastHttpCode = response.code
-                    lastResponseBody = try { response.body?.string() } catch (_: Exception) { null }
-                    Log.d(TAG, "Primary URL HTTP status: $lastHttpCode")
-                    Log.d(TAG, "Response body length: ${lastResponseBody?.length ?: 0}")
+                    var manifest: AppUpdateManifest? = null
+                    var lastHttpCode = 0
+                    var lastResponseBody: String? = null
 
-                    if (response.isSuccessful && !lastResponseBody.isNullOrBlank()) {
-                        try {
-                            manifest = Gson().fromJson(lastResponseBody, AppUpdateManifest::class.java)
-                            Log.d(TAG, "Successfully retrieved manifest from primary URL")
-                            Log.d(TAG, "Parsed versionName: ${manifest.versionName}, versionCode: ${manifest.versionCode}")
-                        } catch (parseError: Exception) {
-                            Log.e(TAG, "Failed to parse manifest from primary URL (HTTP 200 but invalid JSON): ${parseError.message}")
-                            Log.e(TAG, "Response body preview: ${lastResponseBody?.take(200)}")
-                            // Don't fall back if primary returned 200 but parse failed - this is a manifest corruption issue
-                            _updateState.value = AppUpdateState.Error(
-                                message = "Update information is corrupted (invalid manifest format).",
-                                isNetworkError = false,
-                                kind = UpdateErrorKind.INVALID_MANIFEST
-                            )
-                            return@withContext CheckResult.Error("Update information is corrupted (invalid manifest format).")
+                    // Try the CDN first, then the backend compatibility endpoints.
+                    for (manifestUrl in manifestUrls) {
+                    try {
+                        val request = Request.Builder()
+                            .url(manifestUrl)
+                            .header("User-Agent", "SwayogEmployeeApp/${installedVersionName}")
+                            .header("Cache-Control", "no-cache, no-store")
+                            .build()
+
+                        okHttpClient.newCall(request).execute().use { response ->
+                            lastHttpCode = response.code
+                            lastResponseBody = response.body?.string()
+                            Log.d(TAG, "Manifest URL $manifestUrl HTTP status: $lastHttpCode")
+
+                            if (response.isSuccessful && !lastResponseBody.isNullOrBlank()) {
+                                try {
+                                    val parsed = Gson().fromJson(lastResponseBody, AppUpdateManifest::class.java)
+                                    if (parsed.versionCode > 0 &&
+                                        parsed.versionName.isNotBlank() &&
+                                        parsed.apkUrl.isNotBlank() &&
+                                        parsed.sha256.matches(Regex("^[A-Fa-f0-9]{64}$"))
+                                    ) {
+                                        manifest = parsed
+                                        Log.d(TAG, "Successfully retrieved valid manifest from $manifestUrl")
+                                    } else {
+                                        Log.w(TAG, "Ignoring invalid manifest from $manifestUrl")
+                                    }
+                                } catch (parseError: Exception) {
+                                    Log.w(TAG, "Failed to parse manifest from $manifestUrl: ${parseError.message}")
+                                }
+                            }
                         }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Manifest URL check failed for $manifestUrl: ${e.message}")
+                        }
+                        if (manifest != null) break
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Primary manifest URL check failed: ${e.message}")
-                }
 
-                if (manifest != null) {
+                    val availableManifest = manifest
+                    if (availableManifest != null) {
                     // Validate manifest schema
-                    if (manifest.versionCode <= 0) {
+                    if (availableManifest.versionCode <= 0) {
                         val errorMsg = "Update information is invalid (invalid build number)."
                         _updateState.value = AppUpdateState.Error(message = errorMsg, isNetworkError = false)
                         return@withContext CheckResult.Error(errorMsg)
@@ -146,34 +158,34 @@ class AppUpdateManager @Inject constructor(
 
                     lastAutoCheckTimestamp = System.currentTimeMillis()
 
-                    val serverCode = manifest.versionCode
+                    val serverCode = availableManifest.versionCode
                     val currentCode = installedVersionCode
-                    val minCode = manifest.minimumVersionCode ?: 0L
+                    val minCode = availableManifest.minimumVersionCode ?: 0L
 
-                    Log.d(TAG, "Update check result: serverCode=$serverCode, installedCode=$currentCode, minCode=$minCode, mandatory=${manifest.mandatory}")
+                    Log.d(TAG, "Update check result: serverCode=$serverCode, installedCode=$currentCode, minCode=$minCode, mandatory=${availableManifest.mandatory}")
 
                     if (serverCode > currentCode) {
-                        if (manifest.apkUrl.isBlank()) {
+                        if (availableManifest.apkUrl.isBlank()) {
                             val errorMsg = "New version was found, but the update package is currently unavailable."
                             _updateState.value = AppUpdateState.Error(message = errorMsg, isNetworkError = false, kind = UpdateErrorKind.APK_NOT_FOUND)
                             return@withContext CheckResult.Error(errorMsg)
                         }
 
-                        val isMandatory = manifest.mandatory || (currentCode < minCode)
+                        val isMandatory = availableManifest.mandatory || (currentCode < minCode)
                         if (autoDownload) {
                             Log.i(TAG, "Update available and autoDownload=true. Initiating direct download & install.")
                             scope.launch {
-                                downloadAndInstall(manifest)
+                                downloadAndInstall(availableManifest)
                             }
-                            CheckResult.UpdateAvailable(manifest, downloading = true)
-                        } else {
+                            CheckResult.UpdateAvailable(availableManifest, downloading = true)
+                            } else {
                             _updateState.value = AppUpdateState.UpdateAvailable(
-                                manifest = manifest,
+                                manifest = availableManifest,
                                 isMandatory = isMandatory,
                                 installedVersionName = installedVersionName,
                                 installedVersionCode = currentCode
                             )
-                            CheckResult.UpdateAvailable(manifest, downloading = false)
+                            CheckResult.UpdateAvailable(availableManifest, downloading = false)
                         }
                     } else if (serverCode < currentCode) {
                         // Installed version is newer than server version
@@ -209,8 +221,8 @@ class AppUpdateManager @Inject constructor(
                         isNetworkError = lastHttpCode == 0
                     )
                     CheckResult.Error(displayError)
-                }
-            } catch (e: Exception) {
+                    }
+                } catch (e: Exception) {
                 Log.e(TAG, "Exception during update check: ${e.message}", e)
                 val (displayError, isNet) = when (e) {
                     is java.net.UnknownHostException -> "No internet connection. Please check your network." to true
@@ -224,7 +236,8 @@ class AppUpdateManager @Inject constructor(
                     message = displayError,
                     isNetworkError = isNet
                 )
-                CheckResult.Error(displayError)
+                    CheckResult.Error(displayError)
+                }
             }
         }
     }
