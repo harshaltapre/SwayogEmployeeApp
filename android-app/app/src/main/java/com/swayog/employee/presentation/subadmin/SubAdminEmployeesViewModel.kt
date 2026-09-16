@@ -24,28 +24,31 @@ import javax.inject.Inject
 data class SubAdminEmployeesUiState(
     val isLoading: Boolean = true,
     val employees: List<Employee> = emptyList(),
+    val filteredEmployees: List<Employee> = emptyList(),
     val faceEnrollments: List<EmployeeFaceEnrollmentItem> = emptyList(),
     val attendanceRules: AttendanceRule = AttendanceRule(),
     val tasks: List<Task> = emptyList(),
     val error: String? = null
 ) {
-    val filteredEmployees: List<Employee>
-        get() = employees.filter { emp ->
-            val role = (emp.role ?: "").lowercase()
-            val jobRole = (emp.employeeProfile?.jobRole ?: "").lowercase()
-            val allowedRoles = setOf(
-                "electrical engineer", "electrical_engineer",
-                "site survey engineer", "site_survey_engineer",
-                "o&m technician", "om_technician",
-                "service engineer", "service_engineer",
-                "field technician", "field_technician",
-                "technician", "intern", "employee", "service coordinator", "service_coordinator"
-            )
-            allowedRoles.contains(role) || allowedRoles.contains(jobRole)
-        }
-
     val avgRating: Double
         get() = if (filteredEmployees.isEmpty()) 0.0 else filteredEmployees.map { it.rating ?: 0.0 }.average()
+}
+
+private val ALLOWED_ROLES = setOf(
+    "electrical engineer", "electrical_engineer",
+    "site survey engineer", "site_survey_engineer",
+    "o&m technician", "om_technician",
+    "service engineer", "service_engineer",
+    "field technician", "field_technician",
+    "technician", "intern", "employee", "service coordinator", "service_coordinator"
+)
+
+private fun filterEmployees(employees: List<Employee>): List<Employee> {
+    return employees.filter { emp ->
+        val role = (emp.role ?: "").lowercase()
+        val jobRole = (emp.employeeProfile?.jobRole ?: "").lowercase()
+        ALLOWED_ROLES.contains(role) || ALLOWED_ROLES.contains(jobRole)
+    }
 }
 
 @HiltViewModel
@@ -67,7 +70,12 @@ class SubAdminEmployeesViewModel @Inject constructor(
     private fun observeData() {
         viewModelScope.launch {
             employeeRepository.getInternalUsersFlow("EMPLOYEE").collect { employees ->
-                _uiState.update { it.copy(employees = employees) }
+                _uiState.update { 
+                    it.copy(
+                        employees = employees,
+                        filteredEmployees = filterEmployees(employees)
+                    ) 
+                }
             }
         }
         viewModelScope.launch {

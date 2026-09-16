@@ -1819,6 +1819,7 @@ fun AttendanceScreen(
             }
         }
     }
+    }
 }
 }
 
@@ -3464,5 +3465,3 @@ fun calculateElapsedMinutes(isoString: String?): Int {
         0
     }
 }
-
-

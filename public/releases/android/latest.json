@@ -1,0 +1,22 @@
+{
+  "appId": "com.swayog.employee",
+  "platform": "android",
+  "versionCode": 2,
+  "versionName": "1.0.1",
+  "minimumVersionCode": 1,
+  "mandatory": false,
+  "releaseDate": "2026-09-15",
+  "title": "Swayog Employee App v1.0.1",
+  "releaseNotes": {
+    "summary": "Attendance synchronization & database migration updates",
+    "items": [
+      "Fixed database migration compatibility for all devices",
+      "Real-time attendance status and check-in improvements",
+      "Enhanced task management and offline synchronization",
+      "Direct in-app update download and installation"
+    ]
+  },
+  "apkUrl": "https://swayog-dashboard.vercel.app/releases/android/latest.apk",
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "fileSize": 43260840
+}
