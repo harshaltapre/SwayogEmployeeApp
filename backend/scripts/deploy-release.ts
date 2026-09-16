@@ -1,19 +1,15 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { uploadToR2, getFromR2, isR2Configured, getBucketName, generatePresignedUrl } from "../src/services/r2StorageService.js";
+import { uploadToR2, getFromR2, isR2Configured, getBucketName } from "../src/services/r2StorageService.js";
 import { AppUpdateManifest } from "../src/modules/app-update/appUpdate.controller.js";
 
 /**
- * Script to deploy a built APK release to Cloudflare R2 and update update manifests:
+ * Script to deploy a built APK release to Cloudflare R2 and update canonical manifests:
  * - releases/android/{versionName}/build-{versionCode}/app-release.apk
- * - releases/android/{versionName}/app-release.apk
  * - releases/android/latest.apk
- * - releases/android/{versionName}/build-{versionCode}/release.json
- * - releases/android/{versionName}/release.json
- * - releases/android/latest.json
- * - app/android/latest.json
- * - latest.json
+ * - latest.json (canonical root manifest)
+ * - releases/android/latest.json (backward compatibility)
  *
  * Usage:
  *   npx tsx scripts/deploy-release.ts <path-to-apk> <versionName> <versionCode> [minimumVersionCode] [mandatory] [notesFile] [releaseTag] [releaseTitle]
@@ -58,54 +54,51 @@ async function main() {
   console.log(`[Deploy] APK Size:    ${(fileSize / (1024 * 1024)).toFixed(2)} MB (${fileSize} bytes)`);
   console.log(`[Deploy] SHA-256:     ${sha256}`);
 
-  // Step 2: Parse user-facing release notes - output as flat string[] array
+  // Step 2: Parse user-facing release notes
   let releaseNotes: string[] = [
-    "Improved attendance tracking and calendar sync",
-    "Optimized working-hour calculations",
+    "Improved attendance tracking",
+    "Improved attendance working-time calculation",
+    "Improved attendance calendar synchronization",
+    "Improved profile synchronization",
     "Performance improvements and bug fixes"
   ];
 
   if (notesFile && fs.existsSync(notesFile)) {
     const rawNotes = fs.readFileSync(notesFile, "utf-8");
-    const rawLines = rawNotes.split("\n").map(l => l.trim().replace(/^[-*•]\s*/, "")).filter(Boolean);
+    const rawLines = rawNotes
+      .split("\n")
+      .map(l => l.trim().replace(/^[-*•]\s*/, ""))
+      .filter(Boolean);
     if (rawLines.length > 0) {
       releaseNotes = rawLines;
     }
   }
 
-  // Step 3: Upload APK to release hierarchy
+  // Step 3: Upload APK to canonical hierarchy
   const buildSpecificApkKey = `releases/android/${versionName}/build-${versionCode}/app-release.apk`;
-  const versionedApkKey = `releases/android/${versionName}/app-release.apk`;
   const latestApkKey = "releases/android/latest.apk";
 
   console.log(`\n[Deploy] Uploading APK to R2 targets:`);
   console.log(`  1. ${buildSpecificApkKey}`);
   await uploadToR2(apkBuffer, buildSpecificApkKey, "application/vnd.android.package-archive", `swayog-v${versionName}-${versionCode}.apk`);
 
-  console.log(`  2. ${versionedApkKey}`);
-  await uploadToR2(apkBuffer, versionedApkKey, "application/vnd.android.package-archive", `app-${versionName}.apk`);
-
-  console.log(`  3. ${latestApkKey}`);
+  console.log(`  2. ${latestApkKey}`);
   await uploadToR2(apkBuffer, latestApkKey, "application/vnd.android.package-archive", "app-release.apk");
 
-  // Determine public APK URL
+  // Determine authoritative public APK URL (permanent HTTPS URL, never 7-day presigned)
   const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
   let publicApkUrl = "";
   
   if (publicBaseUrl && !publicBaseUrl.includes(".r2.cloudflarestorage.com") && !publicBaseUrl.includes("your-public-domain.com")) {
     publicApkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${buildSpecificApkKey}`;
+    console.log(`[Deploy] Using public CDN URL for APK: ${publicApkUrl}`);
   } else {
-    try {
-      // Generate presigned URL valid for up to 7 days (604,800 seconds max in AWS SigV4)
-      publicApkUrl = await generatePresignedUrl(buildSpecificApkKey, 604800);
-      console.log(`[Deploy] Generated 7-day presigned download URL for APK`);
-    } catch {
-      // Fallback to permanent backend redirect endpoint
-      publicApkUrl = "https://swayog-dashboard.vercel.app/api/v1/app/update/download/latest";
-    }
+    const webDomain = process.env.WEB_DOMAIN || "https://swayog-dashboard.vercel.app";
+    publicApkUrl = `${webDomain.replace(/\/$/, "")}/${buildSpecificApkKey}`;
+    console.log(`[Deploy] Using web dashboard download URL for APK: ${publicApkUrl}`);
   }
 
-  // Step 4: Construct release metadata conforming to Section 5
+  // Step 4: Construct release metadata
   const manifest: AppUpdateManifest = {
     appId: "com.swayog.employee",
     platform: "android",
@@ -117,8 +110,8 @@ async function main() {
     apkUrl: publicApkUrl,
     sha256,
     fileSize,
-    title: `Swayog v${versionName}`,
-    releaseNotes, // Flat string[] array
+    title: `Swayog Employee App v${versionName} — Build ${versionCode}`,
+    releaseNotes,
     releaseTag: releaseTag || `v${versionName}-build${versionCode}`,
     releaseTitle: releaseTitle || `Swayog Employee App v${versionName} — Build ${versionCode}`,
   };
@@ -126,44 +119,35 @@ async function main() {
   const manifestJson = JSON.stringify(manifest, null, 2);
   const manifestBuffer = Buffer.from(manifestJson, "utf-8");
 
-  // Step 5: Upload manifests across all required keys
-  const manifestKeys = [
-    `releases/android/${versionName}/build-${versionCode}/release.json`,
-    `releases/android/${versionName}/release.json`,
-    "releases/android/latest.json",
-    "app/android/latest.json",
-    "latest.json",
-  ];
-
-  console.log(`\n[Deploy] Uploading update manifests to R2:`);
-  for (const mKey of manifestKeys) {
-    console.log(`  - ${mKey}`);
-    await uploadToR2(manifestBuffer, mKey, "application/json", path.basename(mKey));
-  }
+  // Step 5: Upload canonical manifest to latest.json and compatibility key
+  console.log(`\n[Deploy] Uploading canonical manifest to R2:`);
+  console.log(`  - latest.json (Primary)`);
+  await uploadToR2(manifestBuffer, "latest.json", "application/json", "latest.json");
+  console.log(`  - releases/android/latest.json (Compatibility)`);
+  await uploadToR2(manifestBuffer, "releases/android/latest.json", "application/json", "latest.json");
 
   // Step 6: Verify uploaded manifest directly from R2
   console.log(`\n[Deploy] Verifying uploaded manifest in R2...`);
-  const verifyBuffer = await getFromR2("releases/android/latest.json");
+  const verifyBuffer = await getFromR2("latest.json");
   const verifyManifest = JSON.parse(verifyBuffer.toString("utf-8")) as AppUpdateManifest;
   if (verifyManifest.versionCode !== versionCode || verifyManifest.sha256 !== sha256) {
-    throw new Error(`Verification failed: R2 latest manifest does not match expected release (versionCode: ${verifyManifest.versionCode}, sha: ${verifyManifest.sha256})`);
+    throw new Error(`Verification failed: R2 latest.json does not match expected release (versionCode: ${verifyManifest.versionCode}, sha: ${verifyManifest.sha256})`);
   }
-  console.log(`✅ Verified: R2 manifest accurately reflects release v${versionName} (Build ${versionCode})`);
+  console.log(`✅ Verified: R2 latest.json accurately reflects release v${versionName} (Build ${versionCode})`);
 
-  // Step 7: HTTP accessibility verification if a public domain is configured
-  if (publicBaseUrl) {
-    try {
-      const publicManifestUrl = `${publicBaseUrl.replace(/\/$/, "")}/releases/android/latest.json`;
-      console.log(`[Deploy] Testing HTTP fetch from public CDN: ${publicManifestUrl}...`);
-      const httpRes = await fetch(publicManifestUrl, { method: "HEAD" });
-      if (httpRes.ok) {
-        console.log(`✅ Public CDN endpoint is live and accessible (HTTP ${httpRes.status})`);
-      } else {
-        console.warn(`⚠️ Public CDN returned status HTTP ${httpRes.status} for manifest check.`);
-      }
-    } catch (e: any) {
-      console.warn(`⚠️ Could not complete external HTTP check: ${e.message}`);
+  // Step 7: HTTP accessibility check if public domain is provided
+  const checkUrl = publicBaseUrl || "https://swayog-dashboard.vercel.app";
+  try {
+    const publicManifestUrl = `${checkUrl.replace(/\/$/, "")}/latest.json`;
+    console.log(`[Deploy] Testing HTTP fetch from: ${publicManifestUrl}...`);
+    const httpRes = await fetch(publicManifestUrl, { method: "HEAD" });
+    if (httpRes.ok) {
+      console.log(`✅ Public endpoint is live and accessible (HTTP ${httpRes.status})`);
+    } else {
+      console.warn(`⚠️ Public endpoint returned status HTTP ${httpRes.status} for manifest check.`);
     }
+  } catch (e: any) {
+    console.warn(`⚠️ External HTTP check skipped or unreachable: ${e.message}`);
   }
 
   console.log("\n========================================================");

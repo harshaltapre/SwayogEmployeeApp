@@ -136,8 +136,20 @@ class AppUpdateManager @Inject constructor(
                     }
 
                     // Pre-parse validation: detect HTML/SPA fallback or malformed response
-                    val trimmedBody = rawBody.trim()
+                    var trimmedBody = rawBody.trim()
                     val isHtml = contentType.contains("text/html", ignoreCase = true) || trimmedBody.startsWith("<")
+
+                    // Handle edge case where server/proxy returned a stringified JSON (e.g. "\"{\\\"appId\\\":...}\"")
+                    if (trimmedBody.startsWith("\"") && trimmedBody.endsWith("\"") && trimmedBody.length > 2) {
+                        try {
+                            val unwrapped = Gson().fromJson(trimmedBody, String::class.java)
+                            if (unwrapped != null && unwrapped.trim().startsWith("{")) {
+                                Log.i(TAG, "Unwrapped string-encoded JSON payload")
+                                trimmedBody = unwrapped.trim()
+                            }
+                        } catch (_: Exception) {}
+                    }
+
                     val isJsonObject = trimmedBody.startsWith("{") && trimmedBody.endsWith("}")
 
                     if (isHtml || !isJsonObject) {

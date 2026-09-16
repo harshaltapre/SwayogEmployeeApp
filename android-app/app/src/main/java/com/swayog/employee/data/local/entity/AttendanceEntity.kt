@@ -1,9 +1,11 @@
 package com.swayog.employee.data.local.entity
 
+import androidx.annotation.Keep
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.swayog.employee.data.model.AttendanceRecord
 
+@Keep
 @Entity(tableName = "attendance")
 data class AttendanceEntity(
     @PrimaryKey

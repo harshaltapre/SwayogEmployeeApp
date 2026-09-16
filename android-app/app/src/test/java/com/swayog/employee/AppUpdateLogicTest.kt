@@ -164,4 +164,65 @@ class AppUpdateLogicTest {
         }
         assertFalse("Network error must be safely caught without crashing the app", didCrash)
     }
+
+    @Test
+    fun test13_gsonDeserialization_canonicalManifest() {
+        val json = """
+        {
+          "appId": "com.swayog.employee",
+          "platform": "android",
+          "versionName": "1.0.0",
+          "versionCode": 21,
+          "minimumVersionCode": 1,
+          "mandatory": false,
+          "releaseDate": "2026-09-16",
+          "releaseTag": "v1.0.0-build21",
+          "releaseTitle": "Swayog Employee App v1.0.0 — Build 21",
+          "releaseNotes": [
+            "Improved attendance tracking",
+            "Bug fixes and performance improvements"
+          ],
+          "apkUrl": "https://swayog-dashboard.vercel.app/releases/android/1.0.0/build-21/app-release.apk",
+          "sha256": "dd5422cce433152653308bb0ba04ba6159a35ebf4c4b9f90eeb32670289ba3c4",
+          "fileSize": 76872575
+        }
+        """.trimIndent()
+
+        val parsed = com.google.gson.Gson().fromJson(json, AppUpdateManifest::class.java)
+        assertEquals("com.swayog.employee", parsed.appId)
+        assertEquals("android", parsed.platform)
+        assertEquals(21L, parsed.versionCode)
+        assertEquals("1.0.0", parsed.versionName)
+        assertEquals(2, parsed.releaseNotes.size)
+        assertEquals("Improved attendance tracking", parsed.releaseNotes[0])
+    }
+
+    @Test
+    fun test14_gsonDeserialization_stringEncodedJsonUnwrapped() {
+        val rawJson = """{"appId":"com.swayog.employee","platform":"android","versionName":"1.0.0","versionCode":21,"mandatory":false,"apkUrl":"https://example.com/app.apk","sha256":"dd5422cce433152653308bb0ba04ba6159a35ebf4c4b9f90eeb32670289ba3c4","releaseNotes":["Note 1"]}"""
+        // Simulate stringified JSON (wrapped in quotes)
+        val stringified = com.google.gson.Gson().toJson(rawJson)
+        assertTrue(stringified.startsWith("\"") && stringified.endsWith("\""))
+
+        // Unwrapping logic
+        val unwrapped = com.google.gson.Gson().fromJson(stringified, String::class.java)
+        val parsed = com.google.gson.Gson().fromJson(unwrapped, AppUpdateManifest::class.java)
+        assertEquals(21L, parsed.versionCode)
+        assertEquals("1.0.0", parsed.versionName)
+    }
+
+    @Test
+    fun test15_scenarioVerification() {
+        // Scenario 1: Installed 1, Server 20 -> UPDATE_AVAILABLE
+        val s1Manifest = AppUpdateManifest(versionCode = 20L, versionName = "1.0.0", apkUrl = "url", sha256 = "sha")
+        assertTrue("Scenario 1: Server 20 > Installed 1 -> Update available", isUpdateAvailable(1L, s1Manifest.versionCode))
+
+        // Scenario 2: Installed 20, Server 20 -> UP_TO_DATE
+        val s2Manifest = AppUpdateManifest(versionCode = 20L, versionName = "1.0.0", apkUrl = "url", sha256 = "sha")
+        assertFalse("Scenario 2: Server 20 == Installed 20 -> Up to date", isUpdateAvailable(20L, s2Manifest.versionCode))
+
+        // Scenario 3: Installed 21, Server 20 -> NO_DOWNGRADE
+        val s3Manifest = AppUpdateManifest(versionCode = 20L, versionName = "1.0.0", apkUrl = "url", sha256 = "sha")
+        assertFalse("Scenario 3: Installed 21 > Server 20 -> No downgrade", isUpdateAvailable(21L, s3Manifest.versionCode))
+    }
 }

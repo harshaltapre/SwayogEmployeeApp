@@ -1,8 +1,10 @@
 package com.swayog.employee.data.local.entity
 
+import androidx.annotation.Keep
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+@Keep
 @Entity(tableName = "daily_commits")
 data class DailyCommitEntity(
     @PrimaryKey

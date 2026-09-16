@@ -1,0 +1,24 @@
+{
+  "appId": "com.swayog.employee",
+  "platform": "android",
+  "versionName": "1.0.0",
+  "versionCode": 20,
+  "minimumVersionCode": 1,
+  "mandatory": false,
+  "releaseDate": "2026-09-15",
+  "releaseTag": "v1.0.0-build20",
+  "releaseTitle": "Swayog Employee App v1.0.0 — Build 20",
+  "releaseNotes": [
+    "Improved attendance tracking",
+    "Improved attendance working-time calculation",
+    "Improved attendance calendar synchronization",
+    "Improved employee/admin attendance synchronization",
+    "Improved GPS attendance verification",
+    "Improved profile synchronization",
+    "Improved app update system",
+    "Bug fixes and performance improvements"
+  ],
+  "apkUrl": "https://swayog-dashboard.vercel.app/api/v1/app/update/download/latest",
+  "sha256": "dd5422cce433152653308bb0ba04ba6159a35ebf4c4b9f90eeb32670289ba3c4",
+  "fileSize": 76872575
+}

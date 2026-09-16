@@ -1,10 +1,12 @@
 package com.swayog.employee.data.local.entity
 
+import androidx.annotation.Keep
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.swayog.employee.data.model.Task
 
+@Keep
 @Entity(
     tableName = "tasks",
     indices = [
