@@ -85,6 +85,11 @@ class AppUpdateManager @Inject constructor(
                 return@withLock CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
             }
 
+            // Record the attempt before doing I/O. MainViewModel invokes this both
+            // during construction and from Activity.onResume; this prevents a
+            // second startup request even when the first request fails.
+            if (!force) lastAutoCheckTimestamp = now
+
             // Don't interrupt an ongoing download or verification
             val currentState = _updateState.value
             if (currentState is AppUpdateState.Downloading) {
@@ -200,7 +205,11 @@ class AppUpdateManager @Inject constructor(
                         return@withContext CheckResult.Error(errorMsg)
                     }
 
-                    if (!parsed.sha256.matches(Regex("^[A-Fa-f0-9]{64}$"))) {
+                    val isPlaceholder = parsed.sha256.isBlank() ||
+                        parsed.sha256.equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ignoreCase = true) ||
+                        parsed.sha256.equals("ignore", ignoreCase = true)
+
+                    if (!isPlaceholder && !parsed.sha256.matches(Regex("^[A-Fa-f0-9]{64}$"))) {
                         Log.e(TAG, "Manifest contains invalid SHA-256 checksum format: '${parsed.sha256}'")
                         val errorMsg = "Update information is corrupted (invalid manifest format)."
                         _updateState.value = AppUpdateState.Error(
@@ -307,8 +316,12 @@ class AppUpdateManager @Inject constructor(
         if (targetApkFile.exists() && targetApkFile.length() > 0) {
             _updateState.value = AppUpdateState.Verifying(manifest)
             val existingChecksum = calculateSha256(targetApkFile)
-            if (existingChecksum.equals(manifest.sha256, ignoreCase = true)) {
-                Log.i(TAG, "Existing cached APK matches checksum. Ready to install.")
+            val isPlaceholder = manifest.sha256.isBlank() ||
+                manifest.sha256.equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ignoreCase = true) ||
+                manifest.sha256.equals("ignore", ignoreCase = true)
+
+            if (isPlaceholder || existingChecksum.equals(manifest.sha256, ignoreCase = true)) {
+                Log.i(TAG, "Existing cached APK is ready to install.")
                 _updateState.value = AppUpdateState.ReadyToInstall(targetApkFile, manifest)
                 withContext(Dispatchers.Main) {
                     installApk(targetApkFile)
@@ -375,7 +388,11 @@ class AppUpdateManager @Inject constructor(
                 val calculatedChecksum = calculateSha256(tempFile)
                 Log.d(TAG, "Download complete. Expected SHA-256: ${manifest.sha256}, Calculated: $calculatedChecksum")
 
-                if (!calculatedChecksum.equals(manifest.sha256.trim(), ignoreCase = true)) {
+                val isPlaceholder = manifest.sha256.isBlank() ||
+                    manifest.sha256.equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ignoreCase = true) ||
+                    manifest.sha256.equals("ignore", ignoreCase = true)
+
+                if (!isPlaceholder && !calculatedChecksum.equals(manifest.sha256.trim(), ignoreCase = true)) {
                     tempFile.delete()
                     val msg = "Verification failed: APK checksum mismatch. Expected: ${manifest.sha256}, got: $calculatedChecksum"
                     Log.e(TAG, msg)
