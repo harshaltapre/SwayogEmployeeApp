@@ -34,8 +34,11 @@ data class AppUpdateManifest(
     @SerializedName("releaseDate")
     val releaseDate: String? = null,
 
-    @SerializedName("title")
-    val title: String? = null,
+    @SerializedName("releaseTag")
+    val releaseTag: String? = null,
+
+    @SerializedName("releaseTitle", alternate = ["title"])
+    val releaseTitle: String? = null,
 
     @SerializedName("releaseNotes")
     @JsonAdapter(ReleaseNotesDeserializer::class)
@@ -57,7 +60,10 @@ data class AppUpdateManifest(
         get() = releaseNotesPayload.items
 
     val releaseSummary: String?
-        get() = releaseNotesPayload.summary.takeIf { it.isNotBlank() } ?: title
+        get() = releaseNotesPayload.summary.takeIf { it.isNotBlank() } ?: releaseTitle
+
+    val title: String?
+        get() = releaseTitle
 }
 
 data class ReleaseNotesData(

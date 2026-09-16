@@ -66,6 +66,11 @@ android {
         buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
         buildConfigField("String", "MAPS_API_KEY", "\"${getLocalProperty("MAPS_API_KEY", "")}\"")
         buildConfigField("String", "PUBLIC_DISTRIBUTION_URL", "\"${getLocalProperty("PUBLIC_DISTRIBUTION_URL", "https://your-public-domain.com")}\"")
+
+        // Memory optimization settings
+        ndk {
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
+        }
     }
 
     signingConfigs {
@@ -105,6 +110,10 @@ android {
             )
             buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard.vercel.app/api/v1/")}\"")
             buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
+            
+            // Memory optimization for release builds
+            isJniDebuggable = false
+            isRenderscriptDebuggable = false
         }
         debug {
             isDebuggable = true
@@ -265,6 +274,14 @@ afterEvaluate {
         val compileJar = layout.buildDirectory.file("intermediates/compile_app_classes_jar/debug/bundleDebugClassesToCompileJar/classes.jar")
         val debugKotlinDir = layout.buildDirectory.dir("tmp/kotlin-classes/debug")
         classpath = classpath + files(runtimeJar, compileJar, debugKotlinDir)
+    }
+}
+
+// Clean task to force Room code regeneration
+tasks.register("cleanRoom") {
+    doLast {
+        delete(file("${project.projectDir}/build/generated"))
+        delete(file("${project.projectDir}/app/build/generated"))
     }
 }
 

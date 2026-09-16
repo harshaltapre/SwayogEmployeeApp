@@ -20,6 +20,7 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 5000,
+    publicDir: 'public',
     rollupOptions: {
       output: {
         manualChunks(id) {

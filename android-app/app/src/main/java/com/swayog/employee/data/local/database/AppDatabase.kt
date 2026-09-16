@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.swayog.employee.data.local.dao.*
 import com.swayog.employee.data.local.entity.*
 
@@ -17,8 +19,8 @@ import com.swayog.employee.data.local.entity.*
         CustomerEntity::class,
         OutboxQueueEntity::class
     ],
-    version = 14,
-    exportSchema = false
+    version = 15,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     
@@ -33,6 +35,16 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
         
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add indexes for better query performance
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_attendance_employeeId_date ON attendance(employeeId, date)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_attendance_date ON attendance(date)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_task_employeeId ON task(employeeId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_outboxQueue_isSynced ON outboxQueue(isSynced)")
+            }
+        }
+        
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -40,7 +52,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "swayog_employee_database"
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_14_15)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

@@ -69,8 +69,8 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             appUpdateManager.checkForUpdates(force = false)
         }
-        // Fetch latest designation from server periodically so web changes propagate in real time
-        startPeriodicProfileSync()
+        // Initial profile refresh
+        refreshUserProfile()
     }
 
     /**
@@ -87,20 +87,6 @@ class MainViewModel @Inject constructor(
                 }
             } catch (_: Exception) {
                 // Silently ignore network errors during background sync
-            }
-        }
-    }
-
-    /**
-     * Runs [refreshUserProfile] every 5 minutes while the app is alive.
-     * This ensures designation changes made from the web dashboard are reflected
-     * in the app without requiring a logout/login cycle.
-     */
-    private fun startPeriodicProfileSync() {
-        viewModelScope.launch {
-            while (true) {
-                delay(5 * 60 * 1000L) // 5 minutes
-                refreshUserProfile()
             }
         }
     }

@@ -20,4 +20,7 @@ npm run bundle:vercel --prefix backend
 echo "Building frontend with Vite..."
 vite build
 
+echo "Copying public files to dist..."
+cp -r public/* dist/
+
 echo "vercel build script completed"

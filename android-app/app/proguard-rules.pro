@@ -5,20 +5,11 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep line number information for debugging stack traces
+-keepattributes SourceFile,LineNumberTable
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Keep source file name for better crash reports
+-keepattributes *Annotation*
 
 # Retrofit
 -dontwarn retrofit2.**
@@ -59,9 +50,10 @@
 # DataStore
 -dontwarn androidx.datastore.**
 
-# Jetpack Compose
+# Jetpack Compose - Optimize for better shrinking
 -keep class androidx.compose.** { *; }
 -keep interface androidx.compose.** { *; }
+-keep class androidx.compose.ui.tooling.** { *; }
 
 # Firebase
 -keepattributes Signature
@@ -82,9 +74,21 @@
 -keep class androidx.biometric.** { *; }
 -dontwarn androidx.biometric.**
 
-# Keep data models intact for serialization/deserialization
--keep class com.swayog.employee.data.model.** { *; }
+# TensorFlow Lite
+-keep class org.tensorflow.** { *; }
+-keep class org.tensorflow.lite.** { *; }
+-dontwarn org.tensorflow.**
+
+# Keep data models with specific annotations only (allow better shrinking)
+-keep @com.google.gson.annotations.SerializedName class com.swayog.employee.data.model.** { *; }
+-keepclassmembers class com.swayog.employee.data.model.** {
+  @com.google.gson.annotations.SerializedName <fields>;
+}
 
 # Keep database entities and DAOs intact for Room DB mappings
 -keep class com.swayog.employee.data.local.entity.** { *; }
 -keep class com.swayog.employee.data.local.dao.** { *; }
+
+# Optimize: Remove unused methods from data classes
+-allowaccessmodification
+-allowshrinking

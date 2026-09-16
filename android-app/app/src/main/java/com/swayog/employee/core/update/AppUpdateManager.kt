@@ -9,9 +9,9 @@ import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
 import com.swayog.employee.core.config.AppConfig
-import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.model.AppUpdateManifest
 import com.swayog.employee.data.model.AppUpdateState
+import com.swayog.employee.data.model.UpdateErrorKind
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +27,8 @@ import com.google.gson.Gson
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
+import com.swayog.employee.di.UpdateOkHttpClient
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,8 +38,7 @@ private const val CHECK_INTERVAL_MILLIS = 6 * 60 * 60 * 1000L // 6 hours
 @Singleton
 class AppUpdateManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val apiService: ApiService,
-    private val okHttpClient: OkHttpClient
+    @UpdateOkHttpClient private val okHttpClient: OkHttpClient
 ) {
     sealed interface CheckResult {
         data class UpdateAvailable(val manifest: AppUpdateManifest, val downloading: Boolean) : CheckResult
@@ -92,62 +93,72 @@ class AppUpdateManager @Inject constructor(
 
         return withContext(Dispatchers.IO) {
             try {
-                // Try public R2 endpoint first for direct access (faster, no backend dependency)
+                Log.d(TAG, "Update check started")
+                val primaryUrl = AppConfig.PUBLIC_UPDATE_ENDPOINT
+                Log.d(TAG, "Primary public manifest URL: $primaryUrl")
+
                 var manifest: AppUpdateManifest? = null
-                var source = "public_r2"
-                
+                var lastHttpCode = 0
+                var lastResponseBody: String? = null
+
+                // 1. Try stable public endpoint first
                 try {
-                    val publicUrl = AppConfig.PUBLIC_UPDATE_ENDPOINT
-                    Log.d(TAG, "Attempting to fetch manifest from public R2 endpoint: $publicUrl")
                     val request = Request.Builder()
-                        .url(publicUrl)
+                        .url(primaryUrl)
                         .header("User-Agent", "SwayogEmployeeApp/${installedVersionName}")
+                        .header("Cache-Control", "no-cache, no-store")
                         .build()
-                    
+
                     val response = okHttpClient.newCall(request).execute()
-                    if (response.isSuccessful && response.body != null) {
-                        val json = response.body!!.string()
-                        manifest = Gson().fromJson(json, AppUpdateManifest::class.java)
-                        Log.d(TAG, "Successfully fetched manifest from public R2 endpoint")
-                    } else {
-                        Log.w(TAG, "Public R2 endpoint returned HTTP ${response.code}")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Public R2 endpoint failed: ${e.message}")
-                }
-                
-                // Fallback to backend API if public endpoint fails
-                if (manifest == null) {
-                    source = "backend_api"
-                    Log.d(TAG, "Falling back to backend API endpoint")
-                    var response = apiService.getLatestAppUpdate()
-                    if (!response.isSuccessful && response.code() == 404) {
-                        Log.d(TAG, "Primary update endpoint returned 404, attempting fallback: app/android/latest.json")
+                    lastHttpCode = response.code
+                    lastResponseBody = try { response.body?.string() } catch (_: Exception) { null }
+                    Log.d(TAG, "Primary URL HTTP status: $lastHttpCode")
+                    Log.d(TAG, "Response body length: ${lastResponseBody?.length ?: 0}")
+
+                    if (response.isSuccessful && !lastResponseBody.isNullOrBlank()) {
                         try {
-                            val fallbackResponse = apiService.getAppUpdateAndroidLatest()
-                            if (fallbackResponse.isSuccessful && fallbackResponse.body() != null) {
-                                response = fallbackResponse
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Fallback endpoint failed: ${e.message}")
+                            manifest = Gson().fromJson(lastResponseBody, AppUpdateManifest::class.java)
+                            Log.d(TAG, "Successfully retrieved manifest from primary URL")
+                            Log.d(TAG, "Parsed versionName: ${manifest.versionName}, versionCode: ${manifest.versionCode}")
+                        } catch (parseError: Exception) {
+                            Log.e(TAG, "Failed to parse manifest from primary URL (HTTP 200 but invalid JSON): ${parseError.message}")
+                            Log.e(TAG, "Response body preview: ${lastResponseBody?.take(200)}")
+                            // Don't fall back if primary returned 200 but parse failed - this is a manifest corruption issue
+                            _updateState.value = AppUpdateState.Error(
+                                message = "Update information is corrupted (invalid manifest format).",
+                                isNetworkError = false,
+                                kind = UpdateErrorKind.INVALID_MANIFEST
+                            )
+                            return@withContext CheckResult.Error("Update information is corrupted (invalid manifest format).")
                         }
                     }
-
-                    if (response.isSuccessful && response.body() != null) {
-                        manifest = response.body()!!
-                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Primary manifest URL check failed: ${e.message}")
                 }
 
-                lastAutoCheckTimestamp = System.currentTimeMillis()
-
                 if (manifest != null) {
+                    // Validate manifest schema
+                    if (manifest.versionCode <= 0) {
+                        val errorMsg = "Update information is invalid (invalid build number)."
+                        _updateState.value = AppUpdateState.Error(message = errorMsg, isNetworkError = false)
+                        return@withContext CheckResult.Error(errorMsg)
+                    }
+
+                    lastAutoCheckTimestamp = System.currentTimeMillis()
+
                     val serverCode = manifest.versionCode
                     val currentCode = installedVersionCode
                     val minCode = manifest.minimumVersionCode ?: 0L
 
-                    Log.d(TAG, "Update check result ($source): serverCode=$serverCode, installedCode=$currentCode, minCode=$minCode, mandatory=${manifest.mandatory}")
+                    Log.d(TAG, "Update check result: serverCode=$serverCode, installedCode=$currentCode, minCode=$minCode, mandatory=${manifest.mandatory}")
 
                     if (serverCode > currentCode) {
+                        if (manifest.apkUrl.isBlank()) {
+                            val errorMsg = "New version was found, but the update package is currently unavailable."
+                            _updateState.value = AppUpdateState.Error(message = errorMsg, isNetworkError = false, kind = UpdateErrorKind.APK_NOT_FOUND)
+                            return@withContext CheckResult.Error(errorMsg)
+                        }
+
                         val isMandatory = manifest.mandatory || (currentCode < minCode)
                         if (autoDownload) {
                             Log.i(TAG, "Update available and autoDownload=true. Initiating direct download & install.")
@@ -164,7 +175,17 @@ class AppUpdateManager @Inject constructor(
                             )
                             CheckResult.UpdateAvailable(manifest, downloading = false)
                         }
+                    } else if (serverCode < currentCode) {
+                        // Installed version is newer than server version
+                        _updateState.value = AppUpdateState.UpToDate(
+                            installedVersionName = installedVersionName,
+                            installedVersionCode = currentCode,
+                            lastCheckedTimeMillis = lastAutoCheckTimestamp,
+                            isNewerThanServer = true
+                        )
+                        CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                     } else {
+                        // Same version
                         _updateState.value = AppUpdateState.UpToDate(
                             installedVersionName = installedVersionName,
                             installedVersionCode = currentCode,
@@ -173,11 +194,19 @@ class AppUpdateManager @Inject constructor(
                         CheckResult.UpToDate(installedVersionName, lastAutoCheckTimestamp)
                     }
                 } else {
-                    val displayError = "Update service is unavailable. No release manifest found from public or backend endpoints."
-                    Log.w(TAG, displayError)
+                    Log.w(TAG, "Update check failed. HTTP status: $lastHttpCode, response: $lastResponseBody")
+
+                    val displayError = when (lastHttpCode) {
+                        404 -> "Update service configuration is unavailable (HTTP 404)."
+                        401, 403 -> "Authentication error while checking updates (HTTP $lastHttpCode)."
+                        500, 502, 503, 504 -> "Update service is temporarily unavailable (HTTP $lastHttpCode)."
+                        0 -> "Unable to reach the update service."
+                        else -> "Update service returned an error (HTTP $lastHttpCode)."
+                    }
+
                     _updateState.value = AppUpdateState.Error(
                         message = displayError,
-                        isNetworkError = false
+                        isNetworkError = lastHttpCode == 0
                     )
                     CheckResult.Error(displayError)
                 }
@@ -185,9 +214,9 @@ class AppUpdateManager @Inject constructor(
                 Log.e(TAG, "Exception during update check: ${e.message}", e)
                 val (displayError, isNet) = when (e) {
                     is java.net.UnknownHostException -> "No internet connection. Please check your network." to true
-                    is java.net.ConnectException -> "Unable to connect to update server. Please check your connection." to true
-                    is java.net.SocketTimeoutException -> "Update check timed out. Please try again." to true
-                    is com.google.gson.JsonSyntaxException, is org.json.JSONException -> "Unable to read update information from server." to false
+                    is java.net.ConnectException -> "Unable to reach the update service." to true
+                    is java.net.SocketTimeoutException -> "Unable to reach the update service (request timed out)." to true
+                    is com.google.gson.JsonSyntaxException, is org.json.JSONException -> "Unable to read update information." to false
                     is javax.net.ssl.SSLException -> "Secure connection to update service failed (SSL/TLS error)." to true
                     else -> (e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Update check failed.") to false
                 }

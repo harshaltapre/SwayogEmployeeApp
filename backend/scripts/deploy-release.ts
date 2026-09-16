@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { uploadToR2, getFromR2, isR2Configured, getBucketName, generatePresignedUrl } from "../src/services/r2StorageService.js";
-import { AppUpdateManifest, StructuredReleaseNotes } from "../src/modules/app-update/appUpdate.controller.js";
+import { AppUpdateManifest } from "../src/modules/app-update/appUpdate.controller.js";
 
 /**
  * Script to deploy a built APK release to Cloudflare R2 and update update manifests:
@@ -16,16 +16,16 @@ import { AppUpdateManifest, StructuredReleaseNotes } from "../src/modules/app-up
  * - latest.json
  *
  * Usage:
- *   npx tsx scripts/deploy-release.ts <path-to-apk> <versionName> <versionCode> [minimumVersionCode] [mandatory: true/false] [releaseNotesFile]
+ *   npx tsx scripts/deploy-release.ts <path-to-apk> <versionName> <versionCode> [minimumVersionCode] [mandatory] [notesFile] [releaseTag] [releaseTitle]
  */
 async function main() {
   const args = process.argv.slice(2);
   if (args.length < 3) {
-    console.error("Usage: npx tsx scripts/deploy-release.ts <apkPath> <versionName> <versionCode> [minimumVersionCode] [mandatory] [notesFile]");
+    console.error("Usage: npx tsx scripts/deploy-release.ts <apkPath> <versionName> <versionCode> [minimumVersionCode] [mandatory] [notesFile] [releaseTag] [releaseTitle]");
     process.exit(1);
   }
 
-  const [apkPath, versionName, versionCodeStr, minVersionCodeStr, mandatoryStr, notesFile] = args;
+  const [apkPath, versionName, versionCodeStr, minVersionCodeStr, mandatoryStr, notesFile, releaseTag, releaseTitle] = args;
   const versionCode = parseInt(versionCodeStr, 10);
   if (isNaN(versionCode) || versionCode <= 0) {
     console.error(`Error: Invalid versionCode "${versionCodeStr}". Must be a positive integer.`);
@@ -58,9 +58,8 @@ async function main() {
   console.log(`[Deploy] APK Size:    ${(fileSize / (1024 * 1024)).toFixed(2)} MB (${fileSize} bytes)`);
   console.log(`[Deploy] SHA-256:     ${sha256}`);
 
-  // Step 2: Parse user-facing release notes
-  let summary = `Swayog Employee App v${versionName} release`;
-  let items: string[] = [
+  // Step 2: Parse user-facing release notes - output as flat string[] array
+  let releaseNotes: string[] = [
     "Improved attendance tracking and calendar sync",
     "Optimized working-hour calculations",
     "Performance improvements and bug fixes"
@@ -70,20 +69,9 @@ async function main() {
     const rawNotes = fs.readFileSync(notesFile, "utf-8");
     const rawLines = rawNotes.split("\n").map(l => l.trim().replace(/^[-*•]\s*/, "")).filter(Boolean);
     if (rawLines.length > 0) {
-      if (rawLines[0].length < 80 && !rawLines[0].toLowerCase().startsWith("fix") && !rawLines[0].toLowerCase().startsWith("improve")) {
-        summary = rawLines[0];
-        items = rawLines.slice(1).length > 0 ? rawLines.slice(1) : [rawLines[0]];
-      } else {
-        summary = `Swayog Employee App update v${versionName}`;
-        items = rawLines;
-      }
+      releaseNotes = rawLines;
     }
   }
-
-  const structuredNotes: StructuredReleaseNotes = {
-    summary,
-    items,
-  };
 
   // Step 3: Upload APK to release hierarchy
   const buildSpecificApkKey = `releases/android/${versionName}/build-${versionCode}/app-release.apk`;
@@ -102,15 +90,18 @@ async function main() {
 
   // Determine public APK URL
   const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
-  let publicApkUrl = buildSpecificApkKey;
-  if (publicBaseUrl) {
+  let publicApkUrl = "";
+  
+  if (publicBaseUrl && !publicBaseUrl.includes(".r2.cloudflarestorage.com") && !publicBaseUrl.includes("your-public-domain.com")) {
     publicApkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${buildSpecificApkKey}`;
   } else {
     try {
-      // Fallback: generate presigned URL valid for 7 days
-      publicApkUrl = await generatePresignedUrl(buildSpecificApkKey, 604800);
+      // Generate presigned URL valid for 30 days (2,592,000 seconds)
+      publicApkUrl = await generatePresignedUrl(buildSpecificApkKey, 2592000);
+      console.log(`[Deploy] Generated 30-day presigned download URL for APK`);
     } catch {
-      publicApkUrl = buildSpecificApkKey;
+      // Fallback to permanent backend redirect endpoint
+      publicApkUrl = "https://swayog-dashboard.vercel.app/api/v1/app/update/download/latest";
     }
   }
 
@@ -127,7 +118,9 @@ async function main() {
     sha256,
     fileSize,
     title: `Swayog v${versionName}`,
-    releaseNotes: structuredNotes,
+    releaseNotes, // Flat string[] array
+    releaseTag: releaseTag || `v${versionName}-build${versionCode}`,
+    releaseTitle: releaseTitle || `Swayog Employee App v${versionName} — Build ${versionCode}`,
   };
 
   const manifestJson = JSON.stringify(manifest, null, 2);
