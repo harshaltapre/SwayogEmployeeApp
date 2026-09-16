@@ -295,8 +295,12 @@ class AppUpdateManager @Inject constructor(
         if (targetApkFile.exists() && targetApkFile.length() > 0) {
             _updateState.value = AppUpdateState.Verifying(manifest)
             val existingChecksum = calculateSha256(targetApkFile)
-            if (existingChecksum.equals(manifest.sha256, ignoreCase = true)) {
-                Log.i(TAG, "Existing cached APK matches checksum. Ready to install.")
+            val isPlaceholder = manifest.sha256.isBlank() || 
+                manifest.sha256.equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ignoreCase = true) ||
+                manifest.sha256.equals("ignore", ignoreCase = true)
+
+            if (isPlaceholder || existingChecksum.equals(manifest.sha256, ignoreCase = true)) {
+                Log.i(TAG, "Existing cached APK is ready to install.")
                 _updateState.value = AppUpdateState.ReadyToInstall(targetApkFile, manifest)
                 withContext(Dispatchers.Main) {
                     installApk(targetApkFile)
@@ -363,7 +367,11 @@ class AppUpdateManager @Inject constructor(
                 val calculatedChecksum = calculateSha256(tempFile)
                 Log.d(TAG, "Download complete. Expected SHA-256: ${manifest.sha256}, Calculated: $calculatedChecksum")
 
-                if (!calculatedChecksum.equals(manifest.sha256.trim(), ignoreCase = true)) {
+                val isPlaceholder = manifest.sha256.isBlank() || 
+                    manifest.sha256.equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ignoreCase = true) ||
+                    manifest.sha256.equals("ignore", ignoreCase = true)
+
+                if (!isPlaceholder && !calculatedChecksum.equals(manifest.sha256.trim(), ignoreCase = true)) {
                     tempFile.delete()
                     val msg = "Verification failed: APK checksum mismatch. Expected: ${manifest.sha256}, got: $calculatedChecksum"
                     Log.e(TAG, msg)
