@@ -174,20 +174,32 @@ jobs:
 
       - name: Restore Google Services Configuration
         env:
-          GOOGLE_SERVICES_JSON_RAW: ${{ secrets.GOOGLE_SERVICES_JSON }}
-          GOOGLE_SERVICES_B64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 || secrets.GOOGLE_SERVICES_B64 }}
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
           mkdir -p android-app/app
-          
-          if [ -n "$GOOGLE_SERVICES_JSON_RAW" ]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON_RAW" > android-app/app/google-services.json
-          elif [ -n "$GOOGLE_SERVICES_B64" ]; then
-            printf '%s' "$GOOGLE_SERVICES_B64" | tr -d '[:space:]' | base64 -d > android-app/app/google-services.json
+
+          # Strip whitespace from secret
+          CLEAN_B64=$(echo "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '[:space:]')
+
+          if [ -z "$CLEAN_B64" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON_BASE64 secret is missing or empty in GitHub Secrets."
+            echo "::error::Go to: GitHub Repo → Settings → Secrets and variables → Actions → New repository secret"
+            echo "::error::Secret Name: GOOGLE_SERVICES_JSON_BASE64"
+            echo "::error::Secret Value: Base64-encoded string of your google-services.json"
+            exit 1
+          fi
+
+          # Safe decode into target location without echoing content
+          printf '%s' "$CLEAN_B64" | base64 -d > android-app/app/google-services.json
+          DECODE_EXIT=$?
+
+          if [ $DECODE_EXIT -ne 0 ]; then
+            echo "::error::base64 decode of GOOGLE_SERVICES_JSON_BASE64 failed (exit code $DECODE_EXIT)."
+            exit 1
           fi
 
           if [ ! -f "android-app/app/google-services.json" ]; then
-            echo "::error::google-services.json is missing and neither GOOGLE_SERVICES_JSON nor GOOGLE_SERVICES_JSON_BASE64 secret is provided in GitHub Secrets."
-            echo "::error::Please add GOOGLE_SERVICES_JSON in: GitHub Repo -> Settings -> Secrets and variables -> Actions"
+            echo "::error::android-app/app/google-services.json was not created after decode."
             exit 1
           fi
 
@@ -197,7 +209,7 @@ jobs:
             exit 1
           fi
 
-          # Validate JSON structure and package name without printing secrets
+          # Validate JSON structure and package name com.swayog.employee without printing secrets
           node -e '
             const fs = require("fs");
             try {
@@ -217,7 +229,7 @@ jobs:
             }
           '
 
-          echo "✅ google-services.json securely established ($FILE_SIZE bytes, valid JSON for com.swayog.employee)"
+          echo "✅ google-services.json securely established ($FILE_SIZE bytes, validated for com.swayog.employee)"
 
       - name: Make Gradlew Executable
         run: chmod +x android-app/gradlew
