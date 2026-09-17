@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "123456789012",
+    "project_id": "dummy-swayog-id",
+    "storage_bucket": "dummy-swayog-id.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123456789012:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "com.swayog.employee"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "dummy_api_key_value_here"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "status": 1,
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

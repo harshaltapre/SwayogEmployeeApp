@@ -156,7 +156,6 @@ android {
             
             // Memory optimization for release builds
             isJniDebuggable = false
-            isRenderscriptDebuggable = false
         }
         debug {
             isDebuggable = true
