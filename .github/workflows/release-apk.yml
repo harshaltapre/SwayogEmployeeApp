@@ -172,54 +172,52 @@ jobs:
           echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/android-app/keystore/release.jks" >> $GITHUB_ENV
           echo "✅ Production keystore decoded successfully ($FILE_SIZE bytes)"
 
-      - name: Ensure google-services.json Exists
+      - name: Restore Google Services Configuration
         env:
-          GOOGLE_SERVICES_B64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          GOOGLE_SERVICES_JSON_RAW: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICES_B64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 || secrets.GOOGLE_SERVICES_B64 }}
         run: |
-          if [ -n "$GOOGLE_SERVICES_B64" ]; then
-            echo "Decoding google-services.json from secret..."
-            echo "$GOOGLE_SERVICES_B64" | tr -d '[:space:]' | base64 -d > android-app/app/google-services.json
-          elif [ ! -f "android-app/app/google-services.json" ]; then
-            echo "Generating fallback google-services.json for build..."
-            cat << 'EOF' > android-app/app/google-services.json
-          {
-            "project_info": {
-              "project_number": "123456789012",
-              "project_id": "dummy-swayog-id",
-              "storage_bucket": "dummy-swayog-id.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:123456789012:android:0000000000000000000000",
-                  "android_client_info": {
-                    "package_name": "com.swayog.employee"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "dummy_api_key_value_here"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "status": 1,
-                    "other_platform_oauth_client": []
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          EOF
+          mkdir -p android-app/app
+          
+          if [ -n "$GOOGLE_SERVICES_JSON_RAW" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_RAW" > android-app/app/google-services.json
+          elif [ -n "$GOOGLE_SERVICES_B64" ]; then
+            printf '%s' "$GOOGLE_SERVICES_B64" | tr -d '[:space:]' | base64 -d > android-app/app/google-services.json
           fi
-          if [ -f "android-app/app/google-services.json" ]; then
-            echo "✅ google-services.json is present"
-          else
-            echo "::error::Failed to establish google-services.json"
+
+          if [ ! -f "android-app/app/google-services.json" ]; then
+            echo "::error::google-services.json is missing and neither GOOGLE_SERVICES_JSON nor GOOGLE_SERVICES_JSON_BASE64 secret is provided in GitHub Secrets."
+            echo "::error::Please add GOOGLE_SERVICES_JSON in: GitHub Repo -> Settings -> Secrets and variables -> Actions"
             exit 1
           fi
+
+          FILE_SIZE=$(stat -c%s android-app/app/google-services.json 2>/dev/null || echo 0)
+          if [ "$FILE_SIZE" -lt 20 ]; then
+            echo "::error::android-app/app/google-services.json is empty or corrupt ($FILE_SIZE bytes)."
+            exit 1
+          fi
+
+          # Validate JSON structure and package name without printing secrets
+          node -e '
+            const fs = require("fs");
+            try {
+              const data = JSON.parse(fs.readFileSync("android-app/app/google-services.json", "utf8"));
+              if (!data.client || !Array.isArray(data.client)) {
+                console.error("::error::google-services.json structure is invalid: missing client array");
+                process.exit(1);
+              }
+              const pkg = data.client[0]?.client_info?.android_client_info?.package_name;
+              if (pkg !== "com.swayog.employee") {
+                console.error(`::error::google-services.json package name mismatch: found "${pkg}", expected "com.swayog.employee"`);
+                process.exit(1);
+              }
+            } catch (e) {
+              console.error("::error::Failed to parse google-services.json: " + e.message);
+              process.exit(1);
+            }
+          '
+
+          echo "✅ google-services.json securely established ($FILE_SIZE bytes, valid JSON for com.swayog.employee)"
 
       - name: Make Gradlew Executable
         run: chmod +x android-app/gradlew
