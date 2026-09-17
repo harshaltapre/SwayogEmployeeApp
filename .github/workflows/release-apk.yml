@@ -113,38 +113,64 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS || secrets.RELEASE_KEY_ALIAS || 'release' }}
           KEY_PASS: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_B64" ]; then
-            echo "::error::KEYSTORE or RELEASE_KEYSTORE_BASE64 secret is required for production releases"
-            echo "::error::Production OTA updates must be signed with the same certificate as the existing installed app"
+          # Strip whitespace (handles secrets pasted with trailing newlines)
+          KEYSTORE_B64_CLEAN=$(echo "$KEYSTORE_B64" | tr -d '[:space:]')
+          STORE_PASS_CLEAN=$(echo "$STORE_PASS" | tr -d '[:space:]')
+          
+          if [ -z "$KEYSTORE_B64_CLEAN" ]; then
+            echo "::error::KEYSTORE or RELEASE_KEYSTORE_BASE64 secret is missing or empty."
+            echo "::error::Go to: GitHub Repo → Settings → Secrets and variables → Actions → New repository secret"
+            echo "::error::Secret name: KEYSTORE"
+            echo "::error::Secret value: base64-encoded content of your release-key.jks file"
+            echo "::error::On Linux/Mac: base64 -w 0 release-key.jks"
+            echo "::error::On Windows PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes('release-key.jks'))"
             exit 1
           fi
-          if [ -z "$STORE_PASS" ]; then
-            echo "::error::KEYSTORE_PASSWORD or RELEASE_STORE_PASSWORD secret is required"
+          if [ -z "$STORE_PASS_CLEAN" ]; then
+            echo "::error::KEYSTORE_PASSWORD or RELEASE_STORE_PASSWORD secret is missing or empty."
             exit 1
           fi
           echo "KEY_ALIAS=$KEY_ALIAS" >> $GITHUB_ENV
-          echo "✅ All required signing secrets are present"
+          echo "KEYSTORE_B64_CLEAN=$KEYSTORE_B64_CLEAN" >> $GITHUB_ENV
+          echo "✅ All required signing secrets are present and non-empty"
 
       - name: Decode Production Release Keystore
         id: keystore
         env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE || secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_B64_CLEAN: ${{ env.KEYSTORE_B64_CLEAN }}
         run: |
           mkdir -p android-app/keystore
-          echo "$KEYSTORE_B64" | base64 --decode > android-app/keystore/release.jks
+          
+          # Use the pre-validated, whitespace-stripped base64 from the previous step.
+          # Accessing via env: block keeps it out of logs (treated as a secret-like value).
+          printf '%s' "$KEYSTORE_B64_CLEAN" | base64 -d > android-app/keystore/release.jks
+          DECODE_EXIT=$?
+          
+          if [ $DECODE_EXIT -ne 0 ]; then
+            echo "::error::base64 decode failed (exit $DECODE_EXIT). The KEYSTORE secret is not valid base64."
+            echo "::error::Re-encode your keystore: base64 -w 0 release-key.jks  (Linux)"
+            echo "::error::Or on Windows PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes('release-key.jks'))"
+            exit 1
+          fi
           
           if [ ! -f "android-app/keystore/release.jks" ]; then
-            echo "::error::Failed to decode keystore file"
+            echo "::error::Keystore file was not created after decode."
             exit 1
           fi
           
-          if [ ! -s "android-app/keystore/release.jks" ]; then
-            echo "::error::Decoded keystore file is empty"
+          FILE_SIZE=$(stat -c%s android-app/keystore/release.jks 2>/dev/null || echo 0)
+          if [ "$FILE_SIZE" -lt 100 ]; then
+            echo "::error::Decoded keystore is too small ($FILE_SIZE bytes) — likely corrupt or not a real keystore."
+            echo "::error::Expected size: typically 2000-5000 bytes for a PKCS12 keystore."
             exit 1
           fi
+          
+          # Verify PKCS12 magic bytes (0x30 0x82 at start indicates valid DER/PKCS12)
+          MAGIC=$(xxd -l 2 android-app/keystore/release.jks 2>/dev/null | awk '{print $2}' || od -An -N2 -tx1 android-app/keystore/release.jks | tr -d ' ')
+          echo "Keystore magic bytes: $MAGIC | File size: $FILE_SIZE bytes"
           
           echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/android-app/keystore/release.jks" >> $GITHUB_ENV
-          echo "✅ Production keystore decoded successfully"
+          echo "✅ Production keystore decoded successfully ($FILE_SIZE bytes)"
 
       - name: Make Gradlew Executable
         run: chmod +x android-app/gradlew
