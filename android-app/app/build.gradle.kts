@@ -5,7 +5,12 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
+    id("androidx.room")
     id("com.google.gms.google-services")
+}
+
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 val localProperties = Properties().apply {
@@ -50,10 +55,10 @@ android {
         targetSdk = 34
         versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
             ?: (localProperties.getProperty("versionCode"))?.toIntOrNull()
-            ?: 20 // Use production baseline instead of 1
+            ?: 21 // Version 21 > Production Baseline 20
         versionName = (project.findProperty("versionName") as? String)
             ?: (localProperties.getProperty("versionName"))
-            ?: "1.0.0"
+            ?: "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
@@ -74,30 +79,54 @@ android {
     }
 
     signingConfigs {
-        // Debug signing — generated automatically by Android Studio. Do NOT change.
+        // Debug signing — generated automatically by Android Studio.
         // getByName("debug") is available by default.
 
-        // Release signing — credentials come from local.properties or environment variables.
+        // Release signing — credentials come from local.properties, project properties, environment variables, or workspace release-key.jks.
         create("release") {
-            val storeFilePath = getLocalProperty("RELEASE_STORE_FILE", System.getenv("RELEASE_STORE_FILE") ?: "")
-            val keyAlias     = getLocalProperty("RELEASE_KEY_ALIAS", System.getenv("RELEASE_KEY_ALIAS") ?: "")
-            val storePass    = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "")
-            val keyPass      = getLocalProperty("RELEASE_KEY_PASSWORD", System.getenv("RELEASE_KEY_PASSWORD") ?: "")
+            var keystoreFile: java.io.File? = null
+            val explicitPath = getLocalProperty("RELEASE_STORE_FILE", System.getenv("RELEASE_STORE_FILE") ?: "")
+            if (explicitPath.isNotBlank()) {
+                val f1 = file(explicitPath)
+                val f2 = rootProject.file(explicitPath)
+                if (f1.exists()) {
+                    keystoreFile = f1
+                } else if (f2.exists()) {
+                    keystoreFile = f2
+                }
+            }
 
-            if (storeFilePath.isNotBlank()) {
-                storeFile = file(storeFilePath)
-                this.keyAlias = keyAlias
-                storePassword = storePass
-                keyPassword = keyPass
+            // Auto-detect release-key.jks if not found yet
+            if (keystoreFile == null || !keystoreFile.exists()) {
+                val repoRootKeystore = rootProject.file("../release-key.jks")
+                val projectKeystore = rootProject.file("release-key.jks")
+                val appKeystore = file("release-key.jks")
+                if (repoRootKeystore.exists()) {
+                    keystoreFile = repoRootKeystore
+                } else if (projectKeystore.exists()) {
+                    keystoreFile = projectKeystore
+                } else if (appKeystore.exists()) {
+                    keystoreFile = appKeystore
+                }
+            }
+
+            val keyAliasStr = getLocalProperty("RELEASE_KEY_ALIAS", System.getenv("RELEASE_KEY_ALIAS") ?: "release")
+            val storePassStr = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "swayog123")
+            val keyPassStr = getLocalProperty("RELEASE_KEY_PASSWORD", System.getenv("RELEASE_KEY_PASSWORD") ?: storePassStr)
+
+            if (keystoreFile != null && keystoreFile.exists()) {
+                storeFile = keystoreFile
+                this.keyAlias = keyAliasStr
+                storePassword = storePassStr
+                keyPassword = keyPassStr
+                println("🔐 Release signing configured using keystore: ${keystoreFile.canonicalPath}")
             } else {
-                // In CI/CD, this should fail the build. For local development, provide helpful error.
                 val isCI = System.getenv("CI") == "true"
                 if (isCI) {
                     throw GradleException("RELEASE_STORE_FILE must be configured for production releases in CI/CD")
                 } else {
-                    println("⚠️  WARNING: RELEASE_STORE_FILE is not configured in local.properties.")
-                    println("   Release APK will be unsigned until you configure a release keystore.")
-                    println("   See the comments above the android {} block for setup instructions.")
+                    println("⚠️  WARNING: Production keystore file not found (checked: '$explicitPath', repo root, project root).")
+                    println("   Ensure release-key.jks is in the repository root or set RELEASE_STORE_FILE in local.properties.")
                 }
             }
         }
@@ -107,17 +136,16 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            val storeFilePath = getLocalProperty("RELEASE_STORE_FILE", System.getenv("RELEASE_STORE_FILE") ?: "")
-            val isCI = System.getenv("CI") == "true"
             
-            if (storeFilePath.isNotBlank()) {
-                signingConfig = signingConfigs.getByName("release")
-            } else if (isCI) {
-                throw GradleException("RELEASE_STORE_FILE must be configured for production releases in CI/CD")
+            val releaseConfig = signingConfigs.getByName("release")
+            if (releaseConfig.storeFile != null && releaseConfig.storeFile!!.exists()) {
+                signingConfig = releaseConfig
             } else {
-                // Local development fallback only
-                signingConfig = signingConfigs.getByName("debug")
-                println("⚠️  WARNING: Using debug signing for local development only")
+                throw GradleException(
+                    "Cannot build release APK: Production release keystore was not found. " +
+                    "Debug fallback is prohibited to prevent package conflict errors during app updates. " +
+                    "Please configure RELEASE_STORE_FILE in local.properties or provide release-key.jks in the repository root."
+                )
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

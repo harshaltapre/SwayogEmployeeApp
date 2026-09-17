@@ -1631,6 +1631,7 @@ fun AttendanceScreen(
 
                     item { Spacer(modifier = Modifier.height(16.dp)) }
                 }
+            }
 
             // Loading Overlay
             if (state is AttendanceState.Loading) {

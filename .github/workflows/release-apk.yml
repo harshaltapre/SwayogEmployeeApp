@@ -106,33 +106,32 @@ jobs:
           echo "🚀 Target Release: Version $VERSION_NAME (Build $VERSION_CODE) -> Tag $RELEASE_TAG"
 
       - name: Validate Production Signing Secrets
+        id: signing_secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE || secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || secrets.RELEASE_KEY_ALIAS || 'release' }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
         run: |
-          if [ -z "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
-            echo "::error::RELEASE_KEYSTORE_BASE64 secret is required for production releases"
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::KEYSTORE or RELEASE_KEYSTORE_BASE64 secret is required for production releases"
             echo "::error::Production OTA updates must be signed with the same certificate as the existing installed app"
             exit 1
           fi
-          if [ -z "${{ secrets.RELEASE_KEY_ALIAS }}" ]; then
-            echo "::error::RELEASE_KEY_ALIAS secret is required"
+          if [ -z "$STORE_PASS" ]; then
+            echo "::error::KEYSTORE_PASSWORD or RELEASE_STORE_PASSWORD secret is required"
             exit 1
           fi
-          if [ -z "${{ secrets.RELEASE_STORE_PASSWORD }}" ]; then
-            echo "::error::RELEASE_STORE_PASSWORD secret is required"
-            exit 1
-          fi
-          if [ -z "${{ secrets.RELEASE_KEY_PASSWORD }}" ]; then
-            echo "::error::RELEASE_KEY_PASSWORD secret is required"
-            exit 1
-          fi
+          echo "KEY_ALIAS=$KEY_ALIAS" >> $GITHUB_ENV
           echo "✅ All required signing secrets are present"
 
       - name: Decode Production Release Keystore
         id: keystore
         env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_B64: ${{ secrets.KEYSTORE || secrets.RELEASE_KEYSTORE_BASE64 }}
         run: |
           mkdir -p android-app/keystore
-          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > android-app/keystore/release.jks
+          echo "$KEYSTORE_B64" | base64 --decode > android-app/keystore/release.jks
           
           if [ ! -f "android-app/keystore/release.jks" ]; then
             echo "::error::Failed to decode keystore file"
@@ -154,9 +153,9 @@ jobs:
         working-directory: android-app
         env:
           RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
           API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard.vercel.app/api/v1/' }}
           WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard.vercel.app' }}
           PUBLIC_DISTRIBUTION_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
@@ -170,9 +169,9 @@ jobs:
             -PversionName="${{ steps.versioning.outputs.VERSION_NAME }}" \
             -PversionCode="${{ steps.versioning.outputs.VERSION_CODE }}" \
             -PRELEASE_STORE_FILE="$RELEASE_STORE_FILE" \
-            -PRELEASE_KEY_ALIAS="${{ secrets.RELEASE_KEY_ALIAS }}" \
-            -PRELEASE_STORE_PASSWORD="${{ secrets.RELEASE_STORE_PASSWORD }}" \
-            -PRELEASE_KEY_PASSWORD="${{ secrets.RELEASE_KEY_PASSWORD }}" \
+            -PRELEASE_KEY_ALIAS="$RELEASE_KEY_ALIAS" \
+            -PRELEASE_STORE_PASSWORD="$RELEASE_STORE_PASSWORD" \
+            -PRELEASE_KEY_PASSWORD="$RELEASE_KEY_PASSWORD" \
             --no-daemon --stacktrace
 
       - name: Verify Built APK & Calculate SHA-256
@@ -203,35 +202,94 @@ jobs:
           echo "SHA256=$SHA256" >> $GITHUB_OUTPUT
           echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_OUTPUT
 
-      - name: Verify APK Signing Certificate
+      - name: Strict APK Signature and Metadata Validation
+        env:
+          APK_PATH: ${{ steps.apk_info.outputs.APK_PATH }}
+          EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
+          EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
+          EXPECTED_CERT_SHA256: "3E:C2:90:E5:8B:E2:84:B9:0D:CA:34:6C:1E:53:EB:3C:73:5D:5B:FE:B3:C4:2C:6B:6D:DF:B7:EB:7F:6C:1F:B8"
         run: |
-          APK_PATH="${{ steps.apk_info.outputs.APK_PATH }}"
+          # 1. Locate Android SDK tools
+          if command -v apksigner &> /dev/null; then
+            APKSIGNER="apksigner"
+          elif [ -n "$ANDROID_HOME" ]; then
+            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          fi
           
-          # Use apksigner to verify the APK signature
-          if ! command -v apksigner &> /dev/null; then
-            echo "::warning::apksigner not found, skipping certificate verification"
-            echo "Install Android SDK build-tools for full signature verification"
-          else
-            echo "Verifying APK signature..."
-            apksigner verify --print-certs "$APK_PATH" || {
+          if command -v aapt2 &> /dev/null; then
+            AAPT2="aapt2"
+          elif [ -n "$ANDROID_HOME" ]; then
+            AAPT2=$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort -V | tail -n 1)
+          fi
+
+          echo "Using apksigner: $APKSIGNER"
+          echo "Using aapt2:     $AAPT2"
+
+          # 2. Verify APK signature
+          if [ -n "$APKSIGNER" ] && [ -x "$APKSIGNER" ]; then
+            echo "Verifying cryptographic APK signature..."
+            $APKSIGNER verify --print-certs "$APK_PATH" || {
               echo "::error::APK signature verification failed"
               exit 1
             }
-            echo "✅ APK signature verified successfully"
             
-            # Extract certificate fingerprint for diagnostics
-            CERT_INFO=$(apksigner verify --print-certs "$APK_PATH" 2>&1 | grep -A 5 "Signer")
-            echo "Certificate info:"
+            CERT_INFO=$($APKSIGNER verify --print-certs "$APK_PATH" 2>&1)
+            echo "=== APK Certificate Details ==="
             echo "$CERT_INFO"
+            echo "==============================="
+
+            # Fail if signed by Android Debug
+            if echo "$CERT_INFO" | grep -qi "CN=Android Debug"; then
+              echo "::error::CRITICAL FAILURE: APK is signed with Android Debug certificate! Production updates must use the production release keystore."
+              exit 1
+            fi
+
+            # Check expected production certificate fingerprint
+            CLEAN_EXPECTED=$(echo "$EXPECTED_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
+            CLEAN_ACTUAL=$(echo "$CERT_INFO" | grep -i "SHA-256 digest" | head -n 1 | awk '{print $NF}' | tr -d ': ' | tr '[:upper:]' '[:lower:]')
+            
+            echo "Expected Certificate SHA-256: $CLEAN_EXPECTED"
+            echo "Actual APK Certificate SHA-256: $CLEAN_ACTUAL"
+
+            if [ -n "$CLEAN_ACTUAL" ] && [ "$CLEAN_ACTUAL" != "$CLEAN_EXPECTED" ]; then
+              echo "::error::CRITICAL MISMATCH: Built APK certificate ($CLEAN_ACTUAL) does not match expected production certificate ($CLEAN_EXPECTED)!"
+              echo "::error::This would break updates for all installed users!"
+              exit 1
+            fi
+            echo "✅ Certificate matches authoritative production release key"
           fi
-          
-          # Verify it's a release build by checking for debug indicators
-          if unzip -l "$APK_PATH" | grep -q "META-INF/MANIFEST.MF"; then
-            echo "✅ APK contains manifest, appears to be properly signed"
-          else
-            echo "::error::APK missing manifest, may not be properly signed"
+
+          # 3. Verify applicationId and versionCode using aapt2 if available
+          if [ -n "$AAPT2" ] && [ -x "$AAPT2" ]; then
+            DUMP_OUTPUT=$($AAPT2 dump badging "$APK_PATH" 2>&1 || true)
+            
+            # Check package name
+            if ! echo "$DUMP_OUTPUT" | grep -q "package: name='com.swayog.employee'"; then
+              echo "::error::APK package name is not 'com.swayog.employee'!"
+              exit 1
+            fi
+            echo "✅ Package name confirmed: com.swayog.employee"
+
+            # Check versionCode
+            if ! echo "$DUMP_OUTPUT" | grep -q "versionCode='$EXPECTED_VERSION_CODE'"; then
+              echo "::error::APK versionCode does not match expected build number $EXPECTED_VERSION_CODE!"
+              exit 1
+            fi
+            echo "✅ Version code confirmed: $EXPECTED_VERSION_CODE"
+          fi
+
+          # 4. Verify versionCode is strictly greater than 20
+          if [ "$EXPECTED_VERSION_CODE" -le 20 ]; then
+            echo "::error::Production release versionCode must be strictly greater than baseline 20 (got: $EXPECTED_VERSION_CODE)"
             exit 1
           fi
+
+          # 5. Verify MANIFEST.MF exists in APK
+          if ! unzip -l "$APK_PATH" | grep -q "META-INF/MANIFEST.MF"; then
+            echo "::error::APK is missing MANIFEST.MF, build is corrupt"
+            exit 1
+          fi
+          echo "✅ APK integrity checks passed completely"
 
       - name: Prepare User-Facing Release Notes
         run: |
