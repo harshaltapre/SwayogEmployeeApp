@@ -119,18 +119,19 @@ class AttendanceRepository @Inject constructor(
                 )
                 if (response.isSuccessful && response.body()?.result != null) {
                     val checkInResponse = response.body()!!.result!!
+                    val attRecord = checkInResponse.attendanceRecord
                     
                     // Save to local database
                     val attendanceEntity = AttendanceEntity(
-                        id = checkInResponse.attendanceRecord.id,
-                        employeeId = checkInResponse.attendanceRecord.employeeId,
-                        date = formatDate(checkInResponse.attendanceRecord.date),
-                        checkInTime = checkInResponse.attendanceRecord.checkInTime,
-                        checkOutTime = checkInResponse.attendanceRecord.checkOutTime,
-                        totalMinutes = checkInResponse.attendanceRecord.totalMinutes,
-                        status = checkInResponse.attendanceRecord.status,
-                        notes = checkInResponse.attendanceRecord.notes,
-                        checkInSelfieUrl = checkInResponse.checkIn.selfieUrl,
+                        id = attRecord?.id ?: UUID.randomUUID().toString(),
+                        employeeId = attRecord?.employeeId ?: (dataStoreManager.userId.first() ?: ""),
+                        date = formatDate(attRecord?.date ?: java.time.LocalDate.now().toString()),
+                        checkInTime = attRecord?.checkInTime ?: java.time.LocalDateTime.now().toString(),
+                        checkOutTime = attRecord?.checkOutTime,
+                        totalMinutes = attRecord?.totalMinutes,
+                        status = attRecord?.status ?: "PRESENT",
+                        notes = attRecord?.notes,
+                        checkInSelfieUrl = checkInResponse.checkIn?.selfieUrl ?: selfie,
                         checkInLocation = if (latitude != null && longitude != null) "Lat $latitude, Lng $longitude" else null,
                         isSynced = true
                     )
@@ -247,7 +248,9 @@ class AttendanceRepository @Inject constructor(
                 getTodayAttendance()
                 Result.success(Unit)
             } else {
-                Result.failure(Exception("Check-out failed"))
+                val errorMsg = ErrorUtils.formatResponseError(response)
+                android.util.Log.e("AttendanceRepository", "Check-out rejected by server: $errorMsg")
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             Result.failure(e)

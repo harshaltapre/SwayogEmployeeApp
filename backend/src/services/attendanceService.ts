@@ -211,10 +211,12 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
   }
 
   // Prevent employee check-in if attendance was already recorded/assigned by administrator
-  if (existing && (existing.manualOverride || existing.status === "PRESENT" || existing.status === "LEAVE" || existing.status === "ABSENT" || existing.status === "HOLIDAY")) {
+  if (existing && (existing.manualOverride || (existing.status === "PRESENT" && !existing.checkInTime) || existing.status === "LEAVE" || existing.status === "HOLIDAY" || (existing.status === "ABSENT" && existing.manualOverride))) {
     throw new Error(
-      existing.status === "LEAVE" || existing.status === "ABSENT"
-        ? `Your attendance status for today is already marked as ${existing.status}.`
+      existing.status === "LEAVE"
+        ? "Your attendance status for today is already marked as LEAVE."
+        : existing.status === "HOLIDAY"
+        ? "Today is a company holiday; check-in is not required."
         : "Attendance has already been recorded for today by administrator."
     );
   }
