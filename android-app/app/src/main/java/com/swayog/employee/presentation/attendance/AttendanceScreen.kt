@@ -1823,7 +1823,6 @@ fun AttendanceScreen(
         }
     }
 }
-}
 
 @Composable
 fun CalendarLegendItem(color: Color, label: String) {
