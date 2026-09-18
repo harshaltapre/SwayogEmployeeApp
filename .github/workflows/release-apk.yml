@@ -208,37 +208,37 @@ jobs:
           if [ ! -f "android-app/app/google-services.json" ]; then
             echo "ℹ️ Creating default google-services.json placeholder for com.swayog.employee..."
             cat << 'EOF' > android-app/app/google-services.json
-{
-  "project_info": {
-    "project_number": "123456789012",
-    "firebase_url": "https://swayog-employee.firebaseio.com",
-    "project_id": "swayog-employee",
-    "storage_bucket": "swayog-employee.appspot.com"
-  },
-  "client": [
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:123456789012:android:abcdef1234567890",
-        "android_client_info": {
-          "package_name": "com.swayog.employee"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyDummyKeyForBuildVerification12345"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    }
-  ],
-  "configuration_version": "1"
-}
-EOF
+            {
+              "project_info": {
+                "project_number": "123456789012",
+                "firebase_url": "https://swayog-employee.firebaseio.com",
+                "project_id": "swayog-employee",
+                "storage_bucket": "swayog-employee.appspot.com"
+              },
+              "client": [
+                {
+                  "client_info": {
+                    "mobilesdk_app_id": "1:123456789012:android:abcdef1234567890",
+                    "android_client_info": {
+                      "package_name": "com.swayog.employee"
+                    }
+                  },
+                  "oauth_client": [],
+                  "api_key": [
+                    {
+                      "current_key": "AIzaSyDummyKeyForBuildVerification12345"
+                    }
+                  ],
+                  "services": {
+                    "appinvite_service": {
+                      "other_platform_oauth_client": []
+                    }
+                  }
+                }
+              ],
+              "configuration_version": "1"
+            }
+            EOF
           fi
 
           FILE_SIZE=$(stat -c%s android-app/app/google-services.json 2>/dev/null || echo 0)
@@ -269,9 +269,14 @@ EOF
           fi
           
           # Clean any local or machine-specific java.home settings from all possible properties locations
-          sed -i '/org\.gradle\.java\.home/d' gradle.properties 2>/dev/null || true
-          sed -i '/org\.gradle\.java\.home/d' ../gradle.properties 2>/dev/null || true
-          mkdir -p ~/.gradle && sed -i '/org\.gradle\.java\.home/d' ~/.gradle/gradle.properties 2>/dev/null || true
+          for PROPS in \
+            "gradle.properties" \
+            "../gradle.properties" \
+            "$HOME/.gradle/gradle.properties" \
+            "${GRADLE_USER_HOME:-$HOME/.gradle}/gradle.properties"; do
+            [ -f "$PROPS" ] || continue
+            sed -i '/^[[:space:]]*org\.gradle\.java\.home[[:space:]]*=/d' "$PROPS" || true
+          done
           
           ./gradlew assembleRelease \
             -Dorg.gradle.java.home="$JAVA_HOME" \
@@ -397,13 +402,13 @@ EOF
             printf "%s\n" "$INPUT_RELEASE_NOTES" > release_notes.txt
           else
             cat << 'EOF' > release_notes.txt
-Attendance and synchronization improvements
-• Improved attendance tracking
-• Fixed working-hour calculation
-• Improved attendance calendar
-• Improved profile synchronization
-• Bug fixes and performance improvements
-EOF
+            Attendance and synchronization improvements
+            • Improved attendance tracking
+            • Fixed working-hour calculation
+            • Improved attendance calendar
+            • Improved profile synchronization
+            • Bug fixes and performance improvements
+            EOF
           fi
           echo "=== Release Notes ==="
           cat release_notes.txt
