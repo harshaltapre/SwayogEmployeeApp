@@ -6,3 +6,5 @@ dist
 .vercel
 .env*.local
 vite.config.ts.timestamp-*.mjs
+*.apk
+public/releases/
