@@ -349,7 +349,7 @@ class AppUpdateManager @Inject constructor(
                 Log.i(TAG, "Existing cached APK is ready to install.")
                 _updateState.value = AppUpdateState.ReadyToInstall(targetApkFile, manifest)
                 withContext(Dispatchers.Main) {
-                    installApk(targetApkFile)
+                    installApk(targetApkFile, manifest)
                 }
                 return
             } else {
@@ -449,7 +449,7 @@ class AppUpdateManager @Inject constructor(
                 _updateState.value = AppUpdateState.ReadyToInstall(targetApkFile, manifest)
 
                 withContext(Dispatchers.Main) {
-                    installApk(targetApkFile)
+                    installApk(targetApkFile, manifest)
                 }
 
             } catch (e: Exception) {
@@ -465,16 +465,161 @@ class AppUpdateManager @Inject constructor(
         }
     }
 
+    data class ApkArchiveDetails(
+        val packageName: String?,
+        val versionCode: Long,
+        val versionName: String?,
+        val certificateSha256: String?
+    )
+
     /**
-     * Checks permission and launches the Android Package Installer.
+     * Extracts the SHA-256 fingerprint of the currently installed application certificate.
      */
-    fun installApk(apkFile: File) {
-        if (!apkFile.exists()) {
-            _updateState.value = AppUpdateState.Error("APK file does not exist")
+    fun getInstalledCertificateSha256(): String? {
+        return try {
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                @Suppress("DEPRECATION")
+                android.content.pm.PackageManager.GET_SIGNATURES
+            }
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, flags)
+            val certBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val signingInfo = packageInfo.signingInfo
+                if (signingInfo != null) {
+                    if (signingInfo.hasMultipleSigners()) {
+                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
+                    } else {
+                        signingInfo.signingCertificateHistory?.firstOrNull()?.toByteArray()
+                    }
+                } else null
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.signatures?.firstOrNull()?.toByteArray()
+            }
+            certBytes?.let { computeSha256(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error obtaining installed certificate fingerprint: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Inspects a downloaded APK file to extract its package metadata and signing certificate fingerprint.
+     */
+    fun getApkArchiveDetails(apkFile: File): ApkArchiveDetails? {
+        return try {
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                @Suppress("DEPRECATION")
+                android.content.pm.PackageManager.GET_SIGNATURES
+            }
+            val packageInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags) ?: return null
+            val versionCode = PackageInfoCompat.getLongVersionCode(packageInfo)
+            val certBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val signingInfo = packageInfo.signingInfo
+                if (signingInfo != null) {
+                    if (signingInfo.hasMultipleSigners()) {
+                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
+                    } else {
+                        signingInfo.signingCertificateHistory?.firstOrNull()?.toByteArray()
+                    }
+                } else null
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.signatures?.firstOrNull()?.toByteArray()
+            }
+            val certSha256 = certBytes?.let { computeSha256(it) }
+            ApkArchiveDetails(
+                packageName = packageInfo.packageName,
+                versionCode = versionCode,
+                versionName = packageInfo.versionName,
+                certificateSha256 = certSha256
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error inspecting downloaded APK: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
+     * Checks permission, verifies APK compatibility, and launches the Android Package Installer.
+     */
+    fun installApk(apkFile: File, manifest: AppUpdateManifest? = null) {
+        if (!apkFile.exists() || apkFile.length() == 0L) {
+            _updateState.value = AppUpdateState.Error("APK file does not exist or is empty")
             return
         }
 
-        // On Android 8.0 (API 26) and above, check for unknown app install permission
+        // 1. Diagnostic Data Collection
+        val installedPackage = context.packageName
+        val installedCode = installedVersionCode
+        val installedName = installedVersionName
+        val expectedCertSha256 = getInstalledCertificateSha256()
+
+        val archiveDetails = getApkArchiveDetails(apkFile)
+        val downloadedPackage = archiveDetails?.packageName
+        val downloadedCode = archiveDetails?.versionCode ?: -1L
+        val downloadedName = archiveDetails?.versionName ?: "N/A"
+        val downloadedCertSha256 = archiveDetails?.certificateSha256
+
+        val latestCode = manifest?.versionCode ?: downloadedCode
+        val latestName = manifest?.versionName ?: downloadedName
+
+        // Log required diagnostic format
+        Log.i(TAG, "==================== APP UPDATE DIAGNOSTICS ====================")
+        Log.i(TAG, "Installed package name:                   $installedPackage")
+        Log.i(TAG, "Installed versionCode:                    $installedCode")
+        Log.i(TAG, "Installed versionName:                    $installedName")
+        Log.i(TAG, "Latest versionCode:                       $latestCode")
+        Log.i(TAG, "Latest versionName:                       $latestName")
+        Log.i(TAG, "Downloaded APK path:                      ${apkFile.absolutePath}")
+        Log.i(TAG, "Downloaded APK package name:              ${downloadedPackage ?: "UNKNOWN"}")
+        Log.i(TAG, "Downloaded APK versionCode:               $downloadedCode")
+        Log.i(TAG, "Downloaded APK signing cert fingerprint:  ${downloadedCertSha256 ?: "UNKNOWN"}")
+        Log.i(TAG, "Expected signing certificate fingerprint: ${expectedCertSha256 ?: "UNKNOWN"}")
+        Log.i(TAG, "================================================================")
+
+        // 2. Pre-installation Compatibility Checks
+        if (archiveDetails == null) {
+            val errorMsg = "The downloaded APK file appears to be corrupted or invalid."
+            Log.e(TAG, "Pre-install validation failed: unable to parse APK archive.")
+            _updateState.value = AppUpdateState.Error(errorMsg, manifest = manifest)
+            return
+        }
+
+        if (downloadedPackage != installedPackage) {
+            val errorMsg = "Update package has mismatched package name: expected '$installedPackage', got '$downloadedPackage'."
+            Log.e(TAG, "Pre-install validation failed: $errorMsg")
+            _updateState.value = AppUpdateState.Error(errorMsg, manifest = manifest)
+            return
+        }
+
+        if (downloadedCode <= installedCode) {
+            val errorMsg = "Update package version ($downloadedCode) is not greater than installed version ($installedCode). Downgrade is rejected."
+            Log.e(TAG, "Pre-install validation failed: $errorMsg")
+            _updateState.value = AppUpdateState.Error(errorMsg, manifest = manifest)
+            return
+        }
+
+        // 3. Signing Certificate Verification (Prevents "package conflicts with an existing package")
+        if (expectedCertSha256 != null && downloadedCertSha256 != null) {
+            if (!expectedCertSha256.equals(downloadedCertSha256, ignoreCase = true)) {
+                val errorMsg = "Installation blocked: Signing certificate mismatch.\n" +
+                    "The downloaded APK is signed with a different key than the installed app.\n" +
+                    "Installed: $expectedCertSha256\n" +
+                    "Downloaded: $downloadedCertSha256"
+                Log.e(TAG, "CRITICAL SIGNING MISMATCH: $errorMsg")
+                _updateState.value = AppUpdateState.Error(
+                    message = "Update cannot be installed due to a certificate signature mismatch. Please ensure updates are built with the production release key.",
+                    manifest = manifest
+                )
+                return
+            }
+        }
+
+        // 4. On Android 8.0 (API 26) and above, check for unknown app install permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!context.packageManager.canRequestPackageInstalls()) {
                 Log.w(TAG, "Install permission not granted. Requesting user permission in Settings.")
@@ -487,6 +632,7 @@ class AppUpdateManager @Inject constructor(
             }
         }
 
+        // 5. Launch Android Package Installer via Secure FileProvider
         try {
             val contentUri: Uri = FileProvider.getUriForFile(
                 context,
@@ -500,13 +646,16 @@ class AppUpdateManager @Inject constructor(
                 setDataAndType(contentUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
             }
 
             context.startActivity(installIntent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch installer: ${e.message}", e)
             _updateState.value = AppUpdateState.Error(
-                message = "Failed to launch installer: ${e.localizedMessage}"
+                message = "Failed to launch installer: ${e.localizedMessage}",
+                manifest = manifest
             )
         }
     }
@@ -520,7 +669,7 @@ class AppUpdateManager @Inject constructor(
         if (current is AppUpdateState.ReadyToInstall) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()) {
                 Log.i(TAG, "Permissions satisfied: automatically resuming APK installation.")
-                installApk(current.apkFile)
+                installApk(current.apkFile, current.manifest)
             }
         }
     }
@@ -545,6 +694,11 @@ class AppUpdateManager @Inject constructor(
         } else if (current is AppUpdateState.Error) {
             _updateState.value = AppUpdateState.Idle
         }
+    }
+
+    private fun computeSha256(bytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(bytes).joinToString("") { "%02x".format(it) }
     }
 
     private fun calculateSha256(file: File): String {
