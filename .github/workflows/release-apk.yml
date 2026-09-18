@@ -268,8 +268,10 @@ EOF
             exit 1
           fi
           
-          # Clean any local or machine-specific java.home settings from properties
-          sed -i '/^org\.gradle\.java\.home/d' gradle.properties 2>/dev/null || true
+          # Clean any local or machine-specific java.home settings from all possible properties locations
+          sed -i '/org\.gradle\.java\.home/d' gradle.properties 2>/dev/null || true
+          sed -i '/org\.gradle\.java\.home/d' ../gradle.properties 2>/dev/null || true
+          mkdir -p ~/.gradle && sed -i '/org\.gradle\.java\.home/d' ~/.gradle/gradle.properties 2>/dev/null || true
           
           ./gradlew assembleRelease \
             -Dorg.gradle.java.home="$JAVA_HOME" \
