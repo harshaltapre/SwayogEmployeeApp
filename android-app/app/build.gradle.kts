@@ -111,15 +111,18 @@ android {
             }
 
             val keyAliasStr = getLocalProperty("RELEASE_KEY_ALIAS", System.getenv("RELEASE_KEY_ALIAS") ?: "release")
-            val storePassStr = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "swayog123")
+            val storePassStr = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "")
             val keyPassStr = getLocalProperty("RELEASE_KEY_PASSWORD", System.getenv("RELEASE_KEY_PASSWORD") ?: storePassStr)
 
             if (keystoreFile != null && keystoreFile.exists()) {
+                if (keyAliasStr.isBlank() || storePassStr.isBlank() || keyPassStr.isBlank()) {
+                    throw GradleException("Release signing credentials are incomplete. Configure RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD, and RELEASE_KEY_PASSWORD.")
+                }
                 storeFile = keystoreFile
                 this.keyAlias = keyAliasStr
                 storePassword = storePassStr
                 keyPassword = keyPassStr
-                println("🔐 Release signing configured using keystore: ${keystoreFile.canonicalPath}")
+                println("Release signing configured with the supplied production keystore")
             } else {
                 val isCI = System.getenv("CI") == "true"
                 if (isCI) {

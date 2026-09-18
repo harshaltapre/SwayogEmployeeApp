@@ -28,6 +28,11 @@ async function main() {
     process.exit(1);
   }
 
+  if (!/^\d+(\.\d+){2,3}(-[0-9A-Za-z.-]+)?$/.test(versionName)) {
+    console.error(`Error: Invalid versionName "${versionName}".`);
+    process.exit(1);
+  }
+
   const minimumVersionCode = minVersionCodeStr ? parseInt(minVersionCodeStr, 10) : 1;
   const mandatory = mandatoryStr === "true";
 
@@ -82,21 +87,23 @@ async function main() {
   console.log(`  1. ${buildSpecificApkKey}`);
   await uploadToR2(apkBuffer, buildSpecificApkKey, "application/vnd.android.package-archive", `swayog-v${versionName}-${versionCode}.apk`);
 
+  const uploadedApk = await getFromR2(buildSpecificApkKey);
+  const uploadedSha256 = crypto.createHash("sha256").update(uploadedApk).digest("hex");
+  if (uploadedApk.length !== fileSize || uploadedSha256 !== sha256) {
+    throw new Error(`Uploaded APK verification failed for ${buildSpecificApkKey}`);
+  }
+
   console.log(`  2. ${latestApkKey}`);
   await uploadToR2(apkBuffer, latestApkKey, "application/vnd.android.package-archive", "app-release.apk");
 
   // Determine authoritative public APK URL (permanent HTTPS URL, never 7-day presigned)
   const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
   let publicApkUrl = "";
-  
-  if (publicBaseUrl && !publicBaseUrl.includes(".r2.cloudflarestorage.com") && !publicBaseUrl.includes("your-public-domain.com")) {
-    publicApkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${buildSpecificApkKey}`;
-    console.log(`[Deploy] Using public CDN URL for APK: ${publicApkUrl}`);
-  } else {
-    const webDomain = process.env.WEB_DOMAIN || "https://swayog-dashboard.vercel.app";
-    publicApkUrl = `${webDomain.replace(/\/$/, "")}/${buildSpecificApkKey}`;
-    console.log(`[Deploy] Using web dashboard download URL for APK: ${publicApkUrl}`);
+  if (!publicBaseUrl || publicBaseUrl.includes("your-public-domain.com") || publicBaseUrl.includes(".r2.cloudflarestorage.com")) {
+    throw new Error("R2_PUBLIC_URL must be configured as the HTTPS public R2/CDN domain before publishing a release.");
   }
+  publicApkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${buildSpecificApkKey}`;
+  console.log(`[Deploy] Using public CDN URL for APK: ${publicApkUrl}`);
 
   // Step 4: Construct release metadata
   const manifest: AppUpdateManifest = {

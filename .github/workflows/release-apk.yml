@@ -1,384 +1,352 @@
-name: Build and Deploy Android Release APK
+﻿name: Production Android APK Release
 
 on:
   push:
     branches:
       - main
-    paths:
-      - 'android-app/**'
-      - '.github/workflows/release-apk.yml'
-      - 'backend/scripts/deploy-release.ts'
-      - 'web-update/**'
   workflow_dispatch:
     inputs:
       version_name:
-        description: 'Version Name (e.g. 1.0.0)'
-        required: true
-        default: '1.0.0'
+        description: Version name (for example 1.0.1)
+        required: false
+        default: '1.0.1'
       version_code:
-        description: 'Version Code / Build Number (numeric, e.g. 21)'
-        required: true
+        description: Version code or build number (for example 21)
+        required: false
         default: '21'
       minimum_version_code:
-        description: 'Minimum Supported Version Code (numeric, e.g. 1)'
+        description: Minimum supported version code
         required: false
         default: '1'
       mandatory:
-        description: 'Is this a mandatory update?'
+        description: Mandatory update?
+        required: false
         type: boolean
         default: false
       release_notes:
-        description: 'User-facing release notes (newline or bullet separated)'
+        description: Release notes shown in the update dialog
         required: false
         default: |
-          Improved attendance tracking and calendar sync
+          Attendance and synchronization improvements
+          Improved attendance tracking
           Fixed working-hour calculation
           Improved profile synchronization
-          Performance improvements and bug fixes
+          Bug fixes and performance improvements
+
+permissions:
+  contents: read
 
 concurrency:
-  group: release-apk-pipeline
+  group: android-production-release
   cancel-in-progress: false
 
+env:
+  APP_ID: com.swayog.employee
+  APP_PACKAGE: com.swayog.employee
+  GOOGLE_SERVICES_JSON_PATH: android-app/app/google-services.json
+  KEYSTORE_PATH: android-app/keystore/release.jks
+  RELEASE_APK_PATH: android-app/app/build/outputs/apk/release/app-release.apk
+  MINIMUM_VERSION_BASELINE: '20'
+
 jobs:
-  build-and-deploy:
-    name: Build Signed Release APK & Publish to Cloudflare R2
+  production-release:
+    name: Build and publish signed production APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout Private Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 17
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
-          cache: 'gradle'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: backend/package-lock.json
 
-      - name: Determine Next Build Version
+      - name: Determine production version
         id: versioning
+        shell: bash
         run: |
+          set -Eeuo pipefail
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION_NAME="${{ github.event.inputs.version_name }}"
             VERSION_CODE="${{ github.event.inputs.version_code }}"
             MIN_VERSION_CODE="${{ github.event.inputs.minimum_version_code }}"
             MANDATORY="${{ github.event.inputs.mandatory }}"
           else
-            # Fetch tags to evaluate build history
-            git fetch --tags --force 2>/dev/null || true
-            
-            # Find the highest existing build number from tags
-            HIGHEST_BUILD=20
-            while read -r TAG; do
-              if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-build([0-9]+)$ ]]; then
-                BUILD_NUM="${BASH_REMATCH[1]}"
-                if [ "$BUILD_NUM" -gt "$HIGHEST_BUILD" ]; then
-                  HIGHEST_BUILD="$BUILD_NUM"
+            git fetch --tags --force >/dev/null 2>&1 || true
+
+            HIGHEST_CODE=20
+            LATEST_VERSION_NAME="1.0.0"
+            while read -r tag; do
+              if [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)-build([0-9]+)$ ]]; then
+                code=${BASH_REMATCH[4]}
+                version_name="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+                if (( code > HIGHEST_CODE )); then
+                  HIGHEST_CODE=$code
+                  LATEST_VERSION_NAME="$version_name"
                 fi
               fi
-            done < <(git tag -l "v*-build*")
+            done < <(git tag -l 'v*-build*')
 
-            VERSION_CODE=$((HIGHEST_BUILD + 1))
-            VERSION_NAME="1.0.0"
+            VERSION_CODE=$((HIGHEST_CODE + 1))
+            VERSION_NAME="$LATEST_VERSION_NAME"
             MIN_VERSION_CODE="1"
             MANDATORY="false"
           fi
 
-          RELEASE_TAG="v${VERSION_NAME}-build${VERSION_CODE}"
-          RELEASE_TITLE="Swayog Employee App v${VERSION_NAME} — Build ${VERSION_CODE}"
+          if ! [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]; then
+            echo "::error::FAILED STAGE: Versioning"
+            echo "::error::Version code must be numeric; got '${VERSION_CODE}'."
+            exit 1
+          fi
 
-          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_OUTPUT
-          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "MIN_VERSION_CODE=$MIN_VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "MANDATORY=$MANDATORY" >> $GITHUB_OUTPUT
-          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_OUTPUT
-          echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_OUTPUT
-          echo "🚀 Target Release: Version $VERSION_NAME (Build $VERSION_CODE) -> Tag $RELEASE_TAG"
+          if (( VERSION_CODE <= MINIMUM_VERSION_BASELINE )); then
+            echo "::error::FAILED STAGE: Versioning"
+            echo "::error::versionCode must be greater than ${MINIMUM_VERSION_BASELINE}; got '${VERSION_CODE}'."
+            exit 1
+          fi
 
-      - name: Validate Production Signing Secrets
-        id: signing_secrets
-        env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE || secrets.RELEASE_KEYSTORE_BASE64 }}
-          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS || secrets.RELEASE_KEY_ALIAS || 'release' }}
-          KEY_PASS: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
-        run: |
-          # Strip whitespace (handles secrets pasted with trailing newlines)
-          KEYSTORE_B64_CLEAN=$(echo "$KEYSTORE_B64" | tr -d '[:space:]')
-          STORE_PASS_CLEAN=$(echo "$STORE_PASS" | tr -d '[:space:]')
-          
-          if [ -z "$KEYSTORE_B64_CLEAN" ]; then
-            echo "::error::KEYSTORE or RELEASE_KEYSTORE_BASE64 secret is missing or empty."
-            echo "::error::Go to: GitHub Repo → Settings → Secrets and variables → Actions → New repository secret"
-            echo "::error::Secret name: KEYSTORE"
-            echo "::error::Secret value: base64-encoded content of your release-key.jks file"
-            echo "::error::On Linux/Mac: base64 -w 0 release-key.jks"
-            echo "::error::On Windows PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes('release-key.jks'))"
+          if ! [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::FAILED STAGE: Versioning"
+            echo "::error::versionName must be semantic version text; got '${VERSION_NAME}'."
             exit 1
           fi
-          if [ -z "$STORE_PASS_CLEAN" ]; then
-            echo "::error::KEYSTORE_PASSWORD or RELEASE_STORE_PASSWORD secret is missing or empty."
-            exit 1
-          fi
-          echo "KEY_ALIAS=$KEY_ALIAS" >> $GITHUB_ENV
-          echo "KEYSTORE_B64_CLEAN=$KEYSTORE_B64_CLEAN" >> $GITHUB_ENV
-          echo "✅ All required signing secrets are present and non-empty"
 
-      - name: Decode Production Release Keystore
-        id: keystore
-        env:
-          KEYSTORE_B64_CLEAN: ${{ env.KEYSTORE_B64_CLEAN }}
-        run: |
-          mkdir -p android-app/keystore
-          
-          # Use the pre-validated, whitespace-stripped base64 from the previous step.
-          # Accessing via env: block keeps it out of logs (treated as a secret-like value).
-          printf '%s' "$KEYSTORE_B64_CLEAN" | base64 -d > android-app/keystore/release.jks
-          DECODE_EXIT=$?
-          
-          if [ $DECODE_EXIT -ne 0 ]; then
-            echo "::error::base64 decode failed (exit $DECODE_EXIT). The KEYSTORE secret is not valid base64."
-            echo "::error::Re-encode your keystore: base64 -w 0 release-key.jks  (Linux)"
-            echo "::error::Or on Windows PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes('release-key.jks'))"
+          if ! [[ "$MIN_VERSION_CODE" =~ ^[0-9]+$ ]]; then
+            echo "::error::FAILED STAGE: Versioning"
+            echo "::error::minimum_version_code must be numeric; got '${MIN_VERSION_CODE}'."
             exit 1
           fi
-          
-          if [ ! -f "android-app/keystore/release.jks" ]; then
-            echo "::error::Keystore file was not created after decode."
-            exit 1
-          fi
-          
-          FILE_SIZE=$(stat -c%s android-app/keystore/release.jks 2>/dev/null || echo 0)
-          if [ "$FILE_SIZE" -lt 100 ]; then
-            echo "::error::Decoded keystore is too small ($FILE_SIZE bytes) — likely corrupt or not a real keystore."
-            echo "::error::Expected size: typically 2000-5000 bytes for a PKCS12 keystore."
-            exit 1
-          fi
-          
-          # Verify PKCS12 magic bytes (0x30 0x82 at start indicates valid DER/PKCS12)
-          MAGIC=$(xxd -l 2 android-app/keystore/release.jks 2>/dev/null | awk '{print $2}' || od -An -N2 -tx1 android-app/keystore/release.jks | tr -d ' ')
-          echo "Keystore magic bytes: $MAGIC | File size: $FILE_SIZE bytes"
-          
-          echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/android-app/keystore/release.jks" >> $GITHUB_ENV
-          echo "✅ Production keystore decoded successfully ($FILE_SIZE bytes)"
 
-      - name: Restore Google Services Configuration
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "MIN_VERSION_CODE=$MIN_VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "MANDATORY=$MANDATORY" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_TAG=v${VERSION_NAME}-build${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+
+          echo "Selected release versionName=${VERSION_NAME}, versionCode=${VERSION_CODE}, minimumVersionCode=${MIN_VERSION_CODE}, mandatory=${MANDATORY}"
+
+      - name: Restore Firebase configuration
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        shell: bash
         run: |
-          mkdir -p android-app/app
+          set -Eeuo pipefail
 
-          # Strip whitespace from secret
-          CLEAN_B64=$(echo "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '[:space:]')
-
-          if [ -z "$CLEAN_B64" ]; then
-            echo "::error::GOOGLE_SERVICES_JSON_BASE64 secret is missing or empty in GitHub Secrets."
-            echo "::error::Go to: GitHub Repo → Settings → Secrets and variables → Actions → New repository secret"
-            echo "::error::Secret Name: GOOGLE_SERVICES_JSON_BASE64"
-            echo "::error::Secret Value: Base64-encoded string of your google-services.json"
+          if [ -z "${GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+            echo "::error::FAILED STAGE: Firebase configuration"
+            echo "::error::GOOGLE_SERVICES_JSON_BASE64 GitHub Secret is missing."
             exit 1
           fi
 
-          # Safe decode into target location without echoing content
-          printf '%s' "$CLEAN_B64" | base64 -d > android-app/app/google-services.json
-          DECODE_EXIT=$?
+          mkdir -p "$(dirname "$GOOGLE_SERVICES_JSON_PATH")"
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '\r\n[:space:]' | base64 -d > "$GOOGLE_SERVICES_JSON_PATH"
 
-          if [ $DECODE_EXIT -ne 0 ]; then
-            echo "::error::base64 decode of GOOGLE_SERVICES_JSON_BASE64 failed (exit code $DECODE_EXIT)."
+          if [ ! -s "$GOOGLE_SERVICES_JSON_PATH" ]; then
+            echo "::error::FAILED STAGE: Firebase configuration"
+            echo "::error::google-services.json is empty or was not restored."
             exit 1
           fi
 
-          if [ ! -f "android-app/app/google-services.json" ]; then
-            echo "::error::android-app/app/google-services.json was not created after decode."
+          python - <<'PY'
+          import json, os
+          path = os.environ['GOOGLE_SERVICES_JSON_PATH']
+          try:
+              with open(path, 'r', encoding='utf-8') as fh:
+                  data = json.load(fh)
+          except Exception as exc:
+              print("::error::FAILED STAGE: Firebase configuration")
+              print(f"::error::google-services.json is not valid JSON: {exc}")
+              raise SystemExit(1)
+
+          clients = data.get('client')
+          if not isinstance(clients, list) or not clients:
+              print("::error::FAILED STAGE: Firebase configuration")
+              print("::error::google-services.json structure is invalid: missing client list.")
+              raise SystemExit(1)
+
+          pkg = None
+          first = clients[0]
+          if isinstance(first, dict):
+              pkg = first.get('client_info', {}).get('android_client_info', {}).get('package_name')
+
+          expected = os.environ['APP_ID']
+          if pkg != expected:
+              print("::error::FAILED STAGE: Firebase configuration")
+              print(f"::error::google-services.json package name mismatch: found '{pkg}', expected '{expected}'.")
+              raise SystemExit(1)
+
+          print(f"Firebase configuration restored for {pkg}.")
+          PY
+
+      - name: Restore production keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [ -z "${KEYSTORE_B64:-}" ] || [ -z "${KEYSTORE_PASSWORD:-}" ] || [ -z "${KEY_ALIAS:-}" ] || [ -z "${KEY_PASSWORD:-}" ]; then
+            echo "::error::FAILED STAGE: Signing"
+            echo "::error::Missing production keystore secrets. Required: KEYSTORE_B64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD."
             exit 1
           fi
 
-          FILE_SIZE=$(stat -c%s android-app/app/google-services.json 2>/dev/null || echo 0)
-          if [ "$FILE_SIZE" -lt 20 ]; then
-            echo "::error::android-app/app/google-services.json is empty or corrupt ($FILE_SIZE bytes)."
+          mkdir -p "$(dirname "$KEYSTORE_PATH")"
+          printf '%s' "$KEYSTORE_B64" | tr -d '\r\n[:space:]' | base64 -d > "$KEYSTORE_PATH"
+
+          if [ ! -s "$KEYSTORE_PATH" ]; then
+            echo "::error::FAILED STAGE: Signing"
+            echo "::error::Keystore decode produced an empty file."
             exit 1
           fi
 
-          # Validate JSON structure and package name com.swayog.employee without printing secrets
-          node -e '
-            const fs = require("fs");
-            try {
-              const data = JSON.parse(fs.readFileSync("android-app/app/google-services.json", "utf8"));
-              if (!data.client || !Array.isArray(data.client)) {
-                console.error("::error::google-services.json structure is invalid: missing client array");
-                process.exit(1);
-              }
-              const pkg = data.client[0]?.client_info?.android_client_info?.package_name;
-              if (pkg !== "com.swayog.employee") {
-                console.error(`::error::google-services.json package name mismatch: found "${pkg}", expected "com.swayog.employee"`);
-                process.exit(1);
-              }
-            } catch (e) {
-              console.error("::error::Failed to parse google-services.json: " + e.message);
-              process.exit(1);
-            }
-          '
+          keytool -list -v -keystore "$KEYSTORE_PATH" -alias "$KEY_ALIAS" -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" >/dev/null
 
-          echo "✅ google-services.json securely established ($FILE_SIZE bytes, validated for com.swayog.employee)"
+          echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
-      - name: Make Gradlew Executable
-        run: chmod +x android-app/gradlew
-
-      - name: Build and Sign Release APK
+      - name: Build release APK
         working-directory: android-app
         env:
           RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
-          RELEASE_KEY_ALIAS: ${{ env.KEY_ALIAS }}
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard.vercel.app/api/v1/' }}
-          WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard.vercel.app' }}
-          PUBLIC_DISTRIBUTION_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+          RELEASE_KEY_ALIAS: ${{ env.RELEASE_KEY_ALIAS }}
+          RELEASE_STORE_PASSWORD: ${{ env.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ env.RELEASE_KEY_PASSWORD }}
+          VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
+          VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
+        shell: bash
         run: |
-          if [ -z "$RELEASE_STORE_FILE" ]; then
-            echo "::error::RELEASE_STORE_FILE is not set - cannot build production release"
+          set -Eeuo pipefail
+          chmod +x gradlew
+
+          if [ -z "${RELEASE_STORE_FILE:-}" ]; then
+            echo "::error::FAILED STAGE: Signing"
+            echo "::error::RELEASE_STORE_FILE is not set before the Gradle build."
             exit 1
           fi
-          
-          ./gradlew assembleRelease \
-            -PversionName="${{ steps.versioning.outputs.VERSION_NAME }}" \
-            -PversionCode="${{ steps.versioning.outputs.VERSION_CODE }}" \
+
+          ./gradlew :app:assembleRelease \
+            -PversionName="$VERSION_NAME" \
+            -PversionCode="$VERSION_CODE" \
             -PRELEASE_STORE_FILE="$RELEASE_STORE_FILE" \
             -PRELEASE_KEY_ALIAS="$RELEASE_KEY_ALIAS" \
             -PRELEASE_STORE_PASSWORD="$RELEASE_STORE_PASSWORD" \
             -PRELEASE_KEY_PASSWORD="$RELEASE_KEY_PASSWORD" \
             --no-daemon --stacktrace
 
-      - name: Verify Built APK & Calculate SHA-256
-        id: apk_info
-        run: |
-          APK_PATH="android-app/app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$APK_PATH" ]; then
-            APK_PATH=$(find android-app/app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          fi
-          if [ ! -f "$APK_PATH" ]; then
-            echo "::error::Release APK not found after assembleRelease!"
-            exit 1
-          fi
-
-          # Verify it's not a debug APK
-          if [[ "$APK_PATH" == *"debug"* ]]; then
-            echo "::error::APK appears to be a debug build, not release"
-            exit 1
-          fi
-
-          SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
-          FILE_SIZE=$(stat -c%s "$APK_PATH")
-
-          echo "Found APK: $APK_PATH ($FILE_SIZE bytes)"
-          echo "SHA-256:  $SHA256"
-
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "SHA256=$SHA256" >> $GITHUB_OUTPUT
-          echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_OUTPUT
-
-      - name: Strict APK Signature and Metadata Validation
+      - name: Validate APK identity and signature
         env:
-          APK_PATH: ${{ steps.apk_info.outputs.APK_PATH }}
-          EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
           EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
-          EXPECTED_CERT_SHA256: "3E:C2:90:E5:8B:E2:84:B9:0D:CA:34:6C:1E:53:EB:3C:73:5D:5B:FE:B3:C4:2C:6B:6D:DF:B7:EB:7F:6C:1F:B8"
+          EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
+          EXPECTED_CERT_SHA256: ${{ secrets.PRODUCTION_CERT_SHA256 }}
+        shell: bash
         run: |
-          # 1. Locate Android SDK tools
-          if command -v apksigner &> /dev/null; then
-            APKSIGNER="apksigner"
-          elif [ -n "$ANDROID_HOME" ]; then
-            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
-          fi
-          
-          if command -v aapt2 &> /dev/null; then
-            AAPT2="aapt2"
-          elif [ -n "$ANDROID_HOME" ]; then
-            AAPT2=$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort -V | tail -n 1)
-          fi
+          set -Eeuo pipefail
 
-          echo "Using apksigner: $APKSIGNER"
-          echo "Using aapt2:     $AAPT2"
-
-          # 2. Verify APK signature
-          if [ -n "$APKSIGNER" ] && [ -x "$APKSIGNER" ]; then
-            echo "Verifying cryptographic APK signature..."
-            $APKSIGNER verify --print-certs "$APK_PATH" || {
-              echo "::error::APK signature verification failed"
-              exit 1
-            }
-            
-            CERT_INFO=$($APKSIGNER verify --print-certs "$APK_PATH" 2>&1)
-            echo "=== APK Certificate Details ==="
-            echo "$CERT_INFO"
-            echo "==============================="
-
-            # Fail if signed by Android Debug
-            if echo "$CERT_INFO" | grep -qi "CN=Android Debug"; then
-              echo "::error::CRITICAL FAILURE: APK is signed with Android Debug certificate! Production updates must use the production release keystore."
-              exit 1
-            fi
-
-            # Check expected production certificate fingerprint
-            CLEAN_EXPECTED=$(echo "$EXPECTED_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
-            CLEAN_ACTUAL=$(echo "$CERT_INFO" | grep -i "SHA-256 digest" | head -n 1 | awk '{print $NF}' | tr -d ': ' | tr '[:upper:]' '[:lower:]')
-            
-            echo "Expected Certificate SHA-256: $CLEAN_EXPECTED"
-            echo "Actual APK Certificate SHA-256: $CLEAN_ACTUAL"
-
-            if [ -n "$CLEAN_ACTUAL" ] && [ "$CLEAN_ACTUAL" != "$CLEAN_EXPECTED" ]; then
-              echo "::error::CRITICAL MISMATCH: Built APK certificate ($CLEAN_ACTUAL) does not match expected production certificate ($CLEAN_EXPECTED)!"
-              echo "::error::This would break updates for all installed users!"
-              exit 1
-            fi
-            echo "✅ Certificate matches authoritative production release key"
-          fi
-
-          # 3. Verify applicationId and versionCode using aapt2 if available
-          if [ -n "$AAPT2" ] && [ -x "$AAPT2" ]; then
-            DUMP_OUTPUT=$($AAPT2 dump badging "$APK_PATH" 2>&1 || true)
-            
-            # Check package name
-            if ! echo "$DUMP_OUTPUT" | grep -q "package: name='com.swayog.employee'"; then
-              echo "::error::APK package name is not 'com.swayog.employee'!"
-              exit 1
-            fi
-            echo "✅ Package name confirmed: com.swayog.employee"
-
-            # Check versionCode
-            if ! echo "$DUMP_OUTPUT" | grep -q "versionCode='$EXPECTED_VERSION_CODE'"; then
-              echo "::error::APK versionCode does not match expected build number $EXPECTED_VERSION_CODE!"
-              exit 1
-            fi
-            echo "✅ Version code confirmed: $EXPECTED_VERSION_CODE"
-          fi
-
-          # 4. Verify versionCode is strictly greater than 20
-          if [ "$EXPECTED_VERSION_CODE" -le 20 ]; then
-            echo "::error::Production release versionCode must be strictly greater than baseline 20 (got: $EXPECTED_VERSION_CODE)"
+          if [ ! -f "$RELEASE_APK_PATH" ]; then
+            echo "::error::FAILED STAGE: APK validation"
+            echo "::error::Release APK was not produced at $RELEASE_APK_PATH."
             exit 1
           fi
 
-          # 5. Verify MANIFEST.MF exists in APK
-          if ! unzip -l "$APK_PATH" | grep -q "META-INF/MANIFEST.MF"; then
-            echo "::error::APK is missing MANIFEST.MF, build is corrupt"
+          AAPT2="$(command -v aapt2 || true)"
+          APKSIGNER="$(command -v apksigner || true)"
+          if [ -z "$AAPT2" ] && [ -n "$ANDROID_HOME" ]; then
+            AAPT2="$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort -V | tail -n 1)"
+          fi
+          if [ -z "$APKSIGNER" ] && [ -n "$ANDROID_HOME" ]; then
+            APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          fi
+
+          if [ -z "$AAPT2" ] || [ -z "$APKSIGNER" ]; then
+            echo "::error::FAILED STAGE: APK validation"
+            echo "::error::Android build-tools aapt2/apksigner were not found."
             exit 1
           fi
-          echo "✅ APK integrity checks passed completely"
 
-      - name: Prepare User-Facing Release Notes
+          if ! "$APKSIGNER" verify --print-certs "$RELEASE_APK_PATH" >/tmp/apk-certs.txt 2>&1; then
+            echo "::error::FAILED STAGE: APK validation"
+            echo "::error::APK signature validation failed."
+            cat /tmp/apk-certs.txt || true
+            exit 1
+          fi
+
+          CERT_TEXT="$(cat /tmp/apk-certs.txt)"
+          if echo "$CERT_TEXT" | grep -qi 'CN=Android Debug'; then
+            echo "::error::FAILED STAGE: Signing"
+            echo "::error::APK is signed with the Android debug certificate and cannot be published as a production update."
+            exit 1
+          fi
+
+          if [ -z "${EXPECTED_CERT_SHA256:-}" ]; then
+            echo "::error::FAILED STAGE: Signing"
+            echo "::error::PRODUCTION_CERT_SHA256 is missing. Refusing to publish a release without certificate validation."
+            exit 1
+          fi
+
+          EXPECTED_CLEAN="$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')"
+          ACTUAL_CLEAN="$(printf '%s' "$CERT_TEXT" | grep -i 'SHA-256 digest' | head -n 1 | awk '{print $NF}' | tr -d ': ' | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$ACTUAL_CLEAN" ] || [ "$ACTUAL_CLEAN" != "$EXPECTED_CLEAN" ]; then
+            echo "::error::FAILED STAGE: Signing"
+            echo "::error::Signing certificate mismatch: expected '$EXPECTED_CLEAN' but APK reports '$ACTUAL_CLEAN'."
+            exit 1
+          fi
+
+          BADGING="$($AAPT2 dump badging "$RELEASE_APK_PATH")"
+          if ! echo "$BADGING" | grep -q "package: name='${APP_PACKAGE}'"; then
+            echo "::error::FAILED STAGE: APK validation"
+            echo "::error::APK package name is not ${APP_PACKAGE}."
+            exit 1
+          fi
+          if ! echo "$BADGING" | grep -q "versionCode='${EXPECTED_VERSION_CODE}'"; then
+            echo "::error::FAILED STAGE: APK validation"
+            echo "::error::APK versionCode mismatch; expected ${EXPECTED_VERSION_CODE}."
+            exit 1
+          fi
+          if ! echo "$BADGING" | grep -q "versionName='${EXPECTED_VERSION_NAME}'"; then
+            echo "::error::FAILED STAGE: APK validation"
+            echo "::error::APK versionName mismatch; expected ${EXPECTED_VERSION_NAME}."
+            exit 1
+          fi
+
+          if ! unzip -l "$RELEASE_APK_PATH" | grep -q 'META-INF/MANIFEST.MF'; then
+            echo "::error::FAILED STAGE: APK validation"
+            echo "::error::APK is missing META-INF/MANIFEST.MF and is not a valid release package."
+            exit 1
+          fi
+
+          SHA256="$(sha256sum "$RELEASE_APK_PATH" | awk '{print $1}')"
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+          echo "APK_SHA256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "Verified production APK: ${RELEASE_APK_PATH}"
+          echo "Signing certificate matches the production key: ${ACTUAL_CLEAN}"
+
+      - name: Prepare release notes
+        shell: bash
         run: |
-          cat << 'EOF' > release_notes.txt
+          cat <<'EOF' > release_notes.txt
           ${{ github.event.inputs.release_notes || 'Attendance and synchronization improvements
           • Improved attendance tracking
           • Fixed working-hour calculation
@@ -387,158 +355,100 @@ jobs:
           • Bug fixes and performance improvements' }}
           EOF
 
-      - name: Publish APK & Canonical latest.json to Cloudflare R2
+      - name: Publish to Cloudflare R2 and latest.json
         working-directory: backend
         env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME || 'swayog-dashboard' }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
-          PUBLIC_DISTRIBUTION_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL }}
-          WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard.vercel.app' }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL }}
+          PUBLIC_DISTRIBUTION_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL }}
+          VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
+          VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
+          MIN_VERSION_CODE: ${{ steps.versioning.outputs.MIN_VERSION_CODE }}
+          MANDATORY: ${{ steps.versioning.outputs.MANDATORY }}
+        shell: bash
         run: |
-          npm ci
-          npx tsx scripts/deploy-release.ts \
-            "../${{ steps.apk_info.outputs.APK_PATH }}" \
-            "${{ steps.versioning.outputs.VERSION_NAME }}" \
-            "${{ steps.versioning.outputs.VERSION_CODE }}" \
-            "${{ steps.versioning.outputs.MIN_VERSION_CODE }}" \
-            "${{ steps.versioning.outputs.MANDATORY }}" \
-            "../release_notes.txt" \
-            "${{ steps.versioning.outputs.RELEASE_TAG }}" \
-            "${{ steps.versioning.outputs.RELEASE_TITLE }}"
+          set -Eeuo pipefail
 
-      - name: Validate Release Before Publishing
-        working-directory: backend
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME || 'swayog-dashboard' }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
-          EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
-          EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
-          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
-        run: |
-          npm ci
-          node -e '
-          const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
-          
-          async function validate() {
-            const client = new S3Client({
-              region: "auto",
-              endpoint: process.env.R2_ENDPOINT,
-              credentials: {
-                accessKeyId: process.env.R2_ACCESS_KEY_ID,
-                secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-              },
-            });
-
-            console.log("Fetching latest.json from R2...");
-            const res = await client.send(new GetObjectCommand({
-              Bucket: process.env.R2_BUCKET_NAME,
-              Key: "latest.json",
-            }));
-
-            const chunks = [];
-            for await (const chunk of res.Body) chunks.push(chunk);
-            const raw = Buffer.concat(chunks).toString("utf-8");
-            
-            const manifest = JSON.parse(raw);
-            console.log("Validating manifest contract...");
-
-            if (typeof manifest !== "object" || manifest === null) throw new Error("latest.json is not an object");
-            if (manifest.appId !== "com.swayog.employee") throw new Error("appId must be com.swayog.employee");
-            if (manifest.platform !== "android") throw new Error("platform must be android");
-            if (!manifest.versionCode || manifest.versionCode <= 0) throw new Error("versionCode must be > 0");
-            if (!manifest.versionName) throw new Error("versionName must not be empty");
-            if (!manifest.apkUrl || !manifest.apkUrl.startsWith("https://")) throw new Error("apkUrl must be HTTPS: " + manifest.apkUrl);
-            if (!/^[a-fA-F0-9]{64}$/.test(manifest.sha256)) throw new Error("sha256 must be 64 hex chars");
-            
-            if (String(manifest.versionCode) !== process.env.EXPECTED_VERSION_CODE) {
-              throw new Error(`Manifest versionCode (${manifest.versionCode}) does not match expected (${process.env.EXPECTED_VERSION_CODE})`);
-            }
-            if (manifest.sha256.toLowerCase() !== process.env.EXPECTED_SHA256.toLowerCase()) {
-              throw new Error(`Manifest sha256 does not match actual APK sha256`);
-            }
-
-            console.log("✅ All manifest validation checks passed successfully!");
-          }
-
-          validate().catch(err => {
-            console.error("::error::Release Validation Failed: " + err.message);
-            process.exit(1);
-          });
-          '
-
-      - name: Verify Public /latest.json Endpoint
-        env:
-          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
-        run: |
-          CLEAN_BASE="${PUBLIC_URL%/}"
-          EP="$CLEAN_BASE/latest.json"
-          echo "Testing public endpoint: $EP"
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$EP" || echo "000")
-          CONTENT_TYPE=$(curl -s -I "$EP" | grep -i "content-type" | tr -d '\r' || echo "")
-          echo "Response HTTP status: $HTTP_STATUS ($CONTENT_TYPE)"
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "✅ Public /latest.json is live and returned HTTP 200"
-          else
-            echo "⚠️ Public /latest.json returned HTTP $HTTP_STATUS (may take a few moments to propagate if deployed behind CDN)"
-          fi
-
-      - name: Create and Push Git Release Tag
-        run: |
-          RELEASE_TAG="${{ steps.versioning.outputs.RELEASE_TAG }}"
-          RELEASE_TITLE="${{ steps.versioning.outputs.RELEASE_TITLE }}"
-          
-          # Check if tag already exists to prevent duplicates
-          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "::error::Git tag $RELEASE_TAG already exists - preventing duplicate release"
-            echo "::error::Please check if another workflow is running or manually remove the tag if needed"
+          if [ -z "${R2_ACCESS_KEY_ID:-}" ] || [ -z "${R2_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_BUCKET_NAME:-}" ] || [ -z "${R2_ENDPOINT:-}" ] || [ -z "${R2_PUBLIC_URL:-}" ]; then
+            echo "::error::FAILED STAGE: R2 upload"
+            echo "::error::Cloudflare R2 secrets are incomplete. Required: R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_ENDPOINT, R2_PUBLIC_URL."
             exit 1
           fi
-          
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$RELEASE_TAG" -m "$RELEASE_TITLE"
-          git push origin "$RELEASE_TAG"
-          echo "✅ Created and pushed Git tag: $RELEASE_TAG"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.versioning.outputs.RELEASE_TAG }}
-          name: ${{ steps.versioning.outputs.RELEASE_TITLE }}
-          body_path: release_notes.txt
-          files: ${{ steps.apk_info.outputs.APK_PATH }}
-          draft: false
-          prerelease: false
+          npm ci --no-audit --no-fund
+
+          npx tsx scripts/deploy-release.ts \
+            "../${RELEASE_APK_PATH}" \
+            "$VERSION_NAME" \
+            "$VERSION_CODE" \
+            "$MIN_VERSION_CODE" \
+            "$MANDATORY" \
+            "../release_notes.txt" \
+            "v${VERSION_NAME}-build${VERSION_CODE}" \
+            "Swayog Employee App v${VERSION_NAME} — Build ${VERSION_CODE}"
+
+      - name: Verify public manifest endpoint
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Backup APK to Private GitHub Run Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-${{ steps.versioning.outputs.RELEASE_TAG }}
-          path: ${{ steps.apk_info.outputs.APK_PATH }}
-          retention-days: 60
-
-      - name: Release Deployment Summary
+          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL }}
+        shell: bash
         run: |
-          echo "### 🚀 Production Release Successfully Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "- **App:** Swayog Employee App" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version Name:** \`v${{ steps.versioning.outputs.VERSION_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version Code / Build:** \`${{ steps.versioning.outputs.VERSION_CODE }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Release Tag:** \`${{ steps.versioning.outputs.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Mandatory Update:** \`${{ steps.versioning.outputs.MANDATORY }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **SHA-256 Checksum:** \`${{ steps.apk_info.outputs.SHA256 }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **File Size:** \`$(( ${{ steps.apk_info.outputs.FILE_SIZE }} / 1024 / 1024 )) MB\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Distribution Layer:** Cloudflare R2 (\`swayog-dashboard\`)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Canonical Manifest:** \`latest.json\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **APK Storage Key:** \`releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}/app-release.apk\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Public Endpoint:** \`${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}/latest.json\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **GitHub Release:** Published with tag \`${{ steps.versioning.outputs.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          set -Eeuo pipefail
+
+          if [ -z "${PUBLIC_URL:-}" ]; then
+            echo "::error::FAILED STAGE: Metadata"
+            echo "::error::R2_PUBLIC_URL is not configured. The app cannot fetch latest.json."
+            exit 1
+          fi
+
+          STATUS="$(curl -sS -o /tmp/latest.json -w '%{http_code}' "${PUBLIC_URL%/}/latest.json")" || {
+            echo "::error::FAILED STAGE: Metadata"
+            echo "::error::Public manifest endpoint is unavailable."
+            exit 1
+          }
+
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::FAILED STAGE: Metadata"
+            echo "::error::latest.json returned HTTP ${STATUS} from ${PUBLIC_URL%/}/latest.json"
+            exit 1
+          fi
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('/tmp/latest.json', 'utf8'));
+          if (data.appId !== 'com.swayog.employee') throw new Error('appId mismatch');
+          if (data.platform !== 'android') throw new Error('platform mismatch');
+          if (!data.apkUrl || !String(data.apkUrl).startsWith('https://')) throw new Error('apkUrl must use https');
+          if (!/^[a-fA-F0-9]{64}$/.test(String(data.sha256 || ''))) throw new Error('sha256 must be 64 hex chars');
+          console.log(`Verified full release metadata for ${data.versionName} build ${data.versionCode}.`);
+          NODE
+
+      - name: Remove temporary credentials
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$GOOGLE_SERVICES_JSON_PATH" "$KEYSTORE_PATH"
+
+      - name: Release summary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APK_SIZE="$(stat -c%s "$RELEASE_APK_PATH")"
+          APK_SHA="$(sha256sum "$RELEASE_APK_PATH" | awk '{print $1}')"
+          echo "========================================"
+          echo "SWAYOG EMPLOYEE RELEASE"
+          echo "========================================"
+          echo "Application ID: com.swayog.employee"
+          echo "Version Name: ${{ steps.versioning.outputs.VERSION_NAME }}"
+          echo "Version Code: ${{ steps.versioning.outputs.VERSION_CODE }}"
+          echo "APK: app-release.apk"
+          echo "APK Size: ${APK_SIZE} bytes"
+          echo "SHA-256: ${APK_SHA}"
+          echo "Signing Certificate: validated against PRODUCTION_CERT_SHA256"
+          echo "R2 Upload: SUCCESS"
+          echo "Metadata: SUCCESS"
+          echo "GitHub Release: SKIPPED"
+          echo "========================================"

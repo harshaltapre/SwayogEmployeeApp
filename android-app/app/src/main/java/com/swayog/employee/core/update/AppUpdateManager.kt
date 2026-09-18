@@ -57,6 +57,7 @@ class AppUpdateManager @Inject constructor(
 
     private var lastAutoCheckTimestamp: Long = 0L
     private val checkMutex = Mutex()
+    private val downloadMutex = Mutex()
 
     val installedVersionCode: Long
         get() = try {
@@ -219,11 +220,17 @@ class AppUpdateManager @Inject constructor(
                         return@withContext CheckResult.Error(errorMsg)
                     }
 
-                    val isPlaceholder = parsed.sha256.isBlank() ||
-                        parsed.sha256.equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ignoreCase = true) ||
-                        parsed.sha256.equals("ignore", ignoreCase = true)
+                    if (parsed.appId != context.packageName || parsed.platform != "android" ||
+                        !parsed.apkUrl.startsWith("https://")) {
+                        val errorMsg = "Update information is invalid (package, platform, or secure download URL)."
+                        _updateState.value = AppUpdateState.Error(
+                            message = errorMsg,
+                            kind = UpdateErrorKind.INVALID_MANIFEST
+                        )
+                        return@withContext CheckResult.Error(errorMsg)
+                    }
 
-                    if (!isPlaceholder && !parsed.sha256.matches(Regex("^[A-Fa-f0-9]{64}$"))) {
+                    if (!parsed.sha256.matches(Regex("^[A-Fa-f0-9]{64}$"))) {
                         Log.e(TAG, "Manifest contains invalid SHA-256 checksum format: '${parsed.sha256}'")
                         val errorMsg = "Update information is corrupted (invalid manifest format)."
                         _updateState.value = AppUpdateState.Error(
@@ -312,6 +319,12 @@ class AppUpdateManager @Inject constructor(
      * Downloads the APK specified by the manifest, verifying its SHA-256 hash.
      */
     suspend fun downloadAndInstall(manifest: AppUpdateManifest) {
+        downloadMutex.withLock {
+            downloadAndInstallLocked(manifest)
+        }
+    }
+
+    private suspend fun downloadAndInstallLocked(manifest: AppUpdateManifest) {
         val currentState = _updateState.value
         if (currentState is AppUpdateState.Downloading || currentState is AppUpdateState.Verifying) {
             Log.d(TAG, "Download/verification already in progress. Ignoring duplicate call.")
@@ -332,11 +345,7 @@ class AppUpdateManager @Inject constructor(
         if (targetApkFile.exists() && targetApkFile.length() > 0) {
             _updateState.value = AppUpdateState.Verifying(manifest)
             val existingChecksum = calculateSha256(targetApkFile)
-            val isPlaceholder = manifest.sha256.isBlank() ||
-                manifest.sha256.equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ignoreCase = true) ||
-                manifest.sha256.equals("ignore", ignoreCase = true)
-
-            if (isPlaceholder || existingChecksum.equals(manifest.sha256, ignoreCase = true)) {
+            if (existingChecksum.equals(manifest.sha256.trim(), ignoreCase = true)) {
                 Log.i(TAG, "Existing cached APK is ready to install.")
                 _updateState.value = AppUpdateState.ReadyToInstall(targetApkFile, manifest)
                 withContext(Dispatchers.Main) {
@@ -371,6 +380,7 @@ class AppUpdateManager @Inject constructor(
                         in 500..599 -> "Update service is temporarily unavailable (HTTP ${response.code})."
                         else -> "Failed to download update package (HTTP ${response.code})."
                     }
+                    response.close()
                     throw IllegalStateException(errorType)
                 }
 
@@ -405,17 +415,19 @@ class AppUpdateManager @Inject constructor(
                         output.flush()
                     }
                 }
+                response.close()
+
+                if (manifest.fileSize != null && tempFile.length() != manifest.fileSize) {
+                    tempFile.delete()
+                    throw IllegalStateException("Downloaded update is incomplete (expected ${manifest.fileSize} bytes, got ${tempFile.length()}).")
+                }
 
                 // Verify Checksum
                 _updateState.value = AppUpdateState.Verifying(manifest)
                 val calculatedChecksum = calculateSha256(tempFile)
                 Log.d(TAG, "Download complete. Expected SHA-256: ${manifest.sha256}, Calculated: $calculatedChecksum")
 
-                val isPlaceholder = manifest.sha256.isBlank() ||
-                    manifest.sha256.equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ignoreCase = true) ||
-                    manifest.sha256.equals("ignore", ignoreCase = true)
-
-                if (!isPlaceholder && !calculatedChecksum.equals(manifest.sha256.trim(), ignoreCase = true)) {
+                if (!calculatedChecksum.equals(manifest.sha256.trim(), ignoreCase = true)) {
                     tempFile.delete()
                     val msg = "Verification failed: APK checksum mismatch. Expected: ${manifest.sha256}, got: $calculatedChecksum"
                     Log.e(TAG, msg)
@@ -586,8 +598,8 @@ class AppUpdateManager @Inject constructor(
         }
 
         // 3. Signing Certificate Verification (Prevents "package conflicts with an existing package")
-        if (expectedCertSha256 != null && downloadedCertSha256 != null) {
-            if (!expectedCertSha256.equals(downloadedCertSha256, ignoreCase = true)) {
+        if (expectedCertSha256 == null || downloadedCertSha256 == null ||
+            !expectedCertSha256.equals(downloadedCertSha256, ignoreCase = true)) {
                 val errorMsg = "Installation blocked: Signing certificate mismatch.\n" +
                     "The downloaded APK is signed with a different key than the installed app.\n" +
                     "Installed: $expectedCertSha256\n" +
@@ -598,7 +610,6 @@ class AppUpdateManager @Inject constructor(
                     manifest = manifest
                 )
                 return
-            }
         }
 
         // 4. On Android 8.0 (API 26) and above, check for unknown app install permission
