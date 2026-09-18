@@ -11,7 +11,17 @@ import path from "path";
 
 const router = Router();
 
-const employeeAuth = [authenticateAccessToken, authorizeRoles(UserRole.EMPLOYEE, UserRole.SUB_ADMIN)];
+const employeeAuth = [
+  authenticateAccessToken,
+  authorizeRoles(
+    UserRole.EMPLOYEE,
+    UserRole.SUB_ADMIN,
+    UserRole.ADMIN,
+    UserRole.SUPER_ADMIN,
+    UserRole.DEPARTMENT_HEAD,
+    UserRole.TEAM_LEAD
+  )
+];
 const adminAuth = [authenticateAccessToken, authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.DEPARTMENT_HEAD, UserRole.TEAM_LEAD, UserRole.SUB_ADMIN)];
 const superAdminAuth = [authenticateAccessToken, authorizeRoles(UserRole.SUPER_ADMIN)];
 

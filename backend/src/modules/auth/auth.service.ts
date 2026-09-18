@@ -106,9 +106,11 @@ async function issueSession(user: AuthUser, requestedRole?: string) {
   }
 
   const publicUser = toPublicUser(user);
-  const effectivePermissions = Array.isArray(user.permissions) && user.permissions.length > 0
-    ? user.permissions
-    : (Array.isArray(user.employeeProfile?.permissions) ? user.employeeProfile.permissions : []);
+  const userPerms = (user as any).permissions;
+  const empPerms = (user as any).employeeProfile?.permissions;
+  const effectivePermissions = Array.isArray(userPerms) && userPerms.length > 0
+    ? userPerms
+    : (Array.isArray(empPerms) ? empPerms : []);
 
   return {
     accessToken,

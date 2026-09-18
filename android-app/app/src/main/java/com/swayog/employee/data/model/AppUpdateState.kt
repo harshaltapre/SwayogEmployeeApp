@@ -45,7 +45,8 @@ sealed interface AppUpdateState {
         val manifest: AppUpdateManifest,
         val isMandatory: Boolean,
         val installedVersionName: String,
-        val installedVersionCode: Long
+        val installedVersionCode: Long,
+        val isDismissed: Boolean = false
     ) : AppUpdateState
 
     /**

@@ -14,11 +14,13 @@ room {
 }
 
 val localProperties = Properties().apply {
-    val localPropertiesFile = rootProject.file("local.properties")
-    if (localPropertiesFile.exists()) {
-        localPropertiesFile.inputStream().use { 
-            this.load(it) 
-        }
+    val rootFile = rootProject.file("local.properties")
+    if (rootFile.exists()) {
+        rootFile.inputStream().use { this.load(it) }
+    }
+    val projectFile = project.file("local.properties")
+    if (projectFile.exists()) {
+        projectFile.inputStream().use { this.load(it) }
     }
 }
 

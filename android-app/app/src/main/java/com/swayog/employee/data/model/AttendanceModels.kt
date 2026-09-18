@@ -57,19 +57,19 @@ data class FaceEnrollmentStatusResponse(
 
 data class CheckInResponse(
     @SerializedName("checkInRecord")
-    val checkIn: CheckIn,
+    val checkIn: CheckIn? = null,
     @SerializedName("attendance")
-    val attendanceRecord: AttendanceRecord
+    val attendanceRecord: AttendanceRecord? = null
 )
 
 data class CheckIn(
-    val id: String,
-    val employeeId: String,
-    val selfieUrl: String?,
-    val latitude: Double?,
-    val longitude: Double?,
-    val status: String,
-    val createdAt: String
+    val id: String? = null,
+    val employeeId: String? = null,
+    val selfieUrl: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val status: String? = null,
+    val createdAt: String? = null
 )
 
 data class WorkDescriptionRequest(

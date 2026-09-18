@@ -35,16 +35,18 @@ fun AppUpdateDialog(
 ) {
     when (updateState) {
         is AppUpdateState.UpdateAvailable -> {
-            UpdateContentDialog(
-                manifest = updateState.manifest,
-                isMandatory = updateState.isMandatory,
-                installedVersionName = updateState.installedVersionName,
-                downloadProgress = null,
-                isVerifying = false,
-                errorMessage = null,
-                onPrimaryAction = { onDownloadClick(updateState.manifest) },
-                onDismiss = onDismissClick
-            )
+            if (!updateState.isDismissed) {
+                UpdateContentDialog(
+                    manifest = updateState.manifest,
+                    isMandatory = updateState.isMandatory,
+                    installedVersionName = updateState.installedVersionName,
+                    downloadProgress = null,
+                    isVerifying = false,
+                    errorMessage = null,
+                    onPrimaryAction = { onDownloadClick(updateState.manifest) },
+                    onDismiss = onDismissClick
+                )
+            }
         }
         is AppUpdateState.Downloading -> {
             UpdateContentDialog(
