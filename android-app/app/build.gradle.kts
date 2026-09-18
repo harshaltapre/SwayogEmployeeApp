@@ -113,7 +113,7 @@ android {
             }
 
             val keyAliasStr = getLocalProperty("RELEASE_KEY_ALIAS", System.getenv("RELEASE_KEY_ALIAS") ?: "release")
-            val storePassStr = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "")
+            val storePassStr = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "swayog123")
             val keyPassStr = getLocalProperty("RELEASE_KEY_PASSWORD", System.getenv("RELEASE_KEY_PASSWORD") ?: storePassStr)
 
             if (keystoreFile != null && keystoreFile.exists()) {
@@ -124,7 +124,7 @@ android {
                 this.keyAlias = keyAliasStr
                 storePassword = storePassStr
                 keyPassword = keyPassStr
-                println("Release signing configured with the supplied production keystore")
+                println("Release signing configured with keystore: ${keystoreFile.canonicalPath}")
             } else {
                 val isCI = System.getenv("CI") == "true"
                 if (isCI) {
