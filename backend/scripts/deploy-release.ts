@@ -116,7 +116,8 @@ async function main() {
     path.resolve(process.cwd(), "latest.json"),
     path.resolve(process.cwd(), "../latest.json"),
     path.resolve(process.cwd(), "../public/latest.json"),
-    path.resolve(process.cwd(), "../dist/latest.json")
+    path.resolve(process.cwd(), "../dist/latest.json"),
+    path.resolve(process.cwd(), "../web-update/latest.json")
   ];
 
   for (const targetPath of localManifestPaths) {
