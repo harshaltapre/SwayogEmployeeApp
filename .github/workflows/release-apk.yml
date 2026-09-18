@@ -268,7 +268,11 @@ EOF
             exit 1
           fi
           
+          # Clean any local or machine-specific java.home settings from properties
+          sed -i '/^org\.gradle\.java\.home/d' gradle.properties 2>/dev/null || true
+          
           ./gradlew assembleRelease \
+            -Dorg.gradle.java.home="$JAVA_HOME" \
             -PversionName="${{ steps.versioning.outputs.VERSION_NAME }}" \
             -PversionCode="${{ steps.versioning.outputs.VERSION_CODE }}" \
             -PRELEASE_STORE_FILE="$RELEASE_STORE_FILE" \
