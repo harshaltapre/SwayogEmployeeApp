@@ -421,6 +421,21 @@ jobs:
           EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
           EXPECTED_CERT_SHA256: ${{ steps.signing_secrets.outputs.PRODUCTION_CERT_SHA256 }}
         run: |
+          set -Eeuo pipefail
+          echo "========================================"
+          echo "STAGE: APK_VALIDATION"
+          echo "========================================"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "::error::FAILED STAGE: APK_VALIDATION"
+            echo "::error::APK file does not exist: $APK_PATH"
+            exit 1
+          fi
+          if [ ! -s "$APK_PATH" ]; then
+            echo "::error::FAILED STAGE: APK_VALIDATION"
+            echo "::error::APK file is empty: $APK_PATH"
+            exit 1
+          fi
+
           if command -v apksigner &> /dev/null; then
             APKSIGNER="apksigner"
           elif [ -n "$ANDROID_HOME" ]; then
@@ -449,12 +464,23 @@ jobs:
           echo "Using aapt2:     $AAPT2"
 
           echo "Verifying cryptographic APK signature..."
-          CERT_INFO=$($APKSIGNER verify --print-certs "$APK_PATH" 2>&1) || {
+          if ! CERT_INFO=$($APKSIGNER verify --verbose --print-certs "$APK_PATH" 2>&1); then
             echo "$CERT_INFO"
             echo "::error::FAILED STAGE: APK signing"
             echo "::error::APK signature verification failed"
             exit 1
-          }
+          fi
+
+          if ! unzip -t "$APK_PATH" >/dev/null; then
+            echo "::error::FAILED STAGE: APK_VALIDATION"
+            echo "::error::APK archive is not structurally readable."
+            exit 1
+          fi
+          if ! unzip -l "$APK_PATH" | grep -q '^.*AndroidManifest\.xml$'; then
+            echo "::error::FAILED STAGE: APK_VALIDATION"
+            echo "::error::APK does not contain AndroidManifest.xml."
+            exit 1
+          fi
 
           CLEAN_EXPECTED=$(echo "$EXPECTED_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
           CLEAN_ACTUAL=$(echo "$CERT_INFO" | grep -i "SHA-256 digest" | head -n 1 | awk '{print $NF}' | tr -d ': ' | tr '[:upper:]' '[:lower:]')
@@ -472,7 +498,12 @@ jobs:
           fi
           echo "Production and APK certificates match"
 
-          DUMP_OUTPUT=$($AAPT2 dump badging "$APK_PATH" 2>&1 || true)
+          if ! DUMP_OUTPUT=$($AAPT2 dump badging "$APK_PATH" 2>&1); then
+            echo "$DUMP_OUTPUT"
+            echo "::error::FAILED STAGE: APK_VALIDATION"
+            echo "::error::aapt2 could not read APK metadata."
+            exit 1
+          fi
             
             if ! echo "$DUMP_OUTPUT" | grep -q "package: name='com.swayog.employee'"; then
               echo "::error::APK package name is not 'com.swayog.employee'!"
@@ -491,10 +522,6 @@ jobs:
             exit 1
           fi
 
-          if ! unzip -l "$APK_PATH" | grep -q "META-INF/MANIFEST.MF"; then
-            echo "::error::APK is missing MANIFEST.MF, build is corrupt"
-            exit 1
-          fi
           echo "✅ APK integrity checks passed completely"
 
       - name: Set up Node.js 20 for release
