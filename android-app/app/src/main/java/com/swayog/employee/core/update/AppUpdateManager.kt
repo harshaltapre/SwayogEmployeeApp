@@ -376,7 +376,7 @@ class AppUpdateManager @Inject constructor(
                     val errorType = when (response.code) {
                         404 -> "Update package is currently unavailable (HTTP 404)."
                         403 -> "Update package is currently unavailable (HTTP 403)."
-                        401, 403 -> "Update package is currently unavailable."
+                            401 -> "Update package is currently unavailable."
                         in 500..599 -> "Update service is temporarily unavailable (HTTP ${response.code})."
                         else -> "Failed to download update package (HTTP ${response.code})."
                     }

@@ -21,7 +21,9 @@ class SyncManager @Inject constructor(
 ) {
     
     companion object {
-        private const val SYNC_WORK_NAME = "sync_worker"
+        // All repositories share this unique work name so queued operations are
+        // serialized by the same worker instead of racing each other.
+        private const val SYNC_WORK_NAME = "offline_sync_work"
     }
     
     /**
@@ -74,7 +76,7 @@ class SyncManager @Inject constructor(
         val payload = mapOf(
             "latitude" to latitude,
             "longitude" to longitude,
-            "selfieUrl" to (selfieUrl ?: "")
+            "selfie" to (selfieUrl ?: "")
         )
         
         val item = OutboxQueueEntity(
@@ -102,11 +104,12 @@ class SyncManager @Inject constructor(
         tomorrowsPlan: String?
     ) {
         val payload = mapOf(
-            "tasksWorkedOn" to tasksWorkedOn,
+            "commitDate" to java.time.LocalDate.now().toString(),
+            "taskWorkedOn" to tasksWorkedOn,
             "workSummary" to workSummary,
             "hoursSpent" to hoursSpent,
-            "blockers" to (blockers ?: ""),
-            "tomorrowsPlan" to (tomorrowsPlan ?: "")
+            "issuesBlockers" to (blockers ?: ""),
+            "tomorrowPlan" to (tomorrowsPlan ?: "")
         )
         
         val item = OutboxQueueEntity(

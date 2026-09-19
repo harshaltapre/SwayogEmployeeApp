@@ -112,15 +112,23 @@ android {
                 }
             }
 
-            val keyAliasStr = getLocalProperty("RELEASE_KEY_ALIAS", System.getenv("RELEASE_KEY_ALIAS") ?: "release")
-            val storePassStr = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "swayog123")
-            val keyPassStr = getLocalProperty("RELEASE_KEY_PASSWORD", System.getenv("RELEASE_KEY_PASSWORD") ?: storePassStr)
+            val keyAliasStr = getLocalProperty("RELEASE_KEY_ALIAS", System.getenv("RELEASE_KEY_ALIAS") ?: "")
+            val storePassStr = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "")
+            val keyPassStr = getLocalProperty("RELEASE_KEY_PASSWORD", System.getenv("RELEASE_KEY_PASSWORD") ?: "")
+            val storeTypeStr = getLocalProperty("RELEASE_STORE_TYPE", System.getenv("RELEASE_STORE_TYPE") ?: "")
 
             if (keystoreFile != null && keystoreFile.exists()) {
                 if (keyAliasStr.isBlank() || storePassStr.isBlank() || keyPassStr.isBlank()) {
                     throw GradleException("Release signing credentials are incomplete. Configure RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD, and RELEASE_KEY_PASSWORD.")
                 }
                 storeFile = keystoreFile
+                if (storeTypeStr.isBlank()) {
+                    if (System.getenv("CI") == "true") {
+                        throw GradleException("RELEASE_STORE_TYPE must be configured as JKS or PKCS12 for production releases.")
+                    }
+                } else {
+                    storeType = storeTypeStr
+                }
                 this.keyAlias = keyAliasStr
                 storePassword = storePassStr
                 keyPassword = keyPassStr

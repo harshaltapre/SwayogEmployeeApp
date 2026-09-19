@@ -47,13 +47,12 @@ class PeriodicTaskRefreshWorker @AssistedInject constructor(
                 Result.success()
             } else {
                 Log.w(TAG, "Failed to refresh tasks: ${result.exceptionOrNull()?.message}")
-                // Don't retry immediately - let the periodic schedule handle it
-                Result.success()
+                // Preserve the failure so WorkManager can retry with backoff.
+                Result.retry()
             }
         } catch (e: Exception) {
             Log.e(TAG, "PeriodicTaskRefreshWorker failed with exception: ${e.message}", e)
-            // Don't crash the worker, just return success and let periodic schedule handle retry
-            Result.success()
+            Result.retry()
         }
     }
 }

@@ -106,6 +106,7 @@ fun AttendanceScreen(
 
     // Attendance Regularization State
     var showRegularizeDialog by remember { mutableStateOf(false) }
+    var showRegularizationRequestsDialog by remember { mutableStateOf(false) }
     var regError by remember { mutableStateOf<String?>(null) }
     var isSubmittingReg by remember { mutableStateOf(false) }
     var showRequestOtDialog by remember { mutableStateOf(false) }
@@ -394,6 +395,12 @@ fun AttendanceScreen(
             com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
                 maxWidth = if (windowSize.isTablet) 840.dp else androidx.compose.ui.unit.Dp.Unspecified
             ) {
+                val recentAttendanceLogs = remember(monthlyRecords) {
+                    monthlyRecords
+                        .sortedByDescending { it.date.substringBefore("T") }
+                        .take(15)
+                }
+
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1094,55 +1101,26 @@ fun AttendanceScreen(
                         }
                     }
 
-                    // My Regularization Requests History
-                    if (myRegularizationRequests.isNotEmpty()) {
-                        item {
-                            SwayogCard {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.FactCheck,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Text(
-                                                text = "My Regularization Requests",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = CircleShape
-                                        ) {
-                                            Text(
-                                                text = myRegularizationRequests.size.toString(),
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        myRegularizationRequests.take(5).forEach { req ->
-                                            RegularizationRequestCard(req)
-                                        }
-                                    }
-                                }
+                    item {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.loadRegularizationRequests()
+                                showRegularizationRequestsDialog = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(vertical = 12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FactCheck,
+                                contentDescription = "View regularization requests",
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("View Requests", fontWeight = FontWeight.Bold)
+                            if (myRegularizationRequests.isNotEmpty()) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("(${myRegularizationRequests.size})", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
@@ -1546,7 +1524,7 @@ fun AttendanceScreen(
                         )
                     }
 
-                    if (monthlyRecords.isEmpty()) {
+                    if (recentAttendanceLogs.isEmpty()) {
                         item {
                             Box(
                                 modifier = Modifier
@@ -1563,7 +1541,7 @@ fun AttendanceScreen(
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "No attendance logs this month",
+                                        text = "No recent attendance logs",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                     )
@@ -1571,7 +1549,7 @@ fun AttendanceScreen(
                             }
                         }
                     } else {
-                        items(monthlyRecords.reversed().take(15), key = { it.id }) { log ->
+                        items(recentAttendanceLogs, key = { it.id }) { log ->
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(
@@ -1794,6 +1772,15 @@ fun AttendanceScreen(
                     },
                     isSubmitting = isSubmittingReg,
                     serverError = regError
+                )
+            }
+
+            if (showRegularizationRequestsDialog) {
+                RegularizationRequestsDialog(
+                    requests = myRegularizationRequests,
+                    isLoading = isLoadingRegularization,
+                    onDismiss = { showRegularizationRequestsDialog = false },
+                    onRetry = { viewModel.loadRegularizationRequests() }
                 )
             }
 
@@ -3105,6 +3092,105 @@ fun AttendanceRegularizationDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Submit Request", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RegularizationRequestsDialog(
+    requests: List<RegularizationItem>,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.88f),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "My Regularization Requests",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Approved, rejected, and pending requests",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                HorizontalDivider()
+
+                when {
+                    isLoading -> Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+
+                    requests.isEmpty() -> Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FactCheck,
+                            contentDescription = null,
+                            modifier = Modifier.size(42.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "No regularization requests yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Requests you submit will appear here with their review status.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedButton(onClick = onRetry) {
+                            Icon(Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Refresh")
+                        }
+                    }
+
+                    else -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(requests, key = { it.id }) { request ->
+                            RegularizationRequestCard(request)
                         }
                     }
                 }
