@@ -232,6 +232,14 @@ jobs:
         run: |
           set -o pipefail
 
+          echo "========================================"
+          echo "STAGE: Production Signing"
+          echo "========================================"
+          [ -n "${KEYSTORE_B64:-}" ] && echo "KEYSTORE_B64: PRESENT" || echo "KEYSTORE_B64: MISSING"
+          [ -n "${KEYSTORE_PASSWORD:-}" ] && echo "KEYSTORE_PASSWORD: PRESENT" || echo "KEYSTORE_PASSWORD: MISSING"
+          [ -n "${KEY_ALIAS:-}" ] && echo "KEY_ALIAS: PRESENT" || echo "KEY_ALIAS: MISSING"
+          [ -n "${KEY_PASSWORD:-}" ] && echo "KEY_PASSWORD: PRESENT" || echo "KEY_PASSWORD: MISSING"
+
           for secret_name in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
             if [ -z "${!secret_name:-}" ]; then
               echo "::error::$secret_name is missing or empty"
