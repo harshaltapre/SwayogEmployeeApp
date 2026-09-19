@@ -69,25 +69,66 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Validate Android SDK
+        shell: bash
         run: |
           set -Eeuo pipefail
           echo "========================================"
           echo "STAGE: Android SDK"
           echo "========================================"
-          if ! sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"; then
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ]; then
             echo "::error::FAILED STAGE: Android SDK"
-            echo "::error::Required Android SDK components could not be installed."
+            echo "::error::ANDROID_SDK_ROOT and ANDROID_HOME are both unset."
             exit 1
           fi
-          yes | sdkmanager --licenses >/dev/null 2>&1 || {
-            status=$?
-            if [ "$status" -ne 141 ]; then
-              echo "::error::FAILED STAGE: Android SDK"
-              echo "::error::Android SDK licenses could not be accepted."
-              exit "$status"
-            fi
-          }
-          echo "Android SDK platform android-34 and build-tools 34.0.0 are ready."
+          export ANDROID_SDK_ROOT="$SDK_ROOT"
+          export ANDROID_HOME="$SDK_ROOT"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          echo "========================================"
+          echo "STAGE: Android SDK License Acceptance"
+          echo "========================================"
+          set +o pipefail
+          yes | sdkmanager --licenses >/tmp/sdkmanager-licenses.log 2>&1
+          LICENSE_STATUS=$?
+          set -o pipefail
+          if [ "$LICENSE_STATUS" -ne 0 ]; then
+            cat /tmp/sdkmanager-licenses.log
+            echo "::error::FAILED STAGE: Android SDK"
+            echo "::error::Android SDK licenses could not be accepted non-interactively."
+            exit "$LICENSE_STATUS"
+          fi
+
+          if ! sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"; then
+            echo "::error::FAILED STAGE: Android SDK"
+            echo "::error::Required Android SDK packages could not be installed."
+            exit 1
+          fi
+
+          echo "========================================"
+          echo "STAGE: Android SDK Validation"
+          echo "========================================"
+          if ! sdkmanager --list >/dev/null; then
+            echo "::error::FAILED STAGE: Android SDK"
+            echo "::error::sdkmanager could not list installed packages."
+            exit 1
+          fi
+          if [ ! -d "$ANDROID_SDK_ROOT/platforms/android-34" ]; then
+            echo "::error::FAILED STAGE: Android SDK"
+            echo "::error::Required platform android-34 is missing."
+            exit 1
+          fi
+          if [ ! -d "$ANDROID_SDK_ROOT/build-tools/34.0.0" ]; then
+            echo "::error::FAILED STAGE: Android SDK"
+            echo "::error::Required build-tools 34.0.0 are missing."
+            exit 1
+          fi
+          echo "Android SDK setup completed successfully."
 
       - name: Determine Next Build Version
         id: versioning
