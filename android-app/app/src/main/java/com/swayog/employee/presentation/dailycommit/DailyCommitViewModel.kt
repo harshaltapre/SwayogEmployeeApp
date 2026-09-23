@@ -51,6 +51,7 @@ class DailyCommitViewModel @Inject constructor(
     fun refreshCommitsHistory() {
         viewModelScope.launch {
             dailyCommitRepository.refreshDailyCommits()
+            _employeeId.value?.let { loadCommitsHistory(it) }
         }
     }
 

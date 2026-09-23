@@ -107,4 +107,8 @@
     @androidx.room.* <methods>;
 }
 
+# Keep centralized AppConfig class intact for R8 / ProGuard release builds
+-keep class com.swayog.employee.core.config.AppConfig { *; }
+-keepclassmembers class com.swayog.employee.core.config.AppConfig { *; }
+
 -allowaccessmodification

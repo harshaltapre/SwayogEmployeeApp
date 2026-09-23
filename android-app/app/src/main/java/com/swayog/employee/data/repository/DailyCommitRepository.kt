@@ -54,10 +54,11 @@ class DailyCommitRepository @Inject constructor(
             val response = apiService.getDailyCommits()
             if (response.isSuccessful && response.body()?.data != null) {
                 val commits = response.body()!!.data!!
+                val nowStr = java.time.LocalDateTime.now().toString()
                 val entities = commits.map { commit ->
                     DailyCommitEntity(
                         id = commit.id,
-                        employeeId = commit.employeeId,
+                        employeeId = if (!commit.employeeId.isNull_or_empty()) commit.employeeId else "",
                         commitDate = commit.commitDate,
                         taskWorkedOn = commit.taskWorkedOn,
                         workSummary = commit.workSummary,
@@ -65,8 +66,8 @@ class DailyCommitRepository @Inject constructor(
                         issuesBlockers = commit.issuesBlockers,
                         tomorrowPlan = commit.tomorrowPlan,
                         attachmentUrl = commit.attachmentUrl,
-                        submittedAt = commit.submittedAt,
-                        createdAt = commit.createdAt,
+                        submittedAt = commit.submittedAt ?: commit.createdAt ?: nowStr,
+                        createdAt = commit.createdAt ?: commit.submittedAt ?: nowStr,
                         isSynced = true
                     )
                 }
@@ -88,27 +89,80 @@ class DailyCommitRepository @Inject constructor(
         hoursSpent: Double,
         issuesBlockers: String?,
         tomorrowPlan: String?,
-        attachmentUrl: String?
+        attachmentUrl: String?,
+        isQuickUpdate: Boolean = false
     ): Result<DailyCommit> {
         val isOnline = NetworkUtils.isNetworkAvailable(context)
+        val nowStr = java.time.LocalDateTime.now().toString()
+
+        var requestTask = taskWorkedOn.trim().take(190)
+        var requestSummary = workSummary.trim().take(4900)
+        var requestHours = hoursSpent
+        var requestBlockers = issuesBlockers
+        var requestPlan = tomorrowPlan
+
+        // Check if an entry already exists for this employee and date to prevent overwriting
+        val existing = dailyCommitDao.getDailyCommitByDate(employeeId, commitDate)
+        if (existing != null) {
+            val exTask = existing.taskWorkedOn.trim()
+            val exSummary = existing.workSummary.trim()
+
+            if (isQuickUpdate) {
+                // Current submission is Quick Work Update
+                if (!exTask.equals("Quick Work Update", ignoreCase = true) && !exTask.equals("Quick Update", ignoreCase = true)) {
+                    requestTask = exTask
+                }
+                if (!exSummary.contains(workSummary.trim())) {
+                    val quickText = if (workSummary.trim().startsWith("Quick Update: ")) workSummary.trim() else "Quick Update: ${workSummary.trim()}"
+                    requestSummary = "$exSummary\n\n[Quick Update]: $quickText".take(4900)
+                } else {
+                    requestSummary = exSummary
+                }
+                requestHours = maxOf(existing.hoursSpent, hoursSpent)
+                requestBlockers = existing.issuesBlockers ?: issuesBlockers
+                requestPlan = existing.tomorrowPlan ?: tomorrowPlan
+            } else {
+                // Current submission is full Daily Commit Log
+                if (exTask.equals("Quick Work Update", ignoreCase = true) || exTask.equals("Quick Update", ignoreCase = true)) {
+                    requestTask = taskWorkedOn.trim().take(190)
+                    if (!workSummary.trim().contains(exSummary)) {
+                        requestSummary = "${workSummary.trim()}\n\n[Previous Quick Update]: $exSummary".take(4900)
+                    } else {
+                        requestSummary = workSummary.trim().take(4900)
+                    }
+                    requestHours = maxOf(hoursSpent, existing.hoursSpent)
+                    requestBlockers = issuesBlockers ?: existing.issuesBlockers
+                    requestPlan = tomorrowPlan ?: existing.tomorrowPlan
+                } else {
+                    // Both are Daily Commit Logs
+                    if (!exSummary.contains(workSummary.trim()) && !workSummary.trim().contains(exSummary)) {
+                        requestTask = if (exTask.equals(taskWorkedOn.trim(), ignoreCase = true)) exTask else "$exTask | ${taskWorkedOn.trim()}".take(190)
+                        requestSummary = "$exSummary\n\n--- Additional Log ---\n${workSummary.trim()}".take(4900)
+                        requestHours = existing.hoursSpent + hoursSpent
+                        requestBlockers = issuesBlockers ?: existing.issuesBlockers
+                        requestPlan = tomorrowPlan ?: existing.tomorrowPlan
+                    }
+                }
+            }
+        }
         
         return if (isOnline) {
             try {
                 val response = apiService.createDailyCommit(
                     DailyCommitRequest(
                         commitDate = commitDate,
-                        taskWorkedOn = taskWorkedOn,
-                        workSummary = workSummary,
-                        hoursSpent = hoursSpent,
-                        issuesBlockers = issuesBlockers,
-                        tomorrowPlan = tomorrowPlan
+                        taskWorkedOn = requestTask,
+                        workSummary = requestSummary,
+                        hoursSpent = requestHours,
+                        issuesBlockers = requestBlockers,
+                        tomorrowPlan = requestPlan
                     )
                 )
                 if (response.isSuccessful && response.body()?.data != null) {
                     val commit = response.body()!!.data!!
                     val entity = DailyCommitEntity(
                         id = commit.id,
-                        employeeId = commit.employeeId,
+                        employeeId = if (!commit.employeeId.isNull_or_empty()) commit.employeeId else employeeId,
                         commitDate = commit.commitDate,
                         taskWorkedOn = commit.taskWorkedOn,
                         workSummary = commit.workSummary,
@@ -116,47 +170,83 @@ class DailyCommitRepository @Inject constructor(
                         issuesBlockers = commit.issuesBlockers,
                         tomorrowPlan = commit.tomorrowPlan,
                         attachmentUrl = commit.attachmentUrl,
-                        submittedAt = commit.submittedAt,
-                        createdAt = commit.createdAt,
+                        submittedAt = commit.submittedAt ?: commit.createdAt ?: nowStr,
+                        createdAt = commit.createdAt ?: commit.submittedAt ?: nowStr,
                         isSynced = true
                     )
+                    dailyCommitDao.deleteUnsyncedByDate(commitDate)
                     dailyCommitDao.insertDailyCommit(entity)
                     Result.success(commit)
                 } else {
-                    // API call failed - save to outbox queue for offline sync
-                    saveDailyCommitToOutbox(employeeId, commitDate, taskWorkedOn, workSummary, hoursSpent, issuesBlockers, tomorrowPlan, attachmentUrl)
-                    Result.failure(OfflinePendingException())
+                    // API call failed - save to outbox queue for offline sync and create local entity
+                    val tempId = UUID.randomUUID().toString()
+                    saveDailyCommitToOutbox(employeeId, commitDate, requestTask, requestSummary, requestHours, requestBlockers, requestPlan, attachmentUrl)
+                    val entity = DailyCommitEntity(
+                        id = tempId,
+                        employeeId = employeeId,
+                        commitDate = commitDate,
+                        taskWorkedOn = requestTask,
+                        workSummary = requestSummary,
+                        hoursSpent = requestHours,
+                        issuesBlockers = requestBlockers,
+                        tomorrowPlan = requestPlan,
+                        attachmentUrl = attachmentUrl,
+                        submittedAt = nowStr,
+                        createdAt = nowStr,
+                        isSynced = false
+                    )
+                    dailyCommitDao.insertDailyCommit(entity)
+                    Result.failure(OfflinePendingException("Saved locally. Will sync automatically when online."))
                 }
             } catch (e: Exception) {
-                // Network error - save to outbox queue for offline sync
-                saveDailyCommitToOutbox(employeeId, commitDate, taskWorkedOn, workSummary, hoursSpent, issuesBlockers, tomorrowPlan, attachmentUrl)
-                Result.failure(OfflinePendingException())
+                // Network error - save to outbox queue for offline sync and create local entity
+                val tempId = UUID.randomUUID().toString()
+                saveDailyCommitToOutbox(employeeId, commitDate, requestTask, requestSummary, requestHours, requestBlockers, requestPlan, attachmentUrl)
+                val entity = DailyCommitEntity(
+                    id = tempId,
+                    employeeId = employeeId,
+                    commitDate = commitDate,
+                    taskWorkedOn = requestTask,
+                    workSummary = requestSummary,
+                    hoursSpent = requestHours,
+                    issuesBlockers = requestBlockers,
+                    tomorrowPlan = requestPlan,
+                    attachmentUrl = attachmentUrl,
+                    submittedAt = nowStr,
+                    createdAt = nowStr,
+                    isSynced = false
+                )
+                dailyCommitDao.insertDailyCommit(entity)
+                Result.failure(OfflinePendingException("Saved locally. Will sync automatically when online."))
             }
         } else {
             // Offline - save to outbox queue and create local commit record
             val tempId = UUID.randomUUID().toString()
-            
-            saveDailyCommitToOutbox(employeeId, commitDate, taskWorkedOn, workSummary, hoursSpent, issuesBlockers, tomorrowPlan, attachmentUrl)
+            saveDailyCommitToOutbox(employeeId, commitDate, requestTask, requestSummary, requestHours, requestBlockers, requestPlan, attachmentUrl)
             
             // Create local daily commit record
             val entity = DailyCommitEntity(
                 id = tempId,
                 employeeId = employeeId,
                 commitDate = commitDate,
-                taskWorkedOn = taskWorkedOn,
-                workSummary = workSummary,
-                hoursSpent = hoursSpent,
-                issuesBlockers = issuesBlockers,
-                tomorrowPlan = tomorrowPlan,
+                taskWorkedOn = requestTask,
+                workSummary = requestSummary,
+                hoursSpent = requestHours,
+                issuesBlockers = requestBlockers,
+                tomorrowPlan = requestPlan,
                 attachmentUrl = attachmentUrl,
-                submittedAt = java.time.LocalDateTime.now().toString(),
-                createdAt = java.time.LocalDateTime.now().toString(),
+                submittedAt = nowStr,
+                createdAt = nowStr,
                 isSynced = false
             )
             dailyCommitDao.insertDailyCommit(entity)
             
-            Result.failure(OfflinePendingException())
+            Result.failure(OfflinePendingException("Saved locally. Will sync automatically when online."))
         }
+    }
+
+    private fun String?.isNull_or_empty(): Boolean {
+        return this == null || this.trim().isEmpty()
     }
     
     private suspend fun saveDailyCommitToOutbox(

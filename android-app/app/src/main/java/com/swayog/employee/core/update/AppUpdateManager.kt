@@ -484,7 +484,7 @@ class AppUpdateManager @Inject constructor(
                     if (signingInfo.hasMultipleSigners()) {
                         signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
                     } else {
-                        signingInfo.signingCertificateHistory?.firstOrNull()?.toByteArray()
+                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
                     }
                 } else null
             } else {
@@ -517,7 +517,7 @@ class AppUpdateManager @Inject constructor(
                     if (signingInfo.hasMultipleSigners()) {
                         signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
                     } else {
-                        signingInfo.signingCertificateHistory?.firstOrNull()?.toByteArray()
+                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
                     }
                 } else null
             } else {
@@ -674,7 +674,7 @@ class AppUpdateManager @Inject constructor(
         val current = _updateState.value
         if (current is AppUpdateState.UpdateAvailable && !current.isMandatory) {
             _updateState.value = AppUpdateState.Idle
-        } else if (current is AppUpdateState.Error) {
+        } else if (current is AppUpdateState.Error && current.manifest?.mandatory != true) {
             _updateState.value = AppUpdateState.Idle
         }
     }

@@ -25,6 +25,9 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import com.swayog.employee.data.local.dao.DailyCommitDao
+import com.swayog.employee.data.local.entity.DailyCommitEntity
+
 data class SyncResultSummary(
     val total: Int = 0,
     val synced: Int = 0,
@@ -41,6 +44,7 @@ class TaskRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val taskDao: TaskDao,
     private val outboxQueueDao: OutboxQueueDao,
+    private val dailyCommitDao: DailyCommitDao,
     private val apiService: ApiService
 ) {
     private val gson = Gson()
@@ -1318,6 +1322,26 @@ class TaskRepository @Inject constructor(
                                 )
                                 val response = apiService.createDailyCommit(request)
                                 if (response.code() == 401) isAuthErrorForItem = true
+                                if (response.isSuccessful && response.body()?.data != null) {
+                                    val commit = response.body()!!.data!!
+                                    val nowStr = java.time.LocalDateTime.now().toString()
+                                    val entity = DailyCommitEntity(
+                                        id = commit.id,
+                                        employeeId = commit.employeeId,
+                                        commitDate = commit.commitDate,
+                                        taskWorkedOn = commit.taskWorkedOn,
+                                        workSummary = commit.workSummary,
+                                        hoursSpent = commit.hoursSpent,
+                                        issuesBlockers = commit.issuesBlockers,
+                                        tomorrowPlan = commit.tomorrowPlan,
+                                        attachmentUrl = commit.attachmentUrl,
+                                        submittedAt = commit.submittedAt ?: commit.createdAt ?: nowStr,
+                                        createdAt = commit.createdAt ?: commit.submittedAt ?: nowStr,
+                                        isSynced = true
+                                    )
+                                    dailyCommitDao.deleteUnsyncedByDate(commit.commitDate)
+                                    dailyCommitDao.insertDailyCommit(entity)
+                                }
                                 response.isSuccessful
                             }
                             else -> true

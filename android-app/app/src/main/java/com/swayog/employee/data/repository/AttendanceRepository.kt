@@ -262,48 +262,56 @@ class AttendanceRepository @Inject constructor(
         description: String
     ): Result<Unit> {
         val todayStr = java.time.LocalDate.now().toString()
+        val trimmed = description.trim()
+        if (trimmed.length < 2) {
+            return Result.failure(Exception("Description is too short"))
+        }
 
-        // 1. Submit to DailyCommit (visible directly to Super Admin & Admin)
-        try {
-            dailyCommitRepository.createDailyCommit(
-                employeeId = employeeId,
-                commitDate = todayStr,
-                taskWorkedOn = "Quick Update",
-                workSummary = description,
-                hoursSpent = 1.0,
-                issuesBlockers = null,
-                tomorrowPlan = null,
-                attachmentUrl = null
-            )
+        // Ensure work summary satisfies server schema requirement (min 10 characters)
+        val formattedSummary = if (trimmed.length < 10) {
+            "Quick Update: $trimmed"
+        } else {
+            trimmed
+        }
+
+        // 1. Submit to DailyCommit (visible directly to Admin & Super Admin)
+        val commitResult = dailyCommitRepository.createDailyCommit(
+            employeeId = employeeId,
+            commitDate = todayStr,
+            taskWorkedOn = "Quick Work Update",
+            workSummary = formattedSummary,
+            hoursSpent = 1.0,
+            issuesBlockers = null,
+            tomorrowPlan = null,
+            attachmentUrl = null
+        )
+
+        if (commitResult.isSuccess) {
             android.util.Log.d("ATTENDANCE_REPO", "Quick update saved to DailyCommit for admin/superadmin visibility")
-        } catch (e: Exception) {
-            android.util.Log.w("ATTENDANCE_REPO", "Daily commit submission notice: ${e.message}")
+        } else {
+            android.util.Log.w("ATTENDANCE_REPO", "Daily commit submission result: ${commitResult.exceptionOrNull()?.message}")
         }
 
-        // 2. Also send to saveWorkDescription API endpoint if available on server
-        try {
-            apiService.saveWorkDescription(
-                WorkDescriptionRequest(
-                    employeeId = employeeId,
-                    description = description,
-                    timestamp = System.currentTimeMillis().toString()
-                )
-            )
-        } catch (e: Exception) {
-            android.util.Log.w("ATTENDANCE_REPO", "saveWorkDescription API call notice: ${e.message}")
-        }
-
-        // 3. Update local database with work description
+        // 2. Update local attendance notes if available
         try {
             val todayAttendance = attendanceDao.getTodayAttendance()
             todayAttendance?.let {
-                attendanceDao.updateAttendance(it.copy(notes = description))
+                attendanceDao.updateAttendance(it.copy(notes = trimmed))
             }
         } catch (e: Exception) {
             android.util.Log.w("ATTENDANCE_REPO", "Local attendance notes update notice: ${e.message}")
         }
 
-        return Result.success(Unit)
+        return if (commitResult.isSuccess) {
+            Result.success(Unit)
+        } else {
+            val err = commitResult.exceptionOrNull()
+            if (err is OfflinePendingException) {
+                Result.failure(err)
+            } else {
+                Result.failure(err ?: Exception("Failed to submit quick update"))
+            }
+        }
     }
     
     suspend fun getPerformance(

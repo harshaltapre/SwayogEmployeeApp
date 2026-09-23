@@ -7,10 +7,10 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface DailyCommitDao {
     
-    @Query("SELECT * FROM daily_commits WHERE employeeId = :employeeId ORDER BY commitDate DESC")
+    @Query("SELECT * FROM daily_commits WHERE employeeId = :employeeId OR employeeId = '' OR :employeeId = '' ORDER BY commitDate DESC")
     fun getDailyCommitsByEmployeeId(employeeId: String): Flow<List<DailyCommitEntity>>
     
-    @Query("SELECT * FROM daily_commits WHERE employeeId = :employeeId AND commitDate = :date")
+    @Query("SELECT * FROM daily_commits WHERE (employeeId = :employeeId OR employeeId = '' OR :employeeId = '') AND commitDate = :date LIMIT 1")
     suspend fun getDailyCommitByDate(employeeId: String, date: String): DailyCommitEntity?
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -27,6 +27,9 @@ interface DailyCommitDao {
     
     @Query("DELETE FROM daily_commits")
     suspend fun deleteAllDailyCommits()
+    
+    @Query("DELETE FROM daily_commits WHERE commitDate = :date AND isSynced = 0")
+    suspend fun deleteUnsyncedByDate(date: String)
     
     @Query("SELECT * FROM daily_commits WHERE isSynced = 0")
     suspend fun getUnsyncedDailyCommits(): List<DailyCommitEntity>

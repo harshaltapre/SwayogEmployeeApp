@@ -1,22 +1,24 @@
 package com.swayog.employee.data.sync
 
 import android.content.Context
+import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.google.gson.Gson
+import com.swayog.employee.core.util.LocalFileHelper
+import com.swayog.employee.data.api.ApiService
+import com.swayog.employee.data.local.dao.DailyCommitDao
+import com.swayog.employee.data.local.dao.OutboxQueueDao
+import com.swayog.employee.data.local.dao.TaskDao
+import com.swayog.employee.data.local.entity.DailyCommitEntity
+import com.swayog.employee.data.local.entity.TaskEntity
+import com.swayog.employee.data.model.*
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import com.swayog.employee.data.local.dao.TaskDao
-import com.swayog.employee.data.local.dao.OutboxQueueDao
-import com.swayog.employee.data.local.entity.TaskEntity
-import com.swayog.employee.data.api.ApiService
-import com.swayog.employee.data.model.*
-import com.swayog.employee.core.util.LocalFileHelper
-import com.google.gson.Gson
-import android.util.Log
 
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
@@ -24,6 +26,7 @@ class SyncWorker @AssistedInject constructor(
     @Assisted workerParams: WorkerParameters,
     private val outboxQueueDao: OutboxQueueDao,
     private val taskDao: TaskDao,
+    private val dailyCommitDao: DailyCommitDao,
     private val apiService: ApiService
 ) : CoroutineWorker(appContext, workerParams) {
 
@@ -207,6 +210,26 @@ class SyncWorker @AssistedInject constructor(
                                 tomorrowPlan = json.optString("tomorrowPlan").takeIf { it.isNotEmpty() }
                             )
                             val response = apiService.createDailyCommit(request)
+                            if (response.isSuccessful && response.body()?.data != null) {
+                                val commit = response.body()!!.data!!
+                                val nowStr = java.time.LocalDateTime.now().toString()
+                                val entity = DailyCommitEntity(
+                                    id = commit.id,
+                                    employeeId = commit.employeeId,
+                                    commitDate = commit.commitDate,
+                                    taskWorkedOn = commit.taskWorkedOn,
+                                    workSummary = commit.workSummary,
+                                    hoursSpent = commit.hoursSpent,
+                                    issuesBlockers = commit.issuesBlockers,
+                                    tomorrowPlan = commit.tomorrowPlan,
+                                    attachmentUrl = commit.attachmentUrl,
+                                    submittedAt = commit.submittedAt ?: commit.createdAt ?: nowStr,
+                                    createdAt = commit.createdAt ?: commit.submittedAt ?: nowStr,
+                                    isSynced = true
+                                )
+                                dailyCommitDao.deleteUnsyncedByDate(commit.commitDate)
+                                dailyCommitDao.insertDailyCommit(entity)
+                            }
                             response.isSuccessful
                         }
                         else -> false

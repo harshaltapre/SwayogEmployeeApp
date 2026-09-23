@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
+import com.swayog.employee.core.config.AppConfig
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -179,10 +180,10 @@ class DataStoreManager @Inject constructor(
         preferences[PreferencesKeys.LANGUAGE] ?: "en"
     }
 
-    val serverUrl: Flow<String?> = kotlinx.coroutines.flow.flowOf(com.swayog.employee.core.config.AppConfig.API_BASE_URL)
+    val serverUrl: Flow<String?> = kotlinx.coroutines.flow.flowOf(AppConfig.API_BASE_URL)
 
     fun getServerUrlBlocking(): String? {
-        return com.swayog.employee.core.config.AppConfig.API_BASE_URL
+        return AppConfig.API_BASE_URL
     }
     
     suspend fun saveAuthToken(token: String) {
