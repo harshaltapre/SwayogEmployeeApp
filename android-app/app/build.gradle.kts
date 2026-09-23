@@ -112,10 +112,14 @@ android {
                 }
             }
 
-            val keyAliasStr = getLocalProperty("RELEASE_KEY_ALIAS", System.getenv("RELEASE_KEY_ALIAS") ?: "")
-            val storePassStr = getLocalProperty("RELEASE_STORE_PASSWORD", System.getenv("RELEASE_STORE_PASSWORD") ?: "")
-            val keyPassStr = getLocalProperty("RELEASE_KEY_PASSWORD", System.getenv("RELEASE_KEY_PASSWORD") ?: "")
-            val storeTypeStr = getLocalProperty("RELEASE_STORE_TYPE", System.getenv("RELEASE_STORE_TYPE") ?: "")
+            val keyAliasStr = System.getenv("RELEASE_KEY_ALIAS")
+                ?: getLocalProperty("RELEASE_KEY_ALIAS", if (keystoreFile?.name == "release-key.jks") "release" else "")
+            val storePassStr = System.getenv("RELEASE_STORE_PASSWORD")
+                ?: getLocalProperty("RELEASE_STORE_PASSWORD", if (keystoreFile?.name == "release-key.jks") "swayog123" else "")
+            val keyPassStr = System.getenv("RELEASE_KEY_PASSWORD")
+                ?: getLocalProperty("RELEASE_KEY_PASSWORD", if (keystoreFile?.name == "release-key.jks") "swayog123" else "")
+            val storeTypeStr = System.getenv("RELEASE_STORE_TYPE")
+                ?: getLocalProperty("RELEASE_STORE_TYPE", if (keystoreFile?.name == "release-key.jks") "PKCS12" else "")
 
             if (keystoreFile != null && keystoreFile.exists()) {
                 if (keyAliasStr.isBlank() || storePassStr.isBlank() || keyPassStr.isBlank()) {

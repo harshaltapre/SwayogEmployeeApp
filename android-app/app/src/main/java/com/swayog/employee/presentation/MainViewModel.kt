@@ -68,7 +68,7 @@ class MainViewModel @Inject constructor(
         // Automatic update check on application startup (cached 6h, release builds only)
         if (!com.swayog.employee.BuildConfig.DEBUG) {
             viewModelScope.launch {
-                appUpdateManager.checkForUpdates(force = false, autoDownload = false)
+                appUpdateManager.checkForUpdates(force = false, autoDownload = true)
             }
         }
         // Initial profile refresh
@@ -107,7 +107,7 @@ class MainViewModel @Inject constructor(
         // Check for updates if last check was > 6 hours ago (release builds only)
         if (!com.swayog.employee.BuildConfig.DEBUG) {
             viewModelScope.launch {
-                appUpdateManager.checkForUpdates(force = false, autoDownload = false)
+                appUpdateManager.checkForUpdates(force = false, autoDownload = true)
             }
         }
     }

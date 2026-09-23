@@ -1,32 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 
-// Fallback manifest for Build 20
-const DEFAULT_MANIFEST = {
-  appId: "com.swayog.employee",
-  platform: "android",
-  versionName: "1.0.0",
-  versionCode: 20,
-  minimumVersionCode: 1,
-  mandatory: false,
-  releaseDate: "2026-09-15",
-  releaseTag: "v1.0.0-build20",
-  releaseTitle: "Swayog Employee App v1.0.0 — Build 20",
-  releaseNotes: [
-    "Improved attendance tracking",
-    "Improved attendance working-time calculation",
-    "Improved attendance calendar synchronization",
-    "Improved employee/admin attendance synchronization",
-    "Improved GPS attendance verification",
-    "Improved profile synchronization",
-    "Improved app update system",
-    "Bug fixes and performance improvements"
-  ],
-  apkUrl: "https://swayog-dashboard.vercel.app/api/v1/app/update/download/latest",
-  sha256: "dd5422cce433152653308bb0ba04ba6159a35ebf4c4b9f90eeb32670289ba3c4",
-  fileSize: 76872575
-};
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -46,7 +20,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         credentials: { accessKeyId, secretAccessKey },
       });
 
-      for (const key of ["latest.json", "releases/android/latest.json"]) {
+      // Canonical manifest key in R2
+      const candidateKeys = ["latest.json", "releases/android/latest.json"];
+      for (const key of candidateKeys) {
         try {
           const command = new GetObjectCommand({
             Bucket: bucketName,
@@ -72,5 +48,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  return res.status(200).json(DEFAULT_MANIFEST);
+  // Never return an old stale fallback release like Build 20.
+  // Return explicit 503 so client displays "Unable to check for updates right now".
+  return res.status(503).json({
+    error: "Unable to check for updates right now",
+    message: "Authoritative release manifest is temporarily unavailable"
+  });
 }

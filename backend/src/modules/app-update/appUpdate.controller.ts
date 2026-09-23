@@ -95,8 +95,35 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
     }
 
     if (!manifest) {
-      console.warn("[AppUpdate] Using fallback manifest (R2 not configured or latest.json not found)");
-      manifest = { ...DEFAULT_FALLBACK_MANIFEST };
+      // Check if local latest.json is present (e.g. deployed with backend)
+      const fs = await import("fs");
+      const path = await import("path");
+      const localPaths = [
+        path.resolve(process.cwd(), "latest.json"),
+        path.resolve(process.cwd(), "../latest.json"),
+        path.resolve(process.cwd(), "public/latest.json")
+      ];
+      for (const p of localPaths) {
+        if (fs.existsSync(p)) {
+          try {
+            const raw = fs.readFileSync(p, "utf-8");
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object" && parsed.versionCode > 0) {
+              manifest = parsed as AppUpdateManifest;
+              break;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    if (!manifest) {
+      console.warn("[AppUpdate] No authoritative release manifest found in R2 or local storage");
+      res.status(503).json({
+        error: "Unable to check for updates right now",
+        message: "Authoritative release manifest is temporarily unavailable"
+      });
+      return;
     }
 
     // Ensure standard metadata defaults
@@ -148,7 +175,10 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
     res.status(200).json(manifest);
   } catch (error: any) {
     console.error("[AppUpdate] Error in getLatestAppUpdate:", error);
-    res.status(200).json(DEFAULT_FALLBACK_MANIFEST);
+    res.status(503).json({
+      error: "Unable to check for updates right now",
+      message: "An unexpected error occurred while fetching update manifest"
+    });
   }
 }
 
