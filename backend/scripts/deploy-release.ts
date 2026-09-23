@@ -67,7 +67,9 @@ async function main() {
     const rawNotes = fs.readFileSync(notesFile, "utf-8");
     const rawLines = rawNotes
       .split("\n")
-      .map(l => l.trim().replace(/^[-*•]\s*/, ""))
+      .map(l => l.trim())
+      .filter(l => l.length > 0 && !l.startsWith("#"))
+      .map(l => l.replace(/^[-*•]\s*/, "").trim())
       .filter(Boolean);
     if (rawLines.length > 0) {
       releaseNotes = rawLines;

@@ -280,7 +280,7 @@ export const EmployeeCalendar = ({
           all.push({
             id: `fest-${f.date}`,
             title: f.name,
-            subtitle: f.description || "Festival / Public Holiday",
+            subtitle: (f as any).description || "Festival / Public Holiday",
             start,
             type: "festival",
             status: "holiday",

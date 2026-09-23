@@ -12,13 +12,13 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: 'Version Name (e.g. 1.0.1)'
-        required: true
-        default: '1.0.1'
+        description: 'Version Name override (optional, e.g. 1.1.0 - leave blank to auto-calculate)'
+        required: false
+        default: ''
       version_code:
-        description: 'Version Code / Build Number (numeric, e.g. 21)'
-        required: true
-        default: '21'
+        description: 'Version Code / Build Number override (optional, numeric - leave blank to auto-calculate)'
+        required: false
+        default: ''
       minimum_version_code:
         description: 'Minimum Supported Version Code (numeric, e.g. 1)'
         required: false
@@ -28,13 +28,9 @@ on:
         type: boolean
         default: false
       release_notes:
-        description: 'User-facing release notes'
+        description: 'User-facing release notes override (optional - leave blank to auto-generate from commits)'
         required: false
-        default: |
-          Improved attendance tracking and calendar sync
-          Fixed working-hour calculation
-          Improved profile synchronization
-          Performance improvements and bug fixes
+        default: ''
 
 concurrency:
   group: release-apk-pipeline
@@ -141,50 +137,44 @@ jobs:
           fi
           echo "Android SDK setup completed successfully."
 
-      - name: Determine Next Build Version
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install Backend Tooling Dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run Semantic Versioning Verification Tests
+        working-directory: backend
+        run: npx tsx scripts/test-versioning-rules.ts
+
+      - name: Determine Next Semantic Version & Build Number
         id: versioning
+        working-directory: backend
+        env:
+          INPUT_VERSION_NAME: ${{ github.event.inputs.version_name }}
+          INPUT_VERSION_CODE: ${{ github.event.inputs.version_code }}
+          INPUT_RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+          MIN_VERSION_CODE: ${{ github.event.inputs.minimum_version_code || '1' }}
+          MANDATORY: ${{ github.event.inputs.mandatory || 'false' }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION_NAME="${{ github.event.inputs.version_name }}"
-            VERSION_CODE="${{ github.event.inputs.version_code }}"
-            MIN_VERSION_CODE="${{ github.event.inputs.minimum_version_code }}"
-            MANDATORY="${{ github.event.inputs.mandatory }}"
-          else
-            # Fetch tags to evaluate build history
-            git fetch --tags --force origin 2>/dev/null || true
-            
-            # Find the highest existing build number from tags
-            HIGHEST_BUILD=20
-            while read -r TAG; do
-              if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-build([0-9]+)$ ]]; then
-                BUILD_NUM="${BASH_REMATCH[1]}"
-                if [ "$BUILD_NUM" -gt "$HIGHEST_BUILD" ]; then
-                  HIGHEST_BUILD="$BUILD_NUM"
-                fi
-              fi
-            done < <(git tag -l "v*-build*")
+          set -Eeuo pipefail
+          echo "========================================"
+          echo "STAGE: Automatic Semantic Versioning"
+          echo "========================================"
 
-            VERSION_CODE=$((HIGHEST_BUILD + 1))
-            VERSION_NAME="1.0.1"
-            MIN_VERSION_CODE="1"
-            MANDATORY="false"
-          fi
+          # Fetch all tags from origin
+          git fetch --tags --force origin 2>/dev/null || true
 
-          if [ -z "$VERSION_NAME" ]; then VERSION_NAME="1.0.1"; fi
-          if [ -z "$VERSION_CODE" ]; then VERSION_CODE="21"; fi
-          if [ -z "$MIN_VERSION_CODE" ]; then MIN_VERSION_CODE="1"; fi
-          if [ -z "$MANDATORY" ]; then MANDATORY="false"; fi
+          # Execute automatic semantic versioning engine
+          npx tsx scripts/calculate-version.ts "$INPUT_VERSION_NAME" "$INPUT_VERSION_CODE" "$INPUT_RELEASE_NOTES" "$GITHUB_WORKSPACE/release_notes.txt"
 
-          RELEASE_TAG="v${VERSION_NAME}-build${VERSION_CODE}"
-          RELEASE_TITLE="Swayog Employee App v${VERSION_NAME} — Build ${VERSION_CODE}"
-
-          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_OUTPUT
-          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "MIN_VERSION_CODE=$MIN_VERSION_CODE" >> $GITHUB_OUTPUT
           echo "MANDATORY=$MANDATORY" >> $GITHUB_OUTPUT
-          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_OUTPUT
-          echo "RELEASE_TITLE=$RELEASE_TITLE" >> $GITHUB_OUTPUT
-          echo "🚀 Target Release: Version $VERSION_NAME (Build $VERSION_CODE) -> Tag $RELEASE_TAG"
 
       - name: Restore Google Services Configuration
         env:
@@ -517,6 +507,12 @@ jobs:
             fi
             echo "✅ Version code confirmed: $EXPECTED_VERSION_CODE"
 
+            if ! echo "$DUMP_OUTPUT" | grep -q "versionName='$EXPECTED_VERSION_NAME'"; then
+              echo "::error::APK versionName does not match expected version name $EXPECTED_VERSION_NAME!"
+              exit 1
+            fi
+            echo "✅ Version name confirmed: $EXPECTED_VERSION_NAME"
+
           if [ "$EXPECTED_VERSION_CODE" -lt 1 ]; then
             echo "::error::Production release versionCode must be >= 1 (got: $EXPECTED_VERSION_CODE)"
             exit 1
@@ -524,31 +520,15 @@ jobs:
 
           echo "✅ APK integrity checks passed completely"
 
-      - name: Set up Node.js 20 for release
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Prepare User-Facing Release Notes
-        env:
-          INPUT_RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+      - name: Display User-Facing Release Notes
         run: |
-          if [ -n "$INPUT_RELEASE_NOTES" ]; then
-            printf "%s\n" "$INPUT_RELEASE_NOTES" > release_notes.txt
-          else
-            cat << 'EOF' > release_notes.txt
-          Attendance and synchronization improvements
-          - Improved attendance tracking
-          - Fixed working-hour calculation
-          - Improved attendance calendar
-          - Improved profile synchronization
-          - Bug fixes and performance improvements
-          EOF
-          fi
           echo "=== Release Notes ==="
-          cat release_notes.txt
+          if [ -f release_notes.txt ]; then
+            cat release_notes.txt
+          elif [ -f "$GITHUB_WORKSPACE/release_notes.txt" ]; then
+            cp "$GITHUB_WORKSPACE/release_notes.txt" ./release_notes.txt
+            cat release_notes.txt
+          fi
 
       - name: Publish APK & Canonical latest.json to Cloudflare R2
         working-directory: backend
@@ -661,16 +641,47 @@ jobs:
             echo "ℹ️ Public /latest.json returned HTTP $HTTP_STATUS (may take a few moments to propagate if deployed behind CDN)"
           fi
 
-      - name: Create and Push Git Release Tag
+      - name: Automated Version Consistency Check
+        env:
+          TAG: ${{ steps.versioning.outputs.RELEASE_TAG }}
+          V_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
+          V_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
+          APK_PATH: ${{ steps.apk_info.outputs.APK_PATH }}
         run: |
+          set -Eeuo pipefail
+          echo "========================================"
+          echo "STAGE: Automated Version Consistency Check"
+          echo "========================================"
+          EXPECTED_TAG="v${V_NAME}-build${V_CODE}"
+          if [ "$TAG" != "$EXPECTED_TAG" ]; then
+            echo "::error::Tag inconsistency! Calculated TAG='$TAG' does not match expected format '$EXPECTED_TAG'"
+            exit 1
+          fi
+
+          if [ ! -f "$APK_PATH" ]; then
+            echo "::error::APK was not found at $APK_PATH"
+            exit 1
+          fi
+
+          echo "✅ Version Consistency Confirmed: Tag=$TAG, Version=$V_NAME, Build=$V_CODE"
+
+      - name: Create and Push Immutable Git Release Tag
+        run: |
+          set -Eeuo pipefail
           RELEASE_TAG="${{ steps.versioning.outputs.RELEASE_TAG }}"
           RELEASE_TITLE="${{ steps.versioning.outputs.RELEASE_TITLE }}"
           
+          echo "Verifying immutability of release tag: $RELEASE_TAG"
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Release tag '$RELEASE_TAG' already exists! Production release tags are immutable and cannot be overwritten."
+            exit 1
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -fa "$RELEASE_TAG" -m "$RELEASE_TITLE"
-          git push origin "$RELEASE_TAG" --force || echo "Tag push completed or skipped"
-          echo "✅ Created and pushed Git tag: $RELEASE_TAG"
+          git tag "$RELEASE_TAG" -m "$RELEASE_TITLE"
+          git push origin "$RELEASE_TAG"
+          echo "✅ Created and pushed immutable Git tag: $RELEASE_TAG"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -693,6 +704,21 @@ jobs:
 
       - name: Release Deployment Summary
         run: |
+          echo "========================================"
+          echo "Swayog Employee App Release"
+          echo "========================================"
+          echo "Version Name:   ${{ steps.versioning.outputs.VERSION_NAME }}"
+          echo "Version Code:   ${{ steps.versioning.outputs.VERSION_CODE }}"
+          echo "Release Tag:    ${{ steps.versioning.outputs.RELEASE_TAG }}"
+          echo "Commit:         ${{ github.sha }}"
+          echo "APK:            app-release.apk"
+          echo "APK SHA-256:    ${{ steps.apk_info.outputs.SHA256 }}"
+          echo "APK Size:       $(( ${{ steps.apk_info.outputs.FILE_SIZE }} / 1024 / 1024 )) MB (${{ steps.apk_info.outputs.FILE_SIZE }} bytes)"
+          echo "R2 APK:         releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}/app-release.apk"
+          echo "Manifest:       latest.json"
+          echo "GitHub Release: ${{ steps.versioning.outputs.RELEASE_TITLE }}"
+          echo "========================================"
+
           echo "### 🚀 Production Release Successfully Deployed" >> $GITHUB_STEP_SUMMARY
           echo "- **App:** Swayog Employee App" >> $GITHUB_STEP_SUMMARY
           echo "- **Version Name:** \`v${{ steps.versioning.outputs.VERSION_NAME }}\`" >> $GITHUB_STEP_SUMMARY

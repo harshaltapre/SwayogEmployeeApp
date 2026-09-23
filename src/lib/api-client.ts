@@ -3932,3 +3932,8 @@ export function useMarkCustomerNotificationRead(opts?: any) {
   });
 }
 
+// Aliases for employee notifications
+export const useGetEmployeeNotifications = useGetCustomerNotifications;
+export const useGetEmployeeUnreadNotificationsCount = useGetCustomerUnreadNotificationsCount;
+export const useMarkEmployeeNotificationRead = useMarkCustomerNotificationRead;
+

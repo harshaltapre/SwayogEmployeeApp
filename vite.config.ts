@@ -16,11 +16,11 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
   },
   root: path.resolve(__dirname),
+  publicDir: 'public',
   build: {
     outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 5000,
-    publicDir: 'public',
     rollupOptions: {
       output: {
         manualChunks(id) {
