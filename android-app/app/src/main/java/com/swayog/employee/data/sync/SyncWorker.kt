@@ -17,6 +17,7 @@ import com.swayog.employee.data.model.*
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -27,21 +28,55 @@ class SyncWorker @AssistedInject constructor(
     private val outboxQueueDao: OutboxQueueDao,
     private val taskDao: TaskDao,
     private val dailyCommitDao: DailyCommitDao,
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val dataStoreManager: com.swayog.employee.data.local.preferences.DataStoreManager
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val gson = Gson()
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            val pendingItems = outboxQueueDao.getPendingItems()
-            Log.d("TASK_SYNC", "SyncWorker started with ${pendingItems.size} pending outbox item(s)")
-            if (pendingItems.isEmpty()) {
-                Log.d("TASK_SYNC", "SyncWorker exiting early because the queue is empty")
-                return@withContext Result.success()
+            var hasFailure = false
+
+            // 1. Check pending face enrollment sync
+            try {
+                val faceSyncStatus = dataStoreManager.faceEnrollmentSyncStatus.first()
+                if (faceSyncStatus == "PENDING" || faceSyncStatus == "FAILED") {
+                    val descriptors = dataStoreManager.faceDescriptors.first()
+                    if (descriptors.size >= 3) {
+                        Log.d("TASK_SYNC", "SyncWorker attempting to sync pending face enrollment")
+                        val req = FaceEnrollRequest(
+                            descriptor1 = descriptors[0],
+                            descriptor2 = descriptors[1],
+                            descriptor3 = descriptors[2],
+                            source = "MOBILE"
+                        )
+                        val res = apiService.enrollFace(req)
+                        if (res.isSuccessful && res.body()?.success == true) {
+                            val body = res.body()!!
+                            val currentVersion = dataStoreManager.faceEnrollmentVersion.first()
+                            dataStoreManager.saveFaceEnrollment(
+                                descriptor1 = descriptors[0],
+                                descriptor2 = descriptors[1],
+                                descriptor3 = descriptors[2],
+                                enrollmentId = body.enrollmentId,
+                                syncVersion = body.syncVersion ?: (currentVersion + 1),
+                                updatedAt = body.enrolledAt,
+                                syncStatus = "SYNCED"
+                            )
+                            Log.d("TASK_SYNC", "SyncWorker successfully uploaded pending face enrollment")
+                        } else {
+                            hasFailure = true
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("TASK_SYNC", "Failed to sync pending face enrollment: ${e.message}", e)
+                hasFailure = true
             }
 
-            var hasFailure = false
+            val pendingItems = outboxQueueDao.getPendingItems()
+            Log.d("TASK_SYNC", "SyncWorker started with ${pendingItems.size} pending outbox item(s)")
 
             for (item in pendingItems) {
                 Log.d("TASK_SYNC", "Processing outbox item ${item.id} endpoint=${item.endpoint} method=${item.method} retryCount=${item.retryCount}")

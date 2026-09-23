@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import kotlin.math.abs
 
@@ -34,7 +35,8 @@ data class FaceEnrollmentUiState(
 class FaceEnrollmentViewModel @Inject constructor(
     @ApplicationContext context: Context,
     private val apiService: ApiService,
-    private val dataStoreManager: DataStoreManager
+    private val dataStoreManager: DataStoreManager,
+    private val faceIndexManager: FaceIndexManager
 ) : ViewModel() {
 
     val faceEmbeddingHelper = FaceEmbeddingHelper(context)
@@ -158,16 +160,47 @@ class FaceEnrollmentViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, instruction = "Saving Face ID...") }
             
             try {
-                // Save locally first
-                dataStoreManager.saveFaceEnrollment(descriptor1!!, descriptor2!!, descriptor3!!)
+                val d1 = descriptor1!!
+                val d2 = descriptor2!!
+                val d3 = descriptor3!!
+
+                // Update in-memory index immediately for zero-lag recognition
+                faceIndexManager.atomicUpdate(listOf(d1, d2, d3))
+
+                // Save locally first with PENDING status
+                val currentVersion = try { dataStoreManager.faceEnrollmentVersion.first() } catch (_: Exception) { 0 }
+                val nextVersion = currentVersion + 1
+                dataStoreManager.saveFaceEnrollment(
+                    descriptor1 = d1,
+                    descriptor2 = d2,
+                    descriptor3 = d3,
+                    syncVersion = nextVersion,
+                    syncStatus = "PENDING"
+                )
                 
-                val request = FaceEnrollRequest(descriptor1!!, descriptor2!!, descriptor3!!)
+                val request = FaceEnrollRequest(
+                    descriptor1 = d1,
+                    descriptor2 = d2,
+                    descriptor3 = d3,
+                    source = "MOBILE"
+                )
                 val response = apiService.enrollFace(request)
                 
                 if (response.isSuccessful && response.body()?.success == true) {
+                    val body = response.body()!!
+                    dataStoreManager.saveFaceEnrollment(
+                        descriptor1 = d1,
+                        descriptor2 = d2,
+                        descriptor3 = d3,
+                        enrollmentId = body.enrollmentId,
+                        syncVersion = body.syncVersion ?: nextVersion,
+                        updatedAt = body.enrolledAt,
+                        syncStatus = "SYNCED"
+                    )
                     _uiState.update { it.copy(isLoading = false, enrollmentComplete = true) }
                 } else {
                     val errorMsg = ErrorUtils.formatResponseError(response)
+                    dataStoreManager.setFaceSyncStatus("FAILED")
                     _uiState.update { 
                         it.copy(
                             isLoading = false,
@@ -176,10 +209,11 @@ class FaceEnrollmentViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
+                dataStoreManager.setFaceSyncStatus("PENDING")
                 _uiState.update { 
                     it.copy(
                         isLoading = false,
-                        error = "Saved locally. Server sync failed: ${e.localizedMessage ?: e.message}"
+                        error = "Saved locally for offline use. Will sync with server when online."
                     )
                 }
             }

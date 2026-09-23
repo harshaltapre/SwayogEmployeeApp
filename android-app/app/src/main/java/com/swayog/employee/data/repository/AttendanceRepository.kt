@@ -30,7 +30,8 @@ class AttendanceRepository @Inject constructor(
     private val outboxQueueDao: OutboxQueueDao,
     private val apiService: ApiService,
     private val dailyCommitRepository: DailyCommitRepository,
-    private val dataStoreManager: com.swayog.employee.data.local.preferences.DataStoreManager
+    private val dataStoreManager: com.swayog.employee.data.local.preferences.DataStoreManager,
+    private val faceIndexManager: com.swayog.employee.presentation.attendance.face.FaceIndexManager
 ) {
     val pendingSyncCount: Flow<Int> = outboxQueueDao.getPendingCountFlow()
     
@@ -386,20 +387,44 @@ class AttendanceRepository @Inject constructor(
             val response = apiService.getFaceEnrollmentStatus(employeeId)
             if (response.isSuccessful && response.body() != null) {
                 val status = response.body()!!
-                if (status.enrolled && status.enrollment != null) {
+                if (status.enrolled && status.enrollment != null && !status.enrollment.isDeleted) {
                     val e = status.enrollment
+                    val localVersion = try { dataStoreManager.faceEnrollmentVersion.first() } catch (_: Exception) { 0 }
+                    
                     if (e.descriptor1.isNotEmpty() && e.descriptor2.isNotEmpty() && e.descriptor3.isNotEmpty()) {
-                        dataStoreManager.saveFaceEnrollment(e.descriptor1, e.descriptor2, e.descriptor3)
+                        if (e.syncVersion >= localVersion) {
+                            dataStoreManager.saveFaceEnrollment(
+                                descriptor1 = e.descriptor1,
+                                descriptor2 = e.descriptor2,
+                                descriptor3 = e.descriptor3,
+                                enrollmentId = e.id,
+                                syncVersion = e.syncVersion,
+                                updatedAt = e.updatedAt,
+                                syncStatus = "SYNCED"
+                            )
+                            faceIndexManager.atomicUpdate(listOf(e.descriptor1, e.descriptor2, e.descriptor3))
+                        } else if (faceIndexManager.index.isEmpty()) {
+                            faceIndexManager.loadFromDataStore()
+                        }
                     }
                     Result.success(true)
                 } else {
                     dataStoreManager.clearFaceEnrollment()
+                    faceIndexManager.clear()
                     Result.success(false)
                 }
             } else {
+                // If network/server fails, warm up in-memory index from local cache so offline face match works
+                if (faceIndexManager.index.isEmpty()) {
+                    faceIndexManager.loadFromDataStore()
+                }
                 Result.failure(Exception("Failed to fetch face enrollment status: ${response.message()}"))
             }
         } catch (e: Exception) {
+            // Offline fallback: load cached embeddings into in-memory index
+            if (faceIndexManager.index.isEmpty()) {
+                try { faceIndexManager.loadFromDataStore() } catch (_: Exception) {}
+            }
             Result.failure(e)
         }
     }

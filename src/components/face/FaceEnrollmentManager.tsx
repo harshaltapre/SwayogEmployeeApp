@@ -190,9 +190,14 @@ export function FaceEnrollmentManager({ isSuperAdmin = false }: FaceEnrollmentMa
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {emp.enrolled ? (
-                  <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900 dark:text-emerald-300 text-xs">
-                    Enrolled
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900 dark:text-emerald-300 text-xs">
+                      Enrolled
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-300 dark:border-slate-700 text-slate-500">
+                      {emp.enrollmentSource === "MOBILE" ? "📱 Mobile" : "💻 Web"} (v{emp.syncVersion || 1})
+                    </Badge>
+                  </div>
                 ) : (
                   <Badge className="bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900 dark:text-amber-300 text-xs">
                     Not Enrolled

@@ -31,7 +31,8 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun FaceVerificationScreen(
-    faceDescriptors: List<List<Float>>,
+    faceDescriptors: List<List<Float>> = emptyList(),
+    faceIndexManager: com.swayog.employee.presentation.attendance.face.FaceIndexManager? = null,
     onVerificationSuccess: (Bitmap, Float) -> Unit,
     onVerificationFailed: (String) -> Unit,
     onCancel: () -> Unit
@@ -53,7 +54,15 @@ fun FaceVerificationScreen(
         }
     }
 
-    if (faceDescriptors.isEmpty()) {
+    val activeDescriptors = remember(faceDescriptors, faceIndexManager) {
+        if (faceDescriptors.isNotEmpty()) {
+            faceDescriptors
+        } else {
+            faceIndexManager?.getIndexSnapshot() ?: emptyList()
+        }
+    }
+
+    if (activeDescriptors.isEmpty()) {
         LaunchedEffect(Unit) {
             onVerificationFailed("No face enrolled. Please enroll in Settings.")
         }
@@ -89,7 +98,7 @@ fun FaceVerificationScreen(
                                     faceStatusText = "No face detected"
                                 }
                             } else {
-                                val matchScore = FaceMatcher.findBestMatch(embedding, faceDescriptors)
+                                val matchScore = FaceMatcher.findBestMatch(embedding, activeDescriptors)
                                 if (matchScore >= FaceMatcher.THRESHOLD) {
                                     isProcessing = true
                                     // Update UI and trigger success on main thread

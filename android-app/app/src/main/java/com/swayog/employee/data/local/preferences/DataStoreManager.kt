@@ -42,11 +42,16 @@ class DataStoreManager @Inject constructor(
         val PROFILE_PHOTO_CACHE_KEY = longPreferencesKey("profile_photo_cache_key")
         val LAST_ACTIVE_TIME = longPreferencesKey("last_active_time")
         
-        // Face recognition
+        // Face recognition & sync
         val FACE_ENROLLED = booleanPreferencesKey("face_enrolled")
         val FACE_DESCRIPTOR_1 = stringPreferencesKey("face_descriptor_1")
         val FACE_DESCRIPTOR_2 = stringPreferencesKey("face_descriptor_2")
         val FACE_DESCRIPTOR_3 = stringPreferencesKey("face_descriptor_3")
+        val FACE_ENROLLMENT_ID = stringPreferencesKey("face_enrollment_id")
+        val FACE_ENROLLMENT_VERSION = intPreferencesKey("face_enrollment_version")
+        val FACE_ENROLLMENT_UPDATED_AT = stringPreferencesKey("face_enrollment_updated_at")
+        val FACE_ENROLLMENT_SYNC_STATUS = stringPreferencesKey("face_enrollment_sync_status") // "SYNCED", "PENDING", "FAILED"
+        val FACE_LAST_SYNC_AT = stringPreferencesKey("face_last_sync_at")
 
         // Attendance Rules
         val RULE_SHIFT_START = stringPreferencesKey("rule_shift_start")
@@ -254,12 +259,33 @@ class DataStoreManager @Inject constructor(
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_1)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_ID)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_VERSION)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_UPDATED_AT)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS)
+            preferences.remove(PreferencesKeys.FACE_LAST_SYNC_AT)
         }
     }
     
-    // Face Enrollment Storage
+    // Face Enrollment Storage & Sync
     val isFaceEnrolled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.FACE_ENROLLED] ?: false
+    }
+
+    val faceEnrollmentVersion: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.FACE_ENROLLMENT_VERSION] ?: 0
+    }
+
+    val faceEnrollmentId: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.FACE_ENROLLMENT_ID]
+    }
+
+    val faceEnrollmentSyncStatus: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS] ?: "NONE"
+    }
+
+    val faceLastSyncAt: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.FACE_LAST_SYNC_AT]
     }
 
     val faceDescriptors: Flow<List<List<Float>>> = context.dataStore.data.map { preferences ->
@@ -269,12 +295,37 @@ class DataStoreManager @Inject constructor(
         listOf(d1, d2, d3).filter { it.isNotEmpty() }
     }
 
-    suspend fun saveFaceEnrollment(descriptor1: List<Float>, descriptor2: List<Float>, descriptor3: List<Float>) {
+    suspend fun saveFaceEnrollment(
+        descriptor1: List<Float>,
+        descriptor2: List<Float>,
+        descriptor3: List<Float>,
+        enrollmentId: String? = null,
+        syncVersion: Int = 1,
+        updatedAt: String? = null,
+        syncStatus: String = "SYNCED"
+    ) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.FACE_ENROLLED] = true
             preferences[PreferencesKeys.FACE_DESCRIPTOR_1] = descriptor1.joinToString(",")
             preferences[PreferencesKeys.FACE_DESCRIPTOR_2] = descriptor2.joinToString(",")
             preferences[PreferencesKeys.FACE_DESCRIPTOR_3] = descriptor3.joinToString(",")
+            if (enrollmentId != null) preferences[PreferencesKeys.FACE_ENROLLMENT_ID] = enrollmentId
+            preferences[PreferencesKeys.FACE_ENROLLMENT_VERSION] = syncVersion
+            if (updatedAt != null) preferences[PreferencesKeys.FACE_ENROLLMENT_UPDATED_AT] = updatedAt
+            preferences[PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS] = syncStatus
+            preferences[PreferencesKeys.FACE_LAST_SYNC_AT] = System.currentTimeMillis().toString()
+        }
+    }
+
+    suspend fun setFaceSyncStatus(status: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS] = status
+        }
+    }
+
+    suspend fun setFaceLastSyncAt(timestamp: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.FACE_LAST_SYNC_AT] = timestamp
         }
     }
 
@@ -284,6 +335,11 @@ class DataStoreManager @Inject constructor(
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_1)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_ID)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_VERSION)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_UPDATED_AT)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS)
+            preferences.remove(PreferencesKeys.FACE_LAST_SYNC_AT)
         }
     }
 

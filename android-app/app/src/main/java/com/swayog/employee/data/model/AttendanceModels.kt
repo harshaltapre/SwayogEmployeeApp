@@ -37,7 +37,8 @@ data class CheckInRequest(
 data class FaceEnrollRequest(
     val descriptor1: List<Float>,
     val descriptor2: List<Float>,
-    val descriptor3: List<Float>
+    val descriptor3: List<Float>,
+    val source: String = "MOBILE"
 )
 
 data class FaceEnrollment(
@@ -47,12 +48,21 @@ data class FaceEnrollment(
     val descriptor2: List<Float>,
     val descriptor3: List<Float>,
     val enrolledAt: String,
-    val modelVersion: String
+    val modelVersion: String,
+    val syncVersion: Int = 1,
+    val enrollmentSource: String? = null,
+    val isDeleted: Boolean = false,
+    val updatedAt: String? = null
 )
 
 data class FaceEnrollmentStatusResponse(
     val enrolled: Boolean,
     val enrollment: FaceEnrollment?
+)
+
+data class FaceSyncResponse(
+    val serverTime: String,
+    val enrollments: List<FaceEnrollment> = emptyList()
 )
 
 data class CheckInResponse(
@@ -148,7 +158,10 @@ data class UpdateAttendanceRulesResponse(
 
 data class FaceEnrollResponse(
     val success: Boolean,
-    val enrolledAt: String?
+    val enrolledAt: String?,
+    val enrollmentId: String? = null,
+    val syncVersion: Int? = null,
+    val enrollmentSource: String? = null
 )
 
 data class EmployeeFaceEnrollmentItem(
@@ -159,7 +172,9 @@ data class EmployeeFaceEnrollmentItem(
     val department: String,
     val enrolled: Boolean,
     val enrolledAt: String?,
-    val modelVersion: String?
+    val modelVersion: String?,
+    val syncVersion: Int? = null,
+    val enrollmentSource: String? = null
 )
 
 data class FaceEnrollmentListResponse(

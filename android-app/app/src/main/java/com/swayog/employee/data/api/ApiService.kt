@@ -104,6 +104,11 @@ interface ApiService {
     @GET("attendance/face/enrollments")
     suspend fun getAllFaceEnrollments(): Response<FaceEnrollmentListResponse>
 
+    @GET("attendance/face/sync")
+    suspend fun syncFaceEnrollments(
+        @Query("since") since: String? = null
+    ): Response<FaceSyncResponse>
+
     @DELETE("attendance/face/enrollment/{employeeId}")
     suspend fun deleteFaceEnrollment(
         @Path("employeeId") employeeId: String

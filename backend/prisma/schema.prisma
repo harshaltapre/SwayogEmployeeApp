@@ -547,17 +547,27 @@ enum CheckInStatus {
 // ---------------------------------------------------------------------------
 
 model FaceEnrollment {
-  id           String   @id @default(uuid())
-  employeeId   String   @unique
-  descriptor1  Json     // Float32Array serialized as number[] (128 dimensions)
-  descriptor2  Json
-  descriptor3  Json
-  enrolledAt   DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  modelVersion String   @default("face-api-ssd-mobilenetv1-v1")
-  employee     User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id                String    @id @default(uuid())
+  employeeId        String    @unique
+  descriptor1       Json      // Float32Array serialized as number[] (128 dimensions)
+  descriptor2       Json
+  descriptor3       Json
+  enrolledAt        DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  modelVersion      String    @default("face-api-ssd-mobilenetv1-v1")
+  /// Monotonically incremented on every upsert. Mobile compares its local version
+  /// to the server version to detect when a re-download is needed.
+  syncVersion       Int       @default(1)
+  /// Which platform created/last-updated this enrollment. "WEB" | "MOBILE"
+  enrollmentSource  String    @default("WEB")
+  /// Soft-delete flag. Set to true instead of hard-deleting so mobile sync can
+  /// detect the deletion via the /face/sync endpoint.
+  isDeleted         Boolean   @default(false)
+  deletedAt         DateTime?
+  employee          User      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
+  @@index([updatedAt])   // for efficient since-based queries on the sync endpoint
 }
 
 model PerformanceSnapshot {

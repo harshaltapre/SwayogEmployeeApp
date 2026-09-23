@@ -148,6 +148,9 @@ export interface FaceEnrollmentStatus {
     descriptor3: number[];
     enrolledAt: string;
     modelVersion: string;
+    syncVersion?: number;
+    enrollmentSource?: string;
+    updatedAt?: string;
   } | null;
 }
 
@@ -156,17 +159,19 @@ export const useFaceEnrollmentStatus = (userId?: string) => useQuery({
   queryKey: ["face-enrollment", "status", userId],
   queryFn: () => apiClient.get("/attendance/face/enrollment").then((r) => r.data as FaceEnrollmentStatus),
   enabled: !!userId,
-  staleTime: 5 * 60_000,
+  staleTime: 30_000,
+  refetchOnWindowFocus: true,
 });
 
 /** Enroll face: POST 3 descriptors */
 export const useEnrollFace = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { descriptor1: number[]; descriptor2: number[]; descriptor3: number[] }) =>
-      apiClient.post("/attendance/face/enroll", data).then((r) => r.data),
+    mutationFn: (data: { descriptor1: number[]; descriptor2: number[]; descriptor3: number[]; source?: string }) =>
+      apiClient.post("/attendance/face/enroll", { ...data, source: data.source ?? "WEB" }).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["face-enrollment"] });
+      qc.invalidateQueries({ queryKey: ["admin", "face-enrollments"] });
     },
   });
 };

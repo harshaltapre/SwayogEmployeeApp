@@ -566,25 +566,27 @@ router.patch(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
+ * Helper to validate 128-dim float descriptors
+ */
+const isValidDescriptor = (d: any) =>
+  Array.isArray(d) && d.length === 128 && d.every((v: any) => typeof v === "number");
+
+/**
  * POST /face/enroll
  * Save 3 face descriptors for the authenticated employee.
- * Descriptors are 128-dim float arrays from face-api.js, run client-side.
- * Each is stored as a JSON number[] array.
+ * Supports source tag: "MOBILE" | "WEB"
  */
 router.post(
   "/face/enroll",
   authenticateAccessToken,
   asyncHandler(async (req, res) => {
     const employeeId = req.auth!.userId;
-    const { descriptor1, descriptor2, descriptor3 } = req.body as {
+    const { descriptor1, descriptor2, descriptor3, source } = req.body as {
       descriptor1: number[];
       descriptor2: number[];
       descriptor3: number[];
+      source?: string;
     };
-
-    // Validate — each descriptor must be a 128-length float array
-    const isValidDescriptor = (d: any) =>
-      Array.isArray(d) && d.length === 128 && d.every((v: any) => typeof v === "number");
 
     if (!isValidDescriptor(descriptor1) || !isValidDescriptor(descriptor2) || !isValidDescriptor(descriptor3)) {
       res.status(400).json({
@@ -593,6 +595,12 @@ router.post(
       return;
     }
 
+    const enrollmentSource = source || (req.headers["user-agent"]?.includes("okhttp") ? "MOBILE" : "WEB");
+    const modelVersion = enrollmentSource === "MOBILE" ? "mobile-facenet-v1" : "face-api-ssd-mobilenetv1-v1";
+
+    const existing = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
+    const nextVersion = existing ? existing.syncVersion + 1 : 1;
+
     const enrollment = await prisma.faceEnrollment.upsert({
       where: { employeeId },
       create: {
@@ -600,18 +608,103 @@ router.post(
         descriptor1,
         descriptor2,
         descriptor3,
-        modelVersion: "face-api-ssd-mobilenetv1-v1",
+        modelVersion,
+        syncVersion: nextVersion,
+        enrollmentSource,
+        isDeleted: false,
+        deletedAt: null,
       },
       update: {
         descriptor1,
         descriptor2,
         descriptor3,
         enrolledAt: new Date(),
-        modelVersion: "face-api-ssd-mobilenetv1-v1",
+        modelVersion,
+        syncVersion: nextVersion,
+        enrollmentSource,
+        isDeleted: false,
+        deletedAt: null,
       },
     });
 
-    res.json({ success: true, enrolledAt: enrollment.enrolledAt });
+    res.json({
+      success: true,
+      enrolledAt: enrollment.enrolledAt,
+      syncVersion: enrollment.syncVersion,
+      enrollmentId: enrollment.id,
+      enrollmentSource: enrollment.enrollmentSource,
+    });
+  }),
+);
+
+/**
+ * POST /face/enroll/:employeeId
+ * Admin/SuperAdmin: enroll face descriptors on behalf of an employee.
+ */
+router.post(
+  "/face/enroll/:employeeId",
+  adminAuth,
+  asyncHandler(async (req, res) => {
+    const { employeeId } = req.params;
+    const { descriptor1, descriptor2, descriptor3, source } = req.body as {
+      descriptor1: number[];
+      descriptor2: number[];
+      descriptor3: number[];
+      source?: string;
+    };
+
+    const targetUser = await prisma.user.findUnique({ where: { id: employeeId } });
+    if (!targetUser) {
+      res.status(404).json({ error: "Employee not found." });
+      return;
+    }
+
+    if (!isValidDescriptor(descriptor1) || !isValidDescriptor(descriptor2) || !isValidDescriptor(descriptor3)) {
+      res.status(400).json({
+        error: "Invalid face descriptors. Each descriptor must be a 128-element float array.",
+      });
+      return;
+    }
+
+    const enrollmentSource = source || "WEB";
+    const modelVersion = enrollmentSource === "MOBILE" ? "mobile-facenet-v1" : "face-api-ssd-mobilenetv1-v1";
+
+    const existing = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
+    const nextVersion = existing ? existing.syncVersion + 1 : 1;
+
+    const enrollment = await prisma.faceEnrollment.upsert({
+      where: { employeeId },
+      create: {
+        employeeId,
+        descriptor1,
+        descriptor2,
+        descriptor3,
+        modelVersion,
+        syncVersion: nextVersion,
+        enrollmentSource,
+        isDeleted: false,
+        deletedAt: null,
+      },
+      update: {
+        descriptor1,
+        descriptor2,
+        descriptor3,
+        enrolledAt: new Date(),
+        modelVersion,
+        syncVersion: nextVersion,
+        enrollmentSource,
+        isDeleted: false,
+        deletedAt: null,
+      },
+    });
+
+    res.json({
+      success: true,
+      enrolledAt: enrollment.enrolledAt,
+      syncVersion: enrollment.syncVersion,
+      enrollmentId: enrollment.id,
+      enrollmentSource: enrollment.enrollmentSource,
+    });
   }),
 );
 
@@ -619,7 +712,6 @@ router.post(
  * GET /face/enrollment
  * Returns the stored face descriptors for the requesting employee.
  * Admin/SuperAdmin can pass ?employeeId= to get another employee's descriptors.
- * This endpoint is used by the client to load descriptors for client-side matching.
  */
 router.get(
   "/face/enrollment",
@@ -628,7 +720,6 @@ router.get(
     let employeeId = req.auth!.userId;
     const role = req.auth!.role;
 
-    // Admins can request any employee's enrollment for management purposes
     if (
       req.query.employeeId &&
       (role === UserRole.SUPER_ADMIN || role === UserRole.ADMIN || role === UserRole.SUB_ADMIN)
@@ -646,10 +737,14 @@ router.get(
         descriptor3: true,
         enrolledAt: true,
         modelVersion: true,
+        syncVersion: true,
+        enrollmentSource: true,
+        isDeleted: true,
+        updatedAt: true,
       },
     });
 
-    if (!enrollment) {
+    if (!enrollment || enrollment.isDeleted) {
       res.json({ enrollment: null, enrolled: false });
       return;
     }
@@ -679,30 +774,81 @@ router.get(
         departmentId: true,
         department: { select: { name: true } },
         faceEnrollment: {
-          select: { id: true, enrolledAt: true, modelVersion: true },
+          select: {
+            id: true,
+            enrolledAt: true,
+            modelVersion: true,
+            syncVersion: true,
+            enrollmentSource: true,
+            isDeleted: true,
+            updatedAt: true,
+          },
         },
       },
       orderBy: { fullName: "asc" },
     });
 
-    const result = employees.map((e) => ({
-      id: e.id,
-      fullName: e.fullName,
-      email: e.email,
-      employeeCode: e.employeeCode,
-      department: e.department?.name ?? "—",
-      enrolled: e.faceEnrollment !== null,
-      enrolledAt: e.faceEnrollment?.enrolledAt ?? null,
-      modelVersion: e.faceEnrollment?.modelVersion ?? null,
-    }));
+    const result = employees.map((e) => {
+      const activeEnrollment = e.faceEnrollment && !e.faceEnrollment.isDeleted ? e.faceEnrollment : null;
+      return {
+        id: e.id,
+        fullName: e.fullName,
+        email: e.email,
+        employeeCode: e.employeeCode,
+        department: e.department?.name ?? "—",
+        enrolled: activeEnrollment !== null,
+        enrolledAt: activeEnrollment?.enrolledAt ?? null,
+        modelVersion: activeEnrollment?.modelVersion ?? null,
+        syncVersion: activeEnrollment?.syncVersion ?? null,
+        enrollmentSource: activeEnrollment?.enrollmentSource ?? null,
+      };
+    });
 
     res.json({ enrollments: result });
   }),
 );
 
 /**
+ * GET /face/sync
+ * Returns enrollments changed/updated since ?since= (ISO 8601 string or ms timestamp).
+ * Useful for mobile app periodic or resume-based delta synchronization.
+ */
+router.get(
+  "/face/sync",
+  authenticateAccessToken,
+  asyncHandler(async (req, res) => {
+    const sinceParam = req.query.since ? String(req.query.since) : null;
+    const sinceDate = sinceParam ? new Date(isNaN(Number(sinceParam)) ? sinceParam : Number(sinceParam)) : new Date(0);
+
+    const changed = await prisma.faceEnrollment.findMany({
+      where: {
+        updatedAt: { gt: sinceDate },
+      },
+      select: {
+        id: true,
+        employeeId: true,
+        descriptor1: true,
+        descriptor2: true,
+        descriptor3: true,
+        enrolledAt: true,
+        modelVersion: true,
+        syncVersion: true,
+        enrollmentSource: true,
+        isDeleted: true,
+        updatedAt: true,
+      },
+    });
+
+    res.json({
+      serverTime: new Date().toISOString(),
+      enrollments: changed,
+    });
+  }),
+);
+
+/**
  * DELETE /face/enrollment/:employeeId
- * SuperAdmin only: delete an employee's face enrollment, forcing re-enrollment.
+ * SuperAdmin only: soft-delete an employee's face enrollment so mobile/web can sync the deletion.
  */
 router.delete(
   "/face/enrollment/:employeeId",
@@ -711,12 +857,19 @@ router.delete(
     const { employeeId } = req.params;
 
     const existing = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
-    if (!existing) {
-      res.status(404).json({ error: "No face enrollment found for this employee." });
+    if (!existing || existing.isDeleted) {
+      res.status(404).json({ error: "No active face enrollment found for this employee." });
       return;
     }
 
-    await prisma.faceEnrollment.delete({ where: { employeeId } });
+    await prisma.faceEnrollment.update({
+      where: { employeeId },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+        syncVersion: existing.syncVersion + 1,
+      },
+    });
 
     res.json({ success: true, message: "Face enrollment deleted. Employee must re-enroll." });
   }),
