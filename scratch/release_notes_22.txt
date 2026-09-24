@@ -1,0 +1,5 @@
+- Improved attendance tracking
+- Fixed working-hour calculation
+- Improved attendance calendar
+- Improved profile synchronization
+- Bug fixes and performance improvements
