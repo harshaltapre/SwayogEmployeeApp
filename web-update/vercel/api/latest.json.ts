@@ -18,6 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         region: "auto",
         endpoint,
         credentials: { accessKeyId, secretAccessKey },
+        forcePathStyle: true,
       });
 
       // Canonical manifest key in R2

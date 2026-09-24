@@ -356,7 +356,7 @@ jobs:
           RELEASE_STORE_TYPE: ${{ steps.signing_secrets.outputs.KEYSTORE_FORMAT }}
           API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard.vercel.app/api/v1/' }}
           WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard.vercel.app' }}
-          PUBLIC_DISTRIBUTION_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+          RAW_DIST_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
         run: |
           set -Eeuo pipefail
           echo "========================================"
@@ -369,6 +369,14 @@ jobs:
             exit 1
           fi
           
+          # Sanitize distribution URL to guarantee private R2 S3/API endpoints are NEVER passed to the Android app
+          DIST_URL="${RAW_DIST_URL:-https://swayog-dashboard.vercel.app}"
+          if [[ "$DIST_URL" == *".r2.cloudflarestorage.com"* ]] || [[ "$DIST_URL" == *"your-public-domain.com"* ]] || [ -z "$DIST_URL" ]; then
+            echo "Notice: Overriding private/invalid distribution URL '$DIST_URL' with 'https://swayog-dashboard.vercel.app'"
+            DIST_URL="https://swayog-dashboard.vercel.app"
+          fi
+          export PUBLIC_DISTRIBUTION_URL="$DIST_URL"
+
           # Clean any local or machine-specific java.home settings from all possible properties locations
           sed -i '/org\.gradle\.java\.home/d' gradle.properties 2>/dev/null || true
           sed -i '/org\.gradle\.java\.home/d' ../gradle.properties 2>/dev/null || true
@@ -378,6 +386,7 @@ jobs:
             -Dorg.gradle.java.home="$JAVA_HOME" \
             -PversionName="${{ steps.versioning.outputs.VERSION_NAME }}" \
             -PversionCode="${{ steps.versioning.outputs.VERSION_CODE }}" \
+            -PPUBLIC_DISTRIBUTION_URL="$DIST_URL" \
             --no-daemon --stacktrace
 
       - name: Verify Built APK & Calculate SHA-256
@@ -621,81 +630,89 @@ jobs:
           });
           '
 
-      - name: Verify Public /latest.json Release Gate
+      - name: Verify Public /latest.json & APK Download Release Gate
         env:
-          PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+          RAW_PUBLIC_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
           EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
           EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
           EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
         run: |
           set -Eeuo pipefail
           echo "========================================"
-          echo "STAGE: Public /latest.json Release Gate"
+          echo "STAGE: Public /latest.json & APK Release Gate"
           echo "========================================"
 
           node -e '
           const https = require("https");
           const http = require("http");
+          const { URL } = require("url");
 
-          const rawBase = (process.env.PUBLIC_URL || "https://swayog-dashboard.vercel.app").trim().replace(/\/$/, "");
+          let rawBase = (process.env.RAW_PUBLIC_URL || "https://swayog-dashboard.vercel.app").trim().replace(/\/$/, "");
+          if (rawBase.includes(".r2.cloudflarestorage.com") || rawBase.includes("your-public-domain.com") || !rawBase) {
+            console.log(`[Validation Gate] Notice: Overriding private R2/invalid domain "${rawBase}" with canonical "https://swayog-dashboard.vercel.app"`);
+            rawBase = "https://swayog-dashboard.vercel.app";
+          }
           const endpoint = `${rawBase}/latest.json`;
           console.log(`[Validation Gate] Verifying authoritative public endpoint: ${endpoint}`);
 
-          function fetchEndpoint(url) {
+          function fetchWithRedirects(targetUrl, options = {}, maxRedirects = 5) {
             return new Promise((resolve, reject) => {
-              const client = url.startsWith("https://") ? https : http;
-              const req = client.get(url, {
+              if (maxRedirects < 0) return reject(new Error("Too many redirects"));
+              const parsed = new URL(targetUrl);
+              const client = parsed.protocol === "https:" ? https : http;
+
+              const req = client.request(parsed, {
+                method: options.method || "GET",
                 headers: {
                   "User-Agent": "SwayogReleaseValidator/1.0",
                   "Cache-Control": "no-cache, no-store",
-                  "Pragma": "no-cache"
+                  "Pragma": "no-cache",
+                  ...(options.headers || {})
                 }
               }, (res) => {
+                if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+                  const redirectedUrl = new URL(res.headers.location, targetUrl).toString();
+                  console.log(`  ↪ Following redirect (${res.statusCode}) to: ${redirectedUrl.substring(0, 100)}...`);
+                  return resolve(fetchWithRedirects(redirectedUrl, options, maxRedirects - 1));
+                }
+
                 let data = "";
                 res.on("data", chunk => data += chunk);
-                res.on("end", () => {
-                  resolve({
-                    statusCode: res.statusCode,
-                    headers: res.headers,
-                    body: data
-                  });
-                });
+                res.on("end", () => resolve({
+                  statusCode: res.statusCode,
+                  headers: res.headers,
+                  body: data
+                }));
               });
+
               req.on("error", reject);
-              req.setTimeout(15000, () => {
+              req.setTimeout(25000, () => {
                 req.destroy();
-                reject(new Error("Request timed out after 15s"));
+                reject(new Error("Request timed out after 25s"));
               });
+              req.end();
             });
           }
 
           async function main() {
             const maxAttempts = 6;
             const delayMs = 5000;
-            let lastResult = null;
             let lastError = null;
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-              console.log(`[Attempt ${attempt}/${maxAttempts}] Fetching ${endpoint}...`);
+              console.log(`\n[Attempt ${attempt}/${maxAttempts}] Testing public OTA manifest: ${endpoint}...`);
               try {
-                // Add timestamp query parameter to bust any intermediate edge proxy caches during verification
                 const testUrl = `${endpoint}?t=${Date.now()}`;
-                const result = await fetchEndpoint(testUrl);
-                lastResult = result;
+                const result = await fetchWithRedirects(testUrl);
 
                 const contentType = result.headers["content-type"] || "";
-                console.log(`  HTTP Status:  ${result.statusCode}`);
-                console.log(`  Content-Type: ${contentType}`);
+                console.log(`  Manifest HTTP Status:  ${result.statusCode}`);
+                console.log(`  Manifest Content-Type: ${contentType}`);
 
-                if (result.statusCode === 404) {
-                  throw new Error(`Endpoint returned HTTP 404 Not Found at ${endpoint}`);
-                }
-                if (result.statusCode >= 500) {
-                  throw new Error(`Endpoint returned server error HTTP ${result.statusCode} at ${endpoint}`);
-                }
-                if (result.statusCode !== 200) {
-                  throw new Error(`Endpoint returned unexpected HTTP ${result.statusCode} at ${endpoint}`);
-                }
+                if (result.statusCode === 404) throw new Error(`Endpoint returned HTTP 404 Not Found at ${endpoint}`);
+                if (result.statusCode === 400) throw new Error(`Endpoint returned HTTP 400 (R2 S3 API error) at ${endpoint}`);
+                if (result.statusCode >= 500) throw new Error(`Endpoint returned server error HTTP ${result.statusCode} at ${endpoint}`);
+                if (result.statusCode !== 200) throw new Error(`Endpoint returned unexpected HTTP ${result.statusCode} at ${endpoint}`);
                 if (!contentType.toLowerCase().includes("application/json")) {
                   const preview = result.body.substring(0, 100).replace(/\r?\n/g, " ");
                   throw new Error(`Endpoint returned non-JSON Content-Type (${contentType}): ${preview}`);
@@ -708,32 +725,54 @@ jobs:
                   throw new Error(`Endpoint response is not valid JSON: ${e.message}`);
                 }
 
-                if (!manifest || typeof manifest !== "object") {
-                  throw new Error("Parsed manifest is not a valid JSON object");
-                }
-                if (manifest.appId !== "com.swayog.employee") {
-                  throw new Error(`Manifest appId must be 'com.swayog.employee', got '${manifest.appId}'`);
-                }
-                if (manifest.platform !== "android") {
-                  throw new Error(`Manifest platform must be 'android', got '${manifest.platform}'`);
-                }
+                if (!manifest || typeof manifest !== "object") throw new Error("Parsed manifest is not a valid JSON object");
+                if (manifest.appId !== "com.swayog.employee") throw new Error(`appId must be 'com.swayog.employee', got '${manifest.appId}'`);
+                if (manifest.platform !== "android") throw new Error(`platform must be 'android', got '${manifest.platform}'`);
                 if (typeof manifest.versionCode !== "number" || manifest.versionCode <= 0) {
-                  throw new Error(`Manifest versionCode must be > 0, got ${manifest.versionCode}`);
+                  throw new Error(`versionCode must be > 0, got ${manifest.versionCode}`);
                 }
                 if (!manifest.versionName || typeof manifest.versionName !== "string") {
-                  throw new Error(`Manifest versionName must not be empty, got '${manifest.versionName}'`);
+                  throw new Error(`versionName must not be empty, got '${manifest.versionName}'`);
                 }
                 if (!manifest.apkUrl || !manifest.apkUrl.startsWith("https://")) {
-                  throw new Error(`Manifest apkUrl must be HTTPS, got '${manifest.apkUrl}'`);
+                  throw new Error(`apkUrl must be HTTPS, got '${manifest.apkUrl}'`);
                 }
                 if (!manifest.sha256 || !/^[a-fA-F0-9]{64}$/.test(manifest.sha256)) {
-                  throw new Error(`Manifest sha256 must be exactly 64 hexadecimal characters, got '${manifest.sha256}'`);
+                  throw new Error(`sha256 must be exactly 64 hex characters, got '${manifest.sha256}'`);
+                }
+                if (String(manifest.versionCode) !== process.env.EXPECTED_VERSION_CODE) {
+                  throw new Error(`Manifest versionCode (${manifest.versionCode}) does not match expected (${process.env.EXPECTED_VERSION_CODE})`);
+                }
+                if (manifest.sha256.toLowerCase() !== process.env.EXPECTED_SHA256.toLowerCase()) {
+                  throw new Error(`Manifest sha256 (${manifest.sha256}) does not match expected APK sha256 (${process.env.EXPECTED_SHA256})`);
                 }
 
-                console.log(`  Parsed manifest: Version ${manifest.versionName} (Build ${manifest.versionCode})`);
-                console.log(`  APK URL: ${manifest.apkUrl}`);
-                console.log(`  SHA-256: ${manifest.sha256}`);
-                console.log("✅ Public /latest.json validation gate PASSED completely!");
+                console.log(`  ✅ Authoritative manifest validated: Version ${manifest.versionName} (Build ${manifest.versionCode})`);
+                console.log(`  ✅ APK URL: ${manifest.apkUrl}`);
+                console.log(`  ✅ SHA-256: ${manifest.sha256}`);
+
+                // Step 2: Validate public APK download accessibility
+                console.log(`\n  [APK Download Check] Testing public accessibility of manifest.apkUrl...`);
+                const apkHead = await fetchWithRedirects(manifest.apkUrl, {
+                  headers: { "Range": "bytes=0-1023" }
+                });
+
+                console.log(`  APK HTTP Status: ${apkHead.statusCode}`);
+                console.log(`  APK Content-Type: ${apkHead.headers["content-type"] || "unknown"}`);
+                console.log(`  APK Content-Range: ${apkHead.headers["content-range"] || "N/A"}`);
+
+                if ([400, 401, 403, 404, 500, 502, 503, 504].includes(apkHead.statusCode)) {
+                  throw new Error(`manifest.apkUrl is NOT publicly accessible: returned HTTP ${apkHead.statusCode}`);
+                }
+
+                if (apkHead.statusCode !== 200 && apkHead.statusCode !== 206) {
+                  throw new Error(`manifest.apkUrl returned unexpected status HTTP ${apkHead.statusCode}`);
+                }
+
+                console.log("  ✅ APK download endpoint confirmed publicly accessible without credentials!");
+                console.log("\n========================================================");
+                console.log("🚀 PUBLIC RELEASE GATE PASSED COMPLETELY");
+                console.log("========================================================");
                 return;
               } catch (err) {
                 lastError = err;
@@ -745,7 +784,7 @@ jobs:
               }
             }
 
-            console.error(`::error::Public /latest.json validation gate FAILED after ${maxAttempts} attempts: ${lastError?.message}`);
+            console.error(`::error::Public Release Gate FAILED after ${maxAttempts} attempts: ${lastError?.message}`);
             process.exit(1);
           }
 
@@ -844,7 +883,7 @@ jobs:
           echo "- **Distribution Layer:** Cloudflare R2 (\`swayog-dashboard\`)" >> $GITHUB_STEP_SUMMARY
           echo "- **Canonical Manifest:** \`latest.json\`" >> $GITHUB_STEP_SUMMARY
           echo "- **APK Storage Key:** \`releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}/app-release.apk\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Public Endpoint:** \`${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}/latest.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Public Endpoint:** \`https://swayog-dashboard.vercel.app/latest.json\`" >> $GITHUB_STEP_SUMMARY
           echo "- **GitHub Release:** Published with tag \`${{ steps.versioning.outputs.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
 
 

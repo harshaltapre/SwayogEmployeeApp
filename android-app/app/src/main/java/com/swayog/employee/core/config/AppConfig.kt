@@ -43,17 +43,21 @@ object AppConfig {
      * ONE STABLE PERMANENT PUBLIC UPDATE MANIFEST ENDPOINT
      * This URL never changes across builds:
      * https://<PUBLIC-DOMAIN>/latest.json
+     *
+     * Private Cloudflare R2 S3 API endpoints (*.r2.cloudflarestorage.com) and dummy placeholders
+     * are strictly rejected, falling back safely to the authoritative Vercel distribution endpoint.
      */
     val PUBLIC_UPDATE_ENDPOINT: String
         get() {
             val customUrl = BuildConfig.PUBLIC_DISTRIBUTION_URL.trim()
-            val base = if (
-                customUrl.isNotBlank() &&
-                !customUrl.contains("your-public-domain.com")
-            ) {
-                customUrl.removeSuffix("/")
+            val isInvalidUrl = customUrl.isBlank() ||
+                customUrl.contains(".r2.cloudflarestorage.com", ignoreCase = true) ||
+                customUrl.contains("your-public-domain.com", ignoreCase = true)
+
+            val base = if (!isInvalidUrl) {
+                customUrl.removeSuffix("/latest.json").removeSuffix("/")
             } else {
-                PRODUCTION_PUBLIC_URL.removeSuffix("/")
+                PRODUCTION_PUBLIC_URL.removeSuffix("/latest.json").removeSuffix("/")
             }
             return "$base/latest.json"
         }

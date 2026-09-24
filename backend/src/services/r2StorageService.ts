@@ -22,6 +22,7 @@ export function getS3Client(): S3Client | null {
         accessKeyId,
         secretAccessKey,
       },
+      forcePathStyle: true,
     });
   }
 

@@ -42,6 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         region: "auto",
         endpoint,
         credentials: { accessKeyId, secretAccessKey },
+        forcePathStyle: true,
       });
 
       // Canonical manifest keys in Cloudflare R2
@@ -76,6 +77,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ) {
               parsed.appId = parsed.appId || "com.swayog.employee";
               parsed.platform = parsed.platform || "android";
+              // Never return private unauthenticated R2 endpoint to Android clients
+              if (
+                parsed.apkUrl.includes(".r2.cloudflarestorage.com") &&
+                !parsed.apkUrl.includes("X-Amz-Signature")
+              ) {
+                parsed.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${parsed.versionName}/build-${parsed.versionCode}/app-release.apk`;
+              }
               return res.status(200).json(parsed);
             }
           }

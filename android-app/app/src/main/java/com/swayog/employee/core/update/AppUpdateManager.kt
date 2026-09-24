@@ -220,8 +220,20 @@ class AppUpdateManager @Inject constructor(
                         return@withContext CheckResult.Error(errorMsg)
                     }
 
-                    if (parsed.appId != context.packageName || parsed.platform != "android" ||
-                        !parsed.apkUrl.startsWith("https://")) {
+                    // Defense-in-depth: If apkUrl points directly to an unauthenticated Cloudflare R2 S3/API endpoint,
+                    // sanitize it to route through the verified Vercel download proxy
+                    val safeApkUrl = if (parsed.apkUrl.contains(".r2.cloudflarestorage.com", ignoreCase = true) &&
+                        !parsed.apkUrl.contains("X-Amz-Signature")) {
+                        val fallbackApk = "${AppConfig.PRODUCTION_PUBLIC_URL}/releases/android/${parsed.versionName}/build-${parsed.versionCode}/app-release.apk"
+                        Log.w(TAG, "Sanitizing private R2 APK URL '${parsed.apkUrl}' to public proxy '$fallbackApk'")
+                        fallbackApk
+                    } else {
+                        parsed.apkUrl
+                    }
+                    val validatedManifest = if (safeApkUrl != parsed.apkUrl) parsed.copy(apkUrl = safeApkUrl) else parsed
+
+                    if (validatedManifest.appId != context.packageName || validatedManifest.platform != "android" ||
+                        !validatedManifest.apkUrl.startsWith("https://")) {
                         val errorMsg = "Update information is invalid (package, platform, or secure download URL)."
                         _updateState.value = AppUpdateState.Error(
                             message = errorMsg,
@@ -230,8 +242,8 @@ class AppUpdateManager @Inject constructor(
                         return@withContext CheckResult.Error(errorMsg)
                     }
 
-                    if (!parsed.sha256.matches(Regex("^[A-Fa-f0-9]{64}$"))) {
-                        Log.e(TAG, "Manifest contains invalid SHA-256 checksum format: '${parsed.sha256}'")
+                    if (!validatedManifest.sha256.matches(Regex("^[A-Fa-f0-9]{64}$"))) {
+                        Log.e(TAG, "Manifest contains invalid SHA-256 checksum format: '${validatedManifest.sha256}'")
                         val errorMsg = "Update information is corrupted (invalid manifest format)."
                         _updateState.value = AppUpdateState.Error(
                             message = errorMsg,
@@ -243,37 +255,37 @@ class AppUpdateManager @Inject constructor(
 
                     Log.i(
                         TAG,
-                        "Parsed manifest successfully: versionName=${parsed.versionName}, versionCode=${parsed.versionCode}, releaseTag=${parsed.releaseTag ?: "N/A"}, notes=${parsed.releaseNotes.size} items"
+                        "Parsed manifest successfully: versionName=${validatedManifest.versionName}, versionCode=${validatedManifest.versionCode}, releaseTag=${validatedManifest.releaseTag ?: "N/A"}, notes=${validatedManifest.releaseNotes.size} items, apkUrl=${validatedManifest.apkUrl}"
                     )
 
                     lastAutoCheckTimestamp = System.currentTimeMillis()
 
-                    val serverCode = parsed.versionCode
+                    val serverCode = validatedManifest.versionCode
                     val currentCode = installedVersionCode
-                    val minCode = parsed.minimumVersionCode ?: 0L
+                    val minCode = validatedManifest.minimumVersionCode ?: 0L
 
                     Log.i(
                         TAG,
-                        "Comparison: serverCode=$serverCode, installedCode=$currentCode (name=$installedVersionName), minCode=$minCode, mandatory=${parsed.mandatory}"
+                        "Comparison: serverCode=$serverCode, installedCode=$currentCode (name=$installedVersionName), minCode=$minCode, mandatory=${validatedManifest.mandatory}"
                     )
 
                     if (serverCode > currentCode) {
                         Log.i(TAG, "Result: UPDATE_AVAILABLE (server $serverCode > installed $currentCode)")
-                        val isMandatory = parsed.mandatory || (currentCode < minCode)
+                        val isMandatory = validatedManifest.mandatory || (currentCode < minCode)
                         
                         // Only auto-download for mandatory updates or when explicitly requested
                         if (autoDownload && isMandatory) {
                             Log.i(TAG, "Mandatory update with autoDownload: launching direct download & install.")
-                            scope.launch { downloadAndInstall(parsed) }
-                            CheckResult.UpdateAvailable(parsed, downloading = true)
+                            scope.launch { downloadAndInstall(validatedManifest) }
+                            CheckResult.UpdateAvailable(validatedManifest, downloading = true)
                         } else {
                             _updateState.value = AppUpdateState.UpdateAvailable(
-                                manifest = parsed,
+                                manifest = validatedManifest,
                                 isMandatory = isMandatory,
                                 installedVersionName = installedVersionName,
                                 installedVersionCode = currentCode
                             )
-                            CheckResult.UpdateAvailable(parsed, downloading = false)
+                            CheckResult.UpdateAvailable(validatedManifest, downloading = false)
                         }
                     } else if (serverCode < currentCode) {
                         Log.i(TAG, "Result: UP_TO_DATE (installed $currentCode > server $serverCode - no downgrade)")

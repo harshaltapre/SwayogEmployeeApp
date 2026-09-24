@@ -20,6 +20,7 @@ export function getR2Client(): S3Client | null {
         accessKeyId,
         secretAccessKey,
       },
+      forcePathStyle: true,
     });
   }
 

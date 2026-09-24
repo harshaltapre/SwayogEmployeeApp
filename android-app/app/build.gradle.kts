@@ -25,7 +25,10 @@ val localProperties = Properties().apply {
 }
 
 fun getLocalProperty(key: String, defaultValue: String): String {
-    return localProperties.getProperty(key) ?: (project.findProperty(key) as? String) ?: defaultValue
+    return (project.findProperty(key) as? String)
+        ?: System.getenv(key)
+        ?: localProperties.getProperty(key)
+        ?: defaultValue
 }
 
 // ---------------------------------------------------------------------------
@@ -71,8 +74,13 @@ android {
         // BuildConfig fields for API configuration
         buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard.vercel.app/api/v1/")}\"")
         buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
-        buildConfigField("String", "MAPS_API_KEY", "\"${getLocalProperty("MAPS_API_KEY", "")}\"")
-        buildConfigField("String", "PUBLIC_DISTRIBUTION_URL", "\"${getLocalProperty("PUBLIC_DISTRIBUTION_URL", "https://your-public-domain.com")}\"")
+        val rawDistUrl = getLocalProperty("PUBLIC_DISTRIBUTION_URL", "https://swayog-dashboard.vercel.app")
+        val safeDistUrl = if (rawDistUrl.contains(".r2.cloudflarestorage.com") || rawDistUrl.contains("your-public-domain.com") || rawDistUrl.isBlank()) {
+            "https://swayog-dashboard.vercel.app"
+        } else {
+            rawDistUrl
+        }
+        buildConfigField("String", "PUBLIC_DISTRIBUTION_URL", "\"$safeDistUrl\"")
 
         // Memory optimization settings
         ndk {
