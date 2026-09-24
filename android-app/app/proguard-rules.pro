@@ -55,12 +55,6 @@
 -keep interface androidx.compose.** { *; }
 -keep class androidx.compose.ui.tooling.** { *; }
 
-# Firebase
--keepattributes Signature
--keepattributes *Annotation*
--keepattributes SourceFile,LineNumberTable
--keep class com.google.firebase.** { *; }
--dontwarn com.google.firebase.**
 
 # Maps
 -keep class com.google.android.gms.** { *; }

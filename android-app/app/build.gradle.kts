@@ -6,7 +6,6 @@ plugins {
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
     id("androidx.room")
-    id("com.google.gms.google-services")
 }
 
 room {
@@ -311,9 +310,6 @@ dependencies {
     implementation("androidx.hilt:hilt-work:1.2.0")
     ksp("androidx.hilt:hilt-compiler:1.2.0")
     
-    // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-    implementation("com.google.firebase:firebase-messaging")
     
     // Charts
     implementation("com.github.PhilJay:MPAndroidChart:3.1.0")
