@@ -2,21 +2,21 @@
   "appId": "com.swayog.employee",
   "platform": "android",
   "versionName": "1.0.1",
-  "versionCode": 21,
-  "releaseDate": "2026-09-18",
+  "versionCode": 22,
+  "releaseDate": "2026-09-24",
   "mandatory": false,
   "minimumVersionCode": 1,
-  "apkUrl": "https://swayog-dashboard.vercel.app/releases/android/1.0.1/build-21/app-release.apk",
-  "sha256": "10d618ff5ad19ced905569350f754e8223f0a008a6d7ed52f5a9954eaba61d66",
-  "fileSize": 33698515,
-  "title": "Swayog Employee App v1.0.1 — Build 21",
+  "apkUrl": "https://swayog-dashboard.vercel.app/releases/android/1.0.1/build-22/app-release.apk",
+  "sha256": "f40229e577fb6f914b20ed5cadb0187e0cf31415ad0bc23762db3812b7484410",
+  "fileSize": 33698063,
+  "title": "Swayog Employee App v1.0.1 — Build 22",
   "releaseNotes": [
     "Improved attendance tracking",
-    "Improved attendance working-time calculation",
-    "Improved attendance calendar synchronization",
+    "Fixed working-hour calculation",
+    "Improved attendance calendar",
     "Improved profile synchronization",
-    "Performance improvements and bug fixes"
+    "Bug fixes and performance improvements"
   ],
-  "releaseTag": "v1.0.1-build21",
-  "releaseTitle": "Swayog Employee App v1.0.1 — Build 21"
+  "releaseTag": "v1.0.1-build22",
+  "releaseTitle": "Swayog Employee App v1.0.1 — Build 22"
 }

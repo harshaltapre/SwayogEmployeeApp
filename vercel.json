@@ -7,6 +7,9 @@
     "api/index.ts": {
       "maxDuration": 60,
       "includeFiles": "{node_modules/.prisma/client/**,backend/node_modules/.prisma/client/**,backend/dist/vercel-app.cjs}"
+    },
+    "api/latest.json.ts": {
+      "maxDuration": 30
     }
   },
   "headers": [
@@ -20,6 +23,35 @@
         {
           "key": "Cache-Control",
           "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Pragma",
+          "value": "no-cache"
+        },
+        {
+          "key": "Expires",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "source": "/releases/android/latest.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Pragma",
+          "value": "no-cache"
+        },
+        {
+          "key": "Expires",
+          "value": "0"
         }
       ]
     }
@@ -27,7 +59,11 @@
   "rewrites": [
     {
       "source": "/latest.json",
-      "destination": "/api/index.ts"
+      "destination": "/api/latest.json"
+    },
+    {
+      "source": "/releases/android/latest.json",
+      "destination": "/api/latest.json"
     },
     {
       "source": "/releases/(.*)",
@@ -42,7 +78,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api/|app/|releases/|latest\\.json).*)",
+      "source": "/((?!api/|app/|releases/|latest\\.json|update/|download/).*)",
       "destination": "/index.html"
     }
   ]

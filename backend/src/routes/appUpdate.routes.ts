@@ -4,8 +4,12 @@ import { asyncHandler } from "../middleware/async-handler.js";
 
 export const appUpdateRoutes = Router();
 
-// Canonical public update manifest endpoint
+// Canonical public update manifest endpoints
 appUpdateRoutes.get("/latest.json", asyncHandler(getLatestAppUpdate));
+appUpdateRoutes.get("/releases/android/latest.json", asyncHandler(getLatestAppUpdate));
+appUpdateRoutes.get("/releases/latest.json", asyncHandler(getLatestAppUpdate));
+appUpdateRoutes.get("/app/android/latest.json", asyncHandler(getLatestAppUpdate));
+appUpdateRoutes.get("/app/latest.json", asyncHandler(getLatestAppUpdate));
 
 // Compatibility aliases
 appUpdateRoutes.get("/latest", asyncHandler(getLatestAppUpdate));

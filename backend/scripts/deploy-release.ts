@@ -36,8 +36,13 @@ async function main() {
     process.exit(1);
   }
 
+  const isCI = process.env.CI === "true";
   const r2Available = isR2Configured();
   if (!r2Available) {
+    if (isCI) {
+      console.error("::error::Fatal: Cloudflare R2 is not configured in CI environment. Release pipeline cannot continue without authoritative R2 deployment.");
+      process.exit(1);
+    }
     console.warn("⚠️ Warning: Cloudflare R2 is not configured. Release manifests will be updated locally and prepared for deployment.");
   }
 
@@ -175,6 +180,13 @@ async function main() {
       throw new Error(`Verification failed: R2 latest.json does not match expected release (versionCode: ${verifyManifest.versionCode}, sha: ${verifyManifest.sha256})`);
     }
     console.log(`✅ Verified: R2 latest.json accurately reflects release v${versionName} (Build ${versionCode})`);
+
+    const verifyCompatBuffer = await getFromR2("releases/android/latest.json");
+    const verifyCompatManifest = JSON.parse(verifyCompatBuffer.toString("utf-8")) as AppUpdateManifest;
+    if (verifyCompatManifest.versionCode !== versionCode || verifyCompatManifest.sha256 !== sha256) {
+      throw new Error(`Verification failed: R2 releases/android/latest.json does not match expected release (versionCode: ${verifyCompatManifest.versionCode}, sha: ${verifyCompatManifest.sha256})`);
+    }
+    console.log(`✅ Verified: R2 releases/android/latest.json accurately reflects release v${versionName} (Build ${versionCode})`);
   }
 
   console.log("\n========================================================");

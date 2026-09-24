@@ -23,4 +23,8 @@ vite build
 echo "Copying public files to dist..."
 cp -r public/* dist/
 
+echo "Removing static latest.json from dist to guarantee dynamic R2 manifest routing..."
+rm -f dist/latest.json
+rm -f dist/releases/android/latest.json
+
 echo "vercel build script completed"

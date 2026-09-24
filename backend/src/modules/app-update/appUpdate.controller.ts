@@ -25,36 +25,7 @@ export interface AppUpdateManifest {
   releaseTitle?: string;
 }
 
-/**
- * Fallback manifest used when R2 does not yet contain a latest.json release
- * or for local development environments.
- * Updated to Build 20 for current production baseline.
- */
-export const DEFAULT_FALLBACK_MANIFEST: AppUpdateManifest = {
-  appId: "com.swayog.employee",
-  platform: "android",
-  versionCode: 20,
-  versionName: "1.0.0",
-  minimumVersionCode: 1,
-  mandatory: false,
-  releaseDate: "2026-09-15",
-  title: "Swayog Employee App v1.0.0 — Build 20",
-  releaseTag: "v1.0.0-build20",
-  releaseTitle: "Swayog Employee App v1.0.0 — Build 20",
-  releaseNotes: [
-    "Improved attendance tracking",
-    "Improved attendance working-time calculation",
-    "Improved attendance calendar synchronization",
-    "Improved employee/admin attendance synchronization",
-    "Improved GPS attendance verification",
-    "Improved profile synchronization",
-    "Improved app update system",
-    "Bug fixes and performance improvements"
-  ],
-  apkUrl: "https://swayog-dashboard.vercel.app/api/v1/app/update/download/latest",
-  sha256: "dd5422cce433152653308bb0ba04ba6159a35ebf4c4b9f90eeb32670289ba3c4",
-  fileSize: 76872575
-};
+// Authoritative dynamic manifest types. Hardcoded fallbacks are strictly prohibited to ensure OTA integrity.
 
 /**
  * GET /latest.json
@@ -69,6 +40,7 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Access-Control-Allow-Origin", "*");
 
   try {
     let manifest: AppUpdateManifest | null = null;

@@ -566,8 +566,8 @@ jobs:
           EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
         run: |
           if [ -z "$R2_ENDPOINT" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ]; then
-            echo "ℹ️ R2 secrets not provided. Skipping direct R2 verification."
-            exit 0
+            echo "::error::R2 credentials are required for production releases! Missing R2_ENDPOINT, R2_ACCESS_KEY_ID, or R2_SECRET_ACCESS_KEY in GitHub Secrets."
+            exit 1
           fi
           
           npm ci
@@ -621,25 +621,139 @@ jobs:
           });
           '
 
-      - name: Verify Public /latest.json Endpoint
+      - name: Verify Public /latest.json Release Gate
         env:
           PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL || secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+          EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
+          EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
+          EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
         run: |
-          if [ -z "$PUBLIC_URL" ]; then
-            echo "ℹ️ No public URL configured. Skipping."
-            exit 0
-          fi
-          CLEAN_BASE="${PUBLIC_URL%/}"
-          EP="$CLEAN_BASE/latest.json"
-          echo "Testing public endpoint: $EP"
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$EP" || echo "000")
-          CONTENT_TYPE=$(curl -s -I "$EP" | grep -i "content-type" | tr -d '\r' || echo "")
-          echo "Response HTTP status: $HTTP_STATUS ($CONTENT_TYPE)"
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "✅ Public /latest.json is live and returned HTTP 200"
-          else
-            echo "ℹ️ Public /latest.json returned HTTP $HTTP_STATUS (may take a few moments to propagate if deployed behind CDN)"
-          fi
+          set -Eeuo pipefail
+          echo "========================================"
+          echo "STAGE: Public /latest.json Release Gate"
+          echo "========================================"
+
+          node -e '
+          const https = require("https");
+          const http = require("http");
+
+          const rawBase = (process.env.PUBLIC_URL || "https://swayog-dashboard.vercel.app").trim().replace(/\/$/, "");
+          const endpoint = `${rawBase}/latest.json`;
+          console.log(`[Validation Gate] Verifying authoritative public endpoint: ${endpoint}`);
+
+          function fetchEndpoint(url) {
+            return new Promise((resolve, reject) => {
+              const client = url.startsWith("https://") ? https : http;
+              const req = client.get(url, {
+                headers: {
+                  "User-Agent": "SwayogReleaseValidator/1.0",
+                  "Cache-Control": "no-cache, no-store",
+                  "Pragma": "no-cache"
+                }
+              }, (res) => {
+                let data = "";
+                res.on("data", chunk => data += chunk);
+                res.on("end", () => {
+                  resolve({
+                    statusCode: res.statusCode,
+                    headers: res.headers,
+                    body: data
+                  });
+                });
+              });
+              req.on("error", reject);
+              req.setTimeout(15000, () => {
+                req.destroy();
+                reject(new Error("Request timed out after 15s"));
+              });
+            });
+          }
+
+          async function main() {
+            const maxAttempts = 6;
+            const delayMs = 5000;
+            let lastResult = null;
+            let lastError = null;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              console.log(`[Attempt ${attempt}/${maxAttempts}] Fetching ${endpoint}...`);
+              try {
+                // Add timestamp query parameter to bust any intermediate edge proxy caches during verification
+                const testUrl = `${endpoint}?t=${Date.now()}`;
+                const result = await fetchEndpoint(testUrl);
+                lastResult = result;
+
+                const contentType = result.headers["content-type"] || "";
+                console.log(`  HTTP Status:  ${result.statusCode}`);
+                console.log(`  Content-Type: ${contentType}`);
+
+                if (result.statusCode === 404) {
+                  throw new Error(`Endpoint returned HTTP 404 Not Found at ${endpoint}`);
+                }
+                if (result.statusCode >= 500) {
+                  throw new Error(`Endpoint returned server error HTTP ${result.statusCode} at ${endpoint}`);
+                }
+                if (result.statusCode !== 200) {
+                  throw new Error(`Endpoint returned unexpected HTTP ${result.statusCode} at ${endpoint}`);
+                }
+                if (!contentType.toLowerCase().includes("application/json")) {
+                  const preview = result.body.substring(0, 100).replace(/\r?\n/g, " ");
+                  throw new Error(`Endpoint returned non-JSON Content-Type (${contentType}): ${preview}`);
+                }
+
+                let manifest;
+                try {
+                  manifest = JSON.parse(result.body);
+                } catch (e) {
+                  throw new Error(`Endpoint response is not valid JSON: ${e.message}`);
+                }
+
+                if (!manifest || typeof manifest !== "object") {
+                  throw new Error("Parsed manifest is not a valid JSON object");
+                }
+                if (manifest.appId !== "com.swayog.employee") {
+                  throw new Error(`Manifest appId must be 'com.swayog.employee', got '${manifest.appId}'`);
+                }
+                if (manifest.platform !== "android") {
+                  throw new Error(`Manifest platform must be 'android', got '${manifest.platform}'`);
+                }
+                if (typeof manifest.versionCode !== "number" || manifest.versionCode <= 0) {
+                  throw new Error(`Manifest versionCode must be > 0, got ${manifest.versionCode}`);
+                }
+                if (!manifest.versionName || typeof manifest.versionName !== "string") {
+                  throw new Error(`Manifest versionName must not be empty, got '${manifest.versionName}'`);
+                }
+                if (!manifest.apkUrl || !manifest.apkUrl.startsWith("https://")) {
+                  throw new Error(`Manifest apkUrl must be HTTPS, got '${manifest.apkUrl}'`);
+                }
+                if (!manifest.sha256 || !/^[a-fA-F0-9]{64}$/.test(manifest.sha256)) {
+                  throw new Error(`Manifest sha256 must be exactly 64 hexadecimal characters, got '${manifest.sha256}'`);
+                }
+
+                console.log(`  Parsed manifest: Version ${manifest.versionName} (Build ${manifest.versionCode})`);
+                console.log(`  APK URL: ${manifest.apkUrl}`);
+                console.log(`  SHA-256: ${manifest.sha256}`);
+                console.log("✅ Public /latest.json validation gate PASSED completely!");
+                return;
+              } catch (err) {
+                lastError = err;
+                console.warn(`  ⚠️ Attempt ${attempt} failed: ${err.message}`);
+                if (attempt < maxAttempts) {
+                  console.log(`  Waiting ${delayMs / 1000}s before retry...`);
+                  await new Promise(r => setTimeout(r, delayMs));
+                }
+              }
+            }
+
+            console.error(`::error::Public /latest.json validation gate FAILED after ${maxAttempts} attempts: ${lastError?.message}`);
+            process.exit(1);
+          }
+
+          main().catch(err => {
+            console.error("::error::Validation script unexpected error: " + err.message);
+            process.exit(1);
+          });
+          '
 
       - name: Automated Version Consistency Check
         env:
