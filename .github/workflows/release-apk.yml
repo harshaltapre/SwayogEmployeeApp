@@ -184,6 +184,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          EXPECTED_REPO_CERT_SHA256: ${{ vars.PRODUCTION_CERT_SHA256 }}
         run: |
           set -o pipefail
 
@@ -292,6 +293,18 @@ jobs:
             exit 1
           fi
 
+          if [ -n "${EXPECTED_REPO_CERT_SHA256:-}" ]; then
+            CLEAN_REPO_CERT=$(echo "$EXPECTED_REPO_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
+            CLEAN_KEYSTORE_CERT=$(echo "$PRODUCTION_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
+            echo "Repository variable PRODUCTION_CERT_SHA256: $CLEAN_REPO_CERT"
+            echo "Decoded Keystore certificate SHA-256:       $CLEAN_KEYSTORE_CERT"
+            if [ "$CLEAN_KEYSTORE_CERT" != "$CLEAN_REPO_CERT" ]; then
+              echo "::error::CRITICAL: Keystore signing certificate ($CLEAN_KEYSTORE_CERT) does not match repository variable PRODUCTION_CERT_SHA256 ($CLEAN_REPO_CERT)!"
+              exit 1
+            fi
+            echo "✅ Keystore certificate matches repository variable PRODUCTION_CERT_SHA256."
+          fi
+
           echo "========================================"
           echo "SIGNING VALIDATION"
           echo "========================================"
@@ -353,6 +366,76 @@ jobs:
             -PversionCode="${{ steps.versioning.outputs.VERSION_CODE }}" \
             -PPUBLIC_DISTRIBUTION_URL="$DIST_URL" \
             --no-daemon --stacktrace
+
+      - name: Verify APK Production Signing Certificate
+        working-directory: android-app
+        env:
+          EXPECTED_CERT_SHA256: ${{ steps.signing_secrets.outputs.PRODUCTION_CERT_SHA256 }}
+          REPO_CERT_SHA256: ${{ vars.PRODUCTION_CERT_SHA256 }}
+        run: |
+          set -Eeuo pipefail
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "::error::Release APK was not generated."
+            exit 1
+          fi
+
+          echo "Verifying APK signing certificate..."
+
+          if command -v apksigner &> /dev/null; then
+            APKSIGNER="apksigner"
+          elif [ -n "${ANDROID_HOME:-}" ]; then
+            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          else
+            APKSIGNER="apksigner"
+          fi
+
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner not found."
+            exit 1
+          fi
+
+          CERT_OUTPUT="$("$APKSIGNER" verify --print-certs "$APK" 2>&1)"
+
+          echo "$CERT_OUTPUT"
+
+          ACTUAL_CERT_SHA256="$(
+            echo "$CERT_OUTPUT" |
+            awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}'
+          )"
+
+          ACTUAL_CERT_SHA256="${ACTUAL_CERT_SHA256//:/}"
+          EXPECTED_CERT_SHA256="${EXPECTED_CERT_SHA256//:/}"
+
+          ACTUAL_CERT_SHA256="$(echo "$ACTUAL_CERT_SHA256" | tr -d ' ' | tr '[:upper:]' '[:lower:]')"
+          EXPECTED_CERT_SHA256="$(echo "$EXPECTED_CERT_SHA256" | tr -d ' ' | tr '[:upper:]' '[:lower:]')"
+
+          echo "Expected certificate: $EXPECTED_CERT_SHA256"
+          echo "APK certificate:      $ACTUAL_CERT_SHA256"
+
+          if [ -z "$ACTUAL_CERT_SHA256" ]; then
+            echo "::error::Could not extract APK signing certificate."
+            exit 1
+          fi
+
+          if [ "$ACTUAL_CERT_SHA256" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::CRITICAL: APK signing certificate does not match production keystore."
+            exit 1
+          fi
+
+          if [ -n "${REPO_CERT_SHA256:-}" ]; then
+            CLEAN_REPO_CERT="${REPO_CERT_SHA256//:/}"
+            CLEAN_REPO_CERT="$(echo "$CLEAN_REPO_CERT" | tr -d ' ' | tr '[:upper:]' '[:lower:]')"
+            if [ "$ACTUAL_CERT_SHA256" != "$CLEAN_REPO_CERT" ]; then
+              echo "::error::CRITICAL: APK signing certificate does not match repository variable PRODUCTION_CERT_SHA256."
+              exit 1
+            fi
+            echo "APK certificate matches repository variable PRODUCTION_CERT_SHA256."
+          fi
+
+          echo "APK signing certificate verified successfully."
 
       - name: Verify Built APK & Calculate SHA-256
         id: apk_info
@@ -515,6 +598,7 @@ jobs:
           R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
           PUBLIC_DISTRIBUTION_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL }}
           WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard.vercel.app' }}
+          PRODUCTION_CERT_SHA256: ${{ steps.signing_secrets.outputs.PRODUCTION_CERT_SHA256 }}
         run: |
           npm ci
           npx tsx scripts/deploy-release.ts \

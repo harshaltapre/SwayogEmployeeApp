@@ -120,37 +120,35 @@ android {
             }
 
             val keyAliasStr = System.getenv("RELEASE_KEY_ALIAS")
-                ?: getLocalProperty("RELEASE_KEY_ALIAS", if (keystoreFile?.name == "release-key.jks") "release" else "")
+                ?: getLocalProperty("RELEASE_KEY_ALIAS", "")
             val storePassStr = System.getenv("RELEASE_STORE_PASSWORD")
-                ?: getLocalProperty("RELEASE_STORE_PASSWORD", if (keystoreFile?.name == "release-key.jks") "swayog123" else "")
+                ?: getLocalProperty("RELEASE_STORE_PASSWORD", "")
             val keyPassStr = System.getenv("RELEASE_KEY_PASSWORD")
-                ?: getLocalProperty("RELEASE_KEY_PASSWORD", if (keystoreFile?.name == "release-key.jks") "swayog123" else "")
+                ?: getLocalProperty("RELEASE_KEY_PASSWORD", "")
             val storeTypeStr = System.getenv("RELEASE_STORE_TYPE")
-                ?: getLocalProperty("RELEASE_STORE_TYPE", if (keystoreFile?.name == "release-key.jks") "PKCS12" else "")
+                ?: getLocalProperty("RELEASE_STORE_TYPE", "")
+
+            val isReleaseBuildRequested = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+            val isCI = System.getenv("CI") == "true"
 
             if (keystoreFile != null && keystoreFile.exists()) {
-                if (keyAliasStr.isBlank() || storePassStr.isBlank() || keyPassStr.isBlank()) {
+                if (keyAliasStr.isNotBlank() && storePassStr.isNotBlank() && keyPassStr.isNotBlank()) {
+                    storeFile = keystoreFile
+                    storeType = if (storeTypeStr.isNotBlank()) storeTypeStr else "PKCS12"
+                    this.keyAlias = keyAliasStr
+                    storePassword = storePassStr
+                    keyPassword = keyPassStr
+                    println("Release signing configured with keystore: ${keystoreFile.canonicalPath}")
+                } else if (isCI || isReleaseBuildRequested) {
                     throw GradleException("Release signing credentials are incomplete. Configure RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD, and RELEASE_KEY_PASSWORD.")
-                }
-                storeFile = keystoreFile
-                if (storeTypeStr.isBlank()) {
-                    if (System.getenv("CI") == "true") {
-                        throw GradleException("RELEASE_STORE_TYPE must be configured as JKS or PKCS12 for production releases.")
-                    }
                 } else {
-                    storeType = storeTypeStr
+                    println("ℹ️  Release keystore found, but credentials are not set in environment or local.properties. Release signing will be required for assembleRelease.")
                 }
-                this.keyAlias = keyAliasStr
-                storePassword = storePassStr
-                keyPassword = keyPassStr
-                println("Release signing configured with keystore: ${keystoreFile.canonicalPath}")
             } else {
-                val isCI = System.getenv("CI") == "true"
-                if (isCI) {
-                    throw GradleException("RELEASE_STORE_FILE must be configured for production releases in CI/CD")
+                if (isCI || isReleaseBuildRequested) {
+                    throw GradleException("RELEASE_STORE_FILE must be configured for production releases.")
                 } else {
                     println("⚠️  WARNING: Production keystore file not found (checked: '$explicitPath', repo root, project root).")
-                    println("   Ensure release-key.jks is in the repository root or set RELEASE_STORE_FILE in local.properties.")
                 }
             }
         }
@@ -162,11 +160,11 @@ android {
             isShrinkResources = true
             
             val releaseConfig = signingConfigs.getByName("release")
-            if (releaseConfig.storeFile != null && releaseConfig.storeFile!!.exists()) {
+            if (releaseConfig.storeFile != null && releaseConfig.storeFile!!.exists() && !releaseConfig.keyAlias.isNullOrBlank()) {
                 signingConfig = releaseConfig
-            } else {
+            } else if (System.getenv("CI") == "true" || gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
                 throw GradleException(
-                    "Cannot build release APK: Production release keystore was not found. " +
+                    "Cannot build release APK: Production release keystore was not found or credentials incomplete. " +
                     "Debug fallback is prohibited to prevent package conflict errors during app updates. " +
                     "Please configure RELEASE_STORE_FILE in local.properties or provide release-key.jks in the repository root."
                 )

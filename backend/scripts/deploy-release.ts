@@ -98,6 +98,8 @@ async function main() {
   }
 
   // Step 3: Construct release metadata
+  const certSha256 = (process.env.CERTIFICATE_SHA256 || process.env.PRODUCTION_CERT_SHA256 || "").replace(/:/g, "").toLowerCase().trim() || undefined;
+
   const manifest: AppUpdateManifest = {
     appId: "com.swayog.employee",
     platform: "android",
@@ -108,6 +110,7 @@ async function main() {
     minimumVersionCode,
     apkUrl: publicApkUrl,
     sha256,
+    certificateSha256: certSha256,
     fileSize,
     title: `Swayog Employee App v${versionName} — Build ${versionCode}`,
     releaseNotes,

@@ -624,6 +624,22 @@ class AppUpdateManager @Inject constructor(
                 return
         }
 
+        // Validate manifest certificateSha256 when provided
+        val manifestCert = manifest?.certificateSha256
+        if (!manifestCert.isNullOrBlank()) {
+            val cleanManifestCert = manifestCert.replace(":", "").trim()
+            val cleanDownloadedCert = downloadedCertSha256.replace(":", "").trim()
+            if (!cleanManifestCert.equals(cleanDownloadedCert, ignoreCase = true)) {
+                val errorMsg = "Installation blocked: Manifest certificate ($cleanManifestCert) does not match downloaded APK ($cleanDownloadedCert)."
+                Log.e(TAG, "CRITICAL MANIFEST CERT MISMATCH: $errorMsg")
+                _updateState.value = AppUpdateState.Error(
+                    message = "Update manifest certificate validation failed. The release payload may have been modified or misconfigured.",
+                    manifest = manifest
+                )
+                return
+            }
+        }
+
         // 4. On Android 8.0 (API 26) and above, check for unknown app install permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!context.packageManager.canRequestPackageInstalls()) {

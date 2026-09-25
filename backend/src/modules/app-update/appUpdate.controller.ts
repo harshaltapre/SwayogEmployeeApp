@@ -20,6 +20,7 @@ export interface AppUpdateManifest {
   releaseNotes: ReleaseNotesType;
   apkUrl: string;
   sha256: string;
+  certificateSha256?: string;
   fileSize?: number;
   releaseTag?: string;
   releaseTitle?: string;

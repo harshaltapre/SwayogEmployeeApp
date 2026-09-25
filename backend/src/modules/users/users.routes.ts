@@ -19,8 +19,77 @@ import {
   transferInternalUserTeamSchema,
   updateInternalUserSchema,
 } from "./users.schemas.js";
+import { meHandler } from "../auth/auth.controller.js";
 
 export const userRoutes = Router();
+
+userRoutes.get(
+  "/me",
+  authenticateAccessToken,
+  asyncHandler(meHandler),
+);
+
+userRoutes.get(
+  "/me/preferences",
+  authenticateAccessToken,
+  asyncHandler(async (req, res) => {
+    res.status(200).json({
+      data: {
+        darkMode: false,
+        biometricEnabled: false,
+        notificationsEnabled: true,
+        compactViewEnabled: false,
+        animationsEnabled: true,
+        profileVisibilityEnabled: true,
+        showStatusEnabled: true,
+        activitySharingEnabled: true,
+        language: "en",
+      },
+    });
+  }),
+);
+
+userRoutes.patch(
+  "/me/preferences",
+  authenticateAccessToken,
+  asyncHandler(async (req, res) => {
+    res.status(200).json({
+      data: {
+        darkMode: false,
+        biometricEnabled: false,
+        notificationsEnabled: true,
+        compactViewEnabled: false,
+        animationsEnabled: true,
+        profileVisibilityEnabled: true,
+        showStatusEnabled: true,
+        activitySharingEnabled: true,
+        language: "en",
+        ...req.body,
+      },
+    });
+  }),
+);
+
+userRoutes.post(
+  "/me/preferences",
+  authenticateAccessToken,
+  asyncHandler(async (req, res) => {
+    res.status(200).json({
+      data: {
+        darkMode: false,
+        biometricEnabled: false,
+        notificationsEnabled: true,
+        compactViewEnabled: false,
+        animationsEnabled: true,
+        profileVisibilityEnabled: true,
+        showStatusEnabled: true,
+        activitySharingEnabled: true,
+        language: "en",
+        ...req.body,
+      },
+    });
+  }),
+);
 
 userRoutes.get(
   "/internal",

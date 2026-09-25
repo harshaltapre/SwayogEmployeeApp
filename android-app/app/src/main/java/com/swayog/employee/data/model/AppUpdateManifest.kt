@@ -52,6 +52,9 @@ data class AppUpdateManifest(
     @SerializedName("sha256")
     val sha256: String,
 
+    @SerializedName("certificateSha256", alternate = ["certificate_sha256"])
+    val certificateSha256: String? = null,
+
     @SerializedName("fileSize")
     val fileSize: Long? = null
 ) {
