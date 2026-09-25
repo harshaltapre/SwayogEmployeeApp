@@ -478,6 +478,11 @@ class AppUpdateManager @Inject constructor(
         val certificateSha256: String?
     )
 
+    private fun normalizeFingerprint(fingerprint: String?): String? {
+        if (fingerprint.isNullOrBlank()) return null
+        return fingerprint.replace(":", "").replace(" ", "").trim().lowercase()
+    }
+
     /**
      * Extracts the SHA-256 fingerprint of the currently installed application certificate.
      */
@@ -496,9 +501,14 @@ class AppUpdateManager @Inject constructor(
                     if (signingInfo.hasMultipleSigners()) {
                         signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
                     } else {
-                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
+                        signingInfo.signingCertificateHistory?.lastOrNull()?.toByteArray()
+                            ?: signingInfo.signingCertificateHistory?.firstOrNull()?.toByteArray()
+                            ?: signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
                     }
-                } else null
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageInfo.signatures?.firstOrNull()?.toByteArray()
+                }
             } else {
                 @Suppress("DEPRECATION")
                 packageInfo.signatures?.firstOrNull()?.toByteArray()
@@ -529,9 +539,14 @@ class AppUpdateManager @Inject constructor(
                     if (signingInfo.hasMultipleSigners()) {
                         signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
                     } else {
-                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
+                        signingInfo.signingCertificateHistory?.lastOrNull()?.toByteArray()
+                            ?: signingInfo.signingCertificateHistory?.firstOrNull()?.toByteArray()
+                            ?: signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
                     }
-                } else null
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageInfo.signatures?.firstOrNull()?.toByteArray()
+                }
             } else {
                 @Suppress("DEPRECATION")
                 packageInfo.signatures?.firstOrNull()?.toByteArray()
@@ -573,6 +588,13 @@ class AppUpdateManager @Inject constructor(
         val latestCode = manifest?.versionCode ?: downloadedCode
         val latestName = manifest?.versionName ?: downloadedName
 
+        val normInstalledCert = normalizeFingerprint(expectedCertSha256)
+        val normDownloadedCert = normalizeFingerprint(downloadedCertSha256)
+        val expectedProdCert = "3ec290e58be284b90dca346c1e53eb3c735d5bfeb3c42c6b6ddfb7eb7f6c1fb8"
+
+        val certInstalledEqualsDownloaded = (normInstalledCert != null && normInstalledCert == normDownloadedCert)
+        val certDownloadedEqualsProduction = (normDownloadedCert != null && normDownloadedCert == expectedProdCert)
+
         // Log required diagnostic format
         Log.i(TAG, "==================== APP UPDATE DIAGNOSTICS ====================")
         Log.i(TAG, "Installed package name:                   $installedPackage")
@@ -583,8 +605,12 @@ class AppUpdateManager @Inject constructor(
         Log.i(TAG, "Downloaded APK path:                      ${apkFile.absolutePath}")
         Log.i(TAG, "Downloaded APK package name:              ${downloadedPackage ?: "UNKNOWN"}")
         Log.i(TAG, "Downloaded APK versionCode:               $downloadedCode")
-        Log.i(TAG, "Downloaded APK signing cert fingerprint:  ${downloadedCertSha256 ?: "UNKNOWN"}")
-        Log.i(TAG, "Expected signing certificate fingerprint: ${expectedCertSha256 ?: "UNKNOWN"}")
+        Log.i(TAG, "INSTALLED_CERT_SHA256=                    ${normInstalledCert ?: "UNKNOWN"}")
+        Log.i(TAG, "DOWNLOADED_CERT_SHA256=                   ${normDownloadedCert ?: "UNKNOWN"}")
+        Log.i(TAG, "PRODUCTION_CERT_SHA256=                   $expectedProdCert")
+        Log.i(TAG, "CERT_INSTALLED_EQUALS_DOWNLOADED=         $certInstalledEqualsDownloaded")
+        Log.i(TAG, "CERT_DOWNLOADED_EQUALS_PRODUCTION=        $certDownloadedEqualsProduction")
+        Log.i(TAG, "Downloaded APK file size:                 ${apkFile.length()} bytes")
         Log.i(TAG, "================================================================")
 
         // 2. Pre-installation Compatibility Checks
@@ -610,27 +636,24 @@ class AppUpdateManager @Inject constructor(
         }
 
         // 3. Signing Certificate Verification (Prevents "package conflicts with an existing package")
-        if (expectedCertSha256 == null || downloadedCertSha256 == null ||
-            !expectedCertSha256.equals(downloadedCertSha256, ignoreCase = true)) {
-                val errorMsg = "Installation blocked: Signing certificate mismatch.\n" +
-                    "The downloaded APK is signed with a different key than the installed app.\n" +
-                    "Installed: $expectedCertSha256\n" +
-                    "Downloaded: $downloadedCertSha256"
-                Log.e(TAG, "CRITICAL SIGNING MISMATCH: $errorMsg")
-                _updateState.value = AppUpdateState.Error(
-                    message = "Update cannot be installed due to a certificate signature mismatch. Please ensure updates are built with the production release key.",
-                    manifest = manifest
-                )
-                return
+        if (normInstalledCert == null || normDownloadedCert == null || normInstalledCert != normDownloadedCert) {
+            val errorMsg = "Installation blocked: Signing certificate mismatch.\n" +
+                "The downloaded APK is signed with a different key than the installed app.\n" +
+                "Installed: $normInstalledCert\n" +
+                "Downloaded: $normDownloadedCert"
+            Log.e(TAG, "CRITICAL SIGNING MISMATCH: $errorMsg")
+            _updateState.value = AppUpdateState.Error(
+                message = "Update cannot be installed due to a certificate signature mismatch. Please ensure updates are built with the production release key.",
+                manifest = manifest
+            )
+            return
         }
 
         // Validate manifest certificateSha256 when provided
-        val manifestCert = manifest?.certificateSha256
+        val manifestCert = normalizeFingerprint(manifest?.certificateSha256)
         if (!manifestCert.isNullOrBlank()) {
-            val cleanManifestCert = manifestCert.replace(":", "").trim()
-            val cleanDownloadedCert = downloadedCertSha256.replace(":", "").trim()
-            if (!cleanManifestCert.equals(cleanDownloadedCert, ignoreCase = true)) {
-                val errorMsg = "Installation blocked: Manifest certificate ($cleanManifestCert) does not match downloaded APK ($cleanDownloadedCert)."
+            if (manifestCert != normDownloadedCert) {
+                val errorMsg = "Installation blocked: Manifest certificate ($manifestCert) does not match downloaded APK ($normDownloadedCert)."
                 Log.e(TAG, "CRITICAL MANIFEST CERT MISMATCH: $errorMsg")
                 _updateState.value = AppUpdateState.Error(
                     message = "Update manifest certificate validation failed. The release payload may have been modified or misconfigured.",
