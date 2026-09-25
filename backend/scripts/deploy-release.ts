@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import child_process from "child_process";
 import { uploadToR2, getFromR2, isR2Configured, getBucketName } from "../src/services/r2StorageService.js";
 import { AppUpdateManifest } from "../src/modules/app-update/appUpdate.controller.js";
 
@@ -97,8 +98,31 @@ async function main() {
     console.log(`[Deploy] Using web dashboard download URL for APK: ${publicApkUrl}`);
   }
 
-  // Step 3: Construct release metadata
-  const certSha256 = (process.env.CERTIFICATE_SHA256 || process.env.PRODUCTION_CERT_SHA256 || "").replace(/:/g, "").toLowerCase().trim() || undefined;
+  // Step 3: Extract and verify signing certificate directly from the built APK
+  let actualApkCertSha256: string | undefined = undefined;
+  try {
+    const apksignerCmd = process.env.APKSIGNER || "apksigner";
+    const certOutput = child_process.execSync(`${apksignerCmd} verify --print-certs "${apkPath}"`, { stdio: ["pipe", "pipe", "ignore"] }).toString();
+    const match = certOutput.match(/Signer #1 certificate SHA-256 digest:\s*([a-fA-F0-9:]+)/i);
+    if (match && match[1]) {
+      actualApkCertSha256 = match[1].replace(/[:\s]/g, "").toLowerCase().trim();
+      console.log(`[Deploy] Extracted APK signing certificate SHA-256: ${actualApkCertSha256}`);
+    }
+  } catch (e: any) {
+    console.warn(`[Deploy] Direct apksigner execution unavailable in current shell, utilizing passed environment variables.`);
+  }
+
+  const expectedProdCert = (process.env.PRODUCTION_CERT_SHA256 || process.env.CERTIFICATE_SHA256 || "")
+    .replace(/[:\s]/g, "")
+    .toLowerCase()
+    .trim() || undefined;
+
+  if (actualApkCertSha256 && expectedProdCert && actualApkCertSha256 !== expectedProdCert) {
+    throw new Error(`[Deploy] CRITICAL SECURITY MISMATCH: APK certificate (${actualApkCertSha256}) does not match expected production certificate (${expectedProdCert})! Deployment aborted.`);
+  }
+
+  const certSha256 = actualApkCertSha256 || expectedProdCert;
+  console.log(`[Deploy] Final authoritative certificate SHA-256: ${certSha256 || "N/A"}`);
 
   const manifest: AppUpdateManifest = {
     appId: "com.swayog.employee",

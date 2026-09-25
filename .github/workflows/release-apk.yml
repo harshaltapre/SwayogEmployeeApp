@@ -262,16 +262,23 @@ jobs:
             rm -f "$KEYTOOL_OUTPUT" "$KEYTOOL_ERROR"
             exit 1
           fi
-          rm -f "$KEYTOOL_ERROR"
+          KEYSTORE_PASSWORD=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d '\r\n')
+          KEY_PASSWORD=$(printf '%s' "$KEY_PASSWORD" | tr -d '\r\n')
+          KEY_ALIAS=$(printf '%s' "$KEY_ALIAS" | tr -d '\r\n[:space:]')
 
-          if keytool -list -storetype JKS \
-            -keystore android-app/keystore/release.jks \
-            -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+          HEADER_4B=$(head -c 4 android-app/keystore/release.jks | od -tx1 -An | tr -d ' \n')
+          if [ "$HEADER_4B" = "3082" ] || [ "${HEADER_4B:0:4}" = "3082" ]; then
+            KEYSTORE_FORMAT="PKCS12"
+          elif [ "$HEADER_4B" = "feedfeed" ]; then
             KEYSTORE_FORMAT="JKS"
           elif keytool -list -storetype PKCS12 \
             -keystore android-app/keystore/release.jks \
             -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
             KEYSTORE_FORMAT="PKCS12"
+          elif keytool -list -storetype JKS \
+            -keystore android-app/keystore/release.jks \
+            -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            KEYSTORE_FORMAT="JKS"
           else
             echo "::error::FAILED STAGE: Keystore validation"
             echo "::error::The keystore format could not be identified as JKS or PKCS12."
@@ -396,6 +403,7 @@ jobs:
             --no-daemon --stacktrace
 
       - name: Verify APK Production Signing Certificate
+        id: verify_apk_cert
         working-directory: android-app
         env:
           EXPECTED_CERT_SHA256: ${{ steps.signing_secrets.outputs.PRODUCTION_CERT_SHA256 }}
@@ -463,6 +471,7 @@ jobs:
             echo "APK certificate matches repository variable PRODUCTION_CERT_SHA256."
           fi
 
+          echo "APK_CERT_SHA256=$ACTUAL_CERT_SHA256" >> "$GITHUB_OUTPUT"
           echo "APK signing certificate verified successfully."
 
       - name: Verify Built APK & Calculate SHA-256
@@ -627,6 +636,7 @@ jobs:
           PUBLIC_DISTRIBUTION_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL }}
           WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard.vercel.app' }}
           PRODUCTION_CERT_SHA256: ${{ steps.signing_secrets.outputs.PRODUCTION_CERT_SHA256 }}
+          CERTIFICATE_SHA256: ${{ steps.verify_apk_cert.outputs.APK_CERT_SHA256 }}
         run: |
           npm ci
           npx tsx scripts/deploy-release.ts \
