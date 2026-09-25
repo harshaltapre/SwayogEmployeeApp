@@ -483,6 +483,24 @@ class AppUpdateManager @Inject constructor(
         return fingerprint.replace(":", "").replace(" ", "").trim().lowercase()
     }
 
+    private fun extractActiveCertificateBytes(packageInfo: android.content.pm.PackageInfo): ByteArray? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = packageInfo.signingInfo
+            if (signingInfo != null) {
+                val apkSigners = signingInfo.apkContentsSigners
+                if (!apkSigners.isNullOrEmpty()) {
+                    return apkSigners.first().toByteArray()
+                }
+                val history = signingInfo.signingCertificateHistory
+                if (!history.isNullOrEmpty()) {
+                    return history.last().toByteArray()
+                }
+            }
+        }
+        @Suppress("DEPRECATION")
+        return packageInfo.signatures?.firstOrNull()?.toByteArray()
+    }
+
     /**
      * Extracts the SHA-256 fingerprint of the currently installed application certificate.
      */
@@ -495,24 +513,7 @@ class AppUpdateManager @Inject constructor(
                 android.content.pm.PackageManager.GET_SIGNATURES
             }
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, flags)
-            val certBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val signingInfo = packageInfo.signingInfo
-                if (signingInfo != null) {
-                    if (signingInfo.hasMultipleSigners()) {
-                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
-                    } else {
-                        signingInfo.signingCertificateHistory?.lastOrNull()?.toByteArray()
-                            ?: signingInfo.signingCertificateHistory?.firstOrNull()?.toByteArray()
-                            ?: signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
-                    }
-                } else {
-                    @Suppress("DEPRECATION")
-                    packageInfo.signatures?.firstOrNull()?.toByteArray()
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                packageInfo.signatures?.firstOrNull()?.toByteArray()
-            }
+            val certBytes = extractActiveCertificateBytes(packageInfo)
             certBytes?.let { computeSha256(it) }
         } catch (e: Exception) {
             Log.e(TAG, "Error obtaining installed certificate fingerprint: ${e.message}")
@@ -533,24 +534,7 @@ class AppUpdateManager @Inject constructor(
             }
             val packageInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags) ?: return null
             val versionCode = PackageInfoCompat.getLongVersionCode(packageInfo)
-            val certBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val signingInfo = packageInfo.signingInfo
-                if (signingInfo != null) {
-                    if (signingInfo.hasMultipleSigners()) {
-                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
-                    } else {
-                        signingInfo.signingCertificateHistory?.lastOrNull()?.toByteArray()
-                            ?: signingInfo.signingCertificateHistory?.firstOrNull()?.toByteArray()
-                            ?: signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
-                    }
-                } else {
-                    @Suppress("DEPRECATION")
-                    packageInfo.signatures?.firstOrNull()?.toByteArray()
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                packageInfo.signatures?.firstOrNull()?.toByteArray()
-            }
+            val certBytes = extractActiveCertificateBytes(packageInfo)
             val certSha256 = certBytes?.let { computeSha256(it) }
             ApkArchiveDetails(
                 packageName = packageInfo.packageName,
@@ -584,6 +568,7 @@ class AppUpdateManager @Inject constructor(
         val downloadedCode = archiveDetails?.versionCode ?: -1L
         val downloadedName = archiveDetails?.versionName ?: "N/A"
         val downloadedCertSha256 = archiveDetails?.certificateSha256
+        val downloadedApkSha256 = manifest?.sha256 ?: calculateSha256(apkFile)
 
         val latestCode = manifest?.versionCode ?: downloadedCode
         val latestName = manifest?.versionName ?: downloadedName
@@ -605,11 +590,12 @@ class AppUpdateManager @Inject constructor(
         Log.i(TAG, "Downloaded APK path:                      ${apkFile.absolutePath}")
         Log.i(TAG, "Downloaded APK package name:              ${downloadedPackage ?: "UNKNOWN"}")
         Log.i(TAG, "Downloaded APK versionCode:               $downloadedCode")
-        Log.i(TAG, "INSTALLED_CERT_SHA256=                    ${normInstalledCert ?: "UNKNOWN"}")
-        Log.i(TAG, "DOWNLOADED_CERT_SHA256=                   ${normDownloadedCert ?: "UNKNOWN"}")
-        Log.i(TAG, "PRODUCTION_CERT_SHA256=                   $expectedProdCert")
-        Log.i(TAG, "CERT_INSTALLED_EQUALS_DOWNLOADED=         $certInstalledEqualsDownloaded")
-        Log.i(TAG, "CERT_DOWNLOADED_EQUALS_PRODUCTION=        $certDownloadedEqualsProduction")
+        Log.i(TAG, "Downloaded APK SHA-256:                   $downloadedApkSha256")
+        Log.i(TAG, "INSTALLED_CERT_SHA256=$normInstalledCert")
+        Log.i(TAG, "DOWNLOADED_CERT_SHA256=$normDownloadedCert")
+        Log.i(TAG, "PRODUCTION_CERT_SHA256=$expectedProdCert")
+        Log.i(TAG, "CERT_INSTALLED_EQUALS_DOWNLOADED=$certInstalledEqualsDownloaded")
+        Log.i(TAG, "CERT_DOWNLOADED_EQUALS_PRODUCTION=$certDownloadedEqualsProduction")
         Log.i(TAG, "Downloaded APK file size:                 ${apkFile.length()} bytes")
         Log.i(TAG, "================================================================")
 
