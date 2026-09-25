@@ -218,6 +218,12 @@ jobs:
           fi
 
           KEYSTORE_SIZE=$(stat -c%s android-app/keystore/release.jks)
+          KEYSTORE_SHA256=$(sha256sum android-app/keystore/release.jks | awk '{print $1}')
+          KEYSTORE_HEX_HEADER=$(head -c 16 android-app/keystore/release.jks | od -tx1 -An | tr -d ' \n')
+          echo "Decoded Keystore size:        ${KEYSTORE_SIZE} bytes"
+          echo "Decoded Keystore file SHA256: ${KEYSTORE_SHA256}"
+          echo "Decoded Keystore header hex:   ${KEYSTORE_HEX_HEADER}"
+
           KEYTOOL_OUTPUT=$(mktemp)
           KEYTOOL_ERROR=$(mktemp)
           if ! keytool -list \
