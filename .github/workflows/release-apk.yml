@@ -224,6 +224,28 @@ jobs:
           echo "Decoded Keystore file SHA256: ${KEYSTORE_SHA256}"
           echo "Decoded Keystore header hex:   ${KEYSTORE_HEX_HEADER}"
 
+          echo "========================================"
+          echo "SAFE KEYSTORE DIAGNOSTICS"
+          echo "========================================"
+          echo "1. File utility inspection:"
+          file android-app/keystore/release.jks || true
+
+          echo "2. OpenSSL ASN.1 DER structure (first 30 lines):"
+          openssl asn1parse -inform DER -in android-app/keystore/release.jks 2>&1 | head -n 30 || true
+
+          echo "3. OpenSSL PKCS12 inspection:"
+          openssl pkcs12 -info -in android-app/keystore/release.jks -noout -passin env:KEYSTORE_PASSWORD 2>&1 || true
+
+          echo "4. OpenSSL X.509 DER Certificate inspection:"
+          openssl x509 -inform DER -in android-app/keystore/release.jks -noout -subject -issuer -fingerprint -sha256 2>&1 || true
+
+          echo "5. Keytool storetype JKS inspection:"
+          keytool -list -storetype JKS -keystore android-app/keystore/release.jks -storepass "$KEYSTORE_PASSWORD" 2>&1 | head -n 15 || true
+
+          echo "6. Keytool storetype PKCS12 inspection:"
+          keytool -list -storetype PKCS12 -keystore android-app/keystore/release.jks -storepass "$KEYSTORE_PASSWORD" 2>&1 | head -n 15 || true
+          echo "========================================"
+
           KEYTOOL_OUTPUT=$(mktemp)
           KEYTOOL_ERROR=$(mktemp)
           if ! keytool -list \
