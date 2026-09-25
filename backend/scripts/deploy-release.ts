@@ -1,20 +1,96 @@
+/**
+ * deploy-release.ts — Self-contained release deployment script.
+ *
+ * IMPORTANT: This script intentionally does NOT import from src/config/env.ts or
+ * any module that chains to it (e.g. r2StorageService). env.ts runs Zod validation
+ * at module load time and requires DATABASE_URL, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET
+ * — none of which are needed to upload an APK to Cloudflare R2.
+ *
+ * This script reads R2 credentials directly from process.env and uses
+ * @aws-sdk/client-s3 without going through the application config layer.
+ */
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import child_process from "child_process";
-import { uploadToR2, getFromR2, isR2Configured, getBucketName } from "../src/services/r2StorageService.js";
-import { AppUpdateManifest } from "../src/modules/app-update/appUpdate.controller.js";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 
-/**
- * Script to deploy a built APK release to Cloudflare R2 and update canonical manifests:
- * - releases/android/{versionName}/build-{versionCode}/app-release.apk
- * - releases/android/latest.apk
- * - latest.json (canonical root manifest)
- * - releases/android/latest.json (backward compatibility)
- *
- * Usage:
- *   npx tsx scripts/deploy-release.ts <path-to-apk> <versionName> <versionCode> [minimumVersionCode] [mandatory] [notesFile] [releaseTag] [releaseTitle]
- */
+// ---------------------------------------------------------------------------
+// Minimal self-contained R2 client — does NOT import from src/config/env.ts
+// ---------------------------------------------------------------------------
+
+function getR2Client(): S3Client | null {
+  const endpoint = process.env.R2_ENDPOINT;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  if (!endpoint || !accessKeyId || !secretAccessKey) return null;
+  return new S3Client({
+    region: "auto",
+    endpoint,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: true,
+  });
+}
+
+function getBucketName(): string {
+  return process.env.R2_BUCKET_NAME || "swayog-dashboard";
+}
+
+function isR2Configured(): boolean {
+  return !!getR2Client();
+}
+
+async function uploadToR2(
+  client: S3Client,
+  buffer: Buffer,
+  objectKey: string,
+  contentType: string,
+  fileName: string
+): Promise<void> {
+  await client.send(new PutObjectCommand({
+    Bucket: getBucketName(),
+    Key: objectKey,
+    Body: buffer,
+    ContentType: contentType,
+    Metadata: { originalFileName: fileName, uploadedAt: new Date().toISOString() },
+  }));
+  console.log(`[Deploy] Uploaded: ${objectKey} (${buffer.length} bytes)`);
+}
+
+async function getFromR2(client: S3Client, objectKey: string): Promise<Buffer> {
+  const res = await client.send(new GetObjectCommand({ Bucket: getBucketName(), Key: objectKey }));
+  if (!res.Body) throw new Error(`No body for key: ${objectKey}`);
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of res.Body as any) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+// ---------------------------------------------------------------------------
+// AppUpdateManifest — inlined to avoid importing appUpdate.controller
+// ---------------------------------------------------------------------------
+
+interface AppUpdateManifest {
+  appId: string;
+  platform: string;
+  versionCode: number;
+  versionName: string;
+  minimumVersionCode?: number;
+  mandatory: boolean;
+  releaseDate?: string;
+  title?: string;
+  releaseNotes: string[];
+  apkUrl: string;
+  sha256: string;
+  certificateSha256?: string;
+  fileSize?: number;
+  releaseTag?: string;
+  releaseTitle?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
 async function main() {
   const args = process.argv.slice(2);
   if (args.length < 3) {
@@ -39,6 +115,17 @@ async function main() {
 
   const isCI = process.env.CI === "true";
   const r2Available = isR2Configured();
+
+  // Safe R2 configuration diagnostics (no secret values printed)
+  console.log("====================================");
+  console.log("STAGE: R2 Configuration");
+  console.log("====================================");
+  console.log(`R2_ENDPOINT:          ${process.env.R2_ENDPOINT          ? "PRESENT" : "MISSING"}`);
+  console.log(`R2_ACCESS_KEY_ID:     ${process.env.R2_ACCESS_KEY_ID     ? "PRESENT" : "MISSING"}`);
+  console.log(`R2_SECRET_ACCESS_KEY: ${process.env.R2_SECRET_ACCESS_KEY ? "PRESENT" : "MISSING"}`);
+  console.log(`R2_BUCKET_NAME:       ${process.env.R2_BUCKET_NAME       ? "PRESENT" : "MISSING (default: swayog-dashboard)"}`);
+  console.log(`R2 configured:        ${r2Available}`);
+
   if (!r2Available) {
     if (isCI) {
       console.error("::error::Fatal: Cloudflare R2 is not configured in CI environment. Release pipeline cannot continue without authoritative R2 deployment.");
@@ -46,6 +133,8 @@ async function main() {
     }
     console.warn("⚠️ Warning: Cloudflare R2 is not configured. Release manifests will be updated locally and prepared for deployment.");
   }
+
+  const r2Client = r2Available ? getR2Client()! : null;
 
   console.log(`\n========================================================`);
   console.log(`[Deploy] Initiating Release v${versionName} (Build ${versionCode})`);
@@ -103,13 +192,16 @@ async function main() {
   try {
     const apksignerCmd = process.env.APKSIGNER || "apksigner";
     const certOutput = child_process.execSync(`${apksignerCmd} verify --print-certs "${apkPath}"`, { stdio: ["pipe", "pipe", "ignore"] }).toString();
-    const match = certOutput.match(/Signer #1 certificate SHA-256 digest:\s*([a-fA-F0-9:]+)/i);
+    // Match both "V2 Signer: certificate SHA-256 digest:" and "Signer #1 certificate SHA-256 digest:"
+    const match = certOutput.match(/certificate SHA-256 digest:\s*([a-fA-F0-9:]+)/i);
     if (match && match[1]) {
       actualApkCertSha256 = match[1].replace(/[:\s]/g, "").toLowerCase().trim();
       console.log(`[Deploy] Extracted APK signing certificate SHA-256: ${actualApkCertSha256}`);
+    } else {
+      console.warn("[Deploy] Could not extract certificate SHA-256 from apksigner output.");
     }
   } catch (e: any) {
-    console.warn(`[Deploy] Direct apksigner execution unavailable in current shell, utilizing passed environment variables.`);
+    console.warn("[Deploy] apksigner execution unavailable; using environment variables for cert verification.");
   }
 
   const expectedProdCert = (process.env.PRODUCTION_CERT_SHA256 || process.env.CERTIFICATE_SHA256 || "")
@@ -184,36 +276,36 @@ async function main() {
     }
   }
 
-  // Step 6: If R2 is configured, upload to R2
-  if (r2Available) {
-    console.log(`\n[Deploy] Uploading APK to R2 targets:`);
+  // Step 6: Upload to Cloudflare R2 (required in CI)
+  if (r2Available && r2Client) {
+    console.log(`\n[Deploy] Uploading APK to R2:`);
     console.log(`  1. ${buildSpecificApkKey}`);
-    await uploadToR2(apkBuffer, buildSpecificApkKey, "application/vnd.android.package-archive", `swayog-v${versionName}-${versionCode}.apk`);
+    await uploadToR2(r2Client, apkBuffer, buildSpecificApkKey, "application/vnd.android.package-archive", `swayog-v${versionName}-${versionCode}.apk`);
 
     console.log(`  2. ${latestApkKey}`);
-    await uploadToR2(apkBuffer, latestApkKey, "application/vnd.android.package-archive", "app-release.apk");
+    await uploadToR2(r2Client, apkBuffer, latestApkKey, "application/vnd.android.package-archive", "app-release.apk");
 
     console.log(`\n[Deploy] Uploading canonical manifest to R2:`);
     console.log(`  - latest.json (Primary)`);
-    await uploadToR2(manifestBuffer, "latest.json", "application/json", "latest.json");
+    await uploadToR2(r2Client, manifestBuffer, "latest.json", "application/json", "latest.json");
     console.log(`  - releases/android/latest.json (Compatibility)`);
-    await uploadToR2(manifestBuffer, "releases/android/latest.json", "application/json", "latest.json");
+    await uploadToR2(r2Client, manifestBuffer, "releases/android/latest.json", "application/json", "latest.json");
 
     // Verify uploaded manifest directly from R2
     console.log(`\n[Deploy] Verifying uploaded manifest in R2...`);
-    const verifyBuffer = await getFromR2("latest.json");
+    const verifyBuffer = await getFromR2(r2Client, "latest.json");
     const verifyManifest = JSON.parse(verifyBuffer.toString("utf-8")) as AppUpdateManifest;
     if (verifyManifest.versionCode !== versionCode || verifyManifest.sha256 !== sha256) {
-      throw new Error(`Verification failed: R2 latest.json does not match expected release (versionCode: ${verifyManifest.versionCode}, sha: ${verifyManifest.sha256})`);
+      throw new Error(`Verification failed: R2 latest.json mismatch (versionCode: ${verifyManifest.versionCode}, sha256: ${verifyManifest.sha256})`);
     }
-    console.log(`✅ Verified: R2 latest.json accurately reflects release v${versionName} (Build ${versionCode})`);
+    console.log(`✅ Verified: R2 latest.json reflects release v${versionName} (Build ${versionCode})`);
 
-    const verifyCompatBuffer = await getFromR2("releases/android/latest.json");
+    const verifyCompatBuffer = await getFromR2(r2Client, "releases/android/latest.json");
     const verifyCompatManifest = JSON.parse(verifyCompatBuffer.toString("utf-8")) as AppUpdateManifest;
     if (verifyCompatManifest.versionCode !== versionCode || verifyCompatManifest.sha256 !== sha256) {
-      throw new Error(`Verification failed: R2 releases/android/latest.json does not match expected release (versionCode: ${verifyCompatManifest.versionCode}, sha: ${verifyCompatManifest.sha256})`);
+      throw new Error(`Verification failed: R2 releases/android/latest.json mismatch (versionCode: ${verifyCompatManifest.versionCode}, sha256: ${verifyCompatManifest.sha256})`);
     }
-    console.log(`✅ Verified: R2 releases/android/latest.json accurately reflects release v${versionName} (Build ${versionCode})`);
+    console.log(`✅ Verified: R2 releases/android/latest.json reflects release v${versionName} (Build ${versionCode})`);
   }
 
   console.log("\n========================================================");
@@ -224,7 +316,8 @@ async function main() {
   console.log(`Minimum Code:  ${minimumVersionCode}`);
   console.log(`Mandatory:     ${mandatory}`);
   console.log(`SHA-256:       ${sha256}`);
-  console.log(`R2 Upload:     ${r2Available ? "Uploaded to " + getBucketName() : "Local Manifest Updated (R2 not configured locally)"}`);
+  console.log(`Certificate:   ${certSha256 || "N/A"}`);
+  console.log(`R2 Upload:     ${r2Available ? "Uploaded to " + getBucketName() : "Local only (R2 not configured)"}`);
   console.log(`APK URL:       ${publicApkUrl}`);
   console.log("========================================================\n");
 }
