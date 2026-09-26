@@ -178,8 +178,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // DIAGNOSTIC TEST: Temporarily disable R8 to isolate crash
+            isMinifyEnabled = false
+            isShrinkResources = false
             
             val releaseConfig = signingConfigs.getByName("release")
             if (releaseConfig.storeFile != null && releaseConfig.storeFile!!.exists() && !releaseConfig.keyAlias.isNullOrBlank()) {
