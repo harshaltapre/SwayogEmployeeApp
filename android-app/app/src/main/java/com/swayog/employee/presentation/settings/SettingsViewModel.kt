@@ -247,15 +247,15 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val dto = UserSettingsDto(
-                    darkMode = darkMode,
-                    biometricEnabled = biometricEnabled,
-                    notificationsEnabled = notificationsEnabled,
-                    compactViewEnabled = compactViewEnabled,
-                    animationsEnabled = animationsEnabled,
-                    profileVisibilityEnabled = profileVisibilityEnabled,
-                    showStatusEnabled = showStatusEnabled,
-                    activitySharingEnabled = activitySharingEnabled,
-                    language = language
+                    darkMode = darkMode ?: this@SettingsViewModel.darkMode.value,
+                    biometricEnabled = biometricEnabled ?: this@SettingsViewModel.biometricEnabled.value,
+                    notificationsEnabled = notificationsEnabled ?: this@SettingsViewModel.notificationsEnabled.value,
+                    compactViewEnabled = compactViewEnabled ?: this@SettingsViewModel.compactViewEnabled.value,
+                    animationsEnabled = animationsEnabled ?: this@SettingsViewModel.animationsEnabled.value,
+                    profileVisibilityEnabled = profileVisibilityEnabled ?: this@SettingsViewModel.profileVisibilityEnabled.value,
+                    showStatusEnabled = showStatusEnabled ?: this@SettingsViewModel.showStatusEnabled.value,
+                    activitySharingEnabled = activitySharingEnabled ?: this@SettingsViewModel.activitySharingEnabled.value,
+                    language = language ?: this@SettingsViewModel.language.value
                 )
                 try {
                     apiService.updatePreferences(dto)

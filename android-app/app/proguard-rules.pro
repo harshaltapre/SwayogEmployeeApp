@@ -43,6 +43,11 @@
 -keep interface com.swayog.employee.data.api.** { *; }
 -keepattributes Exceptions
 
+# Keep generic signature of Call, Response, and Kotlin Continuation for suspend functions
+-keep,allowobfuscation,allowshrinking interface retrofit2.Call
+-keep,allowobfuscation,allowshrinking class retrofit2.Response
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+
 # OkHttp
 -dontwarn okhttp3.**
 -keep class okhttp3.** { *; }
