@@ -755,7 +755,7 @@ jobs:
           echo "STAGE: Public /latest.json & APK Release Gate"
           echo "========================================"
 
-          node -e '
+          cat > /tmp/validate-public-release.js <<'NODE'
           const https = require("https");
           const http = require("http");
           const { URL } = require("url");
@@ -905,7 +905,9 @@ jobs:
             console.error("::error::Validation script unexpected error: " + err.message);
             process.exit(1);
           });
-          '
+          NODE
+
+          node /tmp/validate-public-release.js
 
       - name: Automated Version Consistency Check
         env:
