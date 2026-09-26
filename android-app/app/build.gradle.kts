@@ -152,6 +152,14 @@ android {
                     this.keyAlias = keyAliasStr
                     storePassword = storePassStr
                     keyPassword = keyPassStr
+                    // v1 (JAR) signing MUST be enabled alongside v2.
+                    // Android's PackageManager.getPackageArchiveInfo() reads certificate data from
+                    // the META-INF directory (v1 signature). If only v2/v3 signing is present the
+                    // PackageManager API returns null certificate bytes for archive files, causing
+                    // the on-device OTA installer to produce a false "certificate mismatch" error
+                    // even when the APK is correctly signed with the production key.
+                    enableV1Signing = true
+                    enableV2Signing = true
                     println("Release signing configured with keystore: ${keystoreFile.canonicalPath} (format: $resolvedStoreType)")
                 } else if (isCI || isReleaseBuildRequested) {
                     throw GradleException("Release signing credentials are incomplete. Configure RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD, and RELEASE_KEY_PASSWORD.")
