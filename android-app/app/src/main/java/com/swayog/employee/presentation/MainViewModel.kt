@@ -11,12 +11,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.swayog.employee.presentation.attendance.face.FaceIndexManager
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
     private val authRepository: AuthRepository,
+    private val faceIndexManager: FaceIndexManager,
     private val appUpdateManager: com.swayog.employee.core.update.AppUpdateManager
 ) : ViewModel() {
 
@@ -61,6 +63,9 @@ class MainViewModel @Inject constructor(
     )
 
     init {
+        viewModelScope.launch {
+            faceIndexManager.loadFromDataStore()
+        }
         viewModelScope.launch {
             // Keep session alive and track activity timestamp without logging out automatically
             dataStoreManager.recordUserActive()

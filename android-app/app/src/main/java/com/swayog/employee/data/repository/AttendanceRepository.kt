@@ -233,29 +233,69 @@ class AttendanceRepository @Inject constructor(
     }
     
     suspend fun checkOut(): Result<Unit> {
-        return try {
-            val response = apiService.checkOut()
-            if (response.isSuccessful) {
-                // Write the local DB update immediately so the UI updates even before
-                // we re-fetch from the server.
-                val todayAttendance = attendanceDao.getTodayAttendance()
-                todayAttendance?.let {
-                    attendanceDao.updateAttendance(
-                        it.copy(checkOutTime = java.time.LocalDateTime.now().toString())
-                    )
+        val isOnline = NetworkUtils.isNetworkAvailable(context)
+        return if (isOnline) {
+            try {
+                val response = apiService.checkOut()
+                if (response.isSuccessful) {
+                    // Write the local DB update immediately so the UI updates even before
+                    // we re-fetch from the server.
+                    val todayAttendance = attendanceDao.getTodayAttendance()
+                    todayAttendance?.let {
+                        attendanceDao.updateAttendance(
+                            it.copy(checkOutTime = java.time.LocalDateTime.now().toString(), isSynced = true)
+                        )
+                    }
+                    // Re-fetch authoritative record from server
+                    getTodayAttendance()
+                    Result.success(Unit)
+                } else {
+                    val errorMsg = ErrorUtils.formatResponseError(response)
+                    android.util.Log.e("AttendanceRepository", "Check-out rejected by server: $errorMsg")
+                    Result.failure(Exception(errorMsg))
                 }
-                // Re-fetch the authoritative record from the server (includes totalMinutes
-                // computed by the backend) and persist it so the dashboard shows accurate data.
-                getTodayAttendance()
-                Result.success(Unit)
-            } else {
-                val errorMsg = ErrorUtils.formatResponseError(response)
-                android.util.Log.e("AttendanceRepository", "Check-out rejected by server: $errorMsg")
-                Result.failure(Exception(errorMsg))
+            } catch (e: Exception) {
+                if (ErrorUtils.isNetworkException(e)) {
+                    saveCheckOutToOutbox()
+                    updateLocalCheckOut()
+                    Result.failure(OfflinePendingException("Check-out saved offline. Will sync automatically when online."))
+                } else {
+                    Result.failure(e)
+                }
+            }
+        } else {
+            saveCheckOutToOutbox()
+            updateLocalCheckOut()
+            Result.failure(OfflinePendingException("Check-out saved offline. Will sync automatically when online."))
+        }
+    }
+
+    private suspend fun updateLocalCheckOut() {
+        try {
+            val todayAttendance = attendanceDao.getTodayAttendance()
+            todayAttendance?.let {
+                attendanceDao.updateAttendance(
+                    it.copy(
+                        checkOutTime = java.time.LocalDateTime.now().toString(),
+                        isSynced = false
+                    )
+                )
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            android.util.Log.w("AttendanceRepository", "Local check-out update notice: ${e.message}")
         }
+    }
+
+    private suspend fun saveCheckOutToOutbox() {
+        val outboxItem = OutboxQueueEntity(
+            id = UUID.randomUUID().toString(),
+            endpoint = "employee/attendance/check-out",
+            method = "POST",
+            payload = "{}",
+            createdAt = System.currentTimeMillis().toString()
+        )
+        outboxQueueDao.insertItem(outboxItem)
+        scheduleSync()
     }
     
     suspend fun saveWorkDescription(

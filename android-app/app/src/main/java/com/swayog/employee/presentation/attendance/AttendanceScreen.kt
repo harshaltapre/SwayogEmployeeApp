@@ -164,7 +164,7 @@ fun AttendanceScreen(
     val record = todayAttendance
     val isAdminMarked = record?.isAdminMarked == true
     val isCheckedIn = record?.checkInTime != null
-    val isAttendanceCompleted = record?.isCompleted == true || isAdminMarked || (record != null && (record.status == "PRESENT" || record.status == "LEAVE" || record.status == "HOLIDAY"))
+    val isAttendanceCompleted = record?.isCompleted == true || isAdminMarked
     val checkInLat = record?.latitude
     val checkInLng = record?.longitude
     val displayLat = checkInLat ?: currentLatitude ?: attendanceRules.officeLat
@@ -258,6 +258,7 @@ fun AttendanceScreen(
     if (showCamera) {
         FaceVerificationScreen(
             faceDescriptors = faceDescriptors,
+            faceIndexManager = viewModel.faceIndexManager,
             onVerificationSuccess = { bitmap, matchConfidence ->
                 showCamera = false
                 // Apply Watermark
@@ -989,9 +990,10 @@ fun AttendanceScreen(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     SwayogButton(
-                                        text = if (isAdminMarked) "Attendance Completed" else "Check In",
+                                        text = if (isAdminMarked) "Attendance Completed" else if (isCheckedIn) "Checked In" else "Check In",
                                         onClick = {
-                                            if (faceDescriptors.isEmpty()) {
+                                            val hasEnrolledFace = isFaceEnrolled || faceDescriptors.isNotEmpty() || viewModel.faceIndexManager.getIndexSnapshot().isNotEmpty()
+                                            if (!hasEnrolledFace) {
                                                 showEnrollmentBlocker = true
                                             } else {
                                                 permissionLauncher.launch(
@@ -1003,7 +1005,7 @@ fun AttendanceScreen(
                                                 )
                                             }
                                         },
-                                        enabled = todayAttendance == null && !isAttendanceCompleted,
+                                        enabled = !isCheckedIn && !isAttendanceCompleted,
                                         modifier = Modifier.weight(1f)
                                     )
 
@@ -1014,11 +1016,16 @@ fun AttendanceScreen(
                                                 if (result.isSuccess) {
                                                     Toast.makeText(context, "Checked out successfully!", Toast.LENGTH_SHORT).show()
                                                 } else {
-                                                    Toast.makeText(context, "Check-out failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                                    val exception = result.exceptionOrNull()
+                                                    if (exception is com.swayog.employee.core.error.OfflinePendingException) {
+                                                        Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                                                    } else {
+                                                        Toast.makeText(context, "Check-out failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                                                    }
                                                 }
                                             }
                                         },
-                                        enabled = todayAttendance != null && todayAttendance?.checkInTime != null && todayAttendance?.checkOutTime == null && !isAdminMarked,
+                                        enabled = isCheckedIn && todayAttendance?.checkOutTime == null && !isAdminMarked,
                                         variant = ButtonVariant.Secondary,
                                         modifier = Modifier.weight(1f)
                                     )

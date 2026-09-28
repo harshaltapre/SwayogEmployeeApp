@@ -87,6 +87,10 @@ android {
         }
     }
 
+    androidResources {
+        noCompress += "tflite"
+    }
+
     signingConfigs {
         // Debug signing — generated automatically by Android Studio.
         // getByName("debug") is available by default.

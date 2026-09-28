@@ -52,9 +52,20 @@ class FaceEnrollmentViewModel @Inject constructor(
     private var lastCaptureTime = 0L
     private var step2Direction = 0f
 
+    init {
+        if (!faceEmbeddingHelper.isModelLoaded()) {
+            _uiState.update { it.copy(error = "Face recognition model failed to initialize. Please restart the app.") }
+        }
+    }
+
     fun processFace(face: Face?, embedding: List<Float>?) {
         if (uiState.value.isLoading || uiState.value.enrollmentComplete) return
         
+        if (!faceEmbeddingHelper.isModelLoaded()) {
+            _uiState.update { it.copy(error = "Face recognition model failed to initialize.") }
+            return
+        }
+
         _uiState.update { it.copy(isFaceDetected = face != null) }
         
         if (face == null || embedding == null) return
@@ -114,6 +125,10 @@ class FaceEnrollmentViewModel @Inject constructor(
      * when a face is detected, ensuring they are never stuck by strict angle math.
      */
     fun captureCurrentStep() {
+        if (!faceEmbeddingHelper.isModelLoaded()) {
+            _uiState.update { it.copy(error = "Face recognition model failed to initialize.") }
+            return
+        }
         val embedding = latestEmbedding ?: return
         if (uiState.value.isLoading || uiState.value.enrollmentComplete) return
 

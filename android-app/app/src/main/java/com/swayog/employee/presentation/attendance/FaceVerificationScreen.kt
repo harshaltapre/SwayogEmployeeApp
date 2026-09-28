@@ -54,15 +54,25 @@ fun FaceVerificationScreen(
         }
     }
 
-    val activeDescriptors = remember(faceDescriptors, faceIndexManager) {
-        if (faceDescriptors.isNotEmpty()) {
-            faceDescriptors
-        } else {
-            faceIndexManager?.getIndexSnapshot() ?: emptyList()
+    if (!faceEmbeddingHelper.isModelLoaded()) {
+        LaunchedEffect(Unit) {
+            onVerificationFailed("Face recognition model failed to initialize. Please restart the app.")
         }
+        return
     }
 
-    if (activeDescriptors.isEmpty()) {
+    var isCheckingEnrollment by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        if (faceDescriptors.isEmpty() && (faceIndexManager == null || faceIndexManager.getIndexSnapshot().isEmpty())) {
+            faceIndexManager?.loadFromDataStore()
+        }
+        isCheckingEnrollment = false
+    }
+
+    val hasEnrolledFaces = faceDescriptors.isNotEmpty() || (faceIndexManager?.getIndexSnapshot()?.isNotEmpty() == true)
+
+    if (!isCheckingEnrollment && !hasEnrolledFaces) {
         LaunchedEffect(Unit) {
             onVerificationFailed("No face enrolled. Please enroll in Settings.")
         }
@@ -98,7 +108,18 @@ fun FaceVerificationScreen(
                                     faceStatusText = "No face detected"
                                 }
                             } else {
-                                val matchScore = FaceMatcher.findBestMatch(embedding, activeDescriptors)
+                                val currentTargets = faceIndexManager?.getIndexSnapshot()?.takeIf { it.isNotEmpty() }
+                                    ?: faceDescriptors.takeIf { it.isNotEmpty() }
+                                    ?: emptyList()
+
+                                if (currentTargets.isEmpty()) {
+                                    ContextCompat.getMainExecutor(ctx).execute {
+                                        faceStatusText = "No face enrolled. Please enroll in Settings."
+                                    }
+                                    return@FaceAnalyzer
+                                }
+
+                                val matchScore = FaceMatcher.findBestMatch(embedding, currentTargets)
                                 if (matchScore >= FaceMatcher.THRESHOLD) {
                                     isProcessing = true
                                     // Update UI and trigger success on main thread

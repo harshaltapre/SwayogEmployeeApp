@@ -36,6 +36,7 @@ import java.text.SimpleDateFormat
 import java.util.TimeZone
 import java.util.Locale
 import java.util.Calendar
+import com.swayog.employee.presentation.attendance.face.FaceIndexManager
 import javax.inject.Inject
 
 @HiltViewModel
@@ -43,8 +44,11 @@ class AttendanceViewModel @Inject constructor(
     private val attendanceRepository: AttendanceRepository,
     private val taskRepository: TaskRepository,
     private val dataStoreManager: DataStoreManager,
-    private val workforceRepository: WorkforceRepository
+    private val workforceRepository: WorkforceRepository,
+    private val _faceIndexManager: FaceIndexManager
 ) : ViewModel() {
+
+    val faceIndexManager: FaceIndexManager get() = _faceIndexManager
 
     private val _attendanceState = MutableStateFlow<AttendanceState>(AttendanceState.Initial)
     val attendanceState: StateFlow<AttendanceState> = _attendanceState.asStateFlow()
@@ -117,6 +121,9 @@ class AttendanceViewModel @Inject constructor(
         )
 
     init {
+        viewModelScope.launch {
+            _faceIndexManager.loadFromDataStore()
+        }
         loadData()
         refreshOvertime()
         startLiveSessionTimer()
@@ -366,10 +373,16 @@ class AttendanceViewModel @Inject constructor(
             attendanceRepository.checkOut()
                 .onSuccess {
                     loadData()
+                    _attendanceState.value = AttendanceState.Success
                     onResult(Result.success(Unit))
                 }
                 .onFailure { error ->
-                    _attendanceState.value = AttendanceState.Success
+                    if (error is com.swayog.employee.core.error.OfflinePendingException) {
+                        loadData()
+                        _attendanceState.value = AttendanceState.Success
+                    } else {
+                        _attendanceState.value = AttendanceState.Error(error.message ?: "Check-out failed")
+                    }
                     onResult(Result.failure(error))
                 }
         }

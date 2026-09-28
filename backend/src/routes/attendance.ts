@@ -848,13 +848,20 @@ router.get(
 
 /**
  * DELETE /face/enrollment/:employeeId
- * SuperAdmin only: soft-delete an employee's face enrollment so mobile/web can sync the deletion.
+ * SuperAdmin or self: soft-delete an employee's face enrollment so mobile/web can sync the deletion.
  */
 router.delete(
   "/face/enrollment/:employeeId",
-  superAdminAuth,
+  authenticateAccessToken,
   asyncHandler(async (req, res) => {
     const { employeeId } = req.params;
+    const userRole = req.auth?.role;
+    const authUserId = req.auth?.userId;
+
+    if (userRole !== UserRole.SUPER_ADMIN && authUserId !== employeeId) {
+      res.status(403).json({ error: "Access denied. You can only delete your own face enrollment." });
+      return;
+    }
 
     const existing = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
     if (!existing || existing.isDeleted) {

@@ -234,6 +234,18 @@ class SyncWorker @AssistedInject constructor(
                             val response = apiService.checkIn(request)
                             response.isSuccessful
                         }
+                        item.endpoint.contains("check-out") && item.method == "POST" -> {
+                            val response = apiService.checkOut()
+                            if (response.isSuccessful) {
+                                val todayAttendance = attendanceDao.getTodayAttendance()
+                                todayAttendance?.let {
+                                    attendanceDao.updateAttendance(it.copy(isSynced = true))
+                                }
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         item.endpoint.contains("daily-commits") && item.method == "POST" -> {
                             val json = JSONObject(item.payload)
                             val request = DailyCommitRequest(
