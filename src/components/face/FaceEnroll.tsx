@@ -206,7 +206,15 @@ export function FaceEnroll({ onDone }: FaceEnrollProps) {
       setPhase("done");
       await refetchStatus();
     } catch (err: any) {
-      setStepError(err?.response?.data?.error ?? err?.message ?? "Failed to save enrollment. Please try again.");
+      console.error('Face enrollment save error:', err);
+      let errorMessage = err?.response?.data?.error ?? err?.message ?? "Failed to save enrollment. Please try again.";
+      
+      // Provide specific guidance for authentication errors
+      if (err?.response?.status === 401 || errorMessage.toLowerCase().includes('unauthorized') || errorMessage.toLowerCase().includes('authentication')) {
+        errorMessage = "Authentication failed. Please log out and log in again, then retry face enrollment.";
+      }
+      
+      setStepError(errorMessage);
       setPhase("camera");
       setStepStatus("error");
     }

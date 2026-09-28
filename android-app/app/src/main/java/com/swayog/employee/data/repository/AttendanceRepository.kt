@@ -144,7 +144,16 @@ class AttendanceRepository @Inject constructor(
                     // Return the actual server error so the user sees the real problem.
                     val errorMsg = ErrorUtils.formatResponseError(response)
                     android.util.Log.e("AttendanceRepository", "Check-in rejected by server (online): $errorMsg")
-                    Result.failure(OnlineSubmissionFailedException(errorMsg))
+                    
+                    // Provide specific guidance for authentication errors
+                    val userFriendlyError = if (response.code() == 401 || errorMsg.contains("401", ignoreCase = true) || 
+                        errorMsg.contains("unauthorized", ignoreCase = true) || errorMsg.contains("authentication", ignoreCase = true)) {
+                        "Authentication failed. Please log out and log in again, then retry check-in."
+                    } else {
+                        errorMsg
+                    }
+                    
+                    Result.failure(OnlineSubmissionFailedException(userFriendlyError))
                 }
             } catch (e: Exception) {
                 // Check if this is a genuine connectivity/network exception.

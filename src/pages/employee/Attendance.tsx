@@ -659,7 +659,14 @@ export default function EmployeeAttendance() {
           livenessVerified: livenessOk,
         });
       } catch (err: any) {
-        const message = err?.response?.data?.error || err?.message || "Unable to complete check-in.";
+        console.error('Check-in mutation error:', err);
+        let message = err?.response?.data?.error || err?.message || "Unable to complete check-in.";
+        
+        // Provide specific guidance for authentication errors
+        if (err?.response?.status === 401 || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('authentication')) {
+          message = "Authentication failed. Please log out and log in again, then retry check-in.";
+        }
+        
         throw new Error(message);
       }
 

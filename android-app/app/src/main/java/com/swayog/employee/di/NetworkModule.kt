@@ -108,6 +108,7 @@ object NetworkModule {
                                 .url(refreshUrl)
                                 .post(refreshJson.toRequestBody(mediaType))
                                 .header("bypass-tunnel-reminder", "true")
+                                .header("Content-Type", "application/json")
                                 .build()
                             
                             val basicClient = OkHttpClient.Builder()
@@ -121,6 +122,7 @@ object NetworkModule {
                                 val refreshResponse = basicClient.newCall(refreshRequest).execute()
                                 if (refreshResponse.isSuccessful && refreshResponse.body != null) {
                                     val responseBodyStr = refreshResponse.body!!.string()
+                                    Log.d("NetworkModule", "Token refresh response: $responseBodyStr")
                                     val json = JSONObject(responseBodyStr)
                                     val dataObj = json.optJSONObject("data")
                                     val newAccessToken = dataObj?.optString("accessToken")
@@ -133,14 +135,20 @@ object NetworkModule {
                                             dataStoreManager.recordUserActive()
                                         }
                                         newAccessTokenToRetry = newAccessToken
+                                        Log.d("NetworkModule", "Token refresh successful")
+                                    } else {
+                                        Log.w("NetworkModule", "Token refresh response missing tokens")
                                     }
                                 } else {
                                     val code = refreshResponse.code
-                                    Log.w("NetworkModule", "Token refresh attempt returned HTTP $code")
+                                    val errorBody = refreshResponse.body?.string()
+                                    Log.w("NetworkModule", "Token refresh attempt returned HTTP $code: $errorBody")
                                 }
                             } catch (e: Exception) {
-                                Log.e("NetworkModule", "Token refresh network error: ${e.message}")
+                                Log.e("NetworkModule", "Token refresh network error: ${e.message}", e)
                             }
+                        } else {
+                            Log.w("NetworkModule", "No refresh token available for token refresh")
                         }
                     }
                 }
@@ -151,6 +159,13 @@ object NetworkModule {
                         .header("Authorization", "Bearer $newAccessTokenToRetry")
                         .build()
                     response = chain.proceed(newRequest)
+                } else {
+                    // Token refresh failed, clear auth state to force re-login
+                    Log.w("NetworkModule", "Token refresh failed, clearing auth state")
+                    runBlocking {
+                        dataStoreManager.saveAuthToken("")
+                        dataStoreManager.saveRefreshToken("")
+                    }
                 }
             }
             

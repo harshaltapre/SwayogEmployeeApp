@@ -83,6 +83,33 @@ class DataStoreManager @Inject constructor(
         )
     }
     
+    /**
+     * In-memory token cache — kept in sync with DataStore.
+     * The OkHttp auth interceptor reads this field directly (no runBlocking / coroutine needed)
+     * to avoid the DataStore thread-dispatch deadlock that causes HTTP 401 in release builds.
+     */
+    @Volatile
+    private var cachedAuthToken: String? = null
+
+    init {
+        // Eagerly prime the in-memory cache from DataStore on the IO thread at startup.
+        // This runs once when the singleton is created (Hilt @Singleton), well before any
+        // network request is made, so the interceptor always has a valid token on hand.
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                cachedAuthToken = context.dataStore.data.map { prefs ->
+                    prefs[PreferencesKeys.AUTH_TOKEN]
+                }.first()
+            } catch (e: Exception) {
+                // Swallow — cache stays null; interceptor falls back to unauthenticated
+                android.util.Log.w("DataStoreManager", "Failed to prime auth token cache: ${e.message}")
+            }
+        }
+    }
+
+    /** Returns the current auth token without blocking any thread. Safe to call from OkHttp interceptors. */
+    fun getCachedAuthToken(): String? = cachedAuthToken
+
     val authToken: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.AUTH_TOKEN]
     }
@@ -192,6 +219,7 @@ class DataStoreManager @Inject constructor(
     }
     
     suspend fun saveAuthToken(token: String) {
+        cachedAuthToken = token  // Update in-memory cache immediately (thread-safe via @Volatile)
         try {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.AUTH_TOKEN] = token

@@ -39,6 +39,12 @@ export const useCheckIn = () => {
       qc.invalidateQueries({ queryKey: ["attendance"] });
       qc.invalidateQueries({ queryKey: ["admin"] });
     },
+    onError: (error: any) => {
+      console.error('Check-in error:', error);
+      if (error?.response?.status === 401) {
+        console.error('Authentication failed during check-in - token may be expired');
+      }
+    },
   });
 };
 
@@ -172,6 +178,12 @@ export const useEnrollFace = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["face-enrollment"] });
       qc.invalidateQueries({ queryKey: ["admin", "face-enrollments"] });
+    },
+    onError: (error: any) => {
+      console.error('Face enrollment error:', error);
+      if (error?.response?.status === 401) {
+        console.error('Authentication failed during face enrollment - token may be expired');
+      }
     },
   });
 };

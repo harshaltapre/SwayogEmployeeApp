@@ -216,10 +216,19 @@ class FaceEnrollmentViewModel @Inject constructor(
                 } else {
                     val errorMsg = ErrorUtils.formatResponseError(response)
                     dataStoreManager.setFaceSyncStatus("FAILED")
+                    
+                    // Provide specific guidance for authentication errors
+                    val userFriendlyError = if (response.code() == 401 || errorMsg.contains("401", ignoreCase = true) || 
+                        errorMsg.contains("unauthorized", ignoreCase = true) || errorMsg.contains("authentication", ignoreCase = true)) {
+                        "Authentication failed. Please log out and log in again, then retry face enrollment."
+                    } else {
+                        "Enrollment saved locally, but server returned: $errorMsg"
+                    }
+                    
                     _uiState.update { 
                         it.copy(
                             isLoading = false,
-                            error = "Enrollment saved locally, but server returned: $errorMsg"
+                            error = userFriendlyError
                         )
                     }
                 }

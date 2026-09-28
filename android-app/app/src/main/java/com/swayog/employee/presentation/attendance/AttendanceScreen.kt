@@ -261,19 +261,20 @@ fun AttendanceScreen(
             faceDescriptors = faceDescriptors,
             faceIndexManager = viewModel.faceIndexManager,
             onVerificationSuccess = { bitmap, matchConfidence ->
-                showCamera = false
                 // Apply Watermark
                 val format = java.text.SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a", java.util.Locale.getDefault())
                 val timestamp = format.format(java.util.Date())
                 val watermarkedBitmap = WatermarkHelper.addWatermark(bitmap, currentLatitude, currentLongitude, "Attendance Check-in", "Self", "N/A", timestamp)
-                
+
                 // Convert to Base64
                 val outputStream = ByteArrayOutputStream()
                 watermarkedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
                 val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-                
-                // Call checkIn
+
+                // Dismiss camera AFTER dispatching checkIn so the ViewModel
+                // coroutine is not cancelled by an early recomposition.
                 viewModel.checkIn(base64String, currentLatitude, currentLongitude, matchConfidence) { result ->
+                    showCamera = false
                     if (result.isSuccess) {
                         Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
                     } else {
