@@ -8,6 +8,7 @@ import androidx.work.WorkerParameters
 import com.google.gson.Gson
 import com.swayog.employee.core.util.LocalFileHelper
 import com.swayog.employee.data.api.ApiService
+import com.swayog.employee.data.local.dao.AttendanceDao
 import com.swayog.employee.data.local.dao.DailyCommitDao
 import com.swayog.employee.data.local.dao.OutboxQueueDao
 import com.swayog.employee.data.local.dao.TaskDao
@@ -28,6 +29,7 @@ class SyncWorker @AssistedInject constructor(
     private val outboxQueueDao: OutboxQueueDao,
     private val taskDao: TaskDao,
     private val dailyCommitDao: DailyCommitDao,
+    private val attendanceDao: AttendanceDao,
     private val apiService: ApiService,
     private val dataStoreManager: com.swayog.employee.data.local.preferences.DataStoreManager
 ) : CoroutineWorker(appContext, workerParams) {
@@ -237,9 +239,9 @@ class SyncWorker @AssistedInject constructor(
                         item.endpoint.contains("check-out") && item.method == "POST" -> {
                             val response = apiService.checkOut()
                             if (response.isSuccessful) {
-                                val todayAttendance = attendanceDao.getTodayAttendance()
-                                todayAttendance?.let {
-                                    attendanceDao.updateAttendance(it.copy(isSynced = true))
+                                val todayRecord = attendanceDao.getTodayAttendance()
+                                if (todayRecord != null) {
+                                    attendanceDao.updateAttendance(todayRecord.copy(isSynced = true))
                                 }
                                 true
                             } else {

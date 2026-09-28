@@ -85,6 +85,7 @@ fun AttendanceScreen(
     val monthlySummary by viewModel.monthlySummary.collectAsState()
     val state by viewModel.attendanceState.collectAsState()
     val faceDescriptors by viewModel.faceDescriptors.collectAsState()
+    val isFaceEnrolled by viewModel.isFaceEnrolled.collectAsState()
     val performance by viewModel.performance.collectAsState()
     val currentTask by viewModel.currentTask.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
@@ -1017,7 +1018,7 @@ fun AttendanceScreen(
                                                     Toast.makeText(context, "Checked out successfully!", Toast.LENGTH_SHORT).show()
                                                 } else {
                                                     val exception = result.exceptionOrNull()
-                                                    if (exception is com.swayog.employee.core.error.OfflinePendingException) {
+                                                    if (exception is OfflinePendingException) {
                                                         Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
                                                     } else {
                                                         Toast.makeText(context, "Check-out failed: ${exception?.message}", Toast.LENGTH_LONG).show()

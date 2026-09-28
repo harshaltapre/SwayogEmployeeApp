@@ -36,6 +36,7 @@ import java.text.SimpleDateFormat
 import java.util.TimeZone
 import java.util.Locale
 import java.util.Calendar
+import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.presentation.attendance.face.FaceIndexManager
 import javax.inject.Inject
 
@@ -377,7 +378,7 @@ class AttendanceViewModel @Inject constructor(
                     onResult(Result.success(Unit))
                 }
                 .onFailure { error ->
-                    if (error is com.swayog.employee.core.error.OfflinePendingException) {
+                    if (error is OfflinePendingException) {
                         loadData()
                         _attendanceState.value = AttendanceState.Success
                     } else {
