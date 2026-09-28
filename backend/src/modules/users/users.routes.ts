@@ -29,10 +29,14 @@ userRoutes.get(
   asyncHandler(meHandler),
 );
 
+const userPreferencesMemoryStore = new Map<string, Record<string, any>>();
+
 userRoutes.get(
   "/me/preferences",
   authenticateAccessToken,
   asyncHandler(async (req, res) => {
+    const userId = (req as any).user?.id || "default";
+    const existing = userPreferencesMemoryStore.get(userId) || {};
     res.status(200).json({
       data: {
         darkMode: false,
@@ -44,6 +48,7 @@ userRoutes.get(
         showStatusEnabled: true,
         activitySharingEnabled: true,
         language: "en",
+        ...existing,
       },
     });
   }),
@@ -53,19 +58,24 @@ userRoutes.patch(
   "/me/preferences",
   authenticateAccessToken,
   asyncHandler(async (req, res) => {
+    const userId = (req as any).user?.id || "default";
+    const existing = userPreferencesMemoryStore.get(userId) || {};
+    const updated = {
+      darkMode: false,
+      biometricEnabled: false,
+      notificationsEnabled: true,
+      compactViewEnabled: false,
+      animationsEnabled: true,
+      profileVisibilityEnabled: true,
+      showStatusEnabled: true,
+      activitySharingEnabled: true,
+      language: "en",
+      ...existing,
+      ...req.body,
+    };
+    userPreferencesMemoryStore.set(userId, updated);
     res.status(200).json({
-      data: {
-        darkMode: false,
-        biometricEnabled: false,
-        notificationsEnabled: true,
-        compactViewEnabled: false,
-        animationsEnabled: true,
-        profileVisibilityEnabled: true,
-        showStatusEnabled: true,
-        activitySharingEnabled: true,
-        language: "en",
-        ...req.body,
-      },
+      data: updated,
     });
   }),
 );
@@ -74,19 +84,24 @@ userRoutes.post(
   "/me/preferences",
   authenticateAccessToken,
   asyncHandler(async (req, res) => {
+    const userId = (req as any).user?.id || "default";
+    const existing = userPreferencesMemoryStore.get(userId) || {};
+    const updated = {
+      darkMode: false,
+      biometricEnabled: false,
+      notificationsEnabled: true,
+      compactViewEnabled: false,
+      animationsEnabled: true,
+      profileVisibilityEnabled: true,
+      showStatusEnabled: true,
+      activitySharingEnabled: true,
+      language: "en",
+      ...existing,
+      ...req.body,
+    };
+    userPreferencesMemoryStore.set(userId, updated);
     res.status(200).json({
-      data: {
-        darkMode: false,
-        biometricEnabled: false,
-        notificationsEnabled: true,
-        compactViewEnabled: false,
-        animationsEnabled: true,
-        profileVisibilityEnabled: true,
-        showStatusEnabled: true,
-        activitySharingEnabled: true,
-        language: "en",
-        ...req.body,
-      },
+      data: updated,
     });
   }),
 );

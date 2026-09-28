@@ -119,26 +119,48 @@ android {
                 }
             }
 
-            val keyAliasStr = System.getenv("RELEASE_KEY_ALIAS")
-                ?: getLocalProperty("RELEASE_KEY_ALIAS", "")
-            val storePassStr = System.getenv("RELEASE_STORE_PASSWORD")
-                ?: getLocalProperty("RELEASE_STORE_PASSWORD", "")
-            val keyPassStr = System.getenv("RELEASE_KEY_PASSWORD")
-                ?: getLocalProperty("RELEASE_KEY_PASSWORD", "")
-            val storeTypeStr = System.getenv("RELEASE_STORE_TYPE")
-                ?: getLocalProperty("RELEASE_STORE_TYPE", "")
+            val keyAliasStr = (System.getenv("RELEASE_KEY_ALIAS")
+                ?: getLocalProperty("RELEASE_KEY_ALIAS", "")).trim()
+            val storePassStr = (System.getenv("RELEASE_STORE_PASSWORD")
+                ?: getLocalProperty("RELEASE_STORE_PASSWORD", "")).trim()
+            var keyPassStr = (System.getenv("RELEASE_KEY_PASSWORD")
+                ?: getLocalProperty("RELEASE_KEY_PASSWORD", "")).trim()
+            if (keyPassStr.isBlank() && storePassStr.isNotBlank()) {
+                keyPassStr = storePassStr
+            }
+            val rawStoreType = (System.getenv("RELEASE_STORE_TYPE")
+                ?: getLocalProperty("RELEASE_STORE_TYPE", "")).trim()
 
             val isReleaseBuildRequested = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
             val isCI = System.getenv("CI") == "true"
 
             if (keystoreFile != null && keystoreFile.exists()) {
+                val header = keystoreFile.inputStream().use { stream ->
+                    val buf = ByteArray(4)
+                    val read = stream.read(buf)
+                    if (read >= 4) buf else byteArrayOf()
+                }
+                // JKS magic is 0xFEEDFEED (0xFE, 0xED, 0xFE, 0xED); PKCS12 starts with ASN.1 Sequence (0x30, 0x82)
+                val isJksMagic = header.size >= 4 &&
+                    header[0] == 0xFE.toByte() && header[1] == 0xED.toByte() &&
+                    header[2] == 0xFE.toByte() && header[3] == 0xED.toByte()
+                val resolvedStoreType = if (isJksMagic || (rawStoreType.equals("JKS", ignoreCase = true) && isJksMagic)) "JKS" else "PKCS12"
+
                 if (keyAliasStr.isNotBlank() && storePassStr.isNotBlank() && keyPassStr.isNotBlank()) {
                     storeFile = keystoreFile
-                    storeType = if (storeTypeStr.isNotBlank()) storeTypeStr else "PKCS12"
+                    storeType = resolvedStoreType
                     this.keyAlias = keyAliasStr
                     storePassword = storePassStr
                     keyPassword = keyPassStr
-                    println("Release signing configured with keystore: ${keystoreFile.canonicalPath}")
+                    // v1 (JAR) signing MUST be enabled alongside v2.
+                    // Android's PackageManager.getPackageArchiveInfo() reads certificate data from
+                    // the META-INF directory (v1 signature). If only v2/v3 signing is present the
+                    // PackageManager API returns null certificate bytes for archive files, causing
+                    // the on-device OTA installer to produce a false "certificate mismatch" error
+                    // even when the APK is correctly signed with the production key.
+                    enableV1Signing = true
+                    enableV2Signing = true
+                    println("Release signing configured with keystore: ${keystoreFile.canonicalPath} (format: $resolvedStoreType)")
                 } else if (isCI || isReleaseBuildRequested) {
                     throw GradleException("Release signing credentials are incomplete. Configure RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD, and RELEASE_KEY_PASSWORD.")
                 } else {

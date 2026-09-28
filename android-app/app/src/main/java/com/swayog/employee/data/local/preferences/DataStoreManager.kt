@@ -482,15 +482,26 @@ class DataStoreManager @Inject constructor(
     suspend fun updateSettingsFromServer(settings: com.swayog.employee.data.model.UserSettingsDto) {
         try {
             context.dataStore.edit { preferences ->
-                settings.darkMode?.let { preferences[PreferencesKeys.DARK_MODE] = it }
+                // Account and notification settings synced from server
                 settings.biometricEnabled?.let { preferences[PreferencesKeys.BIOMETRIC_ENABLED] = it }
                 settings.notificationsEnabled?.let { preferences[PreferencesKeys.NOTIFICATIONS_ENABLED] = it }
-                settings.compactViewEnabled?.let { preferences[PreferencesKeys.COMPACT_VIEW_ENABLED] = it }
-                settings.animationsEnabled?.let { preferences[PreferencesKeys.ANIMATIONS_ENABLED] = it }
                 settings.profileVisibilityEnabled?.let { preferences[PreferencesKeys.PROFILE_VISIBILITY_ENABLED] = it }
                 settings.showStatusEnabled?.let { preferences[PreferencesKeys.SHOW_STATUS_ENABLED] = it }
                 settings.activitySharingEnabled?.let { preferences[PreferencesKeys.ACTIVITY_SHARING_ENABLED] = it }
                 settings.language?.let { preferences[PreferencesKeys.LANGUAGE] = it }
+
+                // Local Device Visual Settings:
+                // Only adopt from server if the user has NOT explicitly set a local preference on this device yet.
+                // This prevents server default "false" values from turning off Dark Mode or Compact View after the user enabled them.
+                if (!preferences.contains(PreferencesKeys.DARK_MODE) && settings.darkMode != null) {
+                    preferences[PreferencesKeys.DARK_MODE] = settings.darkMode
+                }
+                if (!preferences.contains(PreferencesKeys.COMPACT_VIEW_ENABLED) && settings.compactViewEnabled != null) {
+                    preferences[PreferencesKeys.COMPACT_VIEW_ENABLED] = settings.compactViewEnabled
+                }
+                if (!preferences.contains(PreferencesKeys.ANIMATIONS_ENABLED) && settings.animationsEnabled != null) {
+                    preferences[PreferencesKeys.ANIMATIONS_ENABLED] = settings.animationsEnabled
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
