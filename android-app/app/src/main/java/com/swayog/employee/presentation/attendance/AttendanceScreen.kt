@@ -1852,14 +1852,8 @@ private fun formatUtcToLocalTime(isoString: String?): String {
 private fun formatUtcToLocalDate(isoString: String?): String {
     if (isoString.isNullOrBlank()) return "N/A"
     return try {
-        val cleanIso = isoString.substringBefore("T")
-        val utcFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).apply {
-            timeZone = java.util.TimeZone.getTimeZone("UTC")
-        }
-        val date = utcFormat.parse(cleanIso) ?: return "N/A"
-        
-        val localFormat = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
-        localFormat.format(date)
+        val date = java.time.LocalDate.parse(isoString.substringBefore("T"))
+        date.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale.getDefault()))
     } catch (e: Exception) {
         isoString.substringBefore("T")
     }
