@@ -5,9 +5,13 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import com.swayog.employee.core.config.AppConfig
 import javax.inject.Inject
@@ -19,6 +23,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 class DataStoreManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private object PreferencesKeys {
         val AUTH_TOKEN = stringPreferencesKey("auth_token")
         val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
@@ -95,7 +100,7 @@ class DataStoreManager @Inject constructor(
         // Eagerly prime the in-memory cache from DataStore on the IO thread at startup.
         // This runs once when the singleton is created (Hilt @Singleton), well before any
         // network request is made, so the interceptor always has a valid token on hand.
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        scope.launch {
             try {
                 cachedAuthToken = context.dataStore.data.map { prefs ->
                     prefs[PreferencesKeys.AUTH_TOKEN]
