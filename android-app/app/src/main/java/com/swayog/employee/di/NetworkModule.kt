@@ -67,7 +67,8 @@ object NetworkModule {
                 .header("Content-Type", "application/json")
                 .header("bypass-tunnel-reminder", "true")
 
-            val authToken = runBlocking { dataStoreManager.authToken.first() }
+            // Use cached token to avoid runBlocking deadlocks in release builds
+            val authToken = dataStoreManager.getCachedAuthToken()
             if (!authToken.isNullOrBlank()) {
                 requestBuilder.header("Authorization", "Bearer $authToken")
             }
@@ -92,13 +93,13 @@ object NetworkModule {
 
                 synchronized(tokenRefreshLock) {
                     // Check if another concurrent request already refreshed the token
-                    val latestStoredToken = runBlocking { dataStoreManager.authToken.first() }
+                    val latestStoredToken = dataStoreManager.getCachedAuthToken()
                     if (!latestStoredToken.isNullOrBlank() && latestStoredToken != tokenUsed) {
                         // Already refreshed by another thread!
                         newAccessTokenToRetry = latestStoredToken
                     } else {
                         // This thread performs the single refresh
-                        val refreshToken = runBlocking { dataStoreManager.refreshToken.first() }
+                        val refreshToken = dataStoreManager.getCachedRefreshToken()
                         if (refreshToken != null) {
                             val refreshUrl = "${AppConfig.API_BASE_URL}auth/refresh"
                             

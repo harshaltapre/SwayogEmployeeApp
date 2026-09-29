@@ -96,6 +96,9 @@ class DataStoreManager @Inject constructor(
     @Volatile
     private var cachedAuthToken: String? = null
 
+    @Volatile
+    private var cachedRefreshToken: String? = null
+
     init {
         // Eagerly prime the in-memory cache from DataStore on the IO thread at startup.
         // This runs once when the singleton is created (Hilt @Singleton), well before any
@@ -104,6 +107,9 @@ class DataStoreManager @Inject constructor(
             try {
                 cachedAuthToken = context.dataStore.data.map { prefs ->
                     prefs[PreferencesKeys.AUTH_TOKEN]
+                }.first()
+                cachedRefreshToken = context.dataStore.data.map { prefs ->
+                    prefs[PreferencesKeys.REFRESH_TOKEN]
                 }.first()
             } catch (e: Exception) {
                 // Swallow — cache stays null; interceptor falls back to unauthenticated
@@ -114,6 +120,9 @@ class DataStoreManager @Inject constructor(
 
     /** Returns the current auth token without blocking any thread. Safe to call from OkHttp interceptors. */
     fun getCachedAuthToken(): String? = cachedAuthToken
+
+    /** Returns the current refresh token without blocking any thread. Safe to call from OkHttp interceptors. */
+    fun getCachedRefreshToken(): String? = cachedRefreshToken
 
     val authToken: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.AUTH_TOKEN]
@@ -233,8 +242,9 @@ class DataStoreManager @Inject constructor(
             e.printStackTrace()
         }
     }
-    
+
     suspend fun saveRefreshToken(token: String) {
+        cachedRefreshToken = token  // Update in-memory cache immediately (thread-safe via @Volatile)
         try {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.REFRESH_TOKEN] = token
@@ -275,6 +285,8 @@ class DataStoreManager @Inject constructor(
     }
     
     suspend fun clearAuthData() {
+        cachedAuthToken = null  // Clear in-memory cache
+        cachedRefreshToken = null  // Clear in-memory cache
         context.dataStore.edit { preferences ->
             preferences.remove(PreferencesKeys.AUTH_TOKEN)
             preferences.remove(PreferencesKeys.REFRESH_TOKEN)
@@ -286,7 +298,7 @@ class DataStoreManager @Inject constructor(
             preferences.remove(PreferencesKeys.IS_LOGGED_IN)
             preferences.remove(PreferencesKeys.PROFILE_PHOTO_URL)
             preferences.remove(PreferencesKeys.LAST_ACTIVE_TIME)
-            
+
             // Clear face enrollment data on logout
             preferences.remove(PreferencesKeys.FACE_ENROLLED)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_1)
