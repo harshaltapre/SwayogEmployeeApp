@@ -8,3 +8,11 @@ dist
 vite.config.ts.timestamp-*.mjs
 *.apk
 public/releases/
+
+# Android build artifacts
+android-app/temp_debug_apk/
+android-app/temp_release_apk/
+android-app/temp_debug.zip
+android-app/temp_release.zip
+android-app/nul
+nul
