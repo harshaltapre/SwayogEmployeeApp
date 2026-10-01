@@ -505,7 +505,8 @@ class TaskRepository @Inject constructor(
         beforeImages: List<String>? = null,
         afterImages: List<String>? = null,
         sitePhotos: List<String>? = null,
-        maintenanceVideos: List<String>? = null
+        maintenanceVideos: List<String>? = null,
+        photoRemarks: Map<Int, String>? = null
     ): Result<Task> {
         val cleanTaskId = sanitizeTaskId(taskId)
         val clientUploadId = UUID.randomUUID().toString()
@@ -601,6 +602,7 @@ class TaskRepository @Inject constructor(
                     beforeImages = beforeImages,
                     afterImages = afterImages,
                     maintenanceVideos = maintenanceVideos,
+                    photoRemarks = photoRemarks,
                     clientUploadId = clientUploadId
                 )
                 android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: RawTaskId=$taskId, CleanTaskId=$cleanTaskId, Endpoint=PATCH tasks/$cleanTaskId/complete, sitePhotosCount=${req.sitePhotos?.size}, message=${req.message}")
@@ -619,7 +621,7 @@ class TaskRepository @Inject constructor(
                 }
 
                 // Fallback 2: Call status update endpoint (employee/tasks/:taskId/status) to guarantee DB completion
-                if (successTask == null) {
+                if (successTask == null && photoRemarks.isNullOrEmpty()) {
                     android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] completeTask endpoint failed. Falling back to status update endpoint employee/tasks/$cleanTaskId/status")
                     val respStatus = apiService.updateTask(cleanTaskId, UpdateTaskRequest(status = "COMPLETED"))
                     if (respStatus.isSuccessful && respStatus.body()?.data != null) {
@@ -742,6 +744,7 @@ class TaskRepository @Inject constructor(
                         beforeImages = beforeImages,
                         afterImages = afterImages,
                         maintenanceVideos = maintenanceVideos,
+                        photoRemarks = photoRemarks,
                         clientUploadId = clientUploadId
                     )
                     saveCompletionLocally(
@@ -780,6 +783,7 @@ class TaskRepository @Inject constructor(
                     beforeImages = beforeImages,
                     afterImages = afterImages,
                     maintenanceVideos = maintenanceVideos,
+                    photoRemarks = photoRemarks,
                     clientUploadId = clientUploadId
                 )
                 saveCompletionLocally(
@@ -818,6 +822,7 @@ class TaskRepository @Inject constructor(
                 beforeImages = beforeImages,
                 afterImages = afterImages,
                 maintenanceVideos = maintenanceVideos,
+                photoRemarks = photoRemarks,
                 clientUploadId = clientUploadId
             )
             saveCompletionLocally(
@@ -900,7 +905,8 @@ class TaskRepository @Inject constructor(
         beforeImages: List<String>? = null,
         afterImages: List<String>? = null,
         maintenanceVideos: List<String>? = null,
-        clientUploadId: String? = null
+        clientUploadId: String? = null,
+        photoRemarks: Map<Int, String>? = null
     ) {
         val cleanTaskId = sanitizeTaskId(taskId)
         val beforeImageFilePath = beforeImageUrl?.let { LocalFileHelper.saveBase64ToFile(context, it, "task_before") }
@@ -941,6 +947,7 @@ class TaskRepository @Inject constructor(
             put("beforeImagesFilePaths", jsonArrayBeforeFilePaths)
             put("afterImagesFilePaths", jsonArrayAfterFilePaths)
             put("maintenanceVideoFilePaths", jsonArrayMaintenanceVideoFilePaths)
+            put("photoRemarks", photoRemarks?.let { JSONObject(gson.toJson(it)) })
             put("clientUploadId", effectiveUploadId)
         }.toString()
         
@@ -1174,7 +1181,26 @@ class TaskRepository @Inject constructor(
                                             afterLongitude = json.optDouble("afterLongitude").takeIf { !json.isNull("afterLongitude") },
                                             taskType = json.optString("taskType").takeIf { it.isNotEmpty() },
                                             images = sitePhotosList.takeIf { it.isNotEmpty() },
-                                            sitePhotos = sitePhotosList.takeIf { it.isNotEmpty() }
+                                            sitePhotos = sitePhotosList.takeIf { it.isNotEmpty() },
+                                            photoRemarks = json.optJSONObject("photoRemarks")?.let { remarksJson ->
+                                                buildMap {
+                                                    val keys = remarksJson.keys()
+                                                    while (keys.hasNext()) {
+                                                        val key = keys.next()
+                                                        key.toIntOrNull()?.let { index ->
+                                                            remarksJson.optString(key).takeIf { it.isNotBlank() }?.let { remark ->
+                                                                put(index, remark)
+                                                            }
+                                                        }
+                                                    }
+                                                }.takeIf { it.isNotEmpty() }
+                                            } ?: json.optString("photoRemarks").takeIf { it.startsWith("{") }?.let { encoded ->
+                                                try {
+                                                    gson.fromJson(encoded, object : com.google.gson.reflect.TypeToken<Map<Int, String>>() {}.type)
+                                                } catch (_: Exception) {
+                                                    null
+                                                }
+                                            }
                                         )
 
                                         android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Submitting Site Visit for task ID: $taskId...")

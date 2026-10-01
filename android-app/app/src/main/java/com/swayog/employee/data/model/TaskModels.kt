@@ -112,6 +112,7 @@ data class CompleteTaskRequest(
     val beforeImages: List<String>? = null, // Multiple before images for AMC visits
     val afterImages: List<String>? = null, // Multiple after images for AMC visits
     val maintenanceVideos: List<String>? = null, // Maintenance videos for maintenance visits
+    val photoRemarks: Map<Int, String>? = null,
     val clientUploadId: String? = null // Idempotency key to prevent duplicate submissions
 )
 

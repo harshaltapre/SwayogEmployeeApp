@@ -140,6 +140,7 @@ class TasksViewModel @Inject constructor(
         afterImages: List<String>? = null,
         sitePhotos: List<String>? = null,
         maintenanceVideos: List<String>? = null,
+        photoRemarks: Map<Int, String>? = null,
         onResult: (Result<Task>) -> Unit
     ) {
         viewModelScope.launch {
@@ -158,7 +159,8 @@ class TasksViewModel @Inject constructor(
                 beforeImages = beforeImages,
                 afterImages = afterImages,
                 sitePhotos = sitePhotos,
-                maintenanceVideos = maintenanceVideos
+                maintenanceVideos = maintenanceVideos,
+                photoRemarks = photoRemarks
             )
             
             // Auto-sync if offline exception occurs but we are actually online

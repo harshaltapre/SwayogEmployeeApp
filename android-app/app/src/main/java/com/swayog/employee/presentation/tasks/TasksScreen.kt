@@ -314,7 +314,7 @@ fun TasksScreen(
                             }
                         }
                     },
-                    onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng, taskType, images, beforeImages, afterImages, sitePhotos, maintenanceVideos ->
+                    onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng, taskType, images, beforeImages, afterImages, sitePhotos, maintenanceVideos, photoRemarks ->
                         viewModel.completeTask(
                             taskId = task.id,
                             message = msg,
@@ -330,7 +330,8 @@ fun TasksScreen(
                             beforeImages = beforeImages,
                             afterImages = afterImages,
                             sitePhotos = sitePhotos,
-                            maintenanceVideos = maintenanceVideos
+                            maintenanceVideos = maintenanceVideos,
+                            photoRemarks = photoRemarks
                         ) { result ->
                             if (result.isSuccess) {
                                 selectedTask = null
@@ -697,7 +698,7 @@ fun TaskDetailDialog(
     task: Task,
     onDismiss: () -> Unit,
     onStartTask: () -> Unit,
-    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?, List<String>?, List<String>?) -> Unit,
+    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?, List<String>?, List<String>?, Map<Int, String>?) -> Unit,
     serverUrl: String? = null,
     viewModel: TasksViewModel = hiltViewModel()
 ) {
@@ -713,6 +714,10 @@ fun TaskDetailDialog(
     var uploadedImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var beforeImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var afterImages by remember { mutableStateOf<List<String>>(emptyList()) }
+    var maintenancePhotoRemarks by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingMaintenancePhoto by remember { mutableStateOf<Pair<String, Bitmap>?>(null) }
+    var maintenancePhotoRemark by remember { mutableStateOf("") }
+    var showMaintenancePhotoRemarkDialog by remember { mutableStateOf(false) }
     // Maintenance videos
     var maintenanceVideos by remember { mutableStateOf<List<String>>(emptyList()) }
     
@@ -742,6 +747,17 @@ fun TaskDetailDialog(
         else -> "REGULAR"
     }
 
+    fun savePendingMaintenancePhoto(remark: String) {
+        val pendingPhoto = pendingMaintenancePhoto ?: return
+        val updatedPhotos = uploadedImages + pendingPhoto.first
+        val updatedRemarks = maintenancePhotoRemarks + remark.trim()
+        uploadedImages = updatedPhotos
+        imageBitmaps = imageBitmaps + pendingPhoto.second
+        maintenancePhotoRemarks = updatedRemarks
+        pendingMaintenancePhoto = null
+        maintenancePhotoRemark = ""
+        showMaintenancePhotoRemarkDialog = false
+    }
 
     // Helper to get current GPS, watermark the bitmap, and convert to base64
     fun processPhoto(bitmap: Bitmap, type: String, addressOverride: String? = null) {
@@ -803,11 +819,17 @@ fun TaskDetailDialog(
                         afterLng = lng
                     }
                     "site_visit" -> {
-                        val updatedList = uploadedImages + base64String
-                        uploadedImages = updatedList
-                        imageBitmaps = imageBitmaps + watermarked
-                        if (NetworkUtils.isNetworkAvailable(context)) {
-                            viewModel.updateTaskPhotos(task.id, updatedList)
+                        if (task.isMaintenanceVisit) {
+                            pendingMaintenancePhoto = base64String to watermarked
+                            maintenancePhotoRemark = ""
+                            showMaintenancePhotoRemarkDialog = true
+                        } else {
+                            val updatedList = uploadedImages + base64String
+                            uploadedImages = updatedList
+                            imageBitmaps = imageBitmaps + watermarked
+                            if (NetworkUtils.isNetworkAvailable(context)) {
+                                viewModel.updateTaskPhotos(task.id, updatedList)
+                            }
                         }
                     }
                     "amc_before" -> {
@@ -994,6 +1016,33 @@ fun TaskDetailDialog(
         )
     }
 
+    if (showMaintenancePhotoRemarkDialog) {
+        AlertDialog(
+            onDismissRequest = { savePendingMaintenancePhoto("") },
+            title = { Text("Photo Remark") },
+            text = {
+                OutlinedTextField(
+                    value = maintenancePhotoRemark,
+                    onValueChange = { maintenancePhotoRemark = it },
+                    label = { Text("Remark (Optional)") },
+                    placeholder = { Text("Describe this maintenance photo") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { savePendingMaintenancePhoto(maintenancePhotoRemark) }) {
+                    Text("Save Photo")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { savePendingMaintenancePhoto("") }) {
+                    Text("Skip Remark")
+                }
+            }
+        )
+    }
+
     val jobTypeEmoji = when (task.jobType?.lowercase()) {
         "installation" -> "🔧"
         "service" -> "🛠️"
@@ -1166,10 +1215,10 @@ fun TaskDetailDialog(
                                             IconButton(
                                                 onClick = {
                                                      imageBitmaps = imageBitmaps.toMutableList().apply { removeAt(idx) }
-                                                     val updatedList = uploadedImages.toMutableList().apply { removeAt(idx) }
+                                                                                                         val updatedList = uploadedImages.toMutableList().apply { removeAt(idx) }
                                                      uploadedImages = updatedList
                                                      if (NetworkUtils.isNetworkAvailable(context)) {
-                                                        viewModel.updateTaskPhotos(task.id, updatedList)
+                                                                                                                viewModel.updateTaskPhotos(task.id, updatedList)
                                                      }
                                                 },
                                                 modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
@@ -1241,6 +1290,7 @@ fun TaskDetailDialog(
                                             null,
                                             null,
                                             uploadedImages,
+                                            null,
                                             null
                                         )
                                     }
@@ -1354,6 +1404,7 @@ fun TaskDetailDialog(
                                         beforeImages,
                                         afterImages,
                                         null,
+                                        null,
                                         null
                                     )
                                 }
@@ -1393,6 +1444,7 @@ fun TaskDetailDialog(
                                                 onClick = {
                                                      imageBitmaps = imageBitmaps.toMutableList().apply { removeAt(idx) }
                                                      val updatedList = uploadedImages.toMutableList().apply { removeAt(idx) }
+                                                     maintenancePhotoRemarks = maintenancePhotoRemarks.toMutableList().apply { removeAt(idx) }
                                                      uploadedImages = updatedList
                                                      if (NetworkUtils.isNetworkAvailable(context)) {
                                                         viewModel.updateTaskPhotos(task.id, updatedList)
@@ -1528,7 +1580,10 @@ fun TaskDetailDialog(
                                             maintenanceVideos.ifEmpty { null },
                                             null,
                                             uploadedImages,
-                                            null
+                                            null,
+                                            maintenancePhotoRemarks.mapIndexedNotNull { index, remark ->
+                                                remark.takeIf { it.isNotBlank() }?.let { index to it }
+                                            }.toMap().takeIf { it.isNotEmpty() }
                                         )
                                     }
                                 }
@@ -1688,6 +1743,7 @@ fun TaskDetailDialog(
                                             afterLat,
                                             afterLng,
                                             taskType,
+                                            null,
                                             null,
                                             null,
                                             null,
