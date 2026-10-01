@@ -46,7 +46,6 @@ apiClient.interceptors.response.use(
         const refreshToken = cookie.get('refreshToken');
         
         if (!refreshToken) {
-          console.error('No refresh token available');
           throw new Error('No refresh token available');
         }
 
@@ -66,7 +65,6 @@ apiClient.interceptors.response.use(
         
         return apiClient(originalRequest);
       } catch (refreshError) {
-        console.error('Token refresh failed:', refreshError);
         // Refresh failed, logout user
         const { logout } = useAuth.getState();
         logout();

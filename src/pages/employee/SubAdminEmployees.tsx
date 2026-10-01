@@ -1,9 +1,10 @@
-import { Users, IndianRupee, CheckCircle, Star, MapPin, Download, Plus, LayoutGrid, List, ChevronRight, ClipboardList, Calendar, Clock, Phone, User as UserIcon, Compass, Camera, Eye } from "lucide-react";
+import { Users, IndianRupee, CheckCircle, Star, MapPin, Download, Plus, LayoutGrid, List, ChevronRight, ClipboardList, Calendar, Clock, Phone, User as UserIcon, Compass, Camera, Eye, Wrench, Video } from "lucide-react";
 import { useListEmployees, useListTasks, buildAssetUrlFromPath } from "@/lib/api-client";
 import { useEffect, useState } from "react";
 import { EmployeeDetailContent } from "@/components/employees/EmployeeDetailContent";
 import { SubAdminLayout } from "@/components/subadmin/SubAdminLayout";
 import { AssignSiteVisitModal } from "@/components/subadmin/AssignSiteVisitModal";
+import { AssignMaintenanceVisitModal } from "@/components/subadmin/AssignMaintenanceVisitModal";
 import { roleLabel } from "../superadmin/UsersTab";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,13 +39,20 @@ function getCleanSitePhotos(task: any): string[] {
   return Array.from(new Set(fallbackUrls));
 }
 
+function getPhotoRemarks(task: any): Record<number, string> {
+  if (!task || !task.photoRemarks) return {};
+  return task.photoRemarks as Record<number, string>;
+}
+
 export default function SubAdminEmployees() {
   const { data: rawEmployees, isLoading: employeesLoading, refetch: refetchEmployees } = useListEmployees();
   const { data: tasks, isLoading: tasksLoading, refetch: refetchTasks } = useListTasks(undefined, { query: { refetchInterval: 3000 } });
   const [viewMode, setViewMode] = useState<"grid" | "table">("table");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
   const [viewSiteVisitTask, setViewSiteVisitTask] = useState<any | null>(null);
+  const [viewMaintenanceTask, setViewMaintenanceTask] = useState<any | null>(null);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
   const [outerTab, setOuterTab] = useState("directory");
   const [innerTab, setInnerTab] = useState("all");
@@ -88,12 +96,20 @@ export default function SubAdminEmployees() {
               Manage staff and track assigned tasks.
             </p>
           </div>
-          <Button
-            onClick={() => setAssignModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-2 shadow-sm shrink-0 h-10 px-4"
-          >
-            <Compass className="h-4 w-4" /> Assign Site Visit
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => setAssignModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-2 shadow-sm shrink-0 h-10 px-4"
+            >
+              <Compass className="h-4 w-4" /> Assign Site Visit
+            </Button>
+            <Button
+              onClick={() => setMaintenanceModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-2 shadow-sm shrink-0 h-10 px-4"
+            >
+              <Wrench className="h-4 w-4" /> Assign Maintenance Visit
+            </Button>
+          </div>
         </div>
 
         <Tabs value={outerTab} onValueChange={setOuterTab} className="w-full">
@@ -266,6 +282,7 @@ export default function SubAdminEmployees() {
                 <TabsList className="bg-slate-100 p-1 h-9">
                   <TabsTrigger value="all" className="text-xs h-7">All Tasks</TabsTrigger>
                   <TabsTrigger value="site-visits" className="text-xs h-7 font-bold text-emerald-700 bg-emerald-50/50">📍 Site Visits</TabsTrigger>
+                  <TabsTrigger value="maintenance-visits" className="text-xs h-7 font-bold text-blue-700 bg-blue-50/50">🔧 Maintenance Visits</TabsTrigger>
                   <TabsTrigger value="today" className="text-xs h-7">Today</TabsTrigger>
                   <TabsTrigger value="upcoming" className="text-xs h-7">Upcoming</TabsTrigger>
                   <TabsTrigger value="completed" className="text-xs h-7">Completed</TabsTrigger>
@@ -274,7 +291,8 @@ export default function SubAdminEmployees() {
 
               {[
                 { value: "all", label: "Total Assignments", data: tasks ?? [] },
-                { value: "site-visits", label: "Site Visit Tasks", data: tasks?.filter(t => t.jobType === "Site Visit" || t.jobType?.toLowerCase().includes("site") || t.jobType?.toLowerCase().includes("visit")) ?? [] },
+                { value: "site-visits", label: "Site Visit Tasks", data: tasks?.filter(t => t.jobType === "Site Visit" || (t.jobType?.toLowerCase().includes("site") && !t.jobType?.toLowerCase().includes("maintenance"))) ?? [] },
+                { value: "maintenance-visits", label: "Maintenance Visit Tasks", data: tasks?.filter(t => t.jobType === "Maintenance Visit" || t.jobType?.toLowerCase().includes("maintenance")) ?? [] },
                 { value: "today", label: "Today Tasks", data: tasks?.filter(t => (t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd")) || t.scheduledTime < format(new Date(), "yyyy-MM-dd")) && String(t.status).toLowerCase() !== "completed") ?? [] },
                 { value: "upcoming", label: "Upcoming Tasks", data: tasks?.filter(t => t.scheduledTime > format(new Date(), "yyyy-MM-dd") && String(t.status).toLowerCase() !== "completed" && !t.scheduledTime.startsWith(format(new Date(), "yyyy-MM-dd"))) ?? [] },
                 { value: "completed", label: "Completed Tasks", data: tasks?.filter(t => String(t.status).toLowerCase() === "completed") ?? [] }
@@ -313,16 +331,19 @@ export default function SubAdminEmployees() {
                                 emp.loginId === task.employeeUserId ||
                                 emp.email === task.employeeUserId
                               );
-                              const isSiteVisit = task.jobType === "Site Visit" || task.jobType?.toLowerCase().includes("site") || task.jobType?.toLowerCase().includes("visit");
+                              const isSiteVisit = task.jobType === "Site Visit" || (task.jobType?.toLowerCase().includes("site") && !task.jobType?.toLowerCase().includes("maintenance"));
+                              const isMaintenanceVisit = task.jobType === "Maintenance Visit" || task.jobType?.toLowerCase().includes("maintenance");
                               return (
                                 <tr key={task.id} className="hover:bg-slate-50/50 transition-colors group">
                                   <td className="px-6 py-4">
                                     <div className="flex items-center gap-1.5">
-                                      <Badge className={`text-[10px] font-bold px-2 py-0.5 border ${isSiteVisit
+                                      <Badge className={`text-[10px] font-bold px-2 py-0.5 border ${isMaintenanceVisit
+                                          ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                          : isSiteVisit
                                           ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                                           : 'bg-slate-100 text-slate-800 border-slate-300'
                                         }`}>
-                                        {isSiteVisit ? "📍 Site Visit" : task.jobType}
+                                        {isMaintenanceVisit ? "🔧 Maintenance Visit" : isSiteVisit ? "📍 Site Visit" : task.jobType}
                                       </Badge>
                                       <span className="text-[10px] text-slate-400 font-mono">#{task.id}</span>
                                     </div>
@@ -389,6 +410,22 @@ export default function SubAdminEmployees() {
                                           </Button>
                                         );
                                       })()}
+                                      {isMaintenanceVisit && (() => {
+                                        const totalPhotosCount = getCleanSitePhotos(task).length;
+                                        const totalVideosCount = Array.isArray(task.maintenanceVideos) ? task.maintenanceVideos.length : 0;
+
+                                        return (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 text-[10px] font-bold text-blue-800 bg-blue-50 border-blue-300 hover:bg-blue-100 gap-1 shadow-2xs"
+                                            onClick={() => setViewMaintenanceTask(task)}
+                                          >
+                                            <Camera size={12} className="text-blue-700" />
+                                            Media ({totalPhotosCount + totalVideosCount})
+                                          </Button>
+                                        );
+                                      })()}
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -429,6 +466,19 @@ export default function SubAdminEmployees() {
         }}
       />
 
+      <AssignMaintenanceVisitModal
+        isOpen={maintenanceModalOpen}
+        onClose={() => setMaintenanceModalOpen(false)}
+        employees={rawEmployees || []}
+        onSuccess={() => {
+          refetchEmployees();
+          refetchTasks();
+          // Auto-navigate to Maintenance Visits tab to show the newly created task
+          setOuterTab("tasks");
+          setInnerTab("maintenance-visits");
+        }}
+      />
+
       {/* Service Coordinator Site Visit Task Details & Photos Gallery Modal */}
       <Dialog open={!!viewSiteVisitTask} onOpenChange={(open) => !open && setViewSiteVisitTask(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -441,6 +491,7 @@ export default function SubAdminEmployees() {
               emp.email === activeTask.employeeUserId
             );
             const photos: string[] = getCleanSitePhotos(activeTask);
+            const remarks: Record<number, string> = getPhotoRemarks(activeTask);
 
             return (
               <div className="space-y-6">
@@ -491,41 +542,50 @@ export default function SubAdminEmployees() {
                   </div>
                 </div>
 
-                {/* Min 4 - Max 10 Site Visit Photos Gallery */}
+                {/* Site Visit Photos Gallery */}
                 <div className="space-y-3 pt-2">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                       <Camera className="h-4 w-4 text-emerald-600" />
                       Site Visit Photos ({photos.length} Photos Uploaded)
                     </h3>
-                    <Badge variant="outline" className={photos.length >= 4 ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold" : "bg-amber-50 text-amber-800 border-amber-300 font-bold"}>
-                      📸 {photos.length} Photos (Min 4 - Max 10)
+                    <Badge variant="outline" className={photos.length >= 1 ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold" : "bg-amber-50 text-amber-800 border-amber-300 font-bold"}>
+                      📸 {photos.length} Photos (Min 1 Required)
                     </Badge>
                   </div>
 
                   {photos.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {photos.map((photoUrl, idx) => {
                         const fullUrl = buildAssetUrlFromPath(photoUrl) || photoUrl;
+                        const remark = remarks[idx];
                         return (
-                          <div key={idx} className="group relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-900 aspect-video">
-                            <img
-                              src={fullUrl}
-                              alt={`Site Photo ${idx + 1}`}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 p-2 flex flex-col justify-between">
-                              <span className="self-end bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
-                                Photo #{idx + 1}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setPreviewPhotoUrl(fullUrl)}
-                                className="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 py-1 px-2 rounded flex items-center justify-center gap-1 shadow transition-colors w-full cursor-pointer"
-                              >
-                                <Eye className="h-3 w-3" /> View Full Image
-                              </button>
+                          <div key={idx} className="space-y-2">
+                            <div className="group relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-900 aspect-video">
+                              <img
+                                src={fullUrl}
+                                alt={`Site Photo ${idx + 1}`}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 p-2 flex flex-col justify-between">
+                                <span className="self-end bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                                  Photo #{idx + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewPhotoUrl(fullUrl)}
+                                  className="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 py-1 px-2 rounded flex items-center justify-center gap-1 shadow transition-colors w-full cursor-pointer"
+                                >
+                                  <Eye className="h-3 w-3" /> View Full Image
+                                </button>
+                              </div>
                             </div>
+                            {remark && (
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2">
+                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Remark</p>
+                                <p className="text-xs text-slate-700 italic">{remark}</p>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -534,7 +594,7 @@ export default function SubAdminEmployees() {
                     <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400">
                       <Camera className="h-8 w-8 mx-auto mb-2 opacity-40 text-slate-400" />
                       <p className="text-xs font-semibold text-slate-500">No site photos uploaded yet for this site visit task.</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">The employee must upload 4 to 10 site photos from the Employee App/Section.</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">The employee must upload at least 1 site photo from the Employee App/Section.</p>
                     </div>
                   )}
                 </div>
@@ -561,6 +621,162 @@ export default function SubAdminEmployees() {
               />
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Maintenance Visit Task Details & Media Gallery Modal */}
+      <Dialog open={!!viewMaintenanceTask} onOpenChange={(open) => !open && setViewMaintenanceTask(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          {viewMaintenanceTask && (() => {
+            const activeTask = tasks?.find(t => String(t.id) === String(viewMaintenanceTask.id)) || viewMaintenanceTask;
+            const assignedEmp = rawEmployees?.find(emp =>
+              emp.userId === activeTask.employeeUserId ||
+              String(emp.id) === String(activeTask.employeeUserId) ||
+              emp.loginId === activeTask.employeeUserId ||
+              emp.email === activeTask.employeeUserId
+            );
+            const photos: string[] = getCleanSitePhotos(activeTask);
+            const videos: string[] = Array.isArray(activeTask.maintenanceVideos) ? activeTask.maintenanceVideos : [];
+            const remarks: Record<number, string> = getPhotoRemarks(activeTask);
+
+            return (
+              <div className="space-y-6">
+                <DialogHeader className="border-b pb-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge className="bg-blue-100 text-blue-800 border-blue-300 font-bold text-xs">
+                      🔧 Maintenance Visit Task #{viewMaintenanceTask.id}
+                    </Badge>
+                    <Badge className="capitalize bg-slate-100 text-slate-800 border-slate-200 text-xs">
+                      {String(activeTask.status).replace("_", " ")}
+                    </Badge>
+                  </div>
+                  <DialogTitle className="text-xl font-bold text-slate-900">
+                    {viewMaintenanceTask.description}
+                  </DialogTitle>
+                </DialogHeader>
+
+                {/* Details grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned Staff</span>
+                    <div className="font-bold text-slate-900 text-base mt-0.5">{assignedEmp?.name || "Unassigned"}</div>
+                    <div className="text-xs text-slate-500">{assignedEmp?.role || "Employee"}</div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scheduled Date & Time</span>
+                    <div className="font-bold text-slate-900 mt-0.5 flex items-center gap-1.5">
+                      <Calendar className="h-4 w-4 text-slate-400" />
+                      {format(new Date(viewMaintenanceTask.scheduledTime), "PPP 'at' p")}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Customer Contact</span>
+                    <div className="font-bold text-slate-900 mt-0.5">{viewMaintenanceTask.customerName}</div>
+                    <div className="text-xs text-slate-500 flex items-center gap-1">
+                      <Phone className="h-3 w-3" /> {viewMaintenanceTask.customerPhone}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Maintenance Location</span>
+                    <div className="font-medium text-slate-700 mt-0.5 flex items-start gap-1">
+                      <MapPin className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                      <span>{viewMaintenanceTask.address}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Maintenance Photos */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <Camera className="h-4 w-4 text-blue-600" />
+                      Maintenance Photos ({photos.length} Uploaded)
+                    </h3>
+                    <Badge variant="outline" className={photos.length >= 2 ? "bg-blue-50 text-blue-800 border-blue-300 font-bold" : "bg-amber-50 text-amber-800 border-amber-300 font-bold"}>
+                      📸 {photos.length} Photos (Min 2 Required)
+                    </Badge>
+                  </div>
+
+                  {photos.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {photos.map((photoUrl, idx) => {
+                        const fullUrl = buildAssetUrlFromPath(photoUrl) || photoUrl;
+                        const remark = remarks[idx];
+                        return (
+                          <div key={idx} className="space-y-2">
+                            <div className="group relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-900 aspect-video">
+                              <img
+                                src={fullUrl}
+                                alt={`Maintenance Photo ${idx + 1}`}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 p-2 flex flex-col justify-between">
+                                <span className="self-end bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                                  Photo #{idx + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewPhotoUrl(fullUrl)}
+                                  className="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-500 py-1 px-2 rounded flex items-center justify-center gap-1 shadow transition-colors w-full cursor-pointer"
+                                >
+                                  <Eye className="h-3 w-3" /> View Full Image
+                                </button>
+                              </div>
+                            </div>
+                            {remark && (
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2">
+                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Remark</p>
+                                <p className="text-xs text-slate-700 italic">{remark}</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400">
+                      <Camera className="h-8 w-8 mx-auto mb-2 opacity-40 text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-500">No maintenance photos uploaded yet.</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">The employee must upload at least 2 photos.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Maintenance Videos */}
+                {videos.length > 0 && (
+                  <div className="space-y-3 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                        <Video className="h-4 w-4 text-purple-600" />
+                        Maintenance Videos ({videos.length} Uploaded)
+                      </h3>
+                      <Badge variant="outline" className="bg-purple-50 text-purple-800 border-purple-300 font-bold">
+                        🎥 {videos.length} Videos
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {videos.map((videoUrl, idx) => (
+                        <div key={idx} className="group relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-900 aspect-video">
+                          <video
+                            src={videoUrl.startsWith('data:') ? videoUrl : videoUrl}
+                            controls
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute bottom-2 right-2 bg-black/70 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                            Video #{idx + 1}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </SubAdminLayout>

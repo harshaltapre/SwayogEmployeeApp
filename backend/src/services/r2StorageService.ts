@@ -41,13 +41,19 @@ const ALLOWED_MIME_TYPES = [
   "image/png",
   "image/gif",
   "image/webp",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/x-msvideo",
+  "video/x-matroska",
   "application/vnd.android.package-archive",
   "application/octet-stream",
   "application/json",
 ];
 
-// Maximum file size (10MB for general uploads, 250MB for release APKs/manifests)
+// Maximum file size (10MB for images, 200MB for videos, 250MB for release APKs/manifests)
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_VIDEO_FILE_SIZE = 200 * 1024 * 1024;
 const MAX_RELEASE_FILE_SIZE = 250 * 1024 * 1024;
 
 export interface UploadResult {
@@ -60,7 +66,7 @@ export interface UploadResult {
 
 export interface R2Config {
   taskId: number | string;
-  type: "before" | "after" | "site-visit" | string;
+  type: "before" | "after" | "site-visit" | "maintenance-video" | string;
   fileName?: string;
 }
 
@@ -105,7 +111,8 @@ export function validateFileSize(size: number, mimeType?: string, objectKey?: st
   if (size <= 0) return false;
   const isRelease = (mimeType && (mimeType.includes("package-archive") || mimeType === "application/octet-stream" || mimeType === "application/json")) ||
     (objectKey && objectKey.startsWith("releases/"));
-  const limit = isRelease ? MAX_RELEASE_FILE_SIZE : MAX_FILE_SIZE;
+  const isVideo = mimeType && mimeType.startsWith("video/");
+  const limit = isRelease ? MAX_RELEASE_FILE_SIZE : isVideo ? MAX_VIDEO_FILE_SIZE : MAX_FILE_SIZE;
   return size <= limit;
 }
 
@@ -146,7 +153,8 @@ export async function uploadToR2(
 
   if (!validateFileSize(buffer.length, mimeType, objectKey)) {
     const isRelease = objectKey.startsWith("releases/") || mimeType.includes("package-archive");
-    const limitMb = (isRelease ? MAX_RELEASE_FILE_SIZE : MAX_FILE_SIZE) / 1024 / 1024;
+    const isVideo = mimeType && mimeType.startsWith("video/");
+    const limitMb = (isRelease ? MAX_RELEASE_FILE_SIZE : isVideo ? MAX_VIDEO_FILE_SIZE : MAX_FILE_SIZE) / 1024 / 1024;
     throw new Error(`File size exceeds maximum allowed size of ${limitMb}MB`);
   }
 

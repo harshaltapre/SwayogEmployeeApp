@@ -113,6 +113,8 @@ model Task {
   afterLatitude         Float?
   afterLongitude        Float?
   sitePhotos            String[]   @default([])
+  maintenanceVideos     String[]   @default([])
+  photoRemarks          Json?
   customerRating        Int?
   customerFeedback      String?
   fixCharges            Float?
@@ -450,6 +452,7 @@ model AmcVisit {
   visitNotes            String?
   beforeImageUrl        String?
   afterImageUrl         String?
+  maintenanceVideos     String[]   @default([]) // Array of video URLs stored in R2
 
   @@index([customerId])
   @@index([scheduledDate])

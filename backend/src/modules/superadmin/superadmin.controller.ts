@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { UserRole } from "@prisma/client";
+import { UserRole, CustomerAmcStatus, CustomerStatus } from "@prisma/client";
 
 import { clearManagedRedisCache } from "../../lib/redis.js";
 import { prisma } from "../../lib/prisma.js";
@@ -655,57 +655,67 @@ export async function importUsers(req: Request, res: Response): Promise<void> {
     throw new ApiError(400, "Max 100 users per import batch");
   }
 
-  const results: { email: string; status: "created" | "skipped"; loginId?: string; reason?: string }[] = [];
+  const results: { email: string; status: "created" | "skipped"; loginId?: string; role?: string; reason?: string }[] = [];
 
   for (const u of users) {
     try {
       if (!u.fullName || !u.email || !u.password || !u.role) {
-        results.push({ email: u.email || "unknown", status: "skipped", reason: "Missing required fields" });
+        results.push({ email: u.email || "unknown", status: "skipped", role: u.role, reason: "Missing required fields (fullName, email, password, role)" });
         continue;
       }
       if (!Object.values(UserRole).includes(u.role)) {
-        results.push({ email: u.email, status: "skipped", reason: "Invalid role" });
+        results.push({ email: u.email, status: "skipped", role: u.role, reason: `Invalid role: ${u.role}` });
         continue;
       }
       const existing = await prisma.user.findUnique({ where: { email: u.email.toLowerCase() }, select: { id: true } });
       if (existing) {
-        results.push({ email: u.email, status: "skipped", reason: "Email already exists" });
+        results.push({ email: u.email, status: "skipped", role: u.role, reason: "Email already exists" });
         continue;
       }
       const loginId = await generateUniqueLoginId(u.role);
+      const isInternalStaff = [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+        UserRole.SUB_ADMIN,
+        UserRole.DEPARTMENT_HEAD,
+        UserRole.TEAM_LEAD,
+        UserRole.EMPLOYEE,
+        UserRole.PARTNER,
+      ].includes(u.role);
+
+      const parsedPermissions = Array.isArray(u.permissions) ? u.permissions : [];
+
       const created = await prisma.user.create({
         data: {
           loginId,
-          employeeCode: (u.role === UserRole.PARTNER || [
-            UserRole.SUPER_ADMIN,
-            UserRole.ADMIN,
-            UserRole.SUB_ADMIN,
-            UserRole.DEPARTMENT_HEAD,
-            UserRole.TEAM_LEAD,
-            UserRole.EMPLOYEE,
-          ].includes(u.role)) ? loginId : null,
+          employeeCode: isInternalStaff ? loginId : null,
           fullName: u.fullName,
           email: u.email.toLowerCase(),
           phoneNumber: u.phoneNumber || null,
           passwordHash: await hashPassword(u.password),
           portalPassword: u.password,
           role: u.role,
+          designationTitle: u.designationTitle || (u.role === UserRole.EMPLOYEE || u.role === UserRole.SUB_ADMIN ? (u.jobRole || null) : null),
+          departmentId: u.departmentId || null,
+          reportingManagerId: u.reportingManagerId || null,
+          permissions: parsedPermissions,
           partnerProfile:
             u.role === UserRole.PARTNER
               ? {
                   create: {
                     businessName: u.businessName ?? u.fullName,
-                    serviceZone: u.zone ?? "Unassigned",
+                    serviceZone: u.serviceZone ?? u.zone ?? "Unassigned",
                   },
                 }
               : undefined,
           employeeProfile:
-            u.role === UserRole.EMPLOYEE
+            (u.role === UserRole.EMPLOYEE || u.role === UserRole.SUB_ADMIN)
               ? {
                   create: {
                     zone: u.zone ?? "Unassigned",
-                    jobRole: u.jobRole ?? "field_technician",
-                    monthlySalaryInr: u.monthlySalaryInr ?? 0,
+                    jobRole: u.jobRole ?? (u.role === UserRole.SUB_ADMIN ? "Sub Admin" : "field_technician"),
+                    monthlySalaryInr: u.monthlySalaryInr ? parseInt(String(u.monthlySalaryInr), 10) || 0 : 0,
+                    permissions: parsedPermissions,
                   },
                 }
               : undefined,
@@ -717,20 +727,60 @@ export async function importUsers(req: Request, res: Response): Promise<void> {
                     fullName: u.fullName,
                     email: u.email.toLowerCase(),
                     phoneNumber: u.phoneNumber ?? "Not Provided",
-                    city: u.zone ?? "Not Provided",
+                    city: u.city ?? u.zone ?? "Not Provided",
+                    state: u.state ?? null,
                     address: u.address ?? "Not Provided",
-                    systemSizeKw: u.systemSizeKw ?? 0,
-                    installationDate: new Date(),
-                    portalPassword: u.password,
+                    systemSizeKw: u.systemSizeKw ? Number(u.systemSizeKw) : 0,
+                    projectType: u.projectType ?? null,
+                    installationDate: (u.installationDate && !isNaN(new Date(u.installationDate).getTime()))
+                      ? new Date(u.installationDate)
+                      : new Date(),
+                    warrantyExpiry: (u.warrantyExpiry && !isNaN(new Date(u.warrantyExpiry).getTime()))
+                      ? new Date(u.warrantyExpiry)
+                      : null,
+                    panelBrand: u.panelBrand ?? null,
+                    inverterBrand: u.inverterBrand ?? null,
+                    inverterName: u.inverterName ?? null,
+                    inverterModel: u.inverterModel ?? null,
+                    inverterUid: u.inverterUid ?? null,
+                    inverterLoginId: u.inverterLoginId ?? null,
+                    inverterPassword: u.inverterPassword ?? null,
+                    inverterApiKey: u.inverterApiKey ?? null,
+                    dataLoggerSrNo: u.dataLoggerSrNo ?? null,
+                    inverterSrNo: u.inverterSrNo ?? null,
+                    amcStatus: (u.amcStatus?.toString().toUpperCase() === "ACTIVE")
+                      ? CustomerAmcStatus.ACTIVE
+                      : (u.amcStatus?.toString().toUpperCase() === "EXPIRED")
+                      ? CustomerAmcStatus.EXPIRED
+                      : CustomerAmcStatus.NONE,
+                    amcExpiryDate: (u.amcExpiryDate && !isNaN(new Date(u.amcExpiryDate).getTime()))
+                      ? new Date(u.amcExpiryDate)
+                      : null,
+                    contractStartDate: (u.contractStartDate && !isNaN(new Date(u.contractStartDate).getTime()))
+                      ? new Date(u.contractStartDate)
+                      : null,
+                    contractEndDate: (u.contractEndDate && !isNaN(new Date(u.contractEndDate).getTime()))
+                      ? new Date(u.contractEndDate)
+                      : null,
+                    cleaningsPerMonth: u.cleaningsPerMonth ? parseInt(String(u.cleaningsPerMonth), 10) || 1 : 1,
+                    clientType: u.clientType ?? "post_paid",
+                    consumerNumber: u.consumerNumber ?? null,
+                    monthlyCleaningRate: u.monthlyCleaningRate ? parseFloat(String(u.monthlyCleaningRate)) || null : null,
+                    paymentTerms: u.paymentTerms ?? null,
+                    remarks: u.remarks ?? null,
+                    status: (u.status?.toString().toUpperCase() === "INACTIVE")
+                      ? CustomerStatus.INACTIVE
+                      : CustomerStatus.ACTIVE,
+                    portalPassword: u.password ?? u.portalPassword ?? null,
                   },
                 }
               : undefined,
         },
         select: { loginId: true },
       });
-      results.push({ email: u.email, status: "created", loginId: created.loginId });
+      results.push({ email: u.email, status: "created", loginId: created.loginId, role: u.role });
     } catch (error: any) {
-      results.push({ email: u.email || "unknown", status: "skipped", reason: error.message || "Internal error" });
+      results.push({ email: u.email || "unknown", status: "skipped", role: u.role, reason: error.message || "Internal error" });
     }
   }
 

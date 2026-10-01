@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, MapPin, Phone, History, CalendarDays, Filter, Calendar, Edit2, X, Clock, HelpCircle, AlertTriangle, Building2, Eye, Camera } from "lucide-react";
+import { CheckCircle2, MapPin, Phone, History, CalendarDays, Filter, Calendar, Edit2, X, Clock, HelpCircle, AlertTriangle, Building2, Eye, Camera, Video } from "lucide-react";
 import { useListAmcVisits, useMarkVisitDone, useUpdateAmcVisit, useListEmployees, buildAssetUrlFromPath } from "@/lib/api-client";
 import { format, isSameDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -478,12 +478,12 @@ export function AmcVisitTracker({
                                     <div className="flex flex-col gap-1">
                                       <span className="text-[9px] font-bold text-slate-400 uppercase">Before</span>
                                       <div className="relative group/img aspect-video rounded overflow-hidden border border-slate-200 bg-white block shadow-xs">
-                                        <img 
-                                          src={buildAssetUrlFromPath(v.beforeImageUrl) || ""} 
-                                          alt="Before" 
-                                          className="w-full h-full object-cover" 
+                                        <img
+                                          src={buildAssetUrlFromPath(v.beforeImageUrl) || ""}
+                                          alt="Before"
+                                          className="w-full h-full object-cover"
                                         />
-                                        <div 
+                                        <div
                                           onClick={() => setPreviewImageUrl(buildAssetUrlFromPath(v.beforeImageUrl))}
                                           className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer"
                                         >
@@ -496,12 +496,12 @@ export function AmcVisitTracker({
                                     <div className="flex flex-col gap-1">
                                       <span className="text-[9px] font-bold text-slate-400 uppercase">After</span>
                                       <div className="relative group/img aspect-video rounded overflow-hidden border border-slate-200 bg-white block shadow-xs">
-                                        <img 
-                                          src={buildAssetUrlFromPath(v.afterImageUrl) || ""} 
-                                          alt="After" 
-                                          className="w-full h-full object-cover" 
+                                        <img
+                                          src={buildAssetUrlFromPath(v.afterImageUrl) || ""}
+                                          alt="After"
+                                          className="w-full h-full object-cover"
                                         />
-                                        <div 
+                                        <div
                                           onClick={() => setPreviewImageUrl(buildAssetUrlFromPath(v.afterImageUrl))}
                                           className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer"
                                         >
@@ -510,6 +510,27 @@ export function AmcVisitTracker({
                                       </div>
                                     </div>
                                   )}
+                                </div>
+                              )}
+
+                              {/* Maintenance Videos in Logs */}
+                              {v.maintenanceVideos && Array.isArray(v.maintenanceVideos) && v.maintenanceVideos.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-slate-100">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                                    <Video className="h-3 w-3 text-blue-600" /> Videos ({v.maintenanceVideos.length})
+                                  </span>
+                                  <div className="grid grid-cols-2 gap-2 mt-1">
+                                    {v.maintenanceVideos.map((video: string, vIdx: number) => (
+                                      <div key={vIdx} className="relative aspect-video rounded overflow-hidden border border-slate-200 bg-white block shadow-xs">
+                                        <video
+                                          src={video.startsWith('data:') ? video : video}
+                                          className="w-full h-full object-cover"
+                                          controls
+                                          preload="metadata"
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -765,6 +786,30 @@ export function AmcVisitTracker({
                 )}
               </div>
             </div>
+
+            {/* Maintenance Videos Section */}
+            {viewingPhotosVisit?.maintenanceVideos && Array.isArray(viewingPhotosVisit.maintenanceVideos) && viewingPhotosVisit.maintenanceVideos.length > 0 && (
+              <div className="space-y-2 pt-4 border-t border-slate-100">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 block">
+                  <Video className="h-3.5 w-3.5 text-blue-600" /> Maintenance Videos ({viewingPhotosVisit.maintenanceVideos.length})
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {viewingPhotosVisit.maintenanceVideos.map((video: string, idx: number) => (
+                    <div key={idx} className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100">
+                      <video
+                        src={video.startsWith('data:') ? video : video}
+                        className="w-full h-full object-cover"
+                        controls
+                        preload="metadata"
+                      />
+                      <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm">
+                        Video #{idx + 1}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

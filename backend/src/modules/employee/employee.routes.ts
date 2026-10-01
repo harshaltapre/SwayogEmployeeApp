@@ -9,7 +9,6 @@ import { authenticateAccessToken, authorizeRoles } from "../../middleware/auth.j
 import { prisma } from "../../lib/prisma.js";
 import { login, refreshSession } from "../auth/auth.service.js";
 import { ApiError } from "../../middleware/error.js";
-import * as AttendanceService from "../../services/attendanceService.js";
 import {
   getEmployeeDashboard,
   getMyTasks,
@@ -210,38 +209,6 @@ employeeRoutes.get(
   "/dashboard",
   employeeAuth,
   asyncHandler(getEmployeeDashboard)
-);
-
-// Get holidays for calendar display
-employeeRoutes.get(
-  "/attendance/holidays",
-  employeeAuth,
-  asyncHandler(async (req, res) => {
-    const year = req.query.year ? parseInt(req.query.year as string) : undefined;
-    const month = req.query.month ? parseInt(req.query.month as string) : undefined;
-
-    let startDate: Date | undefined;
-    let endDate: Date | undefined;
-
-    if (year && month) {
-      startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
-      endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-    } else if (year) {
-      startDate = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
-      endDate = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
-    }
-
-    const holidays = await AttendanceService.getHolidaysAsync(startDate, endDate);
-    const formatted = holidays.map((h) => {
-      const d = new Date(h.date);
-      const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-      return {
-        ...h,
-        dateStr,
-      };
-    });
-    res.json({ holidays: formatted });
-  })
 );
 
 // Get my assigned tasks

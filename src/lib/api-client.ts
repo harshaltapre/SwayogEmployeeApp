@@ -160,9 +160,9 @@ export type AmcVisitRecord = {
   completedAt?: string;
   notes?: string;
   assignedEmployeeId?: string;
-  customer?: { 
-    fullName: string; 
-    city: string; 
+  customer?: {
+    fullName: string;
+    city: string;
     phoneNumber: string;
     apartmentId?: number | null;
     apartment?: { id: number; name: string; address: string; city: string } | null;
@@ -174,6 +174,7 @@ export type AmcVisitRecord = {
   visitNotes?: string | null;
   beforeImageUrl?: string | null;
   afterImageUrl?: string | null;
+  maintenanceVideos?: string[];
 };
 
 type ListCustomersParams = {
@@ -524,9 +525,11 @@ export type TaskRecord = {
   afterLatitude?: number | null;
   afterLongitude?: number | null;
   sitePhotos?: string[] | null;
+  maintenanceVideos?: string[] | null;
   customerRating?: number | null;
   customerFeedback?: string | null;
   fixCharges?: number | null;
+  photoRemarks?: Record<string, string> | null;
 };
 
 export type CustomerServiceRequestRecord = {
@@ -592,6 +595,8 @@ export type CompleteTaskInput = {
   afterLatitude?: number | null;
   afterLongitude?: number | null;
   sitePhotos?: string[];
+  maintenanceVideos?: string[];
+  photoRemarks?: Record<number, string>;
 };
 
 export type RateTaskInput = {
@@ -3159,6 +3164,12 @@ export function useCompleteTask(opts?: any) {
       if (data.sitePhotos) {
         task.sitePhotos = data.sitePhotos;
       }
+      if (data.maintenanceVideos) {
+        task.maintenanceVideos = data.maintenanceVideos;
+      }
+      if (data.photoRemarks) {
+        task.photoRemarks = data.photoRemarks;
+      }
       task.completedAt = new Date().toISOString();
 
       const storedTasks = getStoredMockTasks();
@@ -3177,6 +3188,8 @@ export function useCompleteTask(opts?: any) {
           afterLongitude: data.afterLongitude ?? null,
           completedAt: new Date().toISOString(),
           sitePhotos: data.sitePhotos ?? storedTasks[storedIdx].sitePhotos,
+          maintenanceVideos: data.maintenanceVideos ?? storedTasks[storedIdx].maintenanceVideos,
+          photoRemarks: data.photoRemarks ?? storedTasks[storedIdx].photoRemarks,
         };
         saveStoredMockTasks(storedTasks);
       }

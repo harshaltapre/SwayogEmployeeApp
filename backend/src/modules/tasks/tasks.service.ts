@@ -89,6 +89,75 @@ export async function processAndSaveBase64Photos(
   return results.filter((url) => typeof url === "string" && url.trim().length > 0);
 }
 
+export async function processAndSaveBase64Videos(
+  videos: string[],
+  taskId: number | string,
+  taskType?: string,
+  customerName?: string
+): Promise<string[]> {
+  if (!Array.isArray(videos)) return [];
+
+  // R2 is mandatory for cloud storage
+  if (!isR2Configured()) {
+    throw new ApiError(500, "Cloudflare R2 storage is not configured. Please set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, and R2_ENDPOINT.");
+  }
+
+  console.log(`[VIDEO_UPLOAD_START] taskId=${taskId}, taskType=${taskType || "task"}, customerName=${customerName || "unknown"}, videoCount=${videos.length}`);
+
+  const results = await Promise.all(
+    videos.map(async (item, index) => {
+      if (!item || typeof item !== "string") return "";
+      let formattedItem = item.trim();
+      if (!formattedItem) return "";
+
+      // If it's already an R2 / web URL, return as-is
+      if (formattedItem.startsWith("http://") || formattedItem.startsWith("https://")) {
+        console.log(`[VIDEO_UPLOAD_SKIP] taskId=${taskId}, index=${index}, reason=already_url`);
+        return formattedItem;
+      }
+
+      // Auto-prefix raw base64 if missing data URI header for videos
+      if (!formattedItem.startsWith("data:video/")) {
+        formattedItem = `data:video/mp4;base64,${formattedItem}`;
+      }
+
+      try {
+        const matches = formattedItem.match(/^data:video\/([a-zA-Z0-9]+);base64,(.+)$/s);
+        if (!matches || matches.length !== 3) return formattedItem;
+
+        const rawType = matches[1].toLowerCase();
+        const mimeType = `video/${rawType}`;
+        const base64Data = matches[2].replace(/[\r\n\s]/g, "");
+        const buffer = Buffer.from(base64Data, "base64");
+        const ext = rawType === "mp4" ? "mp4" : rawType;
+        const cleanTaskId = String(taskId).replace(/^TASK-amc_|^amc_visit_|^amc_/, "");
+        const fileName = `maintenance_video_${cleanTaskId}_${Date.now()}_${index}.${ext}`;
+
+        console.log(`[VIDEO_UPLOAD_PROCESSING] taskId=${taskId}, index=${index}, fileName=${fileName}, mimeType=${mimeType}, fileSize=${buffer.length} bytes`);
+
+        // Upload to Cloudflare R2
+        const objectKey = generateObjectKey(
+          { taskId: cleanTaskId, type: "maintenance-video", taskType: taskType || "task", customerName: customerName || "unknown" },
+          fileName
+        );
+
+        const uploadResult = await uploadToR2(buffer, objectKey, mimeType, fileName);
+        console.log(`[R2_UPLOAD_SUCCESS] taskId=${taskId}, storageKey=${objectKey}, url=${uploadResult.url}`);
+
+        return uploadResult.url;
+      } catch (err) {
+        console.error(`[VIDEO_UPLOAD_ERROR] taskId=${taskId}, index=${index}, error=${err instanceof Error ? err.message : String(err)}`);
+        throw new ApiError(500, `Failed to upload video to Cloudflare R2: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })
+  );
+
+  const successfulUploads = results.filter((url) => typeof url === "string" && url.trim().length > 0);
+  console.log(`[VIDEO_UPLOAD_COMPLETE] taskId=${taskId}, total=${videos.length}, successful=${successfulUploads.length}`);
+
+  return successfulUploads;
+}
+
 async function getRecursiveReporteeIds(userId: string): Promise<string[]> {
   const reports = await prisma.user.findMany({
     where: { reportingManagerId: userId, isActive: true },
@@ -409,6 +478,7 @@ export function serializeTask(task: any, options: { scopedEmployeeUserId?: strin
     afterImageUrl,
     afterLatitude: afterImageObj?.latitude ?? task.afterLatitude ?? null,
     afterLongitude: afterImageObj?.longitude ?? task.afterLongitude ?? null,
+    maintenanceVideos: Array.isArray(task.maintenanceVideos) ? task.maintenanceVideos : [],
   };
 }
 
@@ -525,6 +595,7 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
       const visitSitePhotos = Array.isArray((visit as any).sitePhotos) ? (visit as any).sitePhotos : [];
       const visitBeforeImage = (visit as any).beforeImageUrl ?? visitSitePhotos[0] ?? null;
       const visitAfterImage = (visit as any).afterImageUrl ?? visitSitePhotos[1] ?? null;
+      const visitMaintenanceVideos = Array.isArray((visit as any).maintenanceVideos) ? (visit as any).maintenanceVideos : [];
       return {
         id: `amc_${visit.id}`,
         jobType: "AMC",
@@ -545,6 +616,7 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
         afterImageUrl: visitAfterImage,
         sitePhotos: visitSitePhotos,
         images: visitSitePhotos,
+        maintenanceVideos: visitMaintenanceVideos,
         completedAt: visit.completedAt?.toISOString() ?? null,
         createdAt: visit.createdAt.toISOString(),
         updatedAt: visit.updatedAt.toISOString(),
@@ -896,6 +968,12 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         savedAfterUrl = saved[0] || input.afterImageUrl;
       }
 
+      // Process maintenance videos to Cloudflare R2 for AMC visits
+      let savedMaintenanceVideos: string[] = [];
+      if (input.maintenanceVideos && Array.isArray(input.maintenanceVideos) && input.maintenanceVideos.length > 0) {
+        savedMaintenanceVideos = await processAndSaveBase64Videos(input.maintenanceVideos, cleanAmcId, "AMC", visit.customer.fullName);
+      }
+
       const updated = await prisma.amcVisit.update({
         where: { id: cleanAmcId },
         data: {
@@ -907,6 +985,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
           completedByName: completedByName,
           beforeImageUrl: savedBeforeUrl,
           afterImageUrl: savedAfterUrl,
+          maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : undefined,
         },
       });
 
@@ -929,6 +1008,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         afterImageUrl: updated.afterImageUrl ?? null,
         sitePhotos: [],
         images: [],
+        maintenanceVideos: Array.isArray(updated.maintenanceVideos) ? updated.maintenanceVideos : [],
         completionMessage: updated.visitNotes ?? updated.notes ?? null,
       };
     }
@@ -969,6 +1049,12 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
     const finalSitePhotos = savedInputPhotos.length > 0
       ? Array.from(new Set(savedInputPhotos))
       : existingSitePhotos;
+
+    // Process maintenance videos to Cloudflare R2
+    let savedMaintenanceVideos: string[] = [];
+    if (input.maintenanceVideos && Array.isArray(input.maintenanceVideos) && input.maintenanceVideos.length > 0) {
+      savedMaintenanceVideos = await processAndSaveBase64Videos(input.maintenanceVideos, id, task.jobType, task.customerName);
+    }
 
     // Process before/after images to Cloudflare R2
     let savedBeforeUrl = task.beforeImageUrl;
@@ -1020,6 +1106,8 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
             afterLatitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : undefined,
             afterLongitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : undefined,
             sitePhotos: finalSitePhotos,
+            maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : (input.maintenanceVideos as any),
+            photoRemarks: input.photoRemarks as any,
             completedAt: nextTaskStatus === TaskStatus.COMPLETED ? new Date() : undefined,
           },
         });
@@ -1082,6 +1170,8 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         beforeImageUrl: savedBeforeUrl,
         afterImageUrl: savedAfterUrl,
         sitePhotos: finalSitePhotos,
+        maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : input.maintenanceVideos,
+        photoRemarks: input.photoRemarks,
         completedAt: new Date(),
       };
     }

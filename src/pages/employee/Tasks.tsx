@@ -11,7 +11,7 @@ import {
   MapPin, Phone, User, Clock, CheckCircle, X,
   Calendar, Briefcase, ClipboardList, MessageSquare,
   Navigation, AlertCircle, ArrowLeft, Loader2, FileText, Camera, Image as ImageIcon,
-  Search, Filter, SlidersHorizontal, RotateCcw,
+  Search, Filter, SlidersHorizontal, RotateCcw, Video,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ const jobTypeIcon: Record<string, string> = {
   Complaint: "⚠️",
   Survey: "📐",
   "Site Visit": "📍",
+  "Maintenance Visit": "🔧",
 };
 
 // ─── Mock notes per task (keyed by task id) ────────────────────────────────────
@@ -138,7 +139,8 @@ function TaskDetailDrawer({
   const [documentUrl, setDocumentUrl] = useState("");
   const normalizedJobType = String(task.jobType ?? "").toLowerCase();
   const isSiteVisit = normalizedJobType === "site visit" || (normalizedJobType.includes("site") && !normalizedJobType.includes("amc")) || normalizedJobType.includes("survey") || task.taskType === "SITE_VISIT";
-  const requiresPhotos = ["cleaning", "maintenance", "service", "amc", "visit", "installation", "complaint"].some(t => normalizedJobType.includes(t));
+  const isMaintenanceVisit = normalizedJobType === "maintenance visit" || normalizedJobType.includes("maintenance");
+  const requiresPhotos = ["cleaning", "service", "amc", "installation", "complaint"].some(t => normalizedJobType.includes(t)) && !isMaintenanceVisit;
   const updateTaskPhotosMutation = useUpdateTaskPhotos();
   const [sitePhotos, setSitePhotos] = useState<string[]>(
     Array.isArray(task.sitePhotos) ? task.sitePhotos : []
@@ -156,35 +158,43 @@ function TaskDetailDrawer({
   const [afterLng, setAfterLng] = useState<number | null>(task.afterLongitude ?? null);
   const [isProcessingBefore, setIsProcessingBefore] = useState(false);
   const [isProcessingAfter, setIsProcessingAfter] = useState(false);
+  const [maintenanceVideos, setMaintenanceVideos] = useState<string[]>([]);
+  const [isProcessingVideo, setIsProcessingVideo] = useState(false);
+  const [photoRemarks, setPhotoRemarks] = useState<Record<number, string>>({});
+  const [currentPhotoRemark, setCurrentPhotoRemark] = useState("");
+
+  const convertVideoToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+    });
+  };
 
   const isSubmitDisabled = isSiteVisit
-    ? (sitePhotos.length < 4 || sitePhotos.length > 10)
-    : (requiresPhotos ? (!beforeImage || !afterImage) : false);
+    ? (sitePhotos.length < 1)
+    : isMaintenanceVisit
+      ? (sitePhotos.length < 2)
+      : (requiresPhotos ? (!beforeImage || !afterImage) : false);
 
   const requirementMessage = isSiteVisit
-    ? (sitePhotos.length < 4 ? `Upload at least ${4 - sitePhotos.length} more site photo(s) (4–10 required) to enable completion` : (sitePhotos.length > 10 ? "Maximum 10 site photos allowed" : ""))
-    : (requiresPhotos
-        ? (!beforeImage && !afterImage
-            ? "Upload both Before and After work photos with GPS stamps to enable completion"
-            : !beforeImage
-            ? "Upload Before work photo to enable completion"
-            : !afterImage
-            ? "Upload After work photo to enable completion"
-            : "")
-        : "");
+    ? (sitePhotos.length < 1 ? `Upload at least ${1 - sitePhotos.length} more site photo(s) (min 1 required) to enable completion` : "")
+    : isMaintenanceVisit
+      ? (sitePhotos.length < 2 ? `Upload at least ${2 - sitePhotos.length} more photo(s) (min 2 required) to enable completion` : "")
+      : (requiresPhotos
+          ? (!beforeImage && !afterImage
+              ? "Upload both Before and After work photos with GPS stamps to enable completion"
+              : !beforeImage
+              ? "Upload Before work photo to enable completion"
+              : !afterImage
+              ? "Upload After work photo to enable completion"
+              : "")
+          : "");
 
   const handleSitePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-
-    if (sitePhotos.length >= 10) {
-      toast({
-        title: "Photo Limit Reached",
-        description: "You can upload maximum 10 photos for this site visit.",
-        variant: "destructive"
-      });
-      return;
-    }
 
     setIsProcessingSitePhoto(true);
     try {
@@ -195,8 +205,7 @@ function TaskDetailDrawer({
         : `📍 GPS N/A | ${dateStr}`;
 
       const newPhotos: string[] = [];
-      const remainingSlots = 10 - sitePhotos.length;
-      for (const file of files.slice(0, remainingSlots)) {
+      for (const file of files) {
         const b64 = await watermarkImage(file, label);
         newPhotos.push(b64);
       }
@@ -218,7 +227,7 @@ function TaskDetailDrawer({
 
       toast({
         title: "Site Photos Added 📸",
-        description: `Uploaded ${newPhotos.length} site photo(s). Total: ${updatedList.length}/10 (Min 4 required). Visible immediately to coordinators.`
+        description: `Uploaded ${newPhotos.length} site photo(s). Total: ${updatedList.length} photos. Visible immediately to coordinators.`
       });
     } catch (err) {
       console.error(err);
@@ -231,6 +240,17 @@ function TaskDetailDrawer({
       setIsProcessingSitePhoto(false);
       e.target.value = "";
     }
+  };
+
+  const handleAddPhotoRemark = (photoIndex: number) => {
+    const updatedRemarks = { ...photoRemarks };
+    if (currentPhotoRemark.trim()) {
+      updatedRemarks[photoIndex] = currentPhotoRemark.trim();
+    } else {
+      delete updatedRemarks[photoIndex];
+    }
+    setPhotoRemarks(updatedRemarks);
+    setCurrentPhotoRemark("");
   };
 
   const removeSitePhoto = (index: number) => {
@@ -450,78 +470,258 @@ function TaskDetailDrawer({
 
 
 
-          {/* Site Visit Photos Upload Section (Min 4 - Max 10 Photos) */}
+          {/* Maintenance Visit Photos & Videos Upload Section (Min 2 Photos + Optional Videos) */}
+          {isMaintenanceVisit && task.status !== "completed" && (
+            <div className="px-6 pb-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Camera className="h-4 w-4 text-emerald-600" /> Maintenance Photos (Min 2 Required)
+                </h3>
+                <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0.5", sitePhotos.length >= 2 ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300")}>
+                  📸 {sitePhotos.length} Photos
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {sitePhotos.map((img, idx) => (
+                  <div key={idx} className="space-y-2">
+                    <div className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group shadow-sm bg-slate-100">
+                      <img src={buildAssetUrlFromPath(img) || img} alt={`Maintenance Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeSitePhoto(idx)}
+                        className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-opacity opacity-90 shadow"
+                        title="Remove photo"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                      <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                        #{idx + 1}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <Input
+                        placeholder="Add remark (optional)..."
+                        value={photoRemarks[idx] || ""}
+                        onChange={(e) => {
+                          const updatedRemarks = { ...photoRemarks };
+                          updatedRemarks[idx] = e.target.value;
+                          setPhotoRemarks(updatedRemarks);
+                        }}
+                        className="text-xs h-8"
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => setPhotoSourceModalOpen(true)}
+                  disabled={isProcessingSitePhoto}
+                  className="flex flex-col items-center justify-center aspect-square rounded-xl border-2 border-dashed border-emerald-300 cursor-pointer hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 transition-all group"
+                >
+                  {isProcessingSitePhoto ? (
+                    <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+                  ) : (
+                    <>
+                      <Camera className="h-5 w-5 text-emerald-600 mb-1 group-hover:scale-110 transition-transform" />
+                      <span className="text-[9px] text-emerald-900 font-bold text-center px-1">Add Photo</span>
+                      <span className="text-[8px] text-emerald-600/80 font-medium">Camera / Gallery</span>
+                    </>
+                  )}
+                </button>
+
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleSitePhotoSelect}
+                />
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleSitePhotoSelect}
+                />
+              </div>
+              <p className="text-[10px] text-slate-400 italic">
+                * Upload at least 2 photos for maintenance documentation. No maximum limit.
+              </p>
+
+              {/* Video Upload Section */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Video className="h-4 w-4 text-blue-600" /> Maintenance Videos (Optional)
+                  </h3>
+                  <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-300">
+                    🎥 {maintenanceVideos.length} Videos
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {maintenanceVideos.map((video, idx) => (
+                    <div key={idx} className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 group shadow-sm bg-slate-100">
+                      <video 
+                        src={video.startsWith('data:') ? video : video} 
+                        className="w-full h-full object-cover" 
+                        controls 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = maintenanceVideos.filter((_, i) => i !== idx);
+                          setMaintenanceVideos(updated);
+                        }}
+                        className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-opacity opacity-90 shadow"
+                        title="Remove video"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                      <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                        Video #{idx + 1}
+                      </span>
+                    </div>
+                  ))}
+
+                  <label className="flex flex-col items-center justify-center aspect-video rounded-xl border-2 border-dashed border-blue-300 cursor-pointer hover:border-blue-500 bg-blue-50/40 hover:bg-blue-50/80 transition-all group">
+                    {isProcessingVideo ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                    ) : (
+                      <>
+                        <Video className="h-5 w-5 text-blue-600 mb-1 group-hover:scale-110 transition-transform" />
+                        <span className="text-[9px] text-blue-900 font-bold text-center px-1">Add Video</span>
+                        <span className="text-[8px] text-blue-600/80 font-medium">No limit</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="video/*"
+                      multiple
+                      className="hidden"
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length === 0) return;
+
+                        setIsProcessingVideo(true);
+                        try {
+                          const videoBase64Array: string[] = [];
+                          for (const file of files) {
+                            const videoBase64 = await convertVideoToBase64(file);
+                            videoBase64Array.push(videoBase64);
+                          }
+                          setMaintenanceVideos([...maintenanceVideos, ...videoBase64Array]);
+                          toast({
+                            title: "Videos Added 🎥",
+                            description: `${videoBase64Array.length} video(s) have been added successfully.`
+                          });
+                        } catch (err) {
+                          console.error(err);
+                          toast({
+                            title: "Video Upload Failed",
+                            description: "Failed to add video(s).",
+                            variant: "destructive"
+                          });
+                        } finally {
+                          setIsProcessingVideo(false);
+                          e.target.value = "";
+                        }
+                      }}
+                      disabled={isProcessingVideo}
+                    />
+                  </label>
+                </div>
+                <p className="text-[10px] text-slate-400 italic">
+                  * Optionally upload videos to document the maintenance work. No maximum limit.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Site Visit Photos Upload Section (Min 1 Photo Required) */}
           {isSiteVisit && task.status !== "completed" && (
             <div className="px-6 pb-5 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Camera className="h-4 w-4 text-emerald-600" /> Site Visit Photos (Min 4 - Max 10 Compulsory)
+                  <Camera className="h-4 w-4 text-emerald-600" /> Site Visit Photos (Min 1 Required)
                 </h3>
-                <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0.5", sitePhotos.length >= 4 && sitePhotos.length <= 10 ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300")}>
-                  📸 {sitePhotos.length} / 10 Photos
+                <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0.5", sitePhotos.length >= 1 ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300")}>
+                  📸 {sitePhotos.length} Photos
                 </Badge>
               </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {sitePhotos.map((img, idx) => (
-                  <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group shadow-sm bg-slate-100">
-                    <img src={buildAssetUrlFromPath(img) || img} alt={`Site Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeSitePhoto(idx)}
-                      className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-opacity opacity-90 shadow"
-                      title="Remove photo"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                    <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
-                      #{idx + 1}
-                    </span>
+                  <div key={idx} className="space-y-2">
+                    <div className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group shadow-sm bg-slate-100">
+                      <img src={buildAssetUrlFromPath(img) || img} alt={`Site Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeSitePhoto(idx)}
+                        className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-opacity opacity-90 shadow"
+                        title="Remove photo"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                      <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                        #{idx + 1}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <Input
+                        placeholder="Add remark (optional)..."
+                        value={photoRemarks[idx] || ""}
+                        onChange={(e) => {
+                          const updatedRemarks = { ...photoRemarks };
+                          updatedRemarks[idx] = e.target.value;
+                          setPhotoRemarks(updatedRemarks);
+                        }}
+                        className="text-xs h-8"
+                      />
+                    </div>
                   </div>
                 ))}
 
-                {sitePhotos.length < 10 && (
-                  <>
-                    {/* Trigger button for Camera/Gallery modal */}
-                    <button
-                      type="button"
-                      onClick={() => setPhotoSourceModalOpen(true)}
-                      disabled={isProcessingSitePhoto}
-                      className="flex flex-col items-center justify-center aspect-square rounded-xl border-2 border-dashed border-emerald-300 cursor-pointer hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 transition-all group"
-                    >
-                      {isProcessingSitePhoto ? (
-                        <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
-                      ) : (
-                        <>
-                          <Camera className="h-5 w-5 text-emerald-600 mb-1 group-hover:scale-110 transition-transform" />
-                          <span className="text-[9px] text-emerald-900 font-bold text-center px-1">Add Photo</span>
-                          <span className="text-[8px] text-emerald-600/80 font-medium">Camera / Gallery</span>
-                        </>
-                      )}
-                    </button>
+                <button
+                  type="button"
+                  onClick={() => setPhotoSourceModalOpen(true)}
+                  disabled={isProcessingSitePhoto}
+                  className="flex flex-col items-center justify-center aspect-square rounded-xl border-2 border-dashed border-emerald-300 cursor-pointer hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 transition-all group"
+                >
+                  {isProcessingSitePhoto ? (
+                    <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+                  ) : (
+                    <>
+                      <Camera className="h-5 w-5 text-emerald-600 mb-1 group-hover:scale-110 transition-transform" />
+                      <span className="text-[9px] text-emerald-900 font-bold text-center px-1">Add Photo</span>
+                      <span className="text-[8px] text-emerald-600/80 font-medium">Camera / Gallery</span>
+                    </>
+                  )}
+                </button>
 
-                    {/* Hidden inputs for Camera and Gallery */}
-                    <input
-                      ref={cameraInputRef}
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={handleSitePhotoSelect}
-                    />
-                    <input
-                      ref={galleryInputRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={handleSitePhotoSelect}
-                    />
-                  </>
-                )}
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleSitePhotoSelect}
+                />
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleSitePhotoSelect}
+                />
               </div>
               <p className="text-[10px] text-slate-400 italic">
-                * Click "Add Photo" to take a photo using your <strong>Camera</strong> or pick 4 to 10 site photos from your <strong>Gallery</strong>. Photos sync live with the coordinator dashboard.
+                * Click "Add Photo" to take a photo using your <strong>Camera</strong> or pick site photos from your <strong>Gallery</strong>. Minimum 1 photo required. No maximum limit. Photos sync live with the coordinator dashboard.
               </p>
             </div>
           )}
@@ -576,8 +776,8 @@ function TaskDetailDrawer({
             </DialogContent>
           </Dialog>
 
-          {/* Standard Before & After Photo Inputs for Non-Site Visit tasks */}
-          {!isSiteVisit && task.status !== "completed" && requiresPhotos && (
+          {/* Standard Before & After Photo Inputs for Non-Site Visit and Non-Maintenance Visit tasks */}
+          {!isSiteVisit && !isMaintenanceVisit && task.status !== "completed" && requiresPhotos && (
             <div className="px-6 pb-5 space-y-3">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Camera className="h-4 w-4" /> Before & After Photos (GPS Proof)
@@ -779,6 +979,29 @@ function TaskDetailDrawer({
               </div>
             </div>
           )}
+
+          {/* Maintenance Visit Videos Display */}
+          {task.status === "completed" && task.maintenanceVideos && task.maintenanceVideos.length > 0 && (
+            <div className="px-6 pb-5 space-y-3">
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Video className="h-4 w-4 text-blue-600" /> Maintenance Videos ({task.maintenanceVideos.length})
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                {task.maintenanceVideos.map((video, i) => (
+                  <div key={i} className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100">
+                    <video 
+                      src={video.startsWith('data:') ? video : video} 
+                      className="w-full h-full object-cover" 
+                      controls 
+                    />
+                    <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm">
+                      Video #{i + 1}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer action */}
@@ -808,6 +1031,8 @@ function TaskDetailDrawer({
                       afterLatitude: afterLat,
                       afterLongitude: afterLng,
                       sitePhotos: sitePhotos.length > 0 ? sitePhotos : undefined,
+                      maintenanceVideos: maintenanceVideos.length > 0 ? maintenanceVideos : undefined,
+                      photoRemarks: Object.keys(photoRemarks).length > 0 ? photoRemarks : undefined,
                     });
                     // Only close drawer after successful backend confirmation
                     onClose();
@@ -987,7 +1212,7 @@ export default function EmployeeTasks() {
         id: `task-${t.id}`,
         type: "task",
         badge: t.jobType,
-        badgeColor: "bg-blue-50 text-blue-700 border-blue-200",
+        badgeColor: t.jobType === "Maintenance Visit" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-blue-50 text-blue-700 border-blue-200",
         description: t.description,
         remarks: t.completionMessage,
         proofUrl: t.completionDocumentUrl,
@@ -998,7 +1223,7 @@ export default function EmployeeTasks() {
         id: `submission-${s.id}`,
         type: "submission",
         badge: "Daily Task Update",
-        badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+        badgeColor: "bg-purple-50 text-purple-700 border-purple-200",
         description: s.description,
         remarks: s.proofNotes,
         hoursSpent: s.hoursSpent,
@@ -1041,6 +1266,8 @@ export default function EmployeeTasks() {
           afterLatitude: payload?.afterLatitude,
           afterLongitude: payload?.afterLongitude,
           sitePhotos: payload?.sitePhotos,
+          maintenanceVideos: payload?.maintenanceVideos,
+          photoRemarks: payload?.photoRemarks,
         }
       });
       toast({

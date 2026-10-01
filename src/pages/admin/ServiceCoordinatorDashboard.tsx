@@ -6,14 +6,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
-import { 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  Phone, 
-  User, 
-  Camera, 
-  Star, 
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  Phone,
+  User,
+  Camera,
+  Star,
   IndianRupee,
   RefreshCw,
   Filter,
@@ -22,12 +23,16 @@ import {
   AlertCircle,
   Image as ImageIcon,
   FileText,
-  TrendingUp
+  TrendingUp,
+  Plus,
+  Video,
+  Wrench
 } from "lucide-react";
 import { format } from "date-fns";
-import { useListTasks, useListCustomers, useListEmployees, buildAssetUrlFromPath } from "@/lib/api-client";
+import { useListTasks, useListCustomers, useListEmployees, useCreateTaskAssignment, buildAssetUrlFromPath } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface TaskWithDetails {
@@ -70,10 +75,17 @@ export default function ServiceCoordinatorDashboard() {
   const [dateFilter, setDateFilter] = useState("all");
   const [selectedTask, setSelectedTask] = useState<TaskWithDetails | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState("");
+  const [maintenanceTask, setMaintenanceTask] = useState("");
+  const [maintenanceAddress, setMaintenanceAddress] = useState("");
+  const [maintenancePhone, setMaintenancePhone] = useState("");
+  const [scheduledDate, setScheduledDate] = useState("");
   
   const { data: tasks, isLoading: tasksLoading, refetch: refetchTasks } = useListTasks({}, { query: { refetchInterval: 3000 } });
   const { data: customers } = useListCustomers({ limit: 200 });
   const { data: employees } = useListEmployees({ limit: 200 });
+  const createTaskMutation = useCreateTaskAssignment();
 
   const filteredTasks = tasks?.filter(task => {
     const matchesSearch = 
@@ -115,6 +127,54 @@ export default function ServiceCoordinatorDashboard() {
     toast({ title: "Refreshed", description: "Task data has been updated." });
   };
 
+  const handleMaintenanceVisitSubmit = async () => {
+    if (!selectedEmployee || !maintenanceTask.trim() || !maintenanceAddress.trim() || !maintenancePhone.trim() || !scheduledDate) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const scheduledDateTime = new Date(scheduledDate);
+      scheduledDateTime.setHours(9, 0, 0, 0); // Default to 9 AM
+
+      await createTaskMutation.mutateAsync({
+        data: {
+          employeeUserId: selectedEmployee,
+          jobType: "Maintenance Visit",
+          description: maintenanceTask.trim(),
+          customerName: "Maintenance Customer",
+          customerPhone: maintenancePhone.trim(),
+          address: maintenanceAddress.trim(),
+          scheduledTime: scheduledDateTime.toISOString(),
+        },
+      });
+
+      toast({
+        title: "Maintenance Visit Assigned",
+        description: "Task has been successfully assigned to the employee.",
+      });
+
+      // Reset form
+      setSelectedEmployee("");
+      setMaintenanceTask("");
+      setMaintenanceAddress("");
+      setMaintenancePhone("");
+      setScheduledDate("");
+      setIsMaintenanceModalOpen(false);
+      refetchTasks();
+    } catch (error) {
+      toast({
+        title: "Assignment Failed",
+        description: "Failed to assign maintenance visit. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const openTaskDetail = (task: TaskWithDetails) => {
     setSelectedTask(task);
     setIsDetailModalOpen(true);
@@ -127,10 +187,19 @@ export default function ServiceCoordinatorDashboard() {
           title="Service Coordinator Dashboard"
           description="Monitor tasks, track progress, view images, and manage payments"
           action={
-            <Button variant="outline" onClick={handleRefresh} className="gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                onClick={() => setIsMaintenanceModalOpen(true)} 
+                className="gap-2 bg-emerald-600 hover:bg-emerald-500"
+              >
+                <Plus className="h-4 w-4" />
+                Assign Maintenance Visit
+              </Button>
+              <Button variant="outline" onClick={handleRefresh} className="gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </Button>
+            </div>
           }
         />
 
@@ -277,6 +346,105 @@ export default function ServiceCoordinatorDashboard() {
             onOpenChange={setIsDetailModalOpen}
           />
         )}
+
+        {/* Maintenance Visit Assignment Modal */}
+        <Dialog open={isMaintenanceModalOpen} onOpenChange={setIsMaintenanceModalOpen}>
+          <DialogContent className="sm:max-w-lg rounded-2xl border-none shadow-2xl bg-white">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-black text-slate-900 flex items-center gap-2">
+                <Plus className="h-5 w-5 text-emerald-600" /> Assign Maintenance Visit
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                Assign a maintenance visit task to an employee with image and video upload requirements.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-500 uppercase tracking-widest bg-slate-100/60 px-2 py-1 rounded w-fit">Select Employee</label>
+                <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Choose an employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees?.map((emp) => (
+                      <SelectItem key={emp.userId || emp.id} value={emp.userId || String(emp.id)}>
+                        {emp.name} - {emp.role}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-500 uppercase tracking-widest bg-slate-100/60 px-2 py-1 rounded w-fit">Task Description</label>
+                <Textarea
+                  value={maintenanceTask}
+                  onChange={(e) => setMaintenanceTask(e.target.value)}
+                  placeholder="Describe the maintenance task..."
+                  className="min-h-[100px] p-3 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent font-medium bg-slate-50/50 resize-none text-slate-800 leading-relaxed"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-500 uppercase tracking-widest bg-slate-100/60 px-2 py-1 rounded w-fit">Customer Phone</label>
+                <Input
+                  value={maintenancePhone}
+                  onChange={(e) => setMaintenancePhone(e.target.value)}
+                  placeholder="Customer phone number"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent font-semibold text-slate-800 bg-slate-50/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-500 uppercase tracking-widest bg-slate-100/60 px-2 py-1 rounded w-fit">Address</label>
+                <Textarea
+                  value={maintenanceAddress}
+                  onChange={(e) => setMaintenanceAddress(e.target.value)}
+                  placeholder="Visit address..."
+                  className="min-h-[80px] p-3 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent font-medium bg-slate-50/50 resize-none text-slate-800 leading-relaxed"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-500 uppercase tracking-widest bg-slate-100/60 px-2 py-1 rounded w-fit">Scheduled Date</label>
+                <Input
+                  type="date"
+                  value={scheduledDate}
+                  onChange={(e) => setScheduledDate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent font-semibold text-slate-800 bg-slate-50/50"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsMaintenanceModalOpen(false)}
+                className="font-bold rounded-xl px-5"
+                disabled={createTaskMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleMaintenanceVisitSubmit}
+                className="font-bold rounded-xl gap-2 px-5 bg-emerald-600 text-white hover:bg-emerald-500"
+                disabled={createTaskMutation.isPending}
+              >
+                {createTaskMutation.isPending ? (
+                  "Assigning..."
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Assign Task
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </SidebarLayout>
   );
@@ -315,6 +483,11 @@ function TaskList({ tasks, onTaskClick, isLoading }: {
                 <div className="flex items-center gap-2 mb-2">
                   <StatusBadge status={task.status.toLowerCase()} />
                   <span className="text-sm font-medium text-slate-600">{task.jobType}</span>
+                  {task.jobType === "Maintenance Visit" && (
+                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs">
+                      Maintenance
+                    </Badge>
+                  )}
                 </div>
                 <h3 className="font-semibold text-slate-900 mb-1">{task.description}</h3>
                 <div className="flex items-center gap-4 text-sm text-slate-600">
@@ -386,6 +559,12 @@ function TaskDetailModal({ task, open, onOpenChange }: {
               <div className="flex items-center gap-2 mt-2">
                 <StatusBadge status={task.status.toLowerCase()} />
                 <span className="text-sm text-slate-600">{task.jobType}</span>
+                {task.jobType === "Maintenance Visit" && (
+                  <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs">
+                    <Wrench className="h-3 w-3 mr-1" />
+                    Maintenance
+                  </Badge>
+                )}
               </div>
             </div>
             <button onClick={() => onOpenChange(false)} className="text-slate-400 hover:text-slate-600">
@@ -515,6 +694,33 @@ function TaskDetailModal({ task, open, onOpenChange }: {
                   </div>
                 );
               })()}
+
+              {/* Maintenance Videos Display */}
+              {task.maintenanceVideos && Array.isArray(task.maintenanceVideos) && task.maintenanceVideos.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-sm text-slate-500 mb-2 flex items-center gap-2">
+                    <Video className="h-4 w-4 text-blue-600" />
+                    Maintenance Videos ({task.maintenanceVideos.length})
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {task.maintenanceVideos.map((video, index) => {
+                      const videoUrl = video.startsWith('data:') ? video : video;
+                      return (
+                        <div key={index} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-video group">
+                          <video 
+                            src={videoUrl} 
+                            className="w-full h-full object-cover" 
+                            controls
+                          />
+                          <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+                            Video #{index + 1}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

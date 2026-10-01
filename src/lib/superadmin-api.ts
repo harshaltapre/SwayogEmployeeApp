@@ -135,6 +135,48 @@ export interface ImportUserRow {
   password: string;
   role: UserRole;
   phoneNumber?: string;
+  // Employee / Sub-admin fields
+  jobRole?: string;
+  zone?: string;
+  monthlySalaryInr?: number;
+  permissions?: string[];
+  reportingManagerId?: string;
+  departmentId?: string;
+  // Customer fields
+  city?: string;
+  state?: string;
+  address?: string;
+  systemSizeKw?: number;
+  projectType?: string;
+  installationDate?: string;
+  warrantyExpiry?: string;
+  panelBrand?: string;
+  inverterBrand?: string;
+  inverterName?: string;
+  inverterModel?: string;
+  inverterUid?: string;
+  inverterLoginId?: string;
+  inverterPassword?: string;
+  inverterApiKey?: string;
+  dataLoggerSrNo?: string;
+  inverterSrNo?: string;
+  portalPassword?: string;
+  amcStatus?: "active" | "expired" | "none" | "ACTIVE" | "EXPIRED" | "NONE";
+  amcExpiryDate?: string;
+  contractStartDate?: string;
+  contractEndDate?: string;
+  cleaningsPerMonth?: number | string;
+  clientType?: string;
+  consumerNumber?: string;
+  monthlyCleaningRate?: number;
+  paymentTerms?: string;
+  remarks?: string;
+  status?: "active" | "inactive" | "ACTIVE" | "INACTIVE";
+  // Partner fields
+  businessName?: string;
+  serviceZone?: string;
+  // Admin / General fields
+  designationTitle?: string;
 }
 
 export interface ForceSyncResult {
