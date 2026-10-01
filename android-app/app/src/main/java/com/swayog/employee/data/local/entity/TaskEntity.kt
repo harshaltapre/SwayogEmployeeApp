@@ -47,6 +47,7 @@ data class TaskEntity(
     val sitePhotosJson: String? = null, // JSON array of site photo URLs
     val beforeImagesJson: String? = null, // JSON array of before image URLs for AMC visits
     val afterImagesJson: String? = null, // JSON array of after image URLs for AMC visits
+    val maintenanceVideosJson: String? = null, // JSON array of maintenance video URLs
     val assignedEmployeeName: String? = null, // Employee name for customer notifications
     val assignedEmployeePhone: String? = null // Employee phone for customer notifications
 ) {
@@ -63,6 +64,8 @@ data class TaskEntity(
                 sitePhotosList = fallbackList
             }
         }
+
+        val maintenanceVideosList = maintenanceVideosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList().filter { p -> p.isNotBlank() } } catch(_: Exception) { null } }
 
         val normalizedJobType = jobType?.lowercase().orEmpty()
         val inferredTaskType = when {
@@ -104,6 +107,7 @@ data class TaskEntity(
             taskType = inferredTaskType,
             images = sitePhotosList,
             sitePhotos = sitePhotosList,
+            maintenanceVideos = maintenanceVideosList,
             assignedEmployeeName = assignedEmployeeName,
             assignedEmployeePhone = assignedEmployeePhone
         )

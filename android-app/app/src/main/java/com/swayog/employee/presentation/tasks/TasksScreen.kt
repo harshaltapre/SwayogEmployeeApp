@@ -314,7 +314,7 @@ fun TasksScreen(
                             }
                         }
                     },
-                    onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng, taskType, images, beforeImages, afterImages, sitePhotos ->
+                    onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng, taskType, images, beforeImages, afterImages, sitePhotos, maintenanceVideos ->
                         viewModel.completeTask(
                             taskId = task.id,
                             message = msg,
@@ -329,7 +329,8 @@ fun TasksScreen(
                             images = images,
                             beforeImages = beforeImages,
                             afterImages = afterImages,
-                            sitePhotos = sitePhotos
+                            sitePhotos = sitePhotos,
+                            maintenanceVideos = maintenanceVideos
                         ) { result ->
                             if (result.isSuccess) {
                                 selectedTask = null
@@ -696,7 +697,7 @@ fun TaskDetailDialog(
     task: Task,
     onDismiss: () -> Unit,
     onStartTask: () -> Unit,
-    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?, List<String>?) -> Unit,
+    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?, List<String>?, List<String>?) -> Unit,
     serverUrl: String? = null,
     viewModel: TasksViewModel = hiltViewModel()
 ) {
@@ -712,6 +713,8 @@ fun TaskDetailDialog(
     var uploadedImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var beforeImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var afterImages by remember { mutableStateOf<List<String>>(emptyList()) }
+    // Maintenance videos
+    var maintenanceVideos by remember { mutableStateOf<List<String>>(emptyList()) }
     
     // Photo state: watermarked bitmaps for preview
     var beforeBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -854,6 +857,26 @@ fun TaskDetailDialog(
             }
         }
         pendingPhotoType = null
+    }
+
+    // Video launcher for maintenance videos
+    val videoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+                if (bytes != null) {
+                    val base64String = "data:video/mp4;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    maintenanceVideos = maintenanceVideos + base64String
+                    Toast.makeText(context, "Video added successfully", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to load video: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     var isCustomCameraOpen by remember { mutableStateOf(false) }
@@ -1118,9 +1141,9 @@ fun TaskDetailDialog(
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
                             Text(
-                                text = "Minimum 4 photos required (${uploadedImages.size}/4 uploaded)",
+                                text = "Minimum 1 photo required (${uploadedImages.size} uploaded)",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (uploadedImages.size >= 4) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.error,
+                                color = if (uploadedImages.size >= 1) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.SemiBold
                             )
 
@@ -1170,7 +1193,7 @@ fun TaskDetailDialog(
                                             CircularProgressIndicator(modifier = Modifier.size(20.dp))
                                         } else {
                                             Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
-                                            Text("Add Site Photo (${uploadedImages.size}/10)", style = MaterialTheme.typography.labelMedium)
+                                            Text("Add Site Photo", style = MaterialTheme.typography.labelMedium)
                                         }
                                     }
                                 }
@@ -1195,10 +1218,10 @@ fun TaskDetailDialog(
 
                             SwayogButton(
                                 text = if (isSubmitting) "Submitting..." else if (isProcessing) "Processing..." else "Submit Site Visit",
-                                enabled = uploadedImages.size >= 4 && completionMessage.trim().length >= 3 && !isProcessing && !isSubmitting,
+                                enabled = uploadedImages.size >= 1 && completionMessage.trim().length >= 3 && !isProcessing && !isSubmitting,
                                 onClick = {
-                                    if (uploadedImages.size < 4) {
-                                        Toast.makeText(context, "Minimum 4 site photos required", Toast.LENGTH_SHORT).show()
+                                    if (uploadedImages.size < 1) {
+                                        Toast.makeText(context, "Minimum 1 site photo required", Toast.LENGTH_SHORT).show()
                                     } else if (completionMessage.trim().length < 3) {
                                         Toast.makeText(context, "Observations description must be at least 3 characters", Toast.LENGTH_SHORT).show()
                                     } else {
@@ -1342,7 +1365,7 @@ fun TaskDetailDialog(
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
                             Text(
-                                text = "Required: At least 2 maintenance photos (${uploadedImages.size}/2 uploaded)",
+                                text = "Required: At least 2 maintenance photos (${uploadedImages.size} uploaded)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (uploadedImages.size >= 2) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.SemiBold
@@ -1382,25 +1405,88 @@ fun TaskDetailDialog(
                                 }
                             }
 
-                            if (uploadedImages.size < 10) {
-                                OutlinedButton(
-                                    onClick = { launchPhotoPicker("site_visit") },
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                                    enabled = !isProcessing,
-                                    shape = RoundedCornerShape(8.dp)
+                            OutlinedButton(
+                                onClick = { launchPhotoPicker("site_visit") },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                enabled = !isProcessing,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (isProcessing && pendingPhotoType == "site_visit") {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                    } else {
+                                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                                        Text("Add Maintenance Photo", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Maintenance Videos Section
+                            Text(
+                                text = "Maintenance Videos (Optional)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "Videos uploaded: ${maintenanceVideos.size}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            if (maintenanceVideos.isNotEmpty()) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        if (isProcessing && pendingPhotoType == "site_visit") {
-                                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                        } else {
-                                            Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
-                                            Text("Add Maintenance Photo (${uploadedImages.size}/10)", style = MaterialTheme.typography.labelMedium)
+                                    itemsIndexed(maintenanceVideos) { idx, _ ->
+                                        Box(modifier = Modifier.size(100.dp)) {
+                                            Card(
+                                                modifier = Modifier.fillMaxSize(),
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.VideoLibrary,
+                                                        contentDescription = "Video ${idx + 1}",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(32.dp)
+                                                    )
+                                                }
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    maintenanceVideos = maintenanceVideos.toMutableList().apply { removeAt(idx) }
+                                                },
+                                                modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove video", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                            }
                                         }
                                     }
                                 }
                             }
 
-                            Text("Maintenance Notes", fontWeight = FontWeight.Bold)
+                            OutlinedButton(
+                                onClick = { videoLauncher.launch("video/*") },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Default.VideoLibrary, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Text("Add Maintenance Video", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text("Maintenance Notes (Optional)", fontWeight = FontWeight.Bold)
 
                             SwayogTextField(
                                 value = completionMessage,
@@ -1419,15 +1505,13 @@ fun TaskDetailDialog(
 
                             SwayogButton(
                                 text = if (isSubmitting) "Submitting..." else if (isProcessing) "Processing..." else "Mark Task Completed",
-                                enabled = uploadedImages.size >= 2 && completionMessage.trim().length >= 3 && !isProcessing && !isSubmitting,
+                                enabled = uploadedImages.size >= 2 && !isProcessing && !isSubmitting,
                                 onClick = {
                                     if (uploadedImages.size < 2) {
                                         Toast.makeText(context, "Minimum 2 maintenance photos required", Toast.LENGTH_SHORT).show()
-                                    } else if (completionMessage.trim().length < 3) {
-                                        Toast.makeText(context, "Maintenance notes must be at least 3 characters", Toast.LENGTH_SHORT).show()
                                     } else {
                                         isSubmitting = true
-                                        val finalMessage = completionMessage.trim()
+                                        val finalMessage = completionMessage.trim().ifEmpty { "Task completed successfully." }
                                         onCompleteTask(
                                             finalMessage,
                                             docUrl.trim().ifEmpty { null },
@@ -1439,7 +1523,7 @@ fun TaskDetailDialog(
                                             null,
                                             "REGULAR",
                                             uploadedImages,
-                                            null,
+                                            maintenanceVideos.ifEmpty { null },
                                             null,
                                             uploadedImages
                                         )

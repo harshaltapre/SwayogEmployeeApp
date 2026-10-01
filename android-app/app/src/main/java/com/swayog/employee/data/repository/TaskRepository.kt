@@ -504,7 +504,8 @@ class TaskRepository @Inject constructor(
         images: List<String>? = null,
         beforeImages: List<String>? = null,
         afterImages: List<String>? = null,
-        sitePhotos: List<String>? = null
+        sitePhotos: List<String>? = null,
+        maintenanceVideos: List<String>? = null
     ): Result<Task> {
         val cleanTaskId = sanitizeTaskId(taskId)
         val clientUploadId = UUID.randomUUID().toString()
@@ -571,13 +572,13 @@ class TaskRepository @Inject constructor(
                     taskDao.updateTask(entity)
                     Result.success(completedTask)
                 } else {
-                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, clientUploadId)
-                    saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
+                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, clientUploadId)
+                    saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos)
                     Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
                 }
             } catch (e: Exception) {
-                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, clientUploadId)
-                saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages)
+                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, clientUploadId)
+                saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos)
                 Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
             }
         }
@@ -599,6 +600,7 @@ class TaskRepository @Inject constructor(
                     sitePhotos = sitePhotos ?: images,
                     beforeImages = beforeImages,
                     afterImages = afterImages,
+                    maintenanceVideos = maintenanceVideos,
                     clientUploadId = clientUploadId
                 )
                 android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: RawTaskId=$taskId, CleanTaskId=$cleanTaskId, Endpoint=PATCH tasks/$cleanTaskId/complete, sitePhotosCount=${req.sitePhotos?.size}, message=${req.message}")
@@ -739,6 +741,7 @@ class TaskRepository @Inject constructor(
                         images = images,
                         beforeImages = beforeImages,
                         afterImages = afterImages,
+                        maintenanceVideos = maintenanceVideos,
                         clientUploadId = clientUploadId
                     )
                     saveCompletionLocally(
@@ -754,7 +757,8 @@ class TaskRepository @Inject constructor(
                         taskType = taskType,
                         images = images,
                         beforeImages = beforeImages,
-                        afterImages = afterImages
+                        afterImages = afterImages,
+                        maintenanceVideos = maintenanceVideos
                     )
                     Result.failure(OfflinePendingException("Task completed & saved locally on app! Syncing with server..."))
                 }
@@ -775,6 +779,7 @@ class TaskRepository @Inject constructor(
                     images = images,
                     beforeImages = beforeImages,
                     afterImages = afterImages,
+                    maintenanceVideos = maintenanceVideos,
                     clientUploadId = clientUploadId
                 )
                 saveCompletionLocally(
@@ -790,7 +795,8 @@ class TaskRepository @Inject constructor(
                     taskType = taskType,
                     images = images,
                     beforeImages = beforeImages,
-                    afterImages = afterImages
+                    afterImages = afterImages,
+                    maintenanceVideos = maintenanceVideos
                 )
                 Result.failure(OfflinePendingException("Task completed & saved locally on app! Syncing with server..."))
             }
@@ -811,6 +817,7 @@ class TaskRepository @Inject constructor(
                 images = images,
                 beforeImages = beforeImages,
                 afterImages = afterImages,
+                maintenanceVideos = maintenanceVideos,
                 clientUploadId = clientUploadId
             )
             saveCompletionLocally(
@@ -849,7 +856,8 @@ class TaskRepository @Inject constructor(
         taskType: String? = null,
         images: List<String>? = null,
         beforeImages: List<String>? = null,
-        afterImages: List<String>? = null
+        afterImages: List<String>? = null,
+        maintenanceVideos: List<String>? = null
     ) {
         val localTask = taskDao.getTaskById(taskId)
         if (localTask != null) {
@@ -871,7 +879,8 @@ class TaskRepository @Inject constructor(
                 imagesJson = finalPhotos?.let { gson.toJson(it) } ?: localTask.imagesJson,
                 sitePhotosJson = finalPhotos?.let { gson.toJson(it) } ?: localTask.sitePhotosJson,
                 beforeImagesJson = beforeImages?.let { gson.toJson(it) } ?: localTask.beforeImagesJson,
-                afterImagesJson = afterImages?.let { gson.toJson(it) } ?: localTask.afterImagesJson
+                afterImagesJson = afterImages?.let { gson.toJson(it) } ?: localTask.afterImagesJson,
+                maintenanceVideosJson = maintenanceVideos?.let { gson.toJson(it) } ?: localTask.maintenanceVideosJson
             ))
         }
     }
@@ -890,6 +899,7 @@ class TaskRepository @Inject constructor(
         images: List<String>? = null,
         beforeImages: List<String>? = null,
         afterImages: List<String>? = null,
+        maintenanceVideos: List<String>? = null,
         clientUploadId: String? = null
     ) {
         val cleanTaskId = sanitizeTaskId(taskId)
@@ -905,10 +915,14 @@ class TaskRepository @Inject constructor(
         val afterImageFilePaths = afterImages?.mapNotNull { base64 ->
             if (base64.isNotBlank()) LocalFileHelper.saveBase64ToFile(context, base64, "task_amc_after") else null
         }
+        val maintenanceVideoFilePaths = maintenanceVideos?.mapNotNull { base64 ->
+            if (base64.isNotBlank()) LocalFileHelper.saveBase64ToFile(context, base64, "task_maintenance_video") else null
+        }
 
         val jsonArraySitePhotoFilePaths = JSONObject.wrap(sitePhotoFilePaths ?: emptyList<String>())
         val jsonArrayBeforeFilePaths = JSONObject.wrap(beforeImageFilePaths ?: emptyList<String>())
         val jsonArrayAfterFilePaths = JSONObject.wrap(afterImageFilePaths ?: emptyList<String>())
+        val jsonArrayMaintenanceVideoFilePaths = JSONObject.wrap(maintenanceVideoFilePaths ?: emptyList<String>())
 
         val effectiveUploadId = clientUploadId ?: UUID.randomUUID().toString()
 
@@ -926,6 +940,7 @@ class TaskRepository @Inject constructor(
             put("sitePhotoFilePaths", jsonArraySitePhotoFilePaths)
             put("beforeImagesFilePaths", jsonArrayBeforeFilePaths)
             put("afterImagesFilePaths", jsonArrayAfterFilePaths)
+            put("maintenanceVideoFilePaths", jsonArrayMaintenanceVideoFilePaths)
             put("clientUploadId", effectiveUploadId)
         }.toString()
         
@@ -956,12 +971,13 @@ class TaskRepository @Inject constructor(
                 isSynced = false,
                 taskType = taskType ?: localTask.taskType,
                 imagesJson = images?.let { gson.toJson(it) } ?: localTask.imagesJson,
-                sitePhotosJson = (images ?: beforeImages)?.let { gson.toJson(it) } ?: localTask.sitePhotosJson
+                sitePhotosJson = (images ?: beforeImages)?.let { gson.toJson(it) } ?: localTask.sitePhotosJson,
+                maintenanceVideosJson = maintenanceVideos?.let { gson.toJson(it) } ?: localTask.maintenanceVideosJson
             ))
         }
 
         scheduleSync()
-        android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Enqueued offline completion for task $taskId with ${sitePhotoFilePaths?.size ?: 0} site photos saved locally.")
+        android.util.Log.d("SiteVisitSync", "[SiteVisitSync] Enqueued offline completion for task $taskId with ${sitePhotoFilePaths?.size ?: 0} site photos and ${maintenanceVideoFilePaths?.size ?: 0} videos saved locally.")
     }
 
     suspend fun submitWork(title: String, description: String, hoursSpent: Double, taskId: String?): Result<Unit> {
