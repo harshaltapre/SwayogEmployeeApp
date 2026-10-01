@@ -1107,6 +1107,7 @@ fun TaskDetailDialog(
                     } else if (task.status?.equals("in_progress", ignoreCase = true) == true || task.status?.equals("pending", ignoreCase = true) == true) {
                         val isSiteVisitTask = task.isSiteVisit
                         val isAmcVisitTask = task.isAmcVisit
+                        val isMaintenanceVisitTask = task.isMaintenanceVisit
 
                         if (isSiteVisitTask) {
                             // Site Visit Photo Upload Flow (Gallery + Description)
@@ -1332,8 +1333,121 @@ fun TaskDetailDialog(
                                     )
                                 }
                             )
+                        } else if (isMaintenanceVisitTask) {
+                            // Maintenance Visit: Gallery Photo Flow (Min 2 photos, no before/after)
+                            Text(
+                                text = "Maintenance Photos (Min 2 Required)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "Required: At least 2 maintenance photos (${uploadedImages.size}/2 uploaded)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (uploadedImages.size >= 2) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            // Display Grid of uploaded maintenance photo thumbnails
+                            if (imageBitmaps.isNotEmpty()) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    itemsIndexed(imageBitmaps) { idx, bitmap ->
+                                        Box(modifier = Modifier.size(100.dp)) {
+                                            Image(
+                                                bitmap = bitmap.asImageBitmap(),
+                                                contentDescription = "Maintenance Photo ${idx + 1}",
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                     imageBitmaps = imageBitmaps.toMutableList().apply { removeAt(idx) }
+                                                     val updatedList = uploadedImages.toMutableList().apply { removeAt(idx) }
+                                                     uploadedImages = updatedList
+                                                     if (NetworkUtils.isNetworkAvailable(context)) {
+                                                        viewModel.updateTaskPhotos(task.id, updatedList)
+                                                     }
+                                                },
+                                                modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove photo", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (uploadedImages.size < 10) {
+                                OutlinedButton(
+                                    onClick = { launchPhotoPicker("site_visit") },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    enabled = !isProcessing,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (isProcessing && pendingPhotoType == "site_visit") {
+                                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                        } else {
+                                            Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                                            Text("Add Maintenance Photo (${uploadedImages.size}/10)", style = MaterialTheme.typography.labelMedium)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text("Maintenance Notes", fontWeight = FontWeight.Bold)
+
+                            SwayogTextField(
+                                value = completionMessage,
+                                onValueChange = { completionMessage = it },
+                                label = "Maintenance Report / Notes",
+                                placeholder = "Describe the maintenance work done...",
+                                singleLine = false
+                            )
+
+                            SwayogTextField(
+                                value = docUrl,
+                                onValueChange = { docUrl = it },
+                                label = "Document Link (Optional)",
+                                placeholder = "URL of report blueprint, or proof"
+                            )
+
+                            SwayogButton(
+                                text = if (isSubmitting) "Submitting..." else if (isProcessing) "Processing..." else "Mark Task Completed",
+                                enabled = uploadedImages.size >= 2 && completionMessage.trim().length >= 3 && !isProcessing && !isSubmitting,
+                                onClick = {
+                                    if (uploadedImages.size < 2) {
+                                        Toast.makeText(context, "Minimum 2 maintenance photos required", Toast.LENGTH_SHORT).show()
+                                    } else if (completionMessage.trim().length < 3) {
+                                        Toast.makeText(context, "Maintenance notes must be at least 3 characters", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        isSubmitting = true
+                                        val finalMessage = completionMessage.trim()
+                                        onCompleteTask(
+                                            finalMessage,
+                                            docUrl.trim().ifEmpty { null },
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            "REGULAR",
+                                            uploadedImages,
+                                            null,
+                                            null,
+                                            uploadedImages
+                                        )
+                                    }
+                                }
+                            )
                         } else {
-                            // Cleaning / Maintenance / Regular Before & After Flow
+                            // Cleaning / Regular Before & After Flow
                             Text(
                                 text = "📷 Before & After Photos (GPS Proof)",
                                 style = MaterialTheme.typography.labelLarge,

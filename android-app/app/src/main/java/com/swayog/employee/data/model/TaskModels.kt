@@ -45,15 +45,21 @@ data class Task(
             jobType?.lowercase()?.contains("site") == true || 
             jobType?.lowercase()?.contains("survey") == true
 
+    // Maintenance visits use a gallery of photos (min 2) — no before/after split
+    val isMaintenanceVisit: Boolean
+        get() = jobType?.lowercase() == "maintenance visit" || 
+            (jobType?.lowercase()?.contains("maintenance") == true && !isAmcVisit)
+
     // Helper to check if this is a regular task
     val isRegularTask: Boolean
-        get() = !isSiteVisit && !isAmcVisit
+        get() = !isSiteVisit && !isAmcVisit && !isMaintenanceVisit
 
     // Get required image count based on task type
     val requiredImageCount: Int
         get() = when {
             isSiteVisit -> 4
-            else -> 2 // 1 before + 1 after for maintenance, cleaning, and regular tasks
+            isMaintenanceVisit -> 2 // min 2 photos for maintenance documentation
+            else -> 2 // 1 before + 1 after for cleaning and regular tasks
         }
 
     // Extract the actual visit ID if this is an AMC visit
