@@ -258,7 +258,7 @@ fun WorkforceDashboardScreen(
 
     // Leave Dialog
     if (showRequestLeaveDialog) {
-        RequestLeaveDialog(
+        LeaveRequestDialog(
             onDismiss = { showRequestLeaveDialog = false },
             onSubmit = { req ->
                 workforceViewModel.submitLeaveRequest(req) { result ->
@@ -274,7 +274,7 @@ fun WorkforceDashboardScreen(
 
     // Overtime Dialog
     if (showRequestOtDialog) {
-        RequestOvertimeDialog(
+        OvertimeRequestDialog(
             initialDate = selectedOtDate,
             onDismiss = {
                 showRequestOtDialog = false
@@ -294,7 +294,7 @@ fun WorkforceDashboardScreen(
 
     // Advance Dialog
     if (showRequestAdvanceDialog) {
-        RequestAdvanceDialog(
+        AdvanceRequestDialog(
             onDismiss = { showRequestAdvanceDialog = false },
             onSubmit = { amount, reason ->
                 workforceViewModel.submitAdvanceRequest(amount, reason) { result ->
@@ -310,7 +310,7 @@ fun WorkforceDashboardScreen(
 
     // Attendance Correction Dialog
     if (showCorrectionDialog) {
-        AttendanceCorrectionDialog(
+        AttendanceCorrectionRequestDialog(
             initialDate = selectedCorrectionDate,
             onDismiss = {
                 showCorrectionDialog = false

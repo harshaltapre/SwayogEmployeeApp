@@ -210,7 +210,7 @@ private fun LeaveHistoryItem(req: LeaveRequestDto) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RequestLeaveDialog(
+fun LeaveRequestDialog(
     onDismiss: () -> Unit,
     onSubmit: (SubmitLeaveRequest) -> Unit
 ) {

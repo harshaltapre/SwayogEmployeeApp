@@ -68,7 +68,7 @@ import java.util.*
 import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.presentation.common.utils.WatermarkHelper
 import com.swayog.employee.data.model.SubmitOvertimeRequest
-import com.swayog.employee.presentation.attendance.components.RequestOvertimeDialog
+import com.swayog.employee.presentation.attendance.components.OvertimeRequestDialog
 import com.swayog.employee.presentation.attendance.components.WorkforceOvertimeSection
 
 @Composable
@@ -350,7 +350,7 @@ fun AttendanceScreen(
     val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
 
     if (showRequestOtDialog) {
-        RequestOvertimeDialog(
+        OvertimeRequestDialog(
             initialDate = selectedOtDate,
             onDismiss = { showRequestOtDialog = false },
             onSubmit = { request ->
@@ -1795,7 +1795,7 @@ fun AttendanceScreen(
 
             // Request Overtime Dialog
             if (showRequestOtDialog) {
-                RequestOvertimeDialog(
+                OvertimeRequestDialog(
                     initialDate = selectedOtDate,
                     onDismiss = { showRequestOtDialog = false },
                     onSubmit = { request ->

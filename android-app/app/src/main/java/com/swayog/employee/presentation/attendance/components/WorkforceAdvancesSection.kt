@@ -181,7 +181,7 @@ private fun AdvanceItemView(adv: AdvanceRecordDto) {
 // ── Request Advance Dialog ─────────────────────────────────────────────────
 
 @Composable
-fun RequestAdvanceDialog(
+fun AdvanceRequestDialog(
     onDismiss: () -> Unit,
     onSubmit: (Double, String) -> Unit
 ) {

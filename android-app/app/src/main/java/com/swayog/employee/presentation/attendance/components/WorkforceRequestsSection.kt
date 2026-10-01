@@ -205,7 +205,7 @@ private fun UnifiedRequestItemView(req: UnifiedRequestDto) {
 // ── Attendance Correction Dialog ───────────────────────────────────────────
 
 @Composable
-fun AttendanceCorrectionDialog(
+fun AttendanceCorrectionRequestDialog(
     initialDate: String? = null,
     onDismiss: () -> Unit,
     onSubmit: (SubmitAttendanceCorrectionRequest) -> Unit
