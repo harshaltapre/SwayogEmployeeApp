@@ -1240,7 +1240,8 @@ fun TaskDetailDialog(
                                             uploadedImages,
                                             null,
                                             null,
-                                            uploadedImages
+                                            uploadedImages,
+                                            null
                                         )
                                     }
                                 }
@@ -1352,6 +1353,7 @@ fun TaskDetailDialog(
                                         null,
                                         beforeImages,
                                         afterImages,
+                                        null,
                                         null
                                     )
                                 }
@@ -1525,7 +1527,8 @@ fun TaskDetailDialog(
                                             uploadedImages,
                                             maintenanceVideos.ifEmpty { null },
                                             null,
-                                            uploadedImages
+                                            uploadedImages,
+                                            null
                                         )
                                     }
                                 }
@@ -1685,6 +1688,7 @@ fun TaskDetailDialog(
                                             afterLat,
                                             afterLng,
                                             taskType,
+                                            null,
                                             null,
                                             null,
                                             null,
