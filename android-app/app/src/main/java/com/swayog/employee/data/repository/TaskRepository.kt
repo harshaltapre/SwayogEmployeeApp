@@ -516,6 +516,11 @@ class TaskRepository @Inject constructor(
         val photosToSubmit = (sitePhotos ?: images)?.filter { it.isNotBlank() }
         if (cleanTaskId.startsWith("amc_")) {
             val visitId = cleanTaskId.replace("amc_", "")
+            val filteredMaintenanceVideos = maintenanceVideos?.filter { it.isNotBlank() }
+            android.util.Log.d(
+                "VIDEO_TRACE_3",
+                "taskId=$taskId, cleanTaskId=$cleanTaskId, isAmc=true, maintenanceVideoCount=${filteredMaintenanceVideos?.size ?: 0}, firstVideoLength=${filteredMaintenanceVideos?.firstOrNull()?.length ?: 0}, firstVideoPrefix=${filteredMaintenanceVideos?.firstOrNull()?.take(32) ?: "n/a"}"
+            )
             val requestBody = MarkAmcVisitDoneRequest(
                 notes = completionMessage,
                 visitNotes = completionMessage,
@@ -523,7 +528,11 @@ class TaskRepository @Inject constructor(
                 afterImageUrl = afterImageUrl,
                 sitePhotos = photosToSubmit,
                 images = photosToSubmit,
-                maintenanceVideos = maintenanceVideos?.filter { it.isNotBlank() }
+                maintenanceVideos = filteredMaintenanceVideos
+            )
+            android.util.Log.d(
+                "VIDEO_TRACE_4",
+                "visitId=$visitId, requestMaintenanceVideosCount=${requestBody.maintenanceVideos?.size ?: 0}, firstVideoLength=${requestBody.maintenanceVideos?.firstOrNull()?.length ?: 0}, firstVideoPrefix=${requestBody.maintenanceVideos?.firstOrNull()?.take(32) ?: "n/a"}"
             )
             return try {
                 val response = apiService.markAmcVisitDone(visitId, requestBody)
@@ -546,6 +555,7 @@ class TaskRepository @Inject constructor(
                         afterImageUrl = visit.afterImageUrl ?: afterImageUrl,
                         sitePhotos = visitSitePhotos,
                         images = visitSitePhotos,
+                        maintenanceVideos = visit.maintenanceVideos ?: maintenanceVideos?.filter { it.isNotBlank() },
                         completedAt = visit.completedAt,
                         createdAt = visit.createdAt,
                         updatedAt = visit.updatedAt
@@ -608,6 +618,10 @@ class TaskRepository @Inject constructor(
                     clientUploadId = clientUploadId
                 )
                 android.util.Log.d("TaskSubmissionChain", "LOG 3 - Immediately Before API Call: RawTaskId=$taskId, CleanTaskId=$cleanTaskId, Endpoint=PATCH tasks/$cleanTaskId/complete, sitePhotosCount=${req.sitePhotos?.size}, message=${req.message}")
+                android.util.Log.d(
+                    "VIDEO_TRACE_5",
+                    "taskId=$taskId, cleanTaskId=$cleanTaskId, requestMaintenanceVideosCount=${req.maintenanceVideos?.size ?: 0}, firstVideoLength=${req.maintenanceVideos?.firstOrNull()?.length ?: 0}, firstVideoPrefix=${req.maintenanceVideos?.firstOrNull()?.take(32) ?: "n/a"}"
+                )
                 val response = apiService.completeTask(cleanTaskId, req)
                 android.util.Log.d("TaskSubmissionChain", "LOG 4 - API Call Returned: statusCode=${response.code()}, isSuccessful=${response.isSuccessful}, cleanTaskId=$cleanTaskId")
                 
@@ -723,7 +737,8 @@ class TaskRepository @Inject constructor(
                         sitePhotos = finalSitePhotos,
                         images = finalSitePhotos,
                         beforeImageUrl = task.beforeImageUrl ?: beforeImageUrl,
-                        afterImageUrl = task.afterImageUrl ?: afterImageUrl
+                        afterImageUrl = task.afterImageUrl ?: afterImageUrl,
+                        maintenanceVideos = task.maintenanceVideos ?: maintenanceVideos?.filter { it.isNotBlank() }
                     )
                     taskDao.updateTask(entity)
                     Result.success(finalTask)
@@ -925,8 +940,23 @@ class TaskRepository @Inject constructor(
             if (base64.isNotBlank()) LocalFileHelper.saveBase64ToFile(context, base64, "task_amc_after") else null
         }
         val maintenanceVideoFilePaths = maintenanceVideos?.mapNotNull { base64 ->
-            if (base64.isNotBlank()) LocalFileHelper.saveBase64ToFile(context, base64, "task_maintenance_video") else null
+            if (base64.isNotBlank()) {
+                val savedPath = LocalFileHelper.saveBase64ToFile(context, base64, "task_maintenance_video")
+                val savedFile = java.io.File(savedPath)
+                if (!savedFile.exists()) {
+                    throw IllegalStateException("Maintenance video file does not exist after save: $savedPath")
+                }
+                if (savedFile.length() <= 0L) {
+                    throw IllegalStateException("Maintenance video file is empty after save: $savedPath")
+                }
+                savedPath
+            } else null
         }
+
+        android.util.Log.d(
+            "VIDEO_TRACE_SYNC_1",
+            "taskId=$taskId, maintenanceVideoFilePathsCount=${maintenanceVideoFilePaths?.size ?: 0}, payloadMaintenanceVideosCount=${maintenanceVideos?.size ?: 0}"
+        )
 
         val jsonArraySitePhotoFilePaths = JSONObject.wrap(sitePhotoFilePaths ?: emptyList<String>())
         val jsonArrayBeforeFilePaths = JSONObject.wrap(beforeImageFilePaths ?: emptyList<String>())

@@ -144,6 +144,10 @@ class TasksViewModel @Inject constructor(
         onResult: (Result<Task>) -> Unit
     ) {
         viewModelScope.launch {
+            android.util.Log.d(
+                "VIDEO_TRACE_2",
+                "taskId=$taskId, maintenanceVideoCount=${maintenanceVideos?.size ?: 0}, lengths=${maintenanceVideos?.map { it.length } ?: emptyList()}, firstPrefix=${maintenanceVideos?.firstOrNull()?.take(32) ?: "n/a"}"
+            )
             val res = taskRepository.completeTask(
                 taskId = taskId,
                 completionMessage = message,

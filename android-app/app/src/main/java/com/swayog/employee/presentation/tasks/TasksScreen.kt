@@ -315,6 +315,10 @@ fun TasksScreen(
                         }
                     },
                     onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng, taskType, images, beforeImages, afterImages, sitePhotos, maintenanceVideos, photoRemarks ->
+                        android.util.Log.d(
+                            "VIDEO_TRACE_1",
+                            "taskId=${task.id}, videoCount=${maintenanceVideos?.size ?: 0}, firstVideoLength=${maintenanceVideos?.firstOrNull()?.length ?: 0}, firstVideoPrefix=${maintenanceVideos?.firstOrNull()?.take(32) ?: "n/a"}"
+                        )
                         viewModel.completeTask(
                             taskId = task.id,
                             message = msg,
