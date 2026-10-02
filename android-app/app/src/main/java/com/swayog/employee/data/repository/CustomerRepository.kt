@@ -720,12 +720,24 @@ class CustomerRepository @Inject constructor(
         }
     }
 
-    suspend fun markAmcVisitDone(visitId: String, visitNotes: String?, beforeImageUrl: String?, afterImageUrl: String?): Result<AmcVisit> {
+    suspend fun markAmcVisitDone(
+        visitId: String,
+        visitNotes: String?,
+        beforeImageUrl: String?,
+        afterImageUrl: String?,
+        sitePhotos: List<String>? = null,
+        images: List<String>? = null,
+        maintenanceVideos: List<String>? = null
+    ): Result<AmcVisit> {
         return try {
-            val body = mapOf(
-                "visitNotes" to visitNotes,
-                "beforeImageUrl" to beforeImageUrl,
-                "afterImageUrl" to afterImageUrl
+            val body = MarkAmcVisitDoneRequest(
+                notes = visitNotes,
+                visitNotes = visitNotes,
+                beforeImageUrl = beforeImageUrl,
+                afterImageUrl = afterImageUrl,
+                sitePhotos = sitePhotos,
+                images = images ?: sitePhotos,
+                maintenanceVideos = maintenanceVideos
             )
             val response = apiService.markAmcVisitDone(visitId, body)
             if (response.isSuccessful && response.body()?.data != null) {

@@ -110,32 +110,52 @@ export async function processAndSaveBase64Videos(
       let formattedItem = item.trim();
       if (!formattedItem) return "";
 
-      // If it's already an R2 / web URL, return as-is
       if (formattedItem.startsWith("http://") || formattedItem.startsWith("https://")) {
         console.log(`[VIDEO_UPLOAD_SKIP] taskId=${taskId}, index=${index}, reason=already_url`);
         return formattedItem;
       }
 
-      // Auto-prefix raw base64 if missing data URI header for videos
-      if (!formattedItem.startsWith("data:video/")) {
+      const hasDataUri = /^data:video\/[a-zA-Z0-9.+-]+;base64,/i.test(formattedItem);
+      if (!hasDataUri) {
+        const maybeRawBase64 = formattedItem.replace(/^data:video\/[a-zA-Z0-9.+-]+;base64,/i, "");
+        if (!maybeRawBase64 || !/^[A-Za-z0-9+/=\r\n]+$/.test(maybeRawBase64)) {
+          throw new ApiError(400, `Invalid video payload at index ${index}: expected a non-empty base64 video or data URL`);
+        }
         formattedItem = `data:video/mp4;base64,${formattedItem}`;
       }
 
       try {
-        const matches = formattedItem.match(/^data:video\/([a-zA-Z0-9]+);base64,(.+)$/s);
-        if (!matches || matches.length !== 3) return formattedItem;
+        const matches = formattedItem.match(/^data:video\/([a-zA-Z0-9.+-]+);base64,(.+)$/is);
+        if (!matches || matches.length !== 3) {
+          throw new ApiError(400, `Invalid video data URI at index ${index}`);
+        }
 
         const rawType = matches[1].toLowerCase();
-        const mimeType = `video/${rawType}`;
+        const mimeType = `video/${rawType === "jpeg" ? "mp4" : rawType}`;
+        const allowedVideoMimeTypes = new Set(["video/mp4", "video/webm", "video/quicktime", "video/x-msvideo", "video/x-matroska"]);
+        if (!allowedVideoMimeTypes.has(mimeType)) {
+          throw new ApiError(400, `Unsupported video MIME type: ${mimeType}`);
+        }
+
         const base64Data = matches[2].replace(/[\r\n\s]/g, "");
+        if (!base64Data || base64Data.length === 0) {
+          throw new ApiError(400, `Empty base64 video payload at index ${index}`);
+        }
+
         const buffer = Buffer.from(base64Data, "base64");
-        const ext = rawType === "mp4" ? "mp4" : rawType;
+        if (!buffer || buffer.length <= 0) {
+          throw new ApiError(400, `Decoded video payload is empty at index ${index}`);
+        }
+
+        const ext = rawType === "mp4" ? "mp4" : rawType === "webm" ? "webm" : rawType === "quicktime" ? "mov" : "mp4";
         const cleanTaskId = String(taskId).replace(/^TASK-amc_|^amc_visit_|^amc_/, "");
         const fileName = `maintenance_video_${cleanTaskId}_${Date.now()}_${index}.${ext}`;
 
-        console.log(`[VIDEO_UPLOAD_PROCESSING] taskId=${taskId}, index=${index}, fileName=${fileName}, mimeType=${mimeType}, fileSize=${buffer.length} bytes`);
+        console.log(`[VIDEO_UPLOAD_PROCESSING] taskId=${taskId}, index=${index}, mimeType=${mimeType}, fileSize=${buffer.length}`);
+        if (buffer.length > 200 * 1024 * 1024) {
+          throw new ApiError(400, `Video exceeds max allowed size at index ${index}: ${buffer.length} bytes`);
+        }
 
-        // Upload to Cloudflare R2
         const objectKey = generateObjectKey(
           { taskId: cleanTaskId, type: "maintenance-video", taskType: taskType || "task", customerName: customerName || "unknown" },
           fileName
@@ -144,9 +164,14 @@ export async function processAndSaveBase64Videos(
         const uploadResult = await uploadToR2(buffer, objectKey, mimeType, fileName);
         console.log(`[R2_UPLOAD_SUCCESS] taskId=${taskId}, storageKey=${objectKey}, url=${uploadResult.url}`);
 
+        if (!uploadResult.url || !uploadResult.url.trim()) {
+          throw new ApiError(500, `R2 upload succeeded but did not return a usable URL for task ${taskId}`);
+        }
+
         return uploadResult.url;
       } catch (err) {
         console.error(`[VIDEO_UPLOAD_ERROR] taskId=${taskId}, index=${index}, error=${err instanceof Error ? err.message : String(err)}`);
+        if (err instanceof ApiError) throw err;
         throw new ApiError(500, `Failed to upload video to Cloudflare R2: ${err instanceof Error ? err.message : String(err)}`);
       }
     })
@@ -154,6 +179,7 @@ export async function processAndSaveBase64Videos(
 
   const successfulUploads = results.filter((url) => typeof url === "string" && url.trim().length > 0);
   console.log(`[VIDEO_UPLOAD_COMPLETE] taskId=${taskId}, total=${videos.length}, successful=${successfulUploads.length}`);
+  console.log(`[VIDEO_DB_SAVE_SUCCESS] taskId=${taskId}, videoCount=${successfulUploads.length}`);
 
   return successfulUploads;
 }
@@ -969,7 +995,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       }
 
       // Process maintenance videos to Cloudflare R2 for AMC visits
-      let savedMaintenanceVideos: string[] = [];
+      let savedMaintenanceVideos: string[] = Array.isArray((visit as any).maintenanceVideos) ? [...(visit as any).maintenanceVideos] : [];
       if (input.maintenanceVideos && Array.isArray(input.maintenanceVideos) && input.maintenanceVideos.length > 0) {
         savedMaintenanceVideos = await processAndSaveBase64Videos(input.maintenanceVideos, cleanAmcId, "AMC", visit.customer.fullName);
       }
@@ -985,7 +1011,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
           completedByName: completedByName,
           beforeImageUrl: savedBeforeUrl,
           afterImageUrl: savedAfterUrl,
-          maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : undefined,
+          maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : (Array.isArray((visit as any).maintenanceVideos) ? (visit as any).maintenanceVideos : undefined),
         },
       });
 
@@ -1051,7 +1077,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
       : existingSitePhotos;
 
     // Process maintenance videos to Cloudflare R2
-    let savedMaintenanceVideos: string[] = [];
+    let savedMaintenanceVideos: string[] = Array.isArray(task.maintenanceVideos) ? [...task.maintenanceVideos] : [];
     if (input.maintenanceVideos && Array.isArray(input.maintenanceVideos) && input.maintenanceVideos.length > 0) {
       savedMaintenanceVideos = await processAndSaveBase64Videos(input.maintenanceVideos, id, task.jobType, task.customerName);
     }
@@ -1106,7 +1132,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
             afterLatitude: (input.afterLatitude !== undefined && input.afterLatitude !== null) ? parseFloat(String(input.afterLatitude)) : undefined,
             afterLongitude: (input.afterLongitude !== undefined && input.afterLongitude !== null) ? parseFloat(String(input.afterLongitude)) : undefined,
             sitePhotos: finalSitePhotos,
-            maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : (input.maintenanceVideos as any),
+            maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : (Array.isArray(task.maintenanceVideos) ? task.maintenanceVideos : (input.maintenanceVideos as any)),
             photoRemarks: input.photoRemarks as any,
             completedAt: nextTaskStatus === TaskStatus.COMPLETED ? new Date() : undefined,
           },
@@ -1170,7 +1196,7 @@ export async function completeTask(auth: AuthContext, taskId: string, input: Com
         beforeImageUrl: savedBeforeUrl,
         afterImageUrl: savedAfterUrl,
         sitePhotos: finalSitePhotos,
-        maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : input.maintenanceVideos,
+        maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : (Array.isArray(task.maintenanceVideos) ? task.maintenanceVideos : input.maintenanceVideos),
         photoRemarks: input.photoRemarks,
         completedAt: new Date(),
       };

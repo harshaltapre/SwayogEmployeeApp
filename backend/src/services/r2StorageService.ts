@@ -174,10 +174,10 @@ export async function uploadToR2(
 
     await client.send(command);
 
-    // Generate secure presigned GET URL (valid for 7 days)
+    // Generate secure presigned GET URL (default 24 hours; shorter than the previous 7-day expiry)
     let url: string;
     try {
-      url = await generatePresignedUrl(objectKey, 604800);
+      url = await generatePresignedUrl(objectKey, 86400);
     } catch {
       const endpoint = env.R2_ENDPOINT || process.env.R2_ENDPOINT;
       url = `${endpoint}/${bucketName}/${objectKey}`;

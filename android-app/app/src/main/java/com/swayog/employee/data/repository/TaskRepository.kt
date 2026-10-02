@@ -128,6 +128,9 @@ class TaskRepository @Inject constructor(
                             taskType = mergedTaskType,
                             imagesJson = mergedSitePhotos?.let { gson.toJson(it) },
                             sitePhotosJson = mergedSitePhotos?.let { gson.toJson(it) },
+                            maintenanceVideosJson = (task.maintenanceVideos ?: existingLocal?.maintenanceVideosJson?.let {
+                                try { gson.fromJson(it, Array<String>::class.java).toList() } catch (_: Exception) { null }
+                            })?.filter { it.isNotBlank() }?.let { gson.toJson(it) } ?: existingLocal?.maintenanceVideosJson,
                             assignedEmployeeName = task.assignedEmployeeName,
                             assignedEmployeePhone = task.assignedEmployeePhone
                         )
@@ -513,19 +516,17 @@ class TaskRepository @Inject constructor(
         val photosToSubmit = (sitePhotos ?: images)?.filter { it.isNotBlank() }
         if (cleanTaskId.startsWith("amc_")) {
             val visitId = cleanTaskId.replace("amc_", "")
-            val body: Map<String, Any?> = mutableMapOf<String, Any?>(
-                "notes" to completionMessage,
-                "visitNotes" to completionMessage,
-                "beforeImageUrl" to beforeImageUrl,
-                "afterImageUrl" to afterImageUrl
-            ).apply {
-                if (!photosToSubmit.isNullOrEmpty()) {
-                    put("sitePhotos", photosToSubmit)
-                    put("images", photosToSubmit)
-                }
-            }
+            val requestBody = MarkAmcVisitDoneRequest(
+                notes = completionMessage,
+                visitNotes = completionMessage,
+                beforeImageUrl = beforeImageUrl,
+                afterImageUrl = afterImageUrl,
+                sitePhotos = photosToSubmit,
+                images = photosToSubmit,
+                maintenanceVideos = maintenanceVideos?.filter { it.isNotBlank() }
+            )
             return try {
-                val response = apiService.markAmcVisitDone(visitId, body)
+                val response = apiService.markAmcVisitDone(visitId, requestBody)
                 if (response.isSuccessful && response.body()?.data != null) {
                     val visit = response.body()!!.data!!
                     val visitSitePhotos = photosToSubmit
@@ -565,6 +566,7 @@ class TaskRepository @Inject constructor(
                         afterImageUrl = completedTask.afterImageUrl,
                         sitePhotosJson = visitSitePhotos?.let { gson.toJson(it) },
                         imagesJson = visitSitePhotos?.let { gson.toJson(it) },
+                        maintenanceVideosJson = (visit.maintenanceVideos ?: maintenanceVideos)?.filter { it.isNotBlank() }?.let { gson.toJson(it) },
                         completedAt = completedTask.completedAt,
                         createdAt = completedTask.createdAt,
                         updatedAt = completedTask.updatedAt,
@@ -713,6 +715,7 @@ class TaskRepository @Inject constructor(
                         sitePhotosJson = finalSitePhotos?.let { gson.toJson(it) },
                         beforeImagesJson = beforeImages?.let { gson.toJson(it) },
                         afterImagesJson = afterImages?.let { gson.toJson(it) },
+                        maintenanceVideosJson = (task.maintenanceVideos ?: maintenanceVideos)?.filter { it.isNotBlank() }?.let { gson.toJson(it) } ?: taskDao.getTaskById(task.id)?.maintenanceVideosJson,
                         assignedEmployeeName = task.assignedEmployeeName,
                         assignedEmployeePhone = task.assignedEmployeePhone
                     )
@@ -946,6 +949,7 @@ class TaskRepository @Inject constructor(
             put("sitePhotoFilePaths", jsonArraySitePhotoFilePaths)
             put("beforeImagesFilePaths", jsonArrayBeforeFilePaths)
             put("afterImagesFilePaths", jsonArrayAfterFilePaths)
+            put("maintenanceVideos", JSONObject.wrap(maintenanceVideos ?: emptyList<String>()))
             put("maintenanceVideoFilePaths", jsonArrayMaintenanceVideoFilePaths)
             put("photoRemarks", photoRemarks?.let { JSONObject(gson.toJson(it)) })
             put("clientUploadId", effectiveUploadId)
@@ -1104,8 +1108,61 @@ class TaskRepository @Inject constructor(
                                 if (taskId.startsWith("amc_")) {
                                     val visitId = taskId.removePrefix("amc_")
                                     val msg = json.optString("message", "")
-                                    val body = mapOf("notes" to msg, "visitNotes" to msg, "status" to "COMPLETED")
-                                    val response = apiService.markAmcVisitDone(visitId, body)
+
+                                    val maintenanceVideoFilePathsArray = json.optJSONArray("maintenanceVideoFilePaths")
+                                    val maintenanceVideoFilePaths = if (maintenanceVideoFilePathsArray != null) {
+                                        List(maintenanceVideoFilePathsArray.length()) { maintenanceVideoFilePathsArray.getString(it) }
+                                    } else null
+                                    val maintenanceVideos = maintenanceVideoFilePaths?.mapNotNull { path ->
+                                        filesToDelete.add(path)
+                                        try {
+                                            LocalFileHelper.readFileToBase64(path)
+                                        } catch (e: Exception) {
+                                            isPhotoErrorForItem = true
+                                            null
+                                        }
+                                    } ?: run {
+                                        val payloadVideos = json.optJSONArray("maintenanceVideos")
+                                        if (payloadVideos != null) {
+                                            List(payloadVideos.length()) { index -> payloadVideos.getString(index) }
+                                                .filter { it.isNotBlank() }
+                                        } else null
+                                    }
+
+                                    val request = MarkAmcVisitDoneRequest(
+                                        notes = msg,
+                                        visitNotes = msg,
+                                        beforeImageUrl = json.optString("beforeImageUrl").takeIf { it.isNotEmpty() },
+                                        afterImageUrl = json.optString("afterImageUrl").takeIf { it.isNotEmpty() },
+                                        sitePhotos = json.optJSONArray("sitePhotoFilePaths")?.let { arr ->
+                                            List(arr.length()) { index -> arr.getString(index) }
+                                                .filter { it.isNotBlank() }
+                                                .mapNotNull { path ->
+                                                    filesToDelete.add(path)
+                                                    try {
+                                                        LocalFileHelper.readFileToBase64(path)
+                                                    } catch (e: Exception) {
+                                                        isPhotoErrorForItem = true
+                                                        null
+                                                    }
+                                                }
+                                        },
+                                        images = json.optJSONArray("sitePhotoFilePaths")?.let { arr ->
+                                            List(arr.length()) { index -> arr.getString(index) }
+                                                .filter { it.isNotBlank() }
+                                                .mapNotNull { path ->
+                                                    filesToDelete.add(path)
+                                                    try {
+                                                        LocalFileHelper.readFileToBase64(path)
+                                                    } catch (e: Exception) {
+                                                        isPhotoErrorForItem = true
+                                                        null
+                                                    }
+                                                }
+                                        },
+                                        maintenanceVideos = maintenanceVideos
+                                    )
+                                    val response = apiService.markAmcVisitDone(visitId, request)
                                     if (response.code() == 401) isAuthErrorForItem = true
                                     response.isSuccessful
                                 } else {
@@ -1517,7 +1574,8 @@ class TaskRepository @Inject constructor(
             completedAt = task.completedAt,
             createdAt = task.createdAt,
             updatedAt = task.updatedAt,
-            isSynced = true
+            isSynced = true,
+            maintenanceVideosJson = task.maintenanceVideos?.filter { it.isNotBlank() }?.let { gson.toJson(it) }
         )
         taskDao.insertTask(entity)
     }

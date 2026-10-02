@@ -148,6 +148,21 @@ class SyncWorker @AssistedInject constructor(
                                     LocalFileHelper.readFileToBase64(it) 
                                 }
 
+                                val maintenanceVideoFilePathsArray = json.optJSONArray("maintenanceVideoFilePaths")
+                                val maintenanceVideoFilePaths = if (maintenanceVideoFilePathsArray != null) {
+                                    List(maintenanceVideoFilePathsArray.length()) { maintenanceVideoFilePathsArray.getString(it) }
+                                } else null
+                                val maintenanceVideos = maintenanceVideoFilePaths?.mapNotNull { 
+                                    filesToDelete.add(it)
+                                    LocalFileHelper.readFileToBase64(it)
+                                } ?: run {
+                                    val payloadVideos = json.optJSONArray("maintenanceVideos")
+                                    if (payloadVideos != null) {
+                                        List(payloadVideos.length()) { index -> payloadVideos.getString(index) }
+                                            .filter { it.isNotBlank() }
+                                    } else null
+                                }
+
                                 val clientUploadId = item.clientUploadId ?: json.optString("clientUploadId").takeIf { it.isNotEmpty() }
                                 val request = CompleteTaskRequest(
                                     message = json.optString("message"),
@@ -163,6 +178,7 @@ class SyncWorker @AssistedInject constructor(
                                     sitePhotos = images,
                                     beforeImages = beforeImages,
                                     afterImages = afterImages,
+                                    maintenanceVideos = maintenanceVideos,
                                     clientUploadId = clientUploadId
                                 )
                                 val response = apiService.completeTask(taskId, request)
@@ -200,6 +216,7 @@ class SyncWorker @AssistedInject constructor(
                                             sitePhotosJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
                                             beforeImagesJson = beforeImages?.let { gson.toJson(it) },
                                             afterImagesJson = afterImages?.let { gson.toJson(it) },
+                                            maintenanceVideosJson = task.maintenanceVideos?.filter { it.isNotBlank() }?.let { gson.toJson(it) },
                                             assignedEmployeeName = task.assignedEmployeeName,
                                             assignedEmployeePhone = task.assignedEmployeePhone
                                         )

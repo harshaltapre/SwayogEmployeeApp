@@ -4,7 +4,7 @@ import { prisma } from "../../lib/prisma.js";
 import { ApiError } from "../../middleware/error.js";
 import { recalculateMonthlyPerformance } from "../../services/attendanceService.js";
 import { createAdminNotification, createCustomerNotification } from "../../services/notificationService.js";
-import { processAndSaveBase64Photos } from "../tasks/tasks.service.js";
+import { processAndSaveBase64Photos, processAndSaveBase64Videos } from "../tasks/tasks.service.js";
 
 const normalizeAssignedEmployeeId = (value?: string | null) => {
   if (!value) {
@@ -402,7 +402,7 @@ export const listAmcVisits = async (req: Request, res: Response) => {
  */
 export const markVisitCompleted = async (req: Request, res: Response) => {
   const { visitId } = req.params;
-  const { completedByEmployeeId, completedByName, notes, beforeImageUrl, afterImageUrl, sitePhotos, images } = req.body;
+  const { completedByEmployeeId, completedByName, notes, visitNotes, beforeImageUrl, afterImageUrl, sitePhotos, images, maintenanceVideos } = req.body;
 
   const resolvedEmployeeId = completedByEmployeeId || req.auth?.userId || null;
   let resolvedName = completedByName || null;
@@ -435,6 +435,11 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
     savedAfterUrl = saved[0] || afterImageUrl;
   }
 
+  let savedMaintenanceVideos: string[] = Array.isArray(existingVisit?.maintenanceVideos) ? [...existingVisit.maintenanceVideos] : [];
+  if (Array.isArray(maintenanceVideos) && maintenanceVideos.length > 0) {
+    savedMaintenanceVideos = await processAndSaveBase64Videos(maintenanceVideos, visitId, "AMC", existingVisit?.customerId ? undefined : undefined);
+  }
+
   const visit = await prisma.amcVisit.update({
     where: { id: visitId },
     data: {
@@ -442,10 +447,11 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
       completedAt: new Date(),
       completedByEmployeeId: resolvedEmployeeId,
       completedByName: resolvedName,
-      visitNotes: notes || null,
-      notes: notes || null,
+      visitNotes: notes || visitNotes || null,
+      notes: notes || visitNotes || null,
       beforeImageUrl: savedBeforeUrl,
       afterImageUrl: savedAfterUrl,
+      maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : (Array.isArray(existingVisit?.maintenanceVideos) ? existingVisit.maintenanceVideos : undefined),
     },
     include: {
       assignedEmployee: {
@@ -467,6 +473,7 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
   const formattedVisit = {
     ...visit,
     images: visit.sitePhotos,
+    maintenanceVideos: Array.isArray((visit as any).maintenanceVideos) ? (visit as any).maintenanceVideos : [],
     assignedEmployee: (visit as any).assignedEmployee ? {
       id: (visit as any).assignedEmployee.id,
       name: (visit as any).assignedEmployee.fullName
