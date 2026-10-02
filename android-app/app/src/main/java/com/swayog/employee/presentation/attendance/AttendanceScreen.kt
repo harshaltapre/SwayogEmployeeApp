@@ -127,6 +127,7 @@ fun AttendanceScreen(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 viewModel.loadData()
+                viewModel.refreshFaceEnrollmentIndex()
                 viewModel.refreshOvertime()
             }
         }

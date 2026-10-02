@@ -45,7 +45,13 @@ class SyncWorker @AssistedInject constructor(
                 val faceSyncStatus = dataStoreManager.faceEnrollmentSyncStatus.first()
                 if (faceSyncStatus == "PENDING" || faceSyncStatus == "FAILED") {
                     val descriptors = dataStoreManager.faceDescriptors.first()
-                    if (descriptors.size >= 3) {
+                    val validDescriptors = descriptors.size == 3 && descriptors.all {
+                        com.swayog.employee.data.local.preferences.DataStoreManager.isValidFaceDescriptor(
+                            it,
+                            com.swayog.employee.presentation.attendance.face.FaceEmbeddingHelper.EMBEDDING_DIMENSION
+                        )
+                    }
+                    if (validDescriptors) {
                         Log.d("TASK_SYNC", "SyncWorker attempting to sync pending face enrollment")
                         val req = FaceEnrollRequest(
                             descriptor1 = descriptors[0],
@@ -70,6 +76,9 @@ class SyncWorker @AssistedInject constructor(
                         } else {
                             hasFailure = true
                         }
+                    } else if (descriptors.isNotEmpty()) {
+                        Log.e("TASK_SYNC", "Refusing to sync invalid local face descriptor set")
+                        dataStoreManager.setFaceSyncStatus("FAILED")
                     }
                 }
             } catch (e: Exception) {

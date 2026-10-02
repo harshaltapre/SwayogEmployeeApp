@@ -332,6 +332,12 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
+    fun refreshFaceEnrollmentIndex() {
+        viewModelScope.launch {
+            _faceIndexManager.loadFromDataStore()
+        }
+    }
+
     fun submitRegularizationRequest(
         payload: RegularizationRequestPayload,
         onResult: (Result<RegularizationItem>) -> Unit

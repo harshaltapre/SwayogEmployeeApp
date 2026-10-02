@@ -439,9 +439,17 @@ class AttendanceRepository @Inject constructor(
                 if (status.enrolled && status.enrollment != null && !status.enrollment.isDeleted) {
                     val e = status.enrollment
                     val localVersion = try { dataStoreManager.faceEnrollmentVersion.first() } catch (_: Exception) { 0 }
-                    
-                    if (e.descriptor1.isNotEmpty() && e.descriptor2.isNotEmpty() && e.descriptor3.isNotEmpty()) {
-                        if (e.syncVersion >= localVersion) {
+                    val localDescriptors = dataStoreManager.faceDescriptors.first()
+
+                    val serverDescriptors = listOf(e.descriptor1, e.descriptor2, e.descriptor3)
+                    val serverDescriptorsValid = serverDescriptors.all {
+                        com.swayog.employee.data.local.preferences.DataStoreManager.isValidFaceDescriptor(
+                            it,
+                            com.swayog.employee.presentation.attendance.face.FaceEmbeddingHelper.EMBEDDING_DIMENSION
+                        )
+                    }
+                    if (serverDescriptorsValid) {
+                        if (e.syncVersion > localVersion || localDescriptors.size != 3) {
                             dataStoreManager.saveFaceEnrollment(
                                 descriptor1 = e.descriptor1,
                                 descriptor2 = e.descriptor2,
@@ -451,29 +459,42 @@ class AttendanceRepository @Inject constructor(
                                 updatedAt = e.updatedAt,
                                 syncStatus = "SYNCED"
                             )
-                            faceIndexManager.atomicUpdate(listOf(e.descriptor1, e.descriptor2, e.descriptor3))
-                        } else if (faceIndexManager.index.isEmpty()) {
+                            faceIndexManager.loadFromDataStore()
+                        } else {
+                            android.util.Log.w(
+                                "AttendanceRepository",
+                                "[FACE_UPDATE_5] Keeping newer local enrollment version=$localVersion over server version=${e.syncVersion}"
+                            )
                             faceIndexManager.loadFromDataStore()
                         }
+                    } else {
+                        android.util.Log.w("AttendanceRepository", "Ignoring invalid server face descriptors; preserving local enrollment")
+                        faceIndexManager.loadFromDataStore()
                     }
                     Result.success(true)
-                } else {
+                } else if (status.enrollment?.isDeleted == true) {
                     dataStoreManager.clearFaceEnrollment()
                     faceIndexManager.clear()
                     Result.success(false)
+                } else {
+                    val localDescriptors = faceIndexManager.loadFromDataStore()
+                    if (localDescriptors.isNotEmpty()) {
+                        android.util.Log.w(
+                            "AttendanceRepository",
+                            "Server reports no face enrollment; preserving valid local descriptors for offline recognition"
+                        )
+                        dataStoreManager.setFaceSyncStatus("PENDING")
+                    }
+                    Result.success(localDescriptors.isNotEmpty())
                 }
             } else {
                 // If network/server fails, warm up in-memory index from local cache so offline face match works
-                if (faceIndexManager.index.isEmpty()) {
-                    faceIndexManager.loadFromDataStore()
-                }
+                faceIndexManager.loadFromDataStore()
                 Result.failure(Exception("Failed to fetch face enrollment status: ${response.message()}"))
             }
         } catch (e: Exception) {
             // Offline fallback: load cached embeddings into in-memory index
-            if (faceIndexManager.index.isEmpty()) {
-                try { faceIndexManager.loadFromDataStore() } catch (_: Exception) {}
-            }
+            try { faceIndexManager.loadFromDataStore() } catch (_: Exception) {}
             Result.failure(e)
         }
     }

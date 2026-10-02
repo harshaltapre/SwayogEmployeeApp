@@ -133,6 +133,7 @@ class MainViewModel @Inject constructor(
 
     fun logout() {
         viewModelScope.launch {
+            faceIndexManager.clear()
             authRepository.logout()
         }
     }

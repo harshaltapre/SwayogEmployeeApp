@@ -53,6 +53,7 @@ class DataStoreManager @Inject constructor(
         val FACE_DESCRIPTOR_2 = stringPreferencesKey("face_descriptor_2")
         val FACE_DESCRIPTOR_3 = stringPreferencesKey("face_descriptor_3")
         val FACE_ENROLLMENT_ID = stringPreferencesKey("face_enrollment_id")
+        val FACE_ENROLLMENT_USER_ID = stringPreferencesKey("face_enrollment_user_id")
         val FACE_ENROLLMENT_VERSION = intPreferencesKey("face_enrollment_version")
         val FACE_ENROLLMENT_UPDATED_AT = stringPreferencesKey("face_enrollment_updated_at")
         val FACE_ENROLLMENT_SYNC_STATUS = stringPreferencesKey("face_enrollment_sync_status") // "SYNCED", "PENDING", "FAILED"
@@ -264,6 +265,19 @@ class DataStoreManager @Inject constructor(
     ) {
         try {
             context.dataStore.edit { preferences ->
+                val previousUserId = preferences[PreferencesKeys.USER_ID]
+                if (!previousUserId.isNullOrBlank() && previousUserId != userId) {
+                    preferences.remove(PreferencesKeys.FACE_ENROLLED)
+                    preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_1)
+                    preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
+                    preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_ID)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_USER_ID)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_VERSION)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_UPDATED_AT)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS)
+                    preferences.remove(PreferencesKeys.FACE_LAST_SYNC_AT)
+                }
                 preferences[PreferencesKeys.USER_ID] = userId
                 preferences[PreferencesKeys.USER_EMAIL] = email
                 preferences[PreferencesKeys.USER_NAME] = name
@@ -305,6 +319,7 @@ class DataStoreManager @Inject constructor(
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_ID)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_USER_ID)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_VERSION)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_UPDATED_AT)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS)
@@ -313,6 +328,11 @@ class DataStoreManager @Inject constructor(
     }
     
     // Face Enrollment Storage & Sync
+    companion object {
+        fun isValidFaceDescriptor(descriptor: List<Float>, expectedDimension: Int): Boolean =
+            expectedDimension > 0 && descriptor.size == expectedDimension && descriptor.all { it.isFinite() }
+    }
+
     val isFaceEnrolled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.FACE_ENROLLED] ?: false
     }
@@ -334,10 +354,25 @@ class DataStoreManager @Inject constructor(
     }
 
     val faceDescriptors: Flow<List<List<Float>>> = context.dataStore.data.map { preferences ->
-        val d1 = preferences[PreferencesKeys.FACE_DESCRIPTOR_1]?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
-        val d2 = preferences[PreferencesKeys.FACE_DESCRIPTOR_2]?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
-        val d3 = preferences[PreferencesKeys.FACE_DESCRIPTOR_3]?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
-        listOf(d1, d2, d3).filter { it.isNotEmpty() }
+        val enrollmentUserId = preferences[PreferencesKeys.FACE_ENROLLMENT_USER_ID]
+        if (enrollmentUserId != null && enrollmentUserId != preferences[PreferencesKeys.USER_ID]) {
+            return@map emptyList()
+        }
+        val descriptors = listOf(
+            preferences[PreferencesKeys.FACE_DESCRIPTOR_1],
+            preferences[PreferencesKeys.FACE_DESCRIPTOR_2],
+            preferences[PreferencesKeys.FACE_DESCRIPTOR_3]
+        ).map { stored ->
+            stored?.split(",")?.map { it.toFloatOrNull() }
+                ?.takeIf { values -> values.isNotEmpty() && values.all { it != null && it.isFinite() } }
+                ?.map { it!! }
+        }
+        val validDescriptors = descriptors.filterNotNull()
+        if (validDescriptors.size == 3 && validDescriptors.map { it.size }.distinct().size == 1) {
+            validDescriptors
+        } else {
+            emptyList()
+        }
     }
 
     suspend fun saveFaceEnrollment(
@@ -349,8 +384,15 @@ class DataStoreManager @Inject constructor(
         updatedAt: String? = null,
         syncStatus: String = "SYNCED"
     ) {
+        require(listOf(descriptor1, descriptor2, descriptor3).all { descriptor ->
+            descriptor.isNotEmpty() && descriptor.all { it.isFinite() }
+        }) { "Face enrollment descriptors must be non-empty and contain only finite values" }
+        require(listOf(descriptor1, descriptor2, descriptor3).map { it.size }.distinct().size == 1) {
+            "Face enrollment descriptors must have matching dimensions"
+        }
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.FACE_ENROLLED] = true
+            preferences[PreferencesKeys.USER_ID]?.let { preferences[PreferencesKeys.FACE_ENROLLMENT_USER_ID] = it }
             preferences[PreferencesKeys.FACE_DESCRIPTOR_1] = descriptor1.joinToString(",")
             preferences[PreferencesKeys.FACE_DESCRIPTOR_2] = descriptor2.joinToString(",")
             preferences[PreferencesKeys.FACE_DESCRIPTOR_3] = descriptor3.joinToString(",")
@@ -381,6 +423,7 @@ class DataStoreManager @Inject constructor(
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_ID)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_USER_ID)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_VERSION)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_UPDATED_AT)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS)

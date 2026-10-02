@@ -2,6 +2,7 @@ package com.swayog.employee.presentation.attendance.face
 
 import android.content.Context
 import android.graphics.Bitmap
+import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -9,6 +10,10 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 
 class FaceEmbeddingHelper(context: Context) {
+
+    companion object {
+        const val EMBEDDING_DIMENSION = 128
+    }
 
     private var interpreter: Interpreter? = null
     // Assuming MobileFaceNet 112x112 input
@@ -51,8 +56,23 @@ class FaceEmbeddingHelper(context: Context) {
 
     fun isModelLoaded(): Boolean = interpreter != null
 
+    val modelOutputDimension: Int?
+        get() = interpreter?.getOutputTensor(0)?.shape()?.lastOrNull()
+
+    val modelInputShape: List<Int>?
+        get() = interpreter?.getInputTensor(0)?.shape()?.toList()
+
+    fun isModelCompatible(): Boolean {
+        val currentInterpreter = interpreter ?: return false
+        return modelInputShape == listOf(1, inputSize, inputSize, 3) &&
+            currentInterpreter.getInputTensor(0).dataType() == DataType.FLOAT32 &&
+            (modelOutputDimension ?: 0) >= EMBEDDING_DIMENSION &&
+            currentInterpreter.getOutputTensor(0).dataType() == DataType.FLOAT32
+    }
+
     fun getFaceEmbedding(bitmap: Bitmap): List<Float>? {
         val currentInterpreter = interpreter ?: return null
+        if (!isModelCompatible()) return null
 
         val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
         resizedBitmap.getPixels(intValues, 0, resizedBitmap.width, 0, 0, resizedBitmap.width, resizedBitmap.height)
@@ -69,20 +89,14 @@ class FaceEmbeddingHelper(context: Context) {
             }
         }
 
-        val outputTensor = interpreter?.getOutputTensor(0)
-        val outputDim = outputTensor?.shape()?.get(1) ?: 128
+        val outputDim = modelOutputDimension ?: return null
+        if (outputDim < EMBEDDING_DIMENSION) return null
         val embeddings = Array(1) { FloatArray(outputDim) }
 
         interpreter?.run(imgData, embeddings)
         
-        val rawList = if (outputDim == 128) {
-            embeddings[0].toList()
-        } else {
-            // Resample or take 128 elements to match backend requirement
-            embeddings[0].take(128).let {
-                if (it.size < 128) it + List(128 - it.size) { 0f } else it
-            }
-        }
+        val rawList = embeddings[0].take(EMBEDDING_DIMENSION)
+        if (rawList.any { !it.isFinite() }) return null
 
         // Normalize output
         val l2 = rawList.map { it * it }.sum()
