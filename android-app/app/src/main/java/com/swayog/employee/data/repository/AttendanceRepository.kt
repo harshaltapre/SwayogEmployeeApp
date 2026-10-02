@@ -16,6 +16,8 @@ import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.data.sync.SyncWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
@@ -44,27 +46,31 @@ class AttendanceRepository @Inject constructor(
         }
     }
 
-    /**
-     * Reactive Flow for today's attendance record, queried by date only (no employeeId filter).
-     * This is the reliable source of truth for the dashboard badge — it always reflects
-     * whatever record the server wrote after check-in/check-out, regardless of employeeId format.
-     */
+    /** Current user's cached attendance only; another account's row must never feed this flow. */
     fun getTodayAttendanceFlow(): Flow<AttendanceRecord?> {
         val todayStr = java.time.LocalDate.now().toString()
-        return attendanceDao.getTodayAttendanceFlow(todayStr).map { entity ->
-            entity?.toAttendanceRecord()
+        return dataStoreManager.userId.flatMapLatest { userId ->
+            if (userId.isNullOrBlank()) {
+                flowOf(null)
+            } else {
+                attendanceDao.getTodayAttendanceFlow(userId, todayStr).map { entity ->
+                    entity?.takeIf { it.employeeId == userId }?.toAttendanceRecord()
+                }
+            }
         }
     }
 
     suspend fun getTodayAttendance(): Result<AttendanceRecord?> {
         val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val userId = dataStoreManager.userId.first()
+        if (userId.isNullOrBlank()) return Result.success(null)
         return try {
             val response = apiService.getTodayAttendance()
             
             if (response.isSuccessful && response.body() != null) {
                 val record = response.body()!!.record
                 if (record != null) {
-                    val existingLoc = try { attendanceDao.getTodayAttendance(todayStr)?.checkInLocation } catch (_: Exception) { null }
+                    val existingLoc = try { attendanceDao.getTodayAttendance(userId, todayStr)?.checkInLocation } catch (_: Exception) { null }
                     val locStr = if (record.latitude != null && record.longitude != null) {
                         "Lat ${record.latitude}, Lng ${record.longitude}"
                     } else existingLoc
@@ -72,7 +78,7 @@ class AttendanceRepository @Inject constructor(
                     attendanceDao.insertAttendance(
                         AttendanceEntity(
                             id = record.id,
-                            employeeId = record.employeeId,
+                            employeeId = userId,
                             date = formatDate(record.date),
                             checkInTime = record.checkInTime,
                             checkOutTime = record.checkOutTime,
@@ -92,11 +98,11 @@ class AttendanceRepository @Inject constructor(
                 }
                 Result.success(record)
             } else {
-                val cached = attendanceDao.getTodayAttendance(todayStr)
+                val cached = attendanceDao.getTodayAttendance(userId, todayStr)
                 Result.success(cached?.toAttendanceRecord())
             }
         } catch (e: Exception) {
-            val cached = try { attendanceDao.getTodayAttendance(todayStr) } catch (_: Exception) { null }
+            val cached = try { attendanceDao.getTodayAttendance(userId, todayStr) } catch (_: Exception) { null }
             if (cached != null) {
                 Result.success(cached.toAttendanceRecord())
             } else {
@@ -111,6 +117,8 @@ class AttendanceRepository @Inject constructor(
         longitude: Double?,
         matchConfidence: Float? = null
     ): Result<CheckInResponse> {
+        val userId = dataStoreManager.userId.first()
+        if (userId.isNullOrBlank()) return Result.failure(Exception("User is not authenticated"))
         val isOnline = NetworkUtils.isNetworkAvailable(context)
         
         return if (isOnline) {
@@ -125,7 +133,7 @@ class AttendanceRepository @Inject constructor(
                     // Save to local database
                     val attendanceEntity = AttendanceEntity(
                         id = attRecord?.id ?: UUID.randomUUID().toString(),
-                        employeeId = attRecord?.employeeId ?: (dataStoreManager.userId.first() ?: ""),
+                        employeeId = userId,
                         date = formatDate(attRecord?.date ?: java.time.LocalDate.now().toString()),
                         checkInTime = attRecord?.checkInTime ?: java.time.LocalDateTime.now().toString(),
                         checkOutTime = attRecord?.checkOutTime,
@@ -174,7 +182,7 @@ class AttendanceRepository @Inject constructor(
             val tempId = UUID.randomUUID().toString()
             // Use the real employeeId so the DashboardViewModel's Room Flow
             // (which filters by userId) can pick up this record immediately.
-            val realEmployeeId = dataStoreManager.userId.first() ?: "temp"
+            val realEmployeeId = userId
 
             saveCheckInToOutbox(selfie, latitude, longitude, matchConfidence)
 
@@ -249,7 +257,8 @@ class AttendanceRepository @Inject constructor(
                 if (response.isSuccessful) {
                     // Write the local DB update immediately so the UI updates even before
                     // we re-fetch from the server.
-                    val todayAttendance = attendanceDao.getTodayAttendance()
+                    val userId = dataStoreManager.userId.first()
+                    val todayAttendance = userId?.let { attendanceDao.getTodayAttendance(it) }
                     todayAttendance?.let {
                         attendanceDao.updateAttendance(
                             it.copy(checkOutTime = java.time.LocalDateTime.now().toString(), isSynced = true)
@@ -281,7 +290,8 @@ class AttendanceRepository @Inject constructor(
 
     private suspend fun updateLocalCheckOut() {
         try {
-            val todayAttendance = attendanceDao.getTodayAttendance()
+            val userId = dataStoreManager.userId.first()
+            val todayAttendance = userId?.let { attendanceDao.getTodayAttendance(it) }
             todayAttendance?.let {
                 attendanceDao.updateAttendance(
                     it.copy(
@@ -344,7 +354,7 @@ class AttendanceRepository @Inject constructor(
 
         // 2. Update local attendance notes if available
         try {
-            val todayAttendance = attendanceDao.getTodayAttendance()
+            val todayAttendance = attendanceDao.getTodayAttendance(employeeId)
             todayAttendance?.let {
                 attendanceDao.updateAttendance(it.copy(notes = trimmed))
             }
@@ -387,10 +397,12 @@ class AttendanceRepository @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 val data = response.body()!!
                 val records = data.records
+                val userId = dataStoreManager.userId.first()
+                    ?: return Result.failure(Exception("User is not authenticated"))
                 val entities = records.map { record ->
                     AttendanceEntity(
                         id = record.id,
-                        employeeId = record.employeeId,
+                        employeeId = userId,
                         date = formatDate(record.date),
                         checkInTime = record.checkInTime,
                         checkOutTime = record.checkOutTime,

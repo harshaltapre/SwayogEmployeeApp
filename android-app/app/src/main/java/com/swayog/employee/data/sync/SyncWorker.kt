@@ -265,7 +265,8 @@ class SyncWorker @AssistedInject constructor(
                         item.endpoint.contains("check-out") && item.method == "POST" -> {
                             val response = apiService.checkOut()
                             if (response.isSuccessful) {
-                                val todayRecord = attendanceDao.getTodayAttendance()
+                                val userId = dataStoreManager.userId.first()
+                                val todayRecord = userId?.let { attendanceDao.getTodayAttendance(it) }
                                 if (todayRecord != null) {
                                     attendanceDao.updateAttendance(todayRecord.copy(isSynced = true))
                                 }
