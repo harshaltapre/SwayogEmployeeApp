@@ -60,6 +60,17 @@ export function AmcVisitTracker({
     return emp ? emp.name : "Unassigned";
   };
 
+  const normalizePhotoRemarks = (remarks: any): Record<number, string> => {
+    if (!remarks || typeof remarks !== "object") return {};
+    return Object.entries(remarks as Record<string, any>).reduce((acc, [key, value]) => {
+      const index = Number(key);
+      if (Number.isInteger(index) && typeof value === "string" && value.trim()) {
+        acc[index] = value.trim();
+      }
+      return acc;
+    }, {} as Record<number, string>);
+  };
+
   const handleMarkDoneSubmit = () => {
     if (!completingVisit) return;
     
@@ -513,6 +524,33 @@ export function AmcVisitTracker({
                                 </div>
                               )}
 
+                              {Array.isArray(v.sitePhotos) && v.sitePhotos.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-slate-100">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                                    <Camera className="h-3 w-3 text-indigo-600" /> Maintenance Photos ({v.sitePhotos.length})
+                                  </span>
+                                  <div className="grid grid-cols-2 gap-2 mt-1">
+                                    {v.sitePhotos.map((photo: string, pIdx: number) => {
+                                      const photoUrl = buildAssetUrlFromPath(photo) || photo;
+                                      const remark = normalizePhotoRemarks(v.photoRemarks)[pIdx];
+                                      return (
+                                        <div key={pIdx} className="space-y-1">
+                                          <div className="relative aspect-video rounded overflow-hidden border border-slate-200 bg-white block shadow-xs">
+                                            <img src={photoUrl} alt={`Maintenance Photo ${pIdx + 1}`} className="w-full h-full object-cover" />
+                                          </div>
+                                          {remark && (
+                                            <div className="rounded border border-slate-200 bg-white p-1.5 text-[9px] text-slate-600">
+                                              <div className="font-bold uppercase text-slate-400 mb-0.5">Remark</div>
+                                              <div>{remark}</div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Maintenance Videos in Logs */}
                               {v.maintenanceVideos && Array.isArray(v.maintenanceVideos) && v.maintenanceVideos.length > 0 && (
                                 <div className="mt-2 pt-2 border-t border-slate-100">
@@ -523,7 +561,7 @@ export function AmcVisitTracker({
                                     {v.maintenanceVideos.map((video: string, vIdx: number) => (
                                       <div key={vIdx} className="relative aspect-video rounded overflow-hidden border border-slate-200 bg-white block shadow-xs">
                                         <video
-                                          src={video.startsWith('data:') ? video : video}
+                                          src={buildAssetUrlFromPath(video) || video}
                                           className="w-full h-full object-cover"
                                           controls
                                           preload="metadata"
@@ -787,6 +825,32 @@ export function AmcVisitTracker({
               </div>
             </div>
 
+            {Array.isArray(viewingPhotosVisit?.sitePhotos) && viewingPhotosVisit.sitePhotos.length > 0 && (
+              <div className="space-y-2 pt-4 border-t border-slate-100">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 block">
+                  <Camera className="h-3.5 w-3.5 text-indigo-600" /> Maintenance Photos ({viewingPhotosVisit.sitePhotos.length})
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {viewingPhotosVisit.sitePhotos.map((photo: string, idx: number) => {
+                    const remark = normalizePhotoRemarks(viewingPhotosVisit.photoRemarks)[idx];
+                    return (
+                      <div key={idx} className="space-y-2">
+                        <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                          <img src={buildAssetUrlFromPath(photo) || photo} alt={`Maintenance Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                        </div>
+                        {remark && (
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                            <div className="font-bold uppercase tracking-wider text-slate-500 text-[10px] mb-1">Remark</div>
+                            <div>{remark}</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Maintenance Videos Section */}
             {viewingPhotosVisit?.maintenanceVideos && Array.isArray(viewingPhotosVisit.maintenanceVideos) && viewingPhotosVisit.maintenanceVideos.length > 0 && (
               <div className="space-y-2 pt-4 border-t border-slate-100">
@@ -797,7 +861,7 @@ export function AmcVisitTracker({
                   {viewingPhotosVisit.maintenanceVideos.map((video: string, idx: number) => (
                     <div key={idx} className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100">
                       <video
-                        src={video.startsWith('data:') ? video : video}
+                        src={buildAssetUrlFromPath(video) || video}
                         className="w-full h-full object-cover"
                         controls
                         preload="metadata"

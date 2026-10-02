@@ -31,6 +31,7 @@ data class Task(
     val images: List<String>? = null, // Multiple images for site visits
     val sitePhotos: List<String>? = null, // Site visit photo gallery
     val maintenanceVideos: List<String>? = null, // Maintenance videos for maintenance visits
+    val photoRemarks: Map<Int, String>? = null,
     val assignedEmployees: List<TaskAssigneeSummary>? = null,
     val assignedEmployeeName: String? = null, // Employee name for customer notifications
     val assignedEmployeePhone: String? = null // Employee phone for customer notifications

@@ -453,6 +453,7 @@ model AmcVisit {
   beforeImageUrl        String?
   afterImageUrl         String?
   maintenanceVideos     String[]   @default([]) // Array of video URLs stored in R2
+  photoRemarks          Json?
 
   @@index([customerId])
   @@index([scheduledDate])

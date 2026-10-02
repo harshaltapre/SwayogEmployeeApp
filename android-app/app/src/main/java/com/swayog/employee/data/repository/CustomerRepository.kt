@@ -727,7 +727,8 @@ class CustomerRepository @Inject constructor(
         afterImageUrl: String?,
         sitePhotos: List<String>? = null,
         images: List<String>? = null,
-        maintenanceVideos: List<String>? = null
+        maintenanceVideos: List<String>? = null,
+        photoRemarks: Map<Int, String>? = null
     ): Result<AmcVisit> {
         return try {
             val body = MarkAmcVisitDoneRequest(
@@ -737,7 +738,8 @@ class CustomerRepository @Inject constructor(
                 afterImageUrl = afterImageUrl,
                 sitePhotos = sitePhotos,
                 images = images ?: sitePhotos,
-                maintenanceVideos = maintenanceVideos
+                maintenanceVideos = maintenanceVideos,
+                photoRemarks = photoRemarks
             )
             val response = apiService.markAmcVisitDone(visitId, body)
             if (response.isSuccessful && response.body()?.data != null) {

@@ -37,6 +37,7 @@ data class AmcVisit(
     val sitePhotos: List<String>? = null,
     val images: List<String>? = null,
     val maintenanceVideos: List<String>? = null,
+    val photoRemarks: Map<Int, String>? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null,
     val customer: AmcCustomerInfo? = null,
@@ -69,7 +70,8 @@ data class MarkAmcVisitDoneRequest(
     val afterImageUrl: String? = null,
     val sitePhotos: List<String>? = null,
     val images: List<String>? = null,
-    val maintenanceVideos: List<String>? = null
+    val maintenanceVideos: List<String>? = null,
+    val photoRemarks: Map<Int, String>? = null
 )
 
 

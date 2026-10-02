@@ -52,6 +52,8 @@ interface TaskWithDetails {
   afterLatitude?: number;
   afterLongitude?: number;
   sitePhotos?: string[];
+  maintenanceVideos?: string[];
+  photoRemarks?: Record<number, string> | Record<string, string> | null;
   customerRating?: number;
   customerFeedback?: string;
   fixCharges?: number;
@@ -67,6 +69,17 @@ interface TaskWithDetails {
     };
   }>;
 }
+
+const normalizePhotoRemarks = (remarks: Record<number, string> | Record<string, string> | null | undefined): Record<number, string> => {
+  if (!remarks || typeof remarks !== "object") return {};
+  return Object.entries(remarks).reduce((acc, [key, value]) => {
+    const index = Number(key);
+    if (Number.isInteger(index) && typeof value === "string" && value.trim()) {
+      acc[index] = value.trim();
+    }
+    return acc;
+  }, {} as Record<number, string>);
+};
 
 export default function ServiceCoordinatorDashboard() {
   const { toast } = useToast();
@@ -629,6 +642,7 @@ function TaskDetailModal({ task, open, onOpenChange }: {
                 const displaySitePhotos = Array.isArray(task.sitePhotos)
                   ? Array.from(new Set(task.sitePhotos.filter((url) => typeof url === "string" && url.trim().length > 0)))
                   : [];
+                const photoRemarks = normalizePhotoRemarks(task.photoRemarks);
 
                 return (
                   <div>
@@ -641,24 +655,33 @@ function TaskDetailModal({ task, open, onOpenChange }: {
                       <div className="grid grid-cols-2 gap-3">
                         {displaySitePhotos.map((url, index) => {
                           const fullUrl = buildAssetUrlFromPath(url) || url;
+                          const remark = photoRemarks[index];
                           return (
-                            <div key={index} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-video group">
-                              <img 
-                                src={fullUrl} 
-                                alt={`Site Photo ${index + 1}`} 
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
-                                Photo #{index + 1}
+                            <div key={index} className="space-y-2">
+                              <div className="relative rounded-lg overflow-hidden border border-slate-200 aspect-video group">
+                                <img 
+                                  src={fullUrl} 
+                                  alt={`Site Photo ${index + 1}`} 
+                                  className="w-full h-full object-cover"
+                                />
+                                <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+                                  Photo #{index + 1}
+                                </div>
+                                <a 
+                                  href={fullUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="absolute top-1 right-1 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded opacity-90 hover:opacity-100"
+                                >
+                                  View
+                                </a>
                               </div>
-                              <a 
-                                href={fullUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="absolute top-1 right-1 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded opacity-90 hover:opacity-100"
-                              >
-                                View
-                              </a>
+                              {remark && (
+                                <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                                  <div className="text-[10px] uppercase tracking-wide font-semibold text-slate-500 mb-1">Remark</div>
+                                  <div className="text-xs text-slate-700 italic">{remark}</div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -704,13 +727,14 @@ function TaskDetailModal({ task, open, onOpenChange }: {
                   </h3>
                   <div className="grid grid-cols-2 gap-3">
                     {task.maintenanceVideos.map((video, index) => {
-                      const videoUrl = video.startsWith('data:') ? video : video;
+                      const videoUrl = buildAssetUrlFromPath(video) || video;
                       return (
                         <div key={index} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-video group">
                           <video 
                             src={videoUrl} 
                             className="w-full h-full object-cover" 
                             controls
+                            preload="metadata"
                           />
                           <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
                             Video #{index + 1}

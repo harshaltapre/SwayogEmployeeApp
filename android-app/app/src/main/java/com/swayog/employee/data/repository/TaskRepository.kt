@@ -528,7 +528,8 @@ class TaskRepository @Inject constructor(
                 afterImageUrl = afterImageUrl,
                 sitePhotos = photosToSubmit,
                 images = photosToSubmit,
-                maintenanceVideos = filteredMaintenanceVideos
+                maintenanceVideos = filteredMaintenanceVideos,
+                photoRemarks = photoRemarks
             )
             android.util.Log.d(
                 "VIDEO_TRACE_4",
@@ -556,6 +557,7 @@ class TaskRepository @Inject constructor(
                         sitePhotos = visitSitePhotos,
                         images = visitSitePhotos,
                         maintenanceVideos = visit.maintenanceVideos ?: maintenanceVideos?.filter { it.isNotBlank() },
+                        photoRemarks = visit.photoRemarks ?: photoRemarks,
                         completedAt = visit.completedAt,
                         createdAt = visit.createdAt,
                         updatedAt = visit.updatedAt
@@ -577,6 +579,7 @@ class TaskRepository @Inject constructor(
                         sitePhotosJson = visitSitePhotos?.let { gson.toJson(it) },
                         imagesJson = visitSitePhotos?.let { gson.toJson(it) },
                         maintenanceVideosJson = (visit.maintenanceVideos ?: maintenanceVideos)?.filter { it.isNotBlank() }?.let { gson.toJson(it) },
+                        photoRemarksJson = (visit.photoRemarks ?: photoRemarks)?.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) },
                         completedAt = completedTask.completedAt,
                         createdAt = completedTask.createdAt,
                         updatedAt = completedTask.updatedAt,
@@ -585,13 +588,13 @@ class TaskRepository @Inject constructor(
                     taskDao.updateTask(entity)
                     Result.success(completedTask)
                 } else {
-                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, clientUploadId)
-                    saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos)
+                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, clientUploadId, photoRemarks)
+                    saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, photoRemarks)
                     Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
                 }
             } catch (e: Exception) {
-                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, clientUploadId)
-                saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos)
+                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, clientUploadId, photoRemarks)
+                saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, photoRemarks)
                 Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
             }
         }
@@ -730,6 +733,7 @@ class TaskRepository @Inject constructor(
                         beforeImagesJson = beforeImages?.let { gson.toJson(it) },
                         afterImagesJson = afterImages?.let { gson.toJson(it) },
                         maintenanceVideosJson = (task.maintenanceVideos ?: maintenanceVideos)?.filter { it.isNotBlank() }?.let { gson.toJson(it) } ?: taskDao.getTaskById(task.id)?.maintenanceVideosJson,
+                        photoRemarksJson = (task.photoRemarks ?: photoRemarks)?.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) } ?: taskDao.getTaskById(task.id)?.photoRemarksJson,
                         assignedEmployeeName = task.assignedEmployeeName,
                         assignedEmployeePhone = task.assignedEmployeePhone
                     )
@@ -738,7 +742,8 @@ class TaskRepository @Inject constructor(
                         images = finalSitePhotos,
                         beforeImageUrl = task.beforeImageUrl ?: beforeImageUrl,
                         afterImageUrl = task.afterImageUrl ?: afterImageUrl,
-                        maintenanceVideos = task.maintenanceVideos ?: maintenanceVideos?.filter { it.isNotBlank() }
+                        maintenanceVideos = task.maintenanceVideos ?: maintenanceVideos?.filter { it.isNotBlank() },
+                        photoRemarks = task.photoRemarks ?: photoRemarks
                     )
                     taskDao.updateTask(entity)
                     Result.success(finalTask)
@@ -779,7 +784,8 @@ class TaskRepository @Inject constructor(
                         images = images,
                         beforeImages = beforeImages,
                         afterImages = afterImages,
-                        maintenanceVideos = maintenanceVideos
+                        maintenanceVideos = maintenanceVideos,
+                        photoRemarks = photoRemarks
                     )
                     Result.failure(OfflinePendingException("Task completed & saved locally on app! Syncing with server..."))
                 }
@@ -818,7 +824,8 @@ class TaskRepository @Inject constructor(
                     images = images,
                     beforeImages = beforeImages,
                     afterImages = afterImages,
-                    maintenanceVideos = maintenanceVideos
+                    maintenanceVideos = maintenanceVideos,
+                    photoRemarks = photoRemarks
                 )
                 Result.failure(OfflinePendingException("Task completed & saved locally on app! Syncing with server..."))
             }
@@ -856,7 +863,9 @@ class TaskRepository @Inject constructor(
                 taskType = taskType,
                 images = images,
                 beforeImages = beforeImages,
-                afterImages = afterImages
+                afterImages = afterImages,
+                maintenanceVideos = maintenanceVideos,
+                photoRemarks = photoRemarks
             )
             Result.failure(OfflinePendingException())
         }
@@ -880,7 +889,8 @@ class TaskRepository @Inject constructor(
         images: List<String>? = null,
         beforeImages: List<String>? = null,
         afterImages: List<String>? = null,
-        maintenanceVideos: List<String>? = null
+        maintenanceVideos: List<String>? = null,
+        photoRemarks: Map<Int, String>? = null
     ) {
         val localTask = taskDao.getTaskById(taskId)
         if (localTask != null) {
@@ -903,7 +913,8 @@ class TaskRepository @Inject constructor(
                 sitePhotosJson = finalPhotos?.let { gson.toJson(it) } ?: localTask.sitePhotosJson,
                 beforeImagesJson = beforeImages?.let { gson.toJson(it) } ?: localTask.beforeImagesJson,
                 afterImagesJson = afterImages?.let { gson.toJson(it) } ?: localTask.afterImagesJson,
-                maintenanceVideosJson = maintenanceVideos?.let { gson.toJson(it) } ?: localTask.maintenanceVideosJson
+                maintenanceVideosJson = maintenanceVideos?.let { gson.toJson(it) } ?: localTask.maintenanceVideosJson,
+                photoRemarksJson = photoRemarks?.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) } ?: localTask.photoRemarksJson
             ))
         }
     }
@@ -1013,7 +1024,8 @@ class TaskRepository @Inject constructor(
                 taskType = taskType ?: localTask.taskType,
                 imagesJson = images?.let { gson.toJson(it) } ?: localTask.imagesJson,
                 sitePhotosJson = (images ?: beforeImages)?.let { gson.toJson(it) } ?: localTask.sitePhotosJson,
-                maintenanceVideosJson = maintenanceVideos?.let { gson.toJson(it) } ?: localTask.maintenanceVideosJson
+                maintenanceVideosJson = maintenanceVideos?.let { gson.toJson(it) } ?: localTask.maintenanceVideosJson,
+                photoRemarksJson = photoRemarks?.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) } ?: localTask.photoRemarksJson
             ))
         }
 
@@ -1190,7 +1202,26 @@ class TaskRepository @Inject constructor(
                                                     }
                                                 }
                                         },
-                                        maintenanceVideos = maintenanceVideos
+                                        maintenanceVideos = maintenanceVideos,
+                                        photoRemarks = json.optJSONObject("photoRemarks")?.let { remarksJson ->
+                                            buildMap {
+                                                val keys = remarksJson.keys()
+                                                while (keys.hasNext()) {
+                                                    val key = keys.next()
+                                                    key.toIntOrNull()?.let { index ->
+                                                        remarksJson.optString(key).takeIf { it.isNotBlank() }?.let { remark ->
+                                                            put(index, remark)
+                                                        }
+                                                    }
+                                                }
+                                            }.takeIf { it.isNotEmpty() }
+                                        } ?: json.optString("photoRemarks").takeIf { it.trimStart().startsWith("{") }?.let { encoded ->
+                                            try {
+                                                gson.fromJson(encoded, object : com.google.gson.reflect.TypeToken<Map<Int, String>>() {}.type)
+                                            } catch (_: Exception) {
+                                                null
+                                            }
+                                        }
                                     )
                                     val response = apiService.markAmcVisitDone(visitId, request)
                                     if (response.code() == 401) isAuthErrorForItem = true

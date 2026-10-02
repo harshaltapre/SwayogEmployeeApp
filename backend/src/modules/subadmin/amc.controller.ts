@@ -402,7 +402,7 @@ export const listAmcVisits = async (req: Request, res: Response) => {
  */
 export const markVisitCompleted = async (req: Request, res: Response) => {
   const { visitId } = req.params;
-  const { completedByEmployeeId, completedByName, notes, visitNotes, beforeImageUrl, afterImageUrl, sitePhotos, images, maintenanceVideos } = req.body;
+  const { completedByEmployeeId, completedByName, notes, visitNotes, beforeImageUrl, afterImageUrl, sitePhotos, images, maintenanceVideos, photoRemarks } = req.body;
 
   const resolvedEmployeeId = completedByEmployeeId || req.auth?.userId || null;
   let resolvedName = completedByName || null;
@@ -452,6 +452,7 @@ export const markVisitCompleted = async (req: Request, res: Response) => {
       beforeImageUrl: savedBeforeUrl,
       afterImageUrl: savedAfterUrl,
       maintenanceVideos: savedMaintenanceVideos.length > 0 ? savedMaintenanceVideos : (Array.isArray(existingVisit?.maintenanceVideos) ? existingVisit.maintenanceVideos : undefined),
+      photoRemarks: photoRemarks !== undefined ? (photoRemarks ?? undefined) : (existingVisit?.photoRemarks ?? undefined),
     },
     include: {
       assignedEmployee: {

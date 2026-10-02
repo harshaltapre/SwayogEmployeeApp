@@ -505,6 +505,7 @@ export function serializeTask(task: any, options: { scopedEmployeeUserId?: strin
     afterLatitude: afterImageObj?.latitude ?? task.afterLatitude ?? null,
     afterLongitude: afterImageObj?.longitude ?? task.afterLongitude ?? null,
     maintenanceVideos: Array.isArray(task.maintenanceVideos) ? task.maintenanceVideos : [],
+    photoRemarks: task.photoRemarks ?? null,
   };
 }
 
@@ -643,6 +644,7 @@ export async function listTasks(auth: AuthContext, query: ListTasksQueryInput) {
         sitePhotos: visitSitePhotos,
         images: visitSitePhotos,
         maintenanceVideos: visitMaintenanceVideos,
+        photoRemarks: (visit as any).photoRemarks ?? null,
         completedAt: visit.completedAt?.toISOString() ?? null,
         createdAt: visit.createdAt.toISOString(),
         updatedAt: visit.updatedAt.toISOString(),

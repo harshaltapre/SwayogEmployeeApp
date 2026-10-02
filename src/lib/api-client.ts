@@ -174,7 +174,9 @@ export type AmcVisitRecord = {
   visitNotes?: string | null;
   beforeImageUrl?: string | null;
   afterImageUrl?: string | null;
+  sitePhotos?: string[] | null;
   maintenanceVideos?: string[];
+  photoRemarks?: Record<number, string> | Record<string, string> | null;
 };
 
 type ListCustomersParams = {
