@@ -3947,8 +3947,39 @@ export function useMarkCustomerNotificationRead(opts?: any) {
   });
 }
 
-// Aliases for employee notifications
-export const useGetEmployeeNotifications = useGetCustomerNotifications;
-export const useGetEmployeeUnreadNotificationsCount = useGetCustomerUnreadNotificationsCount;
-export const useMarkEmployeeNotificationRead = useMarkCustomerNotificationRead;
+// Dedicated hooks for employee notifications
+export function useGetEmployeeNotifications(options?: { query?: any }) {
+  return useQuery({
+    queryKey: ["employee-notifications"],
+    queryFn: async () => {
+      const res = await requestApi<any>("/employee/notifications", { method: "GET" });
+      return res?.notifications || res?.data || [];
+    },
+    ...(options?.query || {}),
+  });
+}
+
+export function useGetEmployeeUnreadNotificationsCount(options?: { query?: any }) {
+  return useQuery({
+    queryKey: ["employee-notifications-unread-count"],
+    queryFn: async () => {
+      const res = await requestApi<any>("/employee/notifications/unread-count", { method: "GET" });
+      return res?.count ?? res?.data?.count ?? 0;
+    },
+    ...(options?.query || {}),
+  });
+}
+
+export function useMarkEmployeeNotificationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      return await requestApi<any>(`/employee/notifications/${id}/read`, { method: "PATCH" });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-notifications"] });
+      qc.invalidateQueries({ queryKey: ["employee-notifications-unread-count"] });
+    },
+  });
+}
 

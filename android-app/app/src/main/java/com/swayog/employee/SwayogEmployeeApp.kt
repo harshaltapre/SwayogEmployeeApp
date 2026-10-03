@@ -34,6 +34,8 @@ class SwayogEmployeeApp : Application(), Configuration.Provider {
         createNotificationChannel()
         // Schedule periodic task refresh for dashboard synchronization
         WorkManagerScheduler.schedulePeriodicTaskRefresh(this)
+        // Schedule periodic check-in reminder for employees who haven't checked in
+        WorkManagerScheduler.scheduleCheckInReminder(this)
     }
     
     private fun createNotificationChannel() {

@@ -574,5 +574,20 @@ interface ApiService {
 
     @GET("workforce/requests")
     suspend fun getUnifiedRequests(): Response<UnifiedRequestsResponse>
+
+    // Notification Center Endpoints
+    @GET("employee/notifications")
+    suspend fun getNotifications(): Response<ApiResponse<List<Notification>>>
+
+    @GET("employee/notifications/unread-count")
+    suspend fun getUnreadCount(): Response<ApiResponse<Map<String, Int>>>
+
+    @PATCH("employee/notifications/{notificationId}/read")
+    suspend fun markNotificationAsRead(
+        @Path("notificationId") notificationId: String
+    ): Response<ApiResponse<Unit>>
+
+    @POST("employee/notifications/read-all")
+    suspend fun markAllNotificationsAsRead(): Response<ApiResponse<Unit>>
 }
 

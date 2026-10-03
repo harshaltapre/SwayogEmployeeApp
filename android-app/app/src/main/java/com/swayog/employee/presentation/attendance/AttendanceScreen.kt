@@ -3059,6 +3059,34 @@ fun AttendanceRegularizationDialog(
                                 return@Button
                             }
 
+                            // Validation for current date: Out-Time cannot be greater than current time
+                            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                            if (regDate == todayStr && regStatus != "ABSENT" && regStatus != "LEAVE" && regCheckOutTime.isNotBlank()) {
+                                try {
+                                    val parts = regCheckOutTime.trim().split(":")
+                                    if (parts.size == 2) {
+                                        var hours = parts[0].toInt()
+                                        val minutes = parts[1].toInt()
+                                        if (regCheckOutPeriod.equals("PM", ignoreCase = true) && hours < 12) hours += 12
+                                        if (regCheckOutPeriod.equals("AM", ignoreCase = true) && hours == 12) hours = 0
+
+                                        val outTimeCal = Calendar.getInstance().apply {
+                                            set(Calendar.HOUR_OF_DAY, hours)
+                                            set(Calendar.MINUTE, minutes)
+                                            set(Calendar.SECOND, 0)
+                                            set(Calendar.MILLISECOND, 0)
+                                        }
+
+                                        if (outTimeCal.after(Calendar.getInstance())) {
+                                            localError = "Out-Time cannot be greater than the current time for today's forgot attendance request. It must be equal to or earlier than the current time."
+                                            return@Button
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    // Ignore parse errors, server handles backend validation
+                                }
+                            }
+
                             localError = null
                             val isNoTime = regStatus == "ABSENT" || regStatus == "LEAVE"
                             onSubmit(

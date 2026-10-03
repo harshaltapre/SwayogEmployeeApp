@@ -59,4 +59,41 @@ object WorkManagerScheduler {
         WorkManager.getInstance(context).enqueue(oneTimeWorkRequest)
         android.util.Log.d("WorkManagerScheduler", "Triggered immediate task refresh")
     }
+
+    /**
+     * Schedule a periodic check-in reminder every 30 minutes.
+     * The CheckInReminderWorker will internally determine if a reminder
+     * is needed (i.e., working day + user logged in + no check-in yet).
+     */
+    fun scheduleCheckInReminder(context: Context) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val periodicWorkRequest = PeriodicWorkRequestBuilder<CheckInReminderWorker>(
+            30, TimeUnit.MINUTES
+        )
+            .setConstraints(constraints)
+            .setBackoffCriteria(
+                BackoffPolicy.LINEAR,
+                15, TimeUnit.MINUTES
+            )
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            CheckInReminderWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            periodicWorkRequest
+        )
+
+        android.util.Log.d("WorkManagerScheduler", "Scheduled check-in reminder check every 30 minutes")
+    }
+
+    /**
+     * Cancel the check-in reminder (e.g., on logout)
+     */
+    fun cancelCheckInReminder(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(CheckInReminderWorker.WORK_NAME)
+        android.util.Log.d("WorkManagerScheduler", "Cancelled check-in reminder")
+    }
 }

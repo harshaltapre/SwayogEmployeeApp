@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Bell,
   Timer,
   Coffee,
   Pause,
@@ -379,6 +380,29 @@ export default function EmployeeAttendance() {
     if (!regReason.trim() || regReason.trim().length < 3) {
       setRegError("A reason explaining why you forgot or missed attendance is required (minimum 3 characters).");
       return;
+    }
+
+    // Validation for current date: Out-Time cannot be greater than current time
+    const now = new Date();
+    const todayYear = now.getFullYear();
+    const todayMonth = String(now.getMonth() + 1).padStart(2, "0");
+    const todayDay = String(now.getDate()).padStart(2, "0");
+    const todayStr = `${todayYear}-${todayMonth}-${todayDay}`;
+
+    if (regDate === todayStr && regStatus !== "ABSENT" && regStatus !== "LEAVE" && regCheckOutTime.trim()) {
+      let [hours, minutes] = regCheckOutTime.trim().split(":").map(Number);
+      if (!isNaN(hours) && !isNaN(minutes)) {
+        if (regCheckOutPeriod) {
+          const p = regCheckOutPeriod.toUpperCase();
+          if (p === "PM" && hours < 12) hours += 12;
+          if (p === "AM" && hours === 12) hours = 0;
+        }
+        const outTimeDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0);
+        if (outTimeDate.getTime() > now.getTime()) {
+          setRegError("Out-Time cannot be greater than the current time for today's forgot attendance request. It must be equal to or earlier than the current time.");
+          return;
+        }
+      }
     }
 
     try {
@@ -1226,6 +1250,38 @@ export default function EmployeeAttendance() {
           </Card>
         </div>
       </div>
+
+      {/* ── Check-In Reminder Banner (Working Day & Not Checked In) ─────────── */}
+      {!((rules?.weeklyOffDays || [0]).includes(new Date().getDay())) && !(todayRecord?.checkIn || (todayRecord?.status && ["present", "late", "half-day", "leave"].includes(String(todayRecord.status).toLowerCase()))) && (
+        <div className="mt-6 rounded-2xl border border-blue-400/60 bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 dark:from-blue-950/40 dark:via-indigo-950/40 dark:to-sky-950/40 dark:border-blue-700/50 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 shadow-sm">
+          <div className="flex items-center gap-3 flex-1">
+            <div className="p-2.5 bg-blue-500/20 border border-blue-400/40 rounded-xl shrink-0">
+              <Bell className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-blue-900 dark:text-blue-200 flex items-center gap-2">
+                <span>Check-In Reminder</span>
+                <span className="bg-blue-200 text-blue-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full dark:bg-blue-900 dark:text-blue-200">
+                  Pending Action
+                </span>
+              </p>
+              <p className="text-xs text-blue-700/90 dark:text-blue-300/90 mt-0.5">
+                Today is a working day and you have not completed your check-in yet. Please complete your check-in to mark attendance.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => {
+              const el = document.getElementById("btn-checkin") || document.getElementById("checkin-card");
+              if (el) el.scrollIntoView({ behavior: "smooth" });
+            }}
+            className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm gap-2 shadow-md shadow-blue-200 dark:shadow-blue-900/50 shrink-0 transition-all hover:scale-105"
+          >
+            <Clock className="h-4 w-4" />
+            Complete Check-In
+          </Button>
+        </div>
+      )}
 
       {/* ── Forgot Attendance Banner ─────────────────────────────────────────── */}
       <div className="mt-6 rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-950/20 dark:via-orange-950/20 dark:to-yellow-950/20 dark:border-amber-700/40 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 shadow-sm">
