@@ -8,10 +8,10 @@ import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.swayog.employee.MainActivity
 import com.swayog.employee.R
 import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.local.preferences.DataStoreManager
+import com.swayog.employee.presentation.MainActivity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.Calendar
