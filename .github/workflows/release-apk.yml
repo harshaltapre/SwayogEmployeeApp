@@ -659,7 +659,7 @@ jobs:
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME || 'swayog-dashboard' }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
-          PUBLIC_DISTRIBUTION_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL }}
+          PUBLIC_DISTRIBUTION_URL: ${{ secrets.VERCEL_PROJECT_URL || secrets.PUBLIC_DISTRIBUTION_URL }}
           WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard.vercel.app' }}
           PRODUCTION_CERT_SHA256: ${{ steps.signing_secrets.outputs.PRODUCTION_CERT_SHA256 }}
           CERTIFICATE_SHA256: ${{ steps.verify_apk_cert.outputs.APK_CERT_SHA256 }}
@@ -674,6 +674,35 @@ jobs:
             "../release_notes.txt" \
             "${{ steps.versioning.outputs.RELEASE_TAG }}" \
             "${{ steps.versioning.outputs.RELEASE_TITLE }}"
+
+      - name: Publish OTA manifest and APK to Vercel deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${VERCEL_ORG_ID:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ]; then
+            echo "::error::VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID are required to publish the OTA endpoint."
+            exit 1
+          fi
+
+          npm install --global vercel
+          mkdir -p public/releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}
+          cp "${{ steps.apk_info.outputs.APK_PATH }}" \
+            "public/releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}/app-release.apk"
+          cp backend/latest.json public/latest.json
+
+          vercel link \
+            --project "$VERCEL_PROJECT_ID" \
+            --scope "$VERCEL_ORG_ID" \
+            --token "$VERCEL_TOKEN" \
+            --yes
+          vercel deploy . \
+            --prod \
+            --token "$VERCEL_TOKEN" \
+            --scope "$VERCEL_ORG_ID" \
+            --yes
 
       - name: Validate Release in Cloudflare R2
         working-directory: backend
@@ -745,7 +774,7 @@ jobs:
 
       - name: Verify Public /latest.json & APK Download Release Gate
         env:
-          RAW_PUBLIC_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+          RAW_PUBLIC_URL: ${{ secrets.VERCEL_PROJECT_URL || secrets.PUBLIC_DISTRIBUTION_URL }}
           EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
           EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
           EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
@@ -760,10 +789,9 @@ jobs:
           const http = require("http");
           const { URL } = require("url");
 
-          let rawBase = (process.env.RAW_PUBLIC_URL || "https://swayog-dashboard.vercel.app").trim().replace(/\/$/, "");
+          let rawBase = (process.env.RAW_PUBLIC_URL || "").trim().replace(/\/$/, "");
           if (rawBase.includes(".r2.cloudflarestorage.com") || rawBase.includes("your-public-domain.com") || !rawBase) {
-            console.log(`[Validation Gate] Notice: Overriding private R2/invalid domain "${rawBase}" with canonical "https://swayog-dashboard.vercel.app"`);
-            rawBase = "https://swayog-dashboard.vercel.app";
+            throw new Error("VERCEL_PROJECT_URL (or PUBLIC_DISTRIBUTION_URL) must point to the public OTA Vercel project");
           }
           const endpoint = `${rawBase}/latest.json`;
           console.log(`[Validation Gate] Verifying authoritative public endpoint: ${endpoint}`);

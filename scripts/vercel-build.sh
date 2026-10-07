@@ -23,8 +23,10 @@ vite build
 echo "Copying public files to dist..."
 cp -r public/* dist/
 
-echo "Removing static latest.json from dist to guarantee dynamic R2 manifest routing..."
-rm -f dist/latest.json
-rm -f dist/releases/android/latest.json
+if [ ! -f dist/latest.json ]; then
+  echo "ERROR: dist/latest.json was not generated."
+  exit 1
+fi
+echo "Verified static OTA manifest at dist/latest.json"
 
 echo "vercel build script completed"
