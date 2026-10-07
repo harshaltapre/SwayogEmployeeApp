@@ -676,18 +676,37 @@ jobs:
             "${{ steps.versioning.outputs.RELEASE_TITLE }}"
 
       - name: Publish OTA manifest and APK to Vercel deployment
+        id: vercel_deploy
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -Eeuo pipefail
-          if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${VERCEL_ORG_ID:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ]; then
-            echo "::error::VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID are required to publish the OTA endpoint."
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::error::VERCEL_TOKEN GitHub Secret is missing."
+            exit 1
+          fi
+          if [ -z "${VERCEL_ORG_ID:-}" ]; then
+            echo "::error::VERCEL_ORG_ID GitHub Secret is missing."
+            exit 1
+          fi
+          if [ -z "${VERCEL_PROJECT_ID:-}" ]; then
+            echo "::error::VERCEL_PROJECT_ID GitHub Secret is missing."
             exit 1
           fi
 
           npm install --global vercel
+          if ! command -v vercel >/dev/null 2>&1; then
+            echo "::error::Vercel CLI was not installed or is not available on PATH."
+            exit 1
+          fi
+          vercel --version
+          if ! vercel whoami --token "$VERCEL_TOKEN" >/dev/null 2>&1; then
+            echo "::error::VERCEL_TOKEN is invalid or cannot authenticate with Vercel."
+            exit 1
+          fi
+
           mkdir -p public/releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}
           cp "${{ steps.apk_info.outputs.APK_PATH }}" \
             "public/releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}/app-release.apk"
@@ -698,11 +717,28 @@ jobs:
             --scope "$VERCEL_ORG_ID" \
             --token "$VERCEL_TOKEN" \
             --yes
+
+          DEPLOY_LOG="$(mktemp)"
+          set +e
           vercel deploy . \
             --prod \
             --token "$VERCEL_TOKEN" \
             --scope "$VERCEL_ORG_ID" \
-            --yes
+            --yes 2>&1 | tee "$DEPLOY_LOG"
+          DEPLOY_STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$DEPLOY_STATUS" -ne 0 ]; then
+            echo "::error::Vercel production deployment failed."
+            exit "$DEPLOY_STATUS"
+          fi
+
+          DEPLOYMENT_URL="$(grep -Eo 'https://[^[:space:]]+\.vercel\.app' "$DEPLOY_LOG" | tail -n 1 || true)"
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "::error::Vercel deployment completed but no public *.vercel.app URL was returned."
+            exit 1
+          fi
+          echo "OTA_PUBLIC_URL=$DEPLOYMENT_URL"
+          echo "ota_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
 
       - name: Validate Release in Cloudflare R2
         working-directory: backend
@@ -774,7 +810,7 @@ jobs:
 
       - name: Verify Public /latest.json & APK Download Release Gate
         env:
-          RAW_PUBLIC_URL: ${{ secrets.VERCEL_PROJECT_URL || secrets.PUBLIC_DISTRIBUTION_URL }}
+          RAW_PUBLIC_URL: ${{ steps.vercel_deploy.outputs.ota_url }}
           EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
           EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
           EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
