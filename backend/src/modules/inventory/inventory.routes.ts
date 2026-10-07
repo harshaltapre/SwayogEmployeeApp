@@ -9,7 +9,9 @@ import {
   deleteInventoryItemHandler,
   getInventoryItemHandler,
   listInventoryItemsHandler,
+  listInventoryStockEntriesHandler,
   updateInventoryItemHandler,
+  restockInventoryItemHandler,
   createDispatchRecordHandler,
   deleteDispatchRecordHandler,
   listDispatchRecordsHandler,
@@ -18,6 +20,7 @@ import {
 import {
   createInventorySchema,
   updateInventorySchema,
+  restockInventorySchema,
   createDispatchSchema,
   updateDispatchSchema,
 } from "./inventory.schemas.js";
@@ -72,6 +75,19 @@ inventoryRoutes.patch(
   authorizeInventoryManager,
   validateBody(updateInventorySchema),
   asyncHandler(updateInventoryItemHandler)
+);
+
+inventoryRoutes.post(
+  "/:id/restock",
+  authorizeInventoryManager,
+  validateBody(restockInventorySchema),
+  asyncHandler(restockInventoryItemHandler)
+);
+
+inventoryRoutes.get(
+  "/:id/stock-entries",
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUB_ADMIN, UserRole.EMPLOYEE),
+  asyncHandler(listInventoryStockEntriesHandler)
 );
 
 inventoryRoutes.delete(

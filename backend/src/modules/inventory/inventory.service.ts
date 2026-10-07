@@ -4,6 +4,7 @@ import type { AuthContext } from "../../middleware/auth.js";
 import type {
   CreateInventoryInput,
   UpdateInventoryInput,
+  RestockInventoryInput,
   CreateDispatchInput,
   UpdateDispatchInput,
 } from "./inventory.schemas.js";
@@ -155,6 +156,74 @@ export async function updateInventoryItem(_auth: AuthContext, id: number, input:
   });
 
   return serializeInventoryItem(updated);
+}
+
+export async function restockInventoryItem(_auth: AuthContext, id: number, input: RestockInventoryInput) {
+  const entryDate = new Date(input.entryDate);
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.inventory.updateMany({
+      where: { id },
+      data: {
+        inStock: { increment: input.quantity },
+        pricePerUnit: input.pricePerUnit,
+        entryDate,
+        supplier: input.supplier,
+      },
+    });
+    if (result.count === 0) {
+      throw new ApiError(404, "Inventory item not found");
+    }
+
+    const item = await tx.inventory.findUnique({ where: { id } });
+    if (!item) {
+      throw new ApiError(404, "Inventory item not found");
+    }
+
+    await tx.inventoryStockEntry.create({
+      data: {
+        itemId: id,
+        quantity: input.quantity,
+        entryDate,
+        pricePerUnit: input.pricePerUnit,
+        supplier: input.supplier,
+      },
+    });
+    return item;
+  });
+
+  const user = await prisma.user.findUnique({ where: { id: _auth.userId } });
+  const userName = user?.fullName || _auth.loginId;
+  await createAdminNotification({
+    type: "MATERIAL_ADD",
+    message: `${userName} added ${input.quantity} ${updated.unit || "units"} to ${updated.name} (Total: ${updated.inStock})`,
+    employeeId: _auth.userId,
+  });
+
+  return serializeInventoryItem(updated);
+}
+
+export async function listInventoryStockEntries(_auth: AuthContext, id: number) {
+  const item = await prisma.inventory.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!item) {
+    throw new ApiError(404, "Inventory item not found");
+  }
+
+  const entries = await prisma.inventoryStockEntry.findMany({
+    where: { itemId: id },
+    orderBy: [{ entryDate: "desc" }, { id: "desc" }],
+  });
+  return entries.map((entry) => ({
+    id: entry.id,
+    itemId: entry.itemId,
+    quantity: entry.quantity,
+    entryDate: entry.entryDate.toISOString(),
+    pricePerUnit: entry.pricePerUnit,
+    supplier: entry.supplier,
+    createdAt: entry.createdAt.toISOString(),
+  }));
 }
 
 export async function deleteInventoryItem(_auth: AuthContext, id: number) {

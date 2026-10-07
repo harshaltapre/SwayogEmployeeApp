@@ -1,14 +1,16 @@
 import { useState } from "react";
-import { Plus, Filter, Download, AlertCircle, Pencil, Trash2, Package, Search, TrendingUp } from "lucide-react";
+import { Plus, Filter, Download, AlertCircle, Pencil, Trash2, Package, Search, TrendingUp, PackagePlus, History } from "lucide-react";
 import { Redirect } from "wouter";
 import { SidebarLayout } from "@/components/SidebarLayout";
 import { PageHeader } from "@/components/PageHeader";
-import { useCreateInventory, useDeleteInventory, useListInventory, useUpdateInventory } from "@/lib/api-client";
+import { useCreateInventory, useDeleteInventory, useListInventory, useRestockInventory, useUpdateInventory, type InventoryRecord } from "@/lib/api-client";
 import { useAuth, isInventoryExecutiveJobRole } from "@/lib/auth";
 import { C, Pill, StatCard, Card } from "../superadmin/shared";
 import AdminInventoryFormModal from "../admin/AdminInventoryFormModal";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import AddInventoryStockDialog from "./AddInventoryStockDialog";
+import InventoryStockEntriesDialog from "./InventoryStockEntriesDialog";
 
 export default function InventoryManagementPage() {
   const { user } = useAuth();
@@ -17,6 +19,8 @@ export default function InventoryManagementPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
+  const [restockingItem, setRestockingItem] = useState<InventoryRecord | null>(null);
+  const [historyItem, setHistoryItem] = useState<InventoryRecord | null>(null);
   const { toast } = useToast();
 
   if (!user) return null;
@@ -43,6 +47,8 @@ export default function InventoryManagementPage() {
       },
     },
   });
+
+  const restockMutation = useRestockInventory();
 
   const deleteMutation = useDeleteInventory({
     mutation: {
@@ -297,9 +303,29 @@ export default function InventoryManagementPage() {
                             <div style={{ display: "flex", gap: 8 }}>
                               <button
                                 onClick={() => openEditModal(item)}
+                                aria-label={`Edit ${item.name}`}
                                 style={{ padding: 8, borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", color: C.slate }}
                               >
                                 <Pencil size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRestockingItem(item)}
+                                aria-label={`Add item under SKU ${item.sku}`}
+                                title="Add Item under this SKU"
+                                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #DCFCE7", background: "#F0FDF4", cursor: "pointer", color: C.emerald, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}
+                              >
+                                <PackagePlus size={14} />
+                                Add Item
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setHistoryItem(item)}
+                                aria-label={`View stock entries for ${item.sku}`}
+                                title="View stock entries"
+                                style={{ padding: 8, borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", color: C.slate }}
+                              >
+                                <History size={14} />
                               </button>
                               <ConfirmModal
                                 title="Delete Item?"
@@ -335,6 +361,26 @@ export default function InventoryManagementPage() {
         onAdd={handleAddOrUpdate}
         isLoading={createMutation.isPending || updateMutation.isPending}
         initialData={editingItem}
+      />
+
+      <AddInventoryStockDialog
+        item={restockingItem}
+        isLoading={restockMutation.isPending}
+        onClose={() => setRestockingItem(null)}
+        onSubmit={async (data) => {
+          if (!restockingItem) return;
+          await restockMutation.mutateAsync({ id: restockingItem.id, data });
+          toast({
+            title: "Stock added",
+            description: `${data.quantity} ${restockingItem.unit || "units"} added to ${restockingItem.name}.`,
+          });
+          setRestockingItem(null);
+        }}
+      />
+
+      <InventoryStockEntriesDialog
+        item={historyItem}
+        onClose={() => setHistoryItem(null)}
       />
     </SidebarLayout>
   );

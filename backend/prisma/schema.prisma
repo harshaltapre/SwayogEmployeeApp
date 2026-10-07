@@ -718,6 +718,20 @@ model Inventory {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
   dispatches   DispatchRecord[]
+  stockEntries InventoryStockEntry[]
+}
+
+model InventoryStockEntry {
+  id           Int       @id @default(autoincrement())
+  itemId       Int
+  quantity     Int
+  entryDate    DateTime
+  pricePerUnit Float
+  supplier     String
+  createdAt    DateTime  @default(now())
+  item         Inventory @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, entryDate])
 }
 
 model DispatchRecord {

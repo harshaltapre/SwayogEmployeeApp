@@ -743,6 +743,104 @@ jobs:
           });
           '
 
+      - name: Validate Vercel Configuration
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -Eeuo pipefail
+          echo "========================================"
+          echo "STAGE: Vercel Configuration Validation"
+          echo "========================================"
+
+          # Safe diagnostics — never print secret values
+          [ -n "${VERCEL_TOKEN:-}" ]      && echo "VERCEL_TOKEN:      PRESENT" || echo "VERCEL_TOKEN:      MISSING"
+          [ -n "${VERCEL_ORG_ID:-}" ]     && echo "VERCEL_ORG_ID:     PRESENT" || echo "VERCEL_ORG_ID:     MISSING"
+          [ -n "${VERCEL_PROJECT_ID:-}" ] && echo "VERCEL_PROJECT_ID: PRESENT" || echo "VERCEL_PROJECT_ID: MISSING"
+
+          MISSING_SECRETS=""
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::error::VERCEL_TOKEN GitHub Secret is missing."
+            echo "::error::Add it under: GitHub repo → Settings → Secrets and variables → Actions → Secrets"
+            MISSING_SECRETS="$MISSING_SECRETS VERCEL_TOKEN"
+          fi
+          if [ -z "${VERCEL_ORG_ID:-}" ]; then
+            echo "::error::VERCEL_ORG_ID GitHub Secret is missing."
+            echo "::error::Add it under: GitHub repo → Settings → Secrets and variables → Actions → Secrets"
+            MISSING_SECRETS="$MISSING_SECRETS VERCEL_ORG_ID"
+          fi
+          if [ -z "${VERCEL_PROJECT_ID:-}" ]; then
+            echo "::error::VERCEL_PROJECT_ID GitHub Secret is missing."
+            echo "::error::Add it under: GitHub repo → Settings → Secrets and variables → Actions → Secrets"
+            MISSING_SECRETS="$MISSING_SECRETS VERCEL_PROJECT_ID"
+          fi
+
+          if [ -n "$MISSING_SECRETS" ]; then
+            echo "::error::Vercel deployment cannot proceed. Missing secrets:$MISSING_SECRETS"
+            echo "::error::Obtain values from: https://vercel.com/account/tokens (VERCEL_TOKEN) and your Vercel project settings (VERCEL_ORG_ID, VERCEL_PROJECT_ID)"
+            exit 1
+          fi
+
+          echo "All required Vercel secrets are present."
+          echo "========================================"
+          echo "Verifying Vercel CLI authentication..."
+          echo "========================================"
+
+          # Install Vercel CLI locally for this step
+          npm install --global vercel@latest --silent
+
+          # Authenticate without exposing the token value in logs
+          if ! vercel whoami --token "$VERCEL_TOKEN" > /tmp/vercel-whoami.txt 2>&1; then
+            echo "::error::Vercel CLI authentication failed. The VERCEL_TOKEN secret may be invalid or expired."
+            echo "::error::Regenerate it at: https://vercel.com/account/tokens"
+            exit 1
+          fi
+          # Print only the username (safe) — not the token
+          echo "Vercel CLI authenticated as: $(cat /tmp/vercel-whoami.txt)"
+          rm -f /tmp/vercel-whoami.txt
+          echo "Vercel configuration validation passed."
+
+      - name: Deploy Web OTA Layer to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -Eeuo pipefail
+          echo "========================================"
+          echo "STAGE: Vercel Production Deployment"
+          echo "========================================"
+
+          # Vercel CLI was installed in the preceding validation step
+          echo "Deploying production build to Vercel..."
+
+          # Deploy to production using --token (never echoed), scoped to the org,
+          # and linked to the correct project via environment variables which the
+          # Vercel CLI automatically reads when VERCEL_ORG_ID / VERCEL_PROJECT_ID
+          # are exported in env:.
+          DEPLOY_OUTPUT=$(vercel deploy \
+            --prod \
+            --token "$VERCEL_TOKEN" \
+            --scope "$VERCEL_ORG_ID" \
+            --yes \
+            2>&1) || {
+            echo "::error::Vercel production deployment failed."
+            echo "$DEPLOY_OUTPUT"
+            exit 1
+          }
+
+          # Extract deployment URL from CLI output (safe to log)
+          DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._/-]+\.vercel\.app[^[:space:]]*' | tail -n 1 || true)
+
+          echo "Vercel deployment output:"
+          echo "$DEPLOY_OUTPUT"
+
+          if [ -n "$DEPLOY_URL" ]; then
+            echo "Deployment URL: $DEPLOY_URL"
+          fi
+          echo "Vercel production deployment completed successfully."
+
       - name: Verify Public /latest.json & APK Download Release Gate
         env:
           RAW_PUBLIC_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
