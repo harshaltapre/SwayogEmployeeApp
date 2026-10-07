@@ -108,8 +108,8 @@ jobs:
 
           if ! sdkmanager --install \
             "platform-tools" \
-            "platforms;android-34" \
-            "build-tools;34.0.0"; then
+            "platforms;android-35" \
+            "build-tools;35.0.0"; then
             echo "::error::FAILED STAGE: Android SDK"
             echo "::error::Required Android SDK packages could not be installed."
             exit 1
@@ -124,15 +124,15 @@ jobs:
             exit 1
           fi
           echo "Installed required SDK packages:"
-          sdkmanager --list | grep -E 'platform-tools|platforms;android-34|build-tools;34\.0\.0'
-          if [ ! -d "$ANDROID_SDK_ROOT/platforms/android-34" ]; then
+          sdkmanager --list | grep -E 'platform-tools|platforms;android-35|build-tools;35\.0\.0'
+          if [ ! -d "$ANDROID_SDK_ROOT/platforms/android-35" ]; then
             echo "::error::FAILED STAGE: Android SDK"
-            echo "::error::Required platform android-34 is missing."
+            echo "::error::Required platform android-35 is missing."
             exit 1
           fi
-          if [ ! -d "$ANDROID_SDK_ROOT/build-tools/34.0.0" ]; then
+          if [ ! -d "$ANDROID_SDK_ROOT/build-tools/35.0.0" ]; then
             echo "::error::FAILED STAGE: Android SDK"
-            echo "::error::Required build-tools 34.0.0 are missing."
+            echo "::error::Required build-tools 35.0.0 are missing."
             exit 1
           fi
           echo "Android SDK setup completed successfully."

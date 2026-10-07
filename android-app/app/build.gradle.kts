@@ -51,12 +51,12 @@ fun getLocalProperty(key: String, defaultValue: String): String {
 
 android {
     namespace = "com.swayog.employee"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.swayog.employee"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
             ?: (localProperties.getProperty("versionCode"))?.toIntOrNull()
             ?: 35 // Must be greater than the currently published version code 34.
@@ -371,7 +371,6 @@ tasks.register("cleanRoom") {
         delete(file("${project.projectDir}/app/build/generated"))
     }
 }
-
 
 
 

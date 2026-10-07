@@ -1,6 +1,7 @@
 package com.swayog.employee.core.update
 
 import android.content.Context
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -396,42 +397,76 @@ class AppUpdateManager @Inject constructor(
                     throw IllegalStateException(errorType)
                 }
 
-                val body = response.body!!
-                val contentLength = body.contentLength().takeIf { it > 0 } ?: (manifest.fileSize ?: -1L)
-                val tempFile = File(updatesDir, "download-${System.currentTimeMillis()}.tmp")
+                response.close()
+                val tempFile = File(updatesDir, "swayog-v${manifest.versionName}-${manifest.versionCode}.part")
+                var attempt = 0
+                var completed = false
+                var lastError: Exception? = null
+                while (attempt < 3 && !completed) {
+                    attempt++
+                    try {
+                        val existingBytes = tempFile.takeIf { it.exists() }?.length() ?: 0L
+                        val requestBuilder = Request.Builder()
+                            .url(manifest.apkUrl)
+                            .header("User-Agent", "SwayogEmployeeApp/${installedVersionName}")
+                        if (existingBytes > 0L) {
+                            requestBuilder.header("Range", "bytes=$existingBytes-")
+                        }
 
-                body.byteStream().use { input ->
-                    FileOutputStream(tempFile).use { output ->
-                        val buffer = ByteArray(8192)
-                        var bytesRead: Int
-                        var totalRead = 0L
-                        var lastProgressPercent = 0
+                        okHttpClient.newCall(requestBuilder.build()).execute().use { downloadResponse ->
+                            if (!downloadResponse.isSuccessful || downloadResponse.body == null) {
+                                throw IllegalStateException("Failed to download update package (HTTP ${downloadResponse.code}).")
+                            }
+                            val append = existingBytes > 0L && downloadResponse.code == 206
+                            if (!append && existingBytes > 0L) {
+                                tempFile.delete()
+                            }
+                            val startingBytes = if (append) existingBytes else 0L
+                            val contentLength = downloadResponse.body!!.contentLength().takeIf { it > 0 }
+                                ?.let { it + startingBytes }
+                                ?: (manifest.fileSize ?: -1L)
 
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
-                            totalRead += bytesRead
-
-                            if (contentLength > 0) {
-                                val percent = ((totalRead * 100) / contentLength).toInt().coerceIn(0, 100)
-                                if (percent != lastProgressPercent) {
-                                    lastProgressPercent = percent
-                                    _updateState.value = AppUpdateState.Downloading(
-                                        progressPercent = percent,
-                                        bytesDownloaded = totalRead,
-                                        totalBytes = contentLength,
-                                        manifest = manifest
-                                    )
+                            downloadResponse.body!!.byteStream().use { input ->
+                                FileOutputStream(tempFile, append).use { output ->
+                                    val buffer = ByteArray(8192)
+                                    var bytesRead: Int
+                                    var totalRead = startingBytes
+                                    var lastProgressPercent = 0
+                                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                                        output.write(buffer, 0, bytesRead)
+                                        totalRead += bytesRead
+                                        if (contentLength > 0) {
+                                            val percent = ((totalRead * 100) / contentLength)
+                                                .toInt().coerceIn(0, 100)
+                                            if (percent != lastProgressPercent) {
+                                                lastProgressPercent = percent
+                                                _updateState.value = AppUpdateState.Downloading(
+                                                    progressPercent = percent,
+                                                    bytesDownloaded = totalRead,
+                                                    totalBytes = contentLength,
+                                                    manifest = manifest
+                                                )
+                                            }
+                                        }
+                                    }
+                                    output.flush()
                                 }
                             }
                         }
-                        output.flush()
+                        completed = true
+                    } catch (e: Exception) {
+                        lastError = e
+                        if (attempt < 3) {
+                            Log.w(TAG, "Download attempt $attempt failed; retrying: ${e.message}")
+                        }
                     }
                 }
-                response.close()
+                if (!completed) {
+                    throw lastError ?: IllegalStateException("Download failed after retries.")
+                }
 
                 if (manifest.fileSize != null && tempFile.length() != manifest.fileSize) {
-                    tempFile.delete()
-                    throw IllegalStateException("Downloaded update is incomplete (expected ${manifest.fileSize} bytes, got ${tempFile.length()}).")
+                    throw IllegalStateException("Downloaded update is incomplete (expected ${manifest.fileSize} bytes, got ${tempFile.length()}). It can be resumed.")
                 }
 
                 // Verify Checksum
@@ -452,7 +487,9 @@ class AppUpdateManager @Inject constructor(
 
                 // Move temp file to final target APK
                 if (targetApkFile.exists()) targetApkFile.delete()
-                tempFile.renameTo(targetApkFile)
+                if (!tempFile.renameTo(targetApkFile)) {
+                    throw IllegalStateException("Unable to finalize the verified update file.")
+                }
 
                 _updateState.value = AppUpdateState.ReadyToInstall(targetApkFile, manifest)
 
@@ -628,11 +665,8 @@ class AppUpdateManager @Inject constructor(
         // bytes from a v2-only APK.  In that case, fall back to manifest.certificateSha256 which
         // is injected by deploy-release.ts from the actual APK cert verified at build time.
         val normDownloadedCert = normalizeFingerprint(downloadedCertSha256) ?: manifestCertSha256
-        val expectedProdCert = "3ec290e58be284b90dca346c1e53eb3c735d5bfeb3c42c6b6ddfb7eb7f6c1fb8"
-
         val certArchiveExtracted = normalizeFingerprint(downloadedCertSha256) != null
         val certInstalledEqualsDownloaded = (normInstalledCert != null && normInstalledCert == normDownloadedCert)
-        val certDownloadedEqualsProduction = (normDownloadedCert != null && normDownloadedCert == expectedProdCert)
 
         // Log required diagnostic format
         Log.i(TAG, "==================== APP UPDATE DIAGNOSTICS ====================")
@@ -649,10 +683,8 @@ class AppUpdateManager @Inject constructor(
         Log.i(TAG, "Manifest certificateSha256:               ${manifestCertSha256 ?: "N/A"}")
         Log.i(TAG, "INSTALLED_CERT_SHA256=$normInstalledCert")
         Log.i(TAG, "DOWNLOADED_CERT_SHA256=${normalizeFingerprint(downloadedCertSha256) ?: "NULL (extracted from manifest fallback)"}")
-        Log.i(TAG, "PRODUCTION_CERT_SHA256=$expectedProdCert")
         Log.i(TAG, "CERT_ARCHIVE_EXTRACTED=$certArchiveExtracted")
         Log.i(TAG, "CERT_INSTALLED_EQUALS_DOWNLOADED=$certInstalledEqualsDownloaded")
-        Log.i(TAG, "CERT_DOWNLOADED_EQUALS_PRODUCTION=$certDownloadedEqualsProduction")
         Log.i(TAG, "Downloaded APK file size:                 ${apkFile.length()} bytes")
         Log.i(TAG, "================================================================")
 
@@ -749,12 +781,13 @@ class AppUpdateManager @Inject constructor(
 
             Log.i(TAG, "Launching Android package installer with URI: $contentUri")
 
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
                 setDataAndType(contentUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                clipData = ClipData.newRawUri("update-apk", contentUri)
             }
 
             context.startActivity(installIntent)
