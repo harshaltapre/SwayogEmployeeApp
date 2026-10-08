@@ -866,6 +866,31 @@ jobs:
           rm -f /tmp/vercel-whoami.txt
           echo "Vercel configuration validation passed."
 
+      - name: Prepare Deployment Context (Remove Non-Web Artifacts)
+        run: |
+          set -Eeuo pipefail
+          echo "========================================"
+          echo "STAGE: Pre-Vercel Deployment Cleanup"
+          echo "========================================"
+          # Remove directories/files that must NEVER be uploaded to Vercel.
+          # These are excluded by .vercelignore too, but removing them here
+          # provides a hard guarantee even if .vercelignore is ever bypassed.
+          echo "Removing root node_modules (Vercel installs its own)..."
+          rm -rf node_modules
+          echo "Removing backend/node_modules (Vercel installs its own)..."
+          rm -rf backend/node_modules
+          echo "Removing android-app build cache..."
+          rm -rf android-app/.gradle
+          rm -rf android-app/temp_debug.zip android-app/temp_release.zip
+          rm -rf android-app/temp_debug_apk android-app/temp_release_apk
+          echo "Removing old dist/ (Vercel rebuilds from source)..."
+          rm -rf dist
+          echo "Removing backend/uploads/ (runtime data, not build input)..."
+          rm -rf backend/uploads
+          echo "Cleanup complete."
+          echo "Remaining context size:"
+          du -sh . --exclude=.git 2>/dev/null || true
+
       - name: Deploy Web OTA Layer to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -877,15 +902,19 @@ jobs:
           echo "STAGE: Vercel Production Deployment"
           echo "========================================"
 
-          # Vercel CLI was installed in the preceding validation step
+          # Vercel CLI was installed in the preceding Validate Vercel Configuration step.
           echo "Deploying production build to Vercel..."
 
-          # Deploy to production using --token (never echoed), scoped to the org,
-          # and linked to the correct project via environment variables which the
-          # Vercel CLI automatically reads when VERCEL_ORG_ID / VERCEL_PROJECT_ID
-          # are exported in env:.
+          # --archive=tgz: bundles all files into a single compressed tarball before
+          # uploading. This is Vercel's own recommendation for deployments that would
+          # otherwise exceed the 5000-individual-file upload limit ("api-upload-free").
+          # It is supported by Vercel CLI v28+ and the installed version (62.x) supports it.
+          #
+          # VERCEL_ORG_ID and VERCEL_PROJECT_ID are exported in env: so the CLI
+          # automatically links to the correct project without needing a .vercel/ directory.
           DEPLOY_OUTPUT=$(vercel deploy \
             --prod \
+            --archive=tgz \
             --token "$VERCEL_TOKEN" \
             --scope "$VERCEL_ORG_ID" \
             --yes \
@@ -895,7 +924,7 @@ jobs:
             exit 1
           }
 
-          # Extract deployment URL from CLI output (safe to log)
+          # Extract deployment URL from CLI output (safe to log — never contains the token)
           DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[a-zA-Z0-9._/-]+\.vercel\.app[^[:space:]]*' | tail -n 1 || true)
 
           echo "Vercel deployment output:"

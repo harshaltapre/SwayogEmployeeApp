@@ -47,6 +47,10 @@ fun WorkforceTodayCard(
     val isOtActive = activeOtSession != null && activeOtSession.status == "ACTIVE"
     val isOvertimeAllowed = todayCalendarDay?.overtimeAllowed == true || isSunday || isHoliday
 
+    val nowCal = Calendar.getInstance()
+    val isPast630Today = nowCal.get(Calendar.HOUR_OF_DAY) > 18 || (nowCal.get(Calendar.HOUR_OF_DAY) == 18 && nowCal.get(Calendar.MINUTE) >= 30)
+    val isCutoffAbsentToday = !isCheckedIn && !isAdminMarked && !isLeave && !isHoliday && !isSunday && isPast630Today
+
     val statusLabel = when {
         isOtActive -> "OVERTIME ACTIVE"
         isAdminMarked -> "ASSIGNED BY ADMIN"
@@ -56,7 +60,7 @@ fun WorkforceTodayCard(
         isCheckedOut -> "ATTENDANCE COMPLETED"
         isCheckedIn -> "CHECKED IN"
         todayAttendance?.status == "HALF_DAY" || todayCalendarDay?.isHalfDay == true -> "HALF DAY"
-        todayAttendance?.status == "ABSENT" || todayCalendarDay?.isAbsent == true -> "ABSENT"
+        todayAttendance?.status == "ABSENT" || todayCalendarDay?.isAbsent == true || isCutoffAbsentToday -> "ABSENT"
         else -> "NOT CHECKED IN"
     }
 
@@ -69,6 +73,7 @@ fun WorkforceTodayCard(
         isHoliday -> Color(0xFF8E24AA)
         isSunday -> Color(0xFFC62828)
         todayAttendance?.status == "HALF_DAY" || todayCalendarDay?.isHalfDay == true -> Color(0xFFF57C00)
+        todayAttendance?.status == "ABSENT" || todayCalendarDay?.isAbsent == true || isCutoffAbsentToday -> Color(0xFFC62828)
         else -> Color(0xFF757575)
     }
 
