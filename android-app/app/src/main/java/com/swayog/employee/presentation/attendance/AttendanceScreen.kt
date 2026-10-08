@@ -218,6 +218,17 @@ fun AttendanceScreen(
     }
     val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.getDefault()) }
     val formattedTime = timeFormat.format(Date(currentTime))
+    // Derived from the live currentTime clock (updated every second) so the UI recomposes
+    // automatically when the clock crosses 6:30 PM.  Uses local system calendar so the
+    // comparison is always in the device's own timezone — consistent with how the rest of
+    // the attendance screen handles dates.
+    val isPast630Today: Boolean = remember(currentTime) {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = currentTime
+        val hour = cal.get(Calendar.HOUR_OF_DAY)
+        val minute = cal.get(Calendar.MINUTE)
+        hour > 18 || (hour == 18 && minute >= 30)
+    }
 
     // Permission launchers
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -448,8 +459,6 @@ fun AttendanceScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
 
-                                val nowCal = remember { Calendar.getInstance() }
-                                val isPast630Today = nowCal.get(Calendar.HOUR_OF_DAY) > 18 || (nowCal.get(Calendar.HOUR_OF_DAY) == 18 && nowCal.get(Calendar.MINUTE) >= 30)
                                 val isNotCheckedIn = record == null || (record.checkInTime == null && !record.isAdminMarked && record.status != "PRESENT" && record.status != "LATE" && record.status != "HALF_DAY" && record.status != "HALF-DAY" && record.status != "LEAVE")
 
                                 val statusText = when {
