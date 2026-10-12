@@ -58,6 +58,14 @@
   ],
   "rewrites": [
     {
+      "source": "/latest.json",
+      "destination": "/api/latest.json"
+    },
+    {
+      "source": "/releases/android/latest.json",
+      "destination": "/api/latest.json"
+    },
+    {
       "source": "/releases/(.*)",
       "destination": "/api/index.ts"
     },

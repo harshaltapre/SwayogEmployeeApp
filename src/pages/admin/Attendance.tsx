@@ -61,10 +61,12 @@ import {
   Trash2,
   CalendarDays,
   Sun,
+  Info,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 
 // Types
 interface AttendanceRule {
@@ -95,6 +97,8 @@ const ConditionalWrapper = ({ condition, wrapper, children }: { condition: boole
   condition ? <>{wrapper(children)}</> : <>{children}</>;
 
 export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin" || String(user?.role || "").toUpperCase() === "SUPER_ADMIN";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [searchQuery, setSearchQuery] = useState("");
@@ -144,7 +148,12 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
   );
 
   // Today's Live Attendance Summary
-  const { data: todaySummary } = useAdminTodaySummary();
+  const {
+    data: todaySummary,
+    isLoading: loadingTodaySummary,
+    isError: todaySummaryError,
+    refetch: refetchTodaySummary,
+  } = useAdminTodaySummary();
 
   // Manual Attendance Form State (for forgotten punch or corrections)
   const [applyModalOpen, setApplyModalOpen] = useState(false);
@@ -155,9 +164,12 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
   const [formCheckInPeriod, setFormCheckInPeriod] = useState<"AM" | "PM">("AM");
   const [formCheckOutTime, setFormCheckOutTime] = useState("");
   const [formCheckOutPeriod, setFormCheckOutPeriod] = useState<"AM" | "PM">("PM");
+  const [formDisplayAsSelfPunch, setFormDisplayAsSelfPunch] = useState(false);
   const [formRemark, setFormRemark] = useState("");
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
+  const [selectedAuditRecord, setSelectedAuditRecord] = useState<any | null>(null);
+  const [editingExistingRecord, setEditingExistingRecord] = useState<any | null>(null);
 
   const applyAttendanceMutation = useApplyAttendance();
 
@@ -179,11 +191,13 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
     setFormSuccess("");
     const empId = employee ? String(employee.userId || employee.id) : (selectedEmployeeId || "");
     setFormEmployeeId(empId);
+    setEditingExistingRecord(existingRecord || null);
 
     if (existingRecord) {
       const dateStr = new Date(existingRecord.date).toISOString().slice(0, 10);
       setFormDate(dateStr);
       setFormStatus(existingRecord.status || "PRESENT");
+      setFormDisplayAsSelfPunch(Boolean(existingRecord.displayAsSelfPunch || existingRecord.display_as_self_punch || existingRecord.audit?.displayAsSelfPunch));
       if (existingRecord.checkInTime) {
         const ci = new Date(existingRecord.checkInTime);
         let h = ci.getHours();
@@ -210,11 +224,18 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
         setFormCheckOutTime("");
         setFormCheckOutPeriod("PM");
       }
-      setFormRemark(existingRecord.overrideReason || existingRecord.notes || "");
+      setFormRemark(
+        existingRecord.audit?.remark ||
+        existingRecord.overrideReason ||
+        existingRecord.notes ||
+        existingRecord.admin_remark ||
+        ""
+      );
     } else {
       const todayStr = new Date().toISOString().slice(0, 10);
       setFormDate(todayStr);
       setFormStatus("PRESENT");
+      setFormDisplayAsSelfPunch(false);
       setFormCheckInTime("");
       setFormCheckInPeriod("AM");
       setFormCheckOutTime("");
@@ -245,7 +266,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
       setFormError("Please select an attendance date.");
       return;
     }
-    if (!formRemark.trim() || formRemark.trim().length < 3) {
+    if (!formDisplayAsSelfPunch && (!formRemark.trim() || formRemark.trim().length < 3)) {
       setFormError("A mandatory remark explaining why the employee forgot/needs manual attendance is required (minimum 3 characters).");
       return;
     }
@@ -303,7 +324,8 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
         status: formStatus,
         checkInTime: finalCheckIn,
         checkOutTime: finalCheckOut,
-        remark: formRemark.trim(),
+        remark: formRemark.trim() || (formDisplayAsSelfPunch ? "Self Punch Regularization" : ""),
+        displayAsSelfPunch: isSuperAdmin ? formDisplayAsSelfPunch : false,
       });
 
       setFormSuccess("Attendance record successfully applied and monthly metrics updated!");
@@ -516,9 +538,13 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                         <Badge className="bg-amber-500/20 text-amber-300 border-amber-400/40 text-[10px]">
                           🏖️ Weekly Off
                         </Badge>
-                      ) : (
+                      ) : todaySummary ? (
                         <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-400/40 text-[10px]">
                           🟢 Working Day
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-slate-500/20 text-slate-300 border-slate-400/40 text-[10px]">
+                          Loading...
                         </Badge>
                       )}
                     </div>
@@ -535,26 +561,48 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                     >
                       <CalendarPlus className="h-3.5 w-3.5" /> + Regularize / Apply Attendance
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleOpenApplyModal()}
+                      className="border-indigo-400/50 bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20 text-xs font-semibold shadow gap-1.5 h-8"
+                    >
+                      <CalendarPlus className="h-3.5 w-3.5" /> Apply Attendance
+                    </Button>
                   </div>
                 </div>
+
+                {loadingTodaySummary && (
+                  <div className="mb-3 rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-xs text-slate-300">
+                    Loading today&apos;s attendance...
+                  </div>
+                )}
+                {todaySummaryError && (
+                  <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-rose-400/40 bg-rose-500/10 p-3 text-xs text-rose-200">
+                    <span>Unable to load today&apos;s live attendance.</span>
+                    <Button size="sm" variant="outline" onClick={() => refetchTodaySummary()} className="h-7 border-rose-300/50 text-rose-100">
+                      Retry
+                    </Button>
+                  </div>
+                )}
 
                 {/* Live Stats Pill Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block">Checked In</span>
                     <div className="text-2xl font-bold text-white mt-0.5">
-                      {todaySummary?.checkedIn ?? 0}
-                      <span className="text-xs text-slate-400 font-normal ml-1">/ {todaySummary?.totalEmployees ?? totalEmpCount}</span>
+                      {todaySummary ? todaySummary.checkedIn : "—"}
+                      <span className="text-xs text-slate-400 font-normal ml-1">/ {todaySummary ? todaySummary.totalEmployees : "—"}</span>
                     </div>
                     <span className="text-[10px] text-emerald-400 font-medium">
-                      {todaySummary?.totalEmployees ? Math.round(((todaySummary.checkedIn) / todaySummary.totalEmployees) * 100) : 0}% attendance
+                      {todaySummary ? Math.round((todaySummary.checkedIn / todaySummary.totalEmployees) * 100) : "—"}{todaySummary ? "%" : ""} attendance
                     </span>
                   </div>
 
                   <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block">On Time</span>
                     <div className="text-2xl font-bold text-emerald-400 mt-0.5">
-                      {todaySummary?.onTime ?? 0}
+                      {todaySummary ? todaySummary.onTime : "—"}
                     </div>
                     <span className="text-[10px] text-slate-400 font-medium">Before {rules.shiftStart}</span>
                   </div>
@@ -562,7 +610,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                   <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block">Late Arrivals</span>
                     <div className="text-2xl font-bold text-amber-400 mt-0.5">
-                      {todaySummary?.late ?? 0}
+                      {todaySummary ? todaySummary.late : "—"}
                     </div>
                     <span className="text-[10px] text-slate-400 font-medium">Grace exceeded</span>
                   </div>
@@ -570,7 +618,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                   <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block">Half Day</span>
                     <div className="text-2xl font-bold text-purple-400 mt-0.5">
-                      {todaySummary?.halfDay ?? 0}
+                      {todaySummary ? todaySummary.halfDay : "—"}
                     </div>
                     <span className="text-[10px] text-slate-400 font-medium">&lt; 4 hours</span>
                   </div>
@@ -578,7 +626,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                   <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block">Pending / Absent</span>
                     <div className="text-2xl font-bold text-rose-400 mt-0.5">
-                      {(todaySummary?.notCheckedIn ?? 0) + (todaySummary?.absent ?? 0)}
+                      {todaySummary ? todaySummary.notCheckedIn + todaySummary.absent : "—"}
                     </div>
                     <span className="text-[10px] text-slate-400 font-medium">Not punched yet</span>
                   </div>
@@ -586,7 +634,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                   <div className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block">Admin Assigned</span>
                     <div className="text-2xl font-bold text-indigo-400 mt-0.5">
-                      {todaySummary?.adminAssigned ?? 0}
+                      {todaySummary ? todaySummary.adminAssigned : "—"}
                     </div>
                     <span className="text-[10px] text-slate-400 font-medium">Manually regularized</span>
                   </div>
@@ -1520,83 +1568,124 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap">{getStatusBadge(displayStatus, holidayNameDisplay)}</td>
                                   <td className="px-4 py-3">
-                                    {rec.manualOverride ? (
-                                      <div className="flex flex-col gap-1 min-w-[170px] max-w-[260px]">
-                                        <Badge className="bg-purple-900/50 text-purple-300 border-purple-700 text-[10px] w-fit font-semibold flex items-center gap-1">
-                                          <Shield className="h-2.5 w-2.5" /> Admin Applied
-                                        </Badge>
-                                        <p className="text-[11px] text-slate-300 italic" title={rec.overrideReason || rec.notes}>
-                                          "{rec.overrideReason || rec.notes || "Manual regularized"}"
-                                        </p>
-                                        {rec.reviewerName && (
-                                          <span className="text-[10px] text-slate-400 font-medium">By {rec.reviewerName}</span>
-                                        )}
-                                      </div>
-                                    ) : isSunday || matchedHoliday ? (
-                                      <span className="text-[11px] text-amber-400 font-medium">
-                                        {matchedHoliday ? `🎉 ${matchedHoliday.name}` : "🏖️ Sunday Mandatory Holiday"}
-                                      </span>
-                                    ) : (
-                                      <span className="text-[11px] text-slate-500 font-medium">Self Punch</span>
-                                    )}
+                                    {(() => {
+                                      const isSelfPunchMode = Boolean(rec.displayAsSelfPunch || rec.display_as_self_punch || rec.audit?.displayAsSelfPunch);
+                                      if (!isSelfPunchMode && rec.manualOverride) {
+                                        return (
+                                          <div className="flex flex-col gap-1 min-w-[170px] max-w-[260px]">
+                                            <Badge className="bg-purple-900/50 text-purple-300 border-purple-700 text-[10px] w-fit font-semibold flex items-center gap-1">
+                                              <Shield className="h-2.5 w-2.5" /> Admin Applied
+                                            </Badge>
+                                            <p className="text-[11px] text-slate-300 italic" title={rec.overrideReason || rec.notes || rec.admin_remark}>
+                                              "{rec.overrideReason || rec.notes || rec.admin_remark || "Manual regularized"}"
+                                            </p>
+                                            {(rec.reviewerName || rec.applied_by) && (
+                                              <span className="text-[10px] text-slate-400 font-medium">By {rec.reviewerName || rec.applied_by}</span>
+                                            )}
+                                          </div>
+                                        );
+                                      }
+                                      if (isSunday || matchedHoliday) {
+                                        return (
+                                          <span className="text-[11px] text-amber-400 font-medium">
+                                            {matchedHoliday ? `🎉 ${matchedHoliday.name}` : "🏖️ Sunday Mandatory Holiday"}
+                                          </span>
+                                        );
+                                      }
+                                      return (
+                                        <span className="text-[11px] text-slate-500 font-medium">Self Punch</span>
+                                      );
+                                    })()}
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap">
-                                    {checkinSnap?.selfieUrl ? (
-                                      <a
-                                        href={resolveStaticUrl(checkinSnap.selfieUrl)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="relative group block h-10 w-10 overflow-hidden rounded-md border border-slate-700 bg-slate-900 hover:border-amber-500 transition-colors"
-                                      >
-                                        <img
-                                          src={resolveStaticUrl(checkinSnap.selfieUrl)}
-                                          alt="Check-in Selfie"
-                                          className="h-full w-full object-cover group-hover:scale-110 transition-transform"
-                                        />
-                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <ExternalLink className="h-3.5 w-3.5 text-white" />
-                                        </div>
-                                      </a>
-                                    ) : rec.manualOverride ? (
-                                      <span className="text-[10px] text-purple-300/80 italic font-medium">Manual Exemption</span>
-                                    ) : (
-                                      <span className="text-slate-500">—</span>
-                                    )}
+                                    {(() => {
+                                      const isSelfPunchMode = Boolean(rec.displayAsSelfPunch || rec.display_as_self_punch || rec.audit?.displayAsSelfPunch);
+                                      const selfie = checkinSnap?.selfieUrl || rec.selfieUrl;
+                                      if (selfie) {
+                                        return (
+                                          <a
+                                            href={resolveStaticUrl(selfie)}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="relative group block h-10 w-10 overflow-hidden rounded-md border border-slate-700 bg-slate-900 hover:border-amber-500 transition-colors"
+                                          >
+                                            <img
+                                              src={resolveStaticUrl(selfie)}
+                                              alt="Check-in Selfie"
+                                              className="h-full w-full object-cover group-hover:scale-110 transition-transform"
+                                            />
+                                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                              <ExternalLink className="h-3.5 w-3.5 text-white" />
+                                            </div>
+                                          </a>
+                                        );
+                                      }
+                                      if (!isSelfPunchMode && rec.manualOverride) {
+                                        return (
+                                          <span className="text-[10px] text-purple-300/80 italic font-medium">Manual Exemption</span>
+                                        );
+                                      }
+                                      return <span className="text-slate-500">—</span>;
+                                    })()}
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap">
-                                    {checkinSnap?.latitude && checkinSnap?.longitude ? (
-                                      <div className="flex flex-col gap-1">
-                                        <span className="text-[10px] text-slate-400 font-mono">
-                                          {checkinSnap.latitude.toFixed(5)}, {checkinSnap.longitude.toFixed(5)}
-                                        </span>
-                                        <a
-                                          href={`https://www.google.com/maps?q=${checkinSnap.latitude},${checkinSnap.longitude}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 font-semibold hover:underline"
-                                        >
-                                          <MapPin className="h-3 w-3" /> View Map <ExternalLink className="h-2.5 w-2.5" />
-                                        </a>
-                                      </div>
-                                    ) : rec.manualOverride ? (
-                                      <span className="text-[10px] text-purple-300/80 italic font-medium">Admin Approved</span>
-                                    ) : (
-                                      <span className="text-slate-500">—</span>
-                                    )}
+                                    {(() => {
+                                      const isSelfPunchMode = Boolean(rec.displayAsSelfPunch || rec.display_as_self_punch || rec.audit?.displayAsSelfPunch);
+                                      const lat = checkinSnap?.latitude ?? rec.latitude;
+                                      const lng = checkinSnap?.longitude ?? rec.longitude;
+                                      const hasCoords = lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng));
+
+                                      if (hasCoords) {
+                                        return (
+                                          <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] text-slate-400 font-mono">
+                                              {Number(lat).toFixed(5)}, {Number(lng).toFixed(5)}
+                                            </span>
+                                            <a
+                                              href={`https://www.google.com/maps?q=${lat},${lng}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 font-semibold hover:underline"
+                                            >
+                                              <MapPin className="h-3 w-3" /> View Map <ExternalLink className="h-2.5 w-2.5" />
+                                            </a>
+                                          </div>
+                                        );
+                                      }
+                                      if (!isSelfPunchMode && rec.manualOverride) {
+                                        return (
+                                          <span className="text-[10px] text-purple-300/80 italic font-medium">Admin Approved</span>
+                                        );
+                                      }
+                                      return <span className="text-slate-500">—</span>;
+                                    })()}
                                   </td>
                                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => {
-                                        const emp = employees.find((e: any) => String(e.userId || e.id) === selectedEmployeeId);
-                                        handleOpenApplyModal(emp, rec);
-                                      }}
-                                      className="h-7 px-2 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 gap-1 border border-slate-700/60"
-                                      title="Update attendance record or remark"
-                                    >
-                                      <Pencil className="h-3 w-3 text-amber-400" /> Edit
-                                    </Button>
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {isSuperAdmin && (rec.audit || rec.displayAsSelfPunch || rec.display_as_self_punch || rec.manualOverride || rec.reviewedBy) && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => setSelectedAuditRecord(rec)}
+                                          className="h-7 px-2 text-xs font-semibold text-purple-300 hover:text-white hover:bg-purple-950/60 gap-1 border border-purple-800/60"
+                                          title="View restricted audit history (Super Admin only)"
+                                        >
+                                          <Shield className="h-3 w-3 text-purple-400" /> Audit
+                                        </Button>
+                                      )}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          const emp = employees.find((e: any) => String(e.userId || e.id) === selectedEmployeeId);
+                                          handleOpenApplyModal(emp, rec);
+                                        }}
+                                        className="h-7 px-2 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 gap-1 border border-slate-700/60"
+                                        title="Update attendance record or remark"
+                                      >
+                                        <Pencil className="h-3 w-3 text-amber-400" /> Edit
+                                      </Button>
+                                    </div>
                                   </td>
                                 </tr>
                               );
@@ -1615,6 +1704,95 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
           </DialogContent>
         </Dialog>
 
+        {/* ── Restricted Audit History Dialog (Super Admin Only) ──────────────── */}
+        <Dialog open={!!selectedAuditRecord} onOpenChange={(open) => !open && setSelectedAuditRecord(null)}>
+          <DialogContent className="max-w-lg text-slate-900 dark:text-white bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl">
+            <DialogHeader className="border-b border-border pb-3">
+              <DialogTitle className="text-base font-bold flex items-center gap-2 text-purple-600 dark:text-purple-400">
+                <Shield className="h-5 w-5" />
+                Restricted Attendance Audit History
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+                Privileged Super Admin audit log and verification provenance. This information is restricted and hidden from regular attendance logs.
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedAuditRecord && (
+              <div className="space-y-3.5 py-2 text-xs">
+                <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Employee</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {employees.find((e: any) => String(e.userId || e.id) === selectedEmployeeId)?.name || "Employee"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Attendance Date</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {new Date(selectedAuditRecord.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Status & Recorded Times</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {selectedAuditRecord.status} (In: {selectedAuditRecord.checkInTime ? new Date(selectedAuditRecord.checkInTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "None"} → Out: {selectedAuditRecord.checkOutTime ? new Date(selectedAuditRecord.checkOutTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "None"})
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Display Mode</span>
+                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                      {selectedAuditRecord.displayAsSelfPunch || selectedAuditRecord.display_as_self_punch || selectedAuditRecord.audit?.displayAsSelfPunch
+                        ? "Genuine Self-Punch (Watermarks Hidden)"
+                        : "Standard Admin-Applied Watermark"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-purple-50/70 dark:bg-purple-950/30 p-3 rounded-lg border border-purple-200 dark:border-purple-900/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-purple-950 dark:text-purple-300">Provenance & Author</span>
+                    <Badge className="bg-purple-900/70 text-purple-200 text-[10px]">
+                      {selectedAuditRecord.audit?.actualSource || selectedAuditRecord.actualSource || selectedAuditRecord.source || "ADMIN_ASSIGNED"}
+                    </Badge>
+                  </div>
+                  <div className="text-slate-700 dark:text-slate-300 space-y-1">
+                    <p>
+                      <strong className="text-slate-900 dark:text-white">Applied / Modified By:</strong>{" "}
+                      {selectedAuditRecord.audit?.appliedBy || selectedAuditRecord.reviewerName || selectedAuditRecord.applied_by || "Administrator"}
+                      {selectedAuditRecord.audit?.appliedById ? ` (ID: ${selectedAuditRecord.audit.appliedById})` : ""}
+                    </p>
+                    {(selectedAuditRecord.audit?.appliedAt || selectedAuditRecord.createdAt) && (
+                      <p>
+                        <strong className="text-slate-900 dark:text-white">Applied Timestamp:</strong>{" "}
+                        {new Date(selectedAuditRecord.audit?.appliedAt || selectedAuditRecord.createdAt).toLocaleString("en-IN")}
+                      </p>
+                    )}
+                    <p>
+                      <strong className="text-slate-900 dark:text-white">Mandatory Reason / Remark:</strong>{" "}
+                      <span className="italic">
+                        "{selectedAuditRecord.audit?.remark || selectedAuditRecord.overrideReason || selectedAuditRecord.notes || selectedAuditRecord.admin_remark || "No remark entered"}"
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 bg-amber-50/70 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200 dark:border-amber-900/50">
+                  <span className="font-bold text-amber-900 dark:text-amber-300 block">Verification Check Status</span>
+                  <ul className="space-y-1 text-slate-700 dark:text-slate-300 list-disc list-inside">
+                    <li>Face Recognition / Biometric Match: Bypassed via manual regularize</li>
+                    <li>GPS Geofence Location Validation: Bypassed via manual regularize</li>
+                    <li>Device Signature Verification: Bypassed via manual regularize</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-3 border-t border-border">
+              <Button variant="outline" size="sm" onClick={() => setSelectedAuditRecord(null)}>Close</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* ── Apply / Update Attendance Modal ───────────────────────────────── */}
         <Dialog open={applyModalOpen} onOpenChange={setApplyModalOpen}>
           <DialogContent className="max-w-xl text-slate-900 dark:text-white bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl">
@@ -1629,6 +1807,26 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
             </DialogHeader>
 
             <form onSubmit={handleSubmitApplyAttendance} className="space-y-4 pt-2">
+              {/* Restricted Super Admin Audit Notice when Editing */}
+              {isSuperAdmin && editingExistingRecord && (editingExistingRecord.displayAsSelfPunch || editingExistingRecord.display_as_self_punch || editingExistingRecord.audit || editingExistingRecord.reviewedBy) && (
+                <div className="p-3 rounded-xl bg-purple-50/80 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 text-xs text-purple-900 dark:text-purple-200 flex items-start gap-2.5">
+                  <Shield className="h-4 w-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 space-y-0.5">
+                    <p className="font-bold flex items-center justify-between">
+                      <span>Restricted Super Admin Audit Notice</span>
+                      <span className="text-[10px] text-purple-600 dark:text-purple-400 font-mono">
+                        {editingExistingRecord.audit?.actualSource || editingExistingRecord.actualSource || editingExistingRecord.source || "ADMIN_ASSIGNED"}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                      Originally applied by {editingExistingRecord.audit?.appliedBy || editingExistingRecord.reviewerName || editingExistingRecord.applied_by || "Administrator"}
+                      {editingExistingRecord.audit?.appliedAt ? ` on ${new Date(editingExistingRecord.audit.appliedAt).toLocaleDateString("en-IN")}` : ""}.
+                      Remark: "{editingExistingRecord.audit?.remark || editingExistingRecord.overrideReason || editingExistingRecord.notes || editingExistingRecord.admin_remark || "Manual entry"}".
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {formError && (
                 <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-300 text-xs font-medium rounded-lg flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />
@@ -1808,32 +2006,66 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                 </div>
               )}
 
-              {/* Mandatory Reason / Remark */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400 tracking-wider flex items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                    Remark / Reason Why Employee Forgot *
-                  </label>
-                  <span className={cn(
-                    "text-[10px] font-mono",
-                    formRemark.trim().length >= 3 ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-amber-500 font-medium"
-                  )}>
-                    {formRemark.trim().length} chars (min 3)
-                  </span>
+              {/* Super Admin Only: Display as Self Punch Checkbox */}
+              {isSuperAdmin && (
+                <div className="p-3 rounded-xl bg-purple-50/80 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 flex items-start gap-3">
+                  <div className="pt-0.5">
+                    <input
+                      type="checkbox"
+                      id="displayAsSelfPunch"
+                      checked={formDisplayAsSelfPunch}
+                      onChange={(e) => setFormDisplayAsSelfPunch(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex-1 space-y-0.5">
+                    <label
+                      htmlFor="displayAsSelfPunch"
+                      className="text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span>Display as Self Punch (hide admin-applied watermark)</span>
+                      <span
+                        className="inline-flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-help"
+                        title="When enabled, employee logs display 'Self Punch' without admin badges or regularization labels. Super Admin audit history and accountability remain fully intact."
+                      >
+                        <Info className="h-3.5 w-3.5 text-purple-500" />
+                      </span>
+                    </label>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                      Displays this entry as regular employee Self Punch on the employee-facing log without the "Admin Applied" watermark. Audit history is preserved for Super Admins.
+                    </p>
+                  </div>
                 </div>
-                <Textarea
-                  rows={3}
-                  value={formRemark}
-                  onChange={(e) => setFormRemark(e.target.value)}
-                  placeholder="e.g. Employee forgot to punch attendance due to on-site emergency solar panel service in area with zero mobile connectivity. Verified with field supervisor."
-                  className="bg-slate-50 dark:bg-slate-800/80 resize-none text-xs leading-relaxed"
-                  required
-                />
-                <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                  This explanation will be logged into the permanent attendance audit trail with your admin profile.
-                </p>
-              </div>
+              )}
+
+              {/* Reason / Remark — Hidden when Display as Self Punch is checked */}
+              {!formDisplayAsSelfPunch && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400 tracking-wider flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Remark / Reason Why Employee Forgot *
+                    </label>
+                    <span className={cn(
+                      "text-[10px] font-mono",
+                      formRemark.trim().length >= 3 ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-amber-500 font-medium"
+                    )}>
+                      {formRemark.trim().length} chars (min 3)
+                    </span>
+                  </div>
+                  <Textarea
+                    rows={3}
+                    value={formRemark}
+                    onChange={(e) => setFormRemark(e.target.value)}
+                    placeholder="e.g. Employee forgot to punch attendance due to on-site emergency solar panel service in area with zero mobile connectivity. Verified with field supervisor."
+                    className="bg-slate-50 dark:bg-slate-800/80 resize-none text-xs leading-relaxed"
+                    required
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    This explanation will be logged into the permanent attendance audit trail with your admin profile.
+                  </p>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
@@ -1848,7 +2080,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={applyAttendanceMutation.isPending || formRemark.trim().length < 3 || !formEmployeeId}
+                  disabled={applyAttendanceMutation.isPending || (!formDisplayAsSelfPunch && formRemark.trim().length < 3) || !formEmployeeId}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5"
                 >
                   {applyAttendanceMutation.isPending ? "Applying Attendance..." : "Save & Apply Attendance"}

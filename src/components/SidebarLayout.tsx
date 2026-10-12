@@ -41,6 +41,7 @@ import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Separator } from "./ui/separator";
+import { AdminNotificationBell } from "./AdminNotificationBell";
 
 interface SidebarLayoutProps {
   children: ReactNode;
@@ -403,7 +404,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           <div className="flex-1 px-2">
             <img src="/logo.png" alt="SWAYOG" className="h-8 w-auto" />
           </div>
-          <div className="w-11" />
+          <div className="flex items-center gap-2">
+            {user.role === "admin" && <AdminNotificationBell />}
+            <div className="w-1" />
+          </div>
         </div>
 
         <main className="flex-1 overflow-y-auto">

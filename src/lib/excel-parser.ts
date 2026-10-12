@@ -103,6 +103,7 @@ export function validateEmployeeData(rows: Record<string, unknown>[]): Validated
 export function validateCustomerData(rows: Record<string, unknown>[]): ValidatedCustomerData[] {
   return rows.map((row, index) => {
     const errors: string[] = [];
+    const customerCode = String(row['Customer ID'] || row['Customer Code'] || row['customerCode'] || '').trim() || undefined;
     const fullName = String(row['Customer Name'] || row['Customer Name *'] || row['Full Name'] || row['fullName'] || row['Name'] || '').trim();
     const address = String(row['Site Location'] || row['Site Location *'] || row['Address'] || row['address'] || '').trim();
     const phoneNumber = String(row['Phone'] || row['Phone *'] || row['phoneNumber'] || row['Phone Number'] || '').trim();
@@ -147,6 +148,7 @@ export function validateCustomerData(rows: Record<string, unknown>[]): Validated
 
     return {
       rowNumber: index + 2,
+      customerCode,
       fullName,
       email: email || `${fullName.replace(/\s+/g, '').toLowerCase()}-${index}@swayog.in`, // Fallback email since it's optional in the excel sheet but required in DB/API
       phoneNumber,
@@ -302,6 +304,7 @@ export type ValidatedEmployeeData = {
 
 export type ValidatedCustomerData = {
   rowNumber: number;
+  customerCode?: string;
   fullName: string;
   email: string;
   phoneNumber: string;
@@ -344,14 +347,15 @@ export type ValidatedPartnerData = {
 export async function exportCustomersToExcel(customers: any[]): Promise<Blob> {
   const XLSX = await import('xlsx');
   const headers = [
-    "Customer Name", "Site Location", "Phone", "Email", "City", "Plant Size (kW)", 
+    "Customer ID", "Customer Name", "Site Location", "Phone", "Email", "City", "Plant Size (kW)",
     "Installation Date", "AMC Status", "Contract Start", "Cleanings / Month", 
-    "Inverter Brand", "Inverter Login ID", "Password", "Data Logger Sr No", "Inverter Sr No", "API Key / Plant ID", 
+    "Inverter Brand", "Inverter Login ID", "Data Logger Sr No", "Inverter Sr No", "API Key / Plant ID",
     "Status (Online/Offline)", "Inverter Model", "NO of Cleaning", "Monthly Rate (₹)", 
     "Payment Terms", "Remarks"
   ];
   
   const data = customers.map(c => ({
+    "Customer ID": c.customerCode || "",
     "Customer Name": c.name || c.fullName || "",
     "Site Location": c.address || "",
     "Phone": c.phone || c.phoneNumber || "",
@@ -364,7 +368,6 @@ export async function exportCustomersToExcel(customers: any[]): Promise<Blob> {
     "Cleanings / Month": c.cleaningsPerMonth || 2,
     "Inverter Brand": c.inverterBrand || "",
     "Inverter Login ID": c.inverterLoginId || c.portalLoginId || "",
-    "Password": c.inverterPassword || c.portalPassword || "",
     "Data Logger Sr No": c.dataLoggerSrNo || c.inverterUid || "",
     "Inverter Sr No": c.inverterSrNo || c.inverterDeviceSn || "",
     "API Key / Plant ID": c.inverterApiKey || "",

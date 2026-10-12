@@ -13,11 +13,13 @@ import {
   updatePartnerLeadStatusHandler,
   listEpcAssignedLeadsHandler,
   updateEpcAssignmentStatusHandler,
+  bulkImportCustomersHandler,
 } from "./customers.controller.js";
 import {
   createCustomerSchema,
   listCustomersQuerySchema,
   updateCustomerSchema,
+  bulkCustomerImportSchema,
 } from "./customers.schemas.js";
 
 export const customerRoutes = Router();
@@ -51,6 +53,14 @@ customerRoutes.post(
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.PARTNER, UserRole.SUB_ADMIN, UserRole.EMPLOYEE),
   validateBody(createCustomerSchema),
   asyncHandler(createCustomerHandler),
+);
+
+customerRoutes.post(
+  "/bulk-import",
+  authenticateAccessToken,
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  validateBody(bulkCustomerImportSchema),
+  asyncHandler(bulkImportCustomersHandler),
 );
 
 customerRoutes.patch(

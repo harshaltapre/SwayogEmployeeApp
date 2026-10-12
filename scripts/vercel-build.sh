@@ -6,7 +6,7 @@ npm install --prefix backend
 
 if [ "${RUN_PRISMA_MIGRATE:-0}" = "1" ]; then
   echo "RUN_PRISMA_MIGRATE=1 -> running prisma migrate deploy"
-  npm --prefix backend run prisma:migrate:deploy
+  npm --prefix backend run prisma:migrate:deploy:runtime
 else
   echo "Skipping Prisma migrations during build (set RUN_PRISMA_MIGRATE=1 to enable)"
 fi
@@ -23,10 +23,8 @@ vite build
 echo "Copying public files to dist..."
 cp -r public/* dist/
 
-if [ ! -f dist/latest.json ]; then
-  echo "ERROR: dist/latest.json was not generated."
-  exit 1
-fi
-echo "Verified static OTA manifest at dist/latest.json"
+echo "Removing static latest.json from dist to guarantee dynamic R2 manifest routing..."
+rm -f dist/latest.json
+rm -f dist/releases/android/latest.json
 
 echo "vercel build script completed"

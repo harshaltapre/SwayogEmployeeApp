@@ -12,11 +12,15 @@ import type { AuthContext } from "../../middleware/auth.js";
 import { ApiError } from "../../middleware/error.js";
 import { prisma } from "../../lib/prisma.js";
 import { generateNextCustomerCode } from "../../lib/login-id.js";
+import { generatePartnerCustomerId } from "../../lib/partner-customer-id.js";
 import type {
   CreateCustomerInput,
   ListCustomersQueryInput,
   UpdateCustomerInput,
+  BulkCustomerImportInput,
 } from "./customers.schemas.js";
+
+const COMPLETED_PROJECT_STAGE = 11;
 
 const amcStatusMap: Record<"active" | "expired" | "none", CustomerAmcStatus> = {
   active: CustomerAmcStatus.ACTIVE,
@@ -56,6 +60,21 @@ function normalizeText(value: string): string {
 
 function normalizePhone(value: string): string {
   return value.replace(/\s+/g, "").trim();
+}
+
+function canonicalPhone(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+  return digits;
+}
+
+function hasValue(value: unknown): boolean {
+  return value !== undefined && value !== null && String(value).trim() !== "";
+}
+
+function importValueChanged(existing: unknown, incoming: unknown): boolean {
+  return hasValue(incoming) && (!hasValue(existing) || String(existing).trim() !== String(incoming).trim());
 }
 
 function serializeCustomer(customer: any) {
@@ -108,13 +127,15 @@ function serializeCustomer(customer: any) {
     } : null,
     partner: customer.partner ? {
       id: customer.partner.id,
+      partnerCode: customer.partner.partnerCode || null,
       businessName: customer.partner.businessName,
       companyName: customer.partner.businessName || customer.partner.user?.fullName || "Partner",
       name: customer.partner.user?.fullName || "Partner Representative",
       email: customer.partner.user?.email || null,
       phone: customer.partner.user?.phoneNumber || null,
-      zone: customer.partner.zone || null,
+      zone: customer.partner.serviceZone || customer.partner.zone || null,
     } : null,
+    serviceHistoryCount: customer._count?.serviceRequests ?? 0,
   };
 }
 
@@ -164,7 +185,16 @@ export async function listCustomers(auth: AuthContext, query: ListCustomersQuery
       { email: { contains: query.search, mode: "insensitive" } },
       { phoneNumber: { contains: query.search, mode: "insensitive" } },
       { city: { contains: query.search, mode: "insensitive" } },
+      { inverterBrand: { contains: query.search, mode: "insensitive" } },
+      { inverterName: { contains: query.search, mode: "insensitive" } },
+      { inverterModel: { contains: query.search, mode: "insensitive" } },
+      { inverterUid: { contains: query.search, mode: "insensitive" } },
+      { inverterSrNo: { contains: query.search, mode: "insensitive" } },
+      { dataLoggerSrNo: { contains: query.search, mode: "insensitive" } },
       { apartment: { name: { contains: query.search, mode: "insensitive" } } },
+      { partner: { partnerCode: { contains: query.search, mode: "insensitive" } } },
+      { partner: { businessName: { contains: query.search, mode: "insensitive" } } },
+      { partner: { user: { fullName: { contains: query.search, mode: "insensitive" } } } },
     ];
   }
 
@@ -180,6 +210,47 @@ export async function listCustomers(auth: AuthContext, query: ListCustomersQuery
     where.partnerId = query.partnerId;
   }
 
+  if ((query as any).partnerCode) {
+    where.partner = {
+      ...(where.partner || {}),
+      partnerCode: { contains: (query as any).partnerCode, mode: "insensitive" },
+    };
+  }
+
+  if ((query as any).partnerName) {
+    where.partner = {
+      ...(where.partner || {}),
+      OR: [
+        { user: { fullName: { contains: (query as any).partnerName, mode: "insensitive" } } },
+        { businessName: { contains: (query as any).partnerName, mode: "insensitive" } },
+      ],
+    };
+  }
+
+  if ((query as any).registrationMonth) {
+    const rawMonth = String((query as any).registrationMonth).trim();
+    let year: number | null = null;
+    let month: number | null = null;
+
+    if (rawMonth.includes("-")) {
+      const parts = rawMonth.split("-");
+      year = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10);
+    } else if (rawMonth.length === 4) {
+      year = 2000 + parseInt(rawMonth.slice(0, 2), 10);
+      month = parseInt(rawMonth.slice(2, 4), 10);
+    }
+
+    if (year && month && !isNaN(year) && !isNaN(month)) {
+      const startOfMonth = new Date(year, month - 1, 1);
+      const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+      where.createdAt = {
+        gte: startOfMonth,
+        lte: endOfMonth,
+      };
+    }
+  }
+
   if (query.city) {
     where.city = { contains: query.city, mode: "insensitive" };
   }
@@ -192,6 +263,9 @@ export async function listCustomers(auth: AuthContext, query: ListCustomersQuery
         include: {
           user: true,
         },
+      },
+      _count: {
+        select: { serviceRequests: true },
       },
     },
     orderBy: { createdAt: "desc" },
@@ -215,6 +289,9 @@ export async function getCustomerById(auth: AuthContext, id: number) {
         include: {
           user: true,
         },
+      },
+      _count: {
+        select: { serviceRequests: true },
       },
     },
   });
@@ -284,7 +361,9 @@ export async function createCustomer(auth: AuthContext, input: CreateCustomerInp
     throw new ApiError(409, "Same customer details already exist");
   }
 
-  const customerCode = await generateCustomerCode();
+  const customerCode = partnerId
+    ? (await generatePartnerCustomerId(partnerId, new Date(input.installationDate || Date.now()))).customerId
+    : await generateCustomerCode();
   const pwdToUse = input.portalPassword || crypto.randomBytes(4).toString('hex');
   const passwordHash = await hashPassword(pwdToUse);
 
@@ -343,7 +422,7 @@ export async function createCustomer(auth: AuthContext, input: CreateCustomerInp
           cleaningsPerMonth: input.cleaningsPerMonth !== undefined ? Number(input.cleaningsPerMonth) : 2,
           status: customerStatusMap[input.status],
           partnerId,
-          projectStage: input.projectStage ?? 0,
+          projectStage: COMPLETED_PROJECT_STAGE,
           commissionAmount: input.commissionAmount ?? null,
           monthlyCleaningRate: input.monthlyCleaningRate ?? null,
           paymentTerms: input.paymentTerms ?? null,
@@ -383,6 +462,130 @@ export async function createCustomer(auth: AuthContext, input: CreateCustomerInp
     }
     throw error;
   }
+}
+
+export async function bulkImportCustomers(auth: AuthContext, input: BulkCustomerImportInput) {
+  const results = {
+    successful: 0,
+    failed: 0,
+    created: 0,
+    updated: 0,
+    unchanged: 0,
+    ambiguous: 0,
+    conflicts: 0,
+    errors: [] as Array<{ row: number; fullName: string; error: string }>,
+  };
+  const seen = new Map<string, { row: number; signature: string }>();
+
+  for (const row of input.rows) {
+    const phone = canonicalPhone(row.phoneNumber);
+    const email = normalizeText(row.email);
+    const key = row.customerCode
+      ? `code:${row.customerCode.toLowerCase()}`
+      : phone ? `phone:${phone}` : `email:${email}`;
+    const signature = JSON.stringify(row);
+    const previous = seen.get(key);
+    if (previous) {
+      if (previous.signature === signature) {
+        results.successful++;
+        results.unchanged++;
+      } else {
+        results.failed++;
+        results.conflicts++;
+        results.errors.push({
+          row: row.rowNumber,
+          fullName: row.fullName,
+          error: `Conflicts with duplicate import row ${previous.row}`,
+        });
+      }
+      continue;
+    }
+    seen.set(key, { row: row.rowNumber, signature });
+
+    try {
+      const candidates = await prisma.customer.findMany({
+        where: {
+          OR: [
+            ...(row.customerCode ? [{ customerCode: row.customerCode }] : []),
+            ...(email ? [{ email: { equals: email, mode: "insensitive" as const } }] : []),
+            ...(phone ? [{ phoneNumber: { contains: phone.slice(-10) } }] : []),
+          ],
+        },
+      });
+      const matches = candidates.filter((customer) =>
+        (row.customerCode && customer.customerCode.toLowerCase() === row.customerCode.toLowerCase()) ||
+        (phone.length > 0 && canonicalPhone(customer.phoneNumber) === phone) ||
+        (email.length > 0 && normalizeText(customer.email) === email),
+      );
+
+      if (matches.length > 1) {
+        results.failed++;
+        results.ambiguous++;
+        results.errors.push({ row: row.rowNumber, fullName: row.fullName, error: "Multiple existing customers match this row" });
+        continue;
+      }
+
+      const existing = matches[0];
+      if (!existing) {
+        await createCustomer(auth, {
+          ...row,
+          email,
+          phoneNumber: normalizePhone(row.phoneNumber),
+          portalPassword: undefined,
+          projectStage: COMPLETED_PROJECT_STAGE,
+        });
+        results.successful++;
+        results.created++;
+        continue;
+      }
+
+      const update: UpdateCustomerInput = {};
+      const fields: Array<keyof UpdateCustomerInput> = [
+        "fullName", "email", "phoneNumber", "city", "address", "systemSizeKw",
+        "installationDate", "panelBrand", "inverterBrand", "inverterModel",
+        "inverterLoginId", "inverterApiKey", "dataLoggerSrNo", "inverterSrNo",
+        "contractStartDate", "cleaningsPerMonth", "amcStatus", "monthlyCleaningRate",
+        "paymentTerms", "remarks",
+      ];
+      for (const field of fields) {
+        const incoming = row[field];
+        const existingValue = field === "fullName"
+          ? existing.fullName
+          : field === "phoneNumber" ? existing.phoneNumber : (existing as any)[field];
+        if (hasValue(incoming) && (input.mode === "update_existing" || !hasValue(existingValue)) &&
+          importValueChanged(existingValue, incoming)) {
+          (update as any)[field] = field === "phoneNumber" ? normalizePhone(String(incoming)) : incoming;
+        }
+      }
+
+      if (Object.keys(update).length === 0) {
+        results.successful++;
+        results.unchanged++;
+      } else {
+        await updateCustomer(auth, existing.id, update);
+        results.successful++;
+        results.updated++;
+      }
+    } catch (error) {
+      results.failed++;
+      results.errors.push({
+        row: row.rowNumber,
+        fullName: row.fullName,
+        error: error instanceof Error ? error.message : "Customer import failed",
+      });
+    }
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: auth.userId,
+      action: "CUSTOMER_BULK_IMPORT",
+      entity: "Customer",
+      entityId: "bulk",
+      metadata: results,
+    },
+  });
+  return results;
 }
 
 export async function updateCustomer(auth: AuthContext, id: number, input: UpdateCustomerInput) {
@@ -499,7 +702,7 @@ export async function updateCustomer(auth: AuthContext, id: number, input: Updat
       cleaningsPerMonth: input.cleaningsPerMonth !== undefined ? Number(input.cleaningsPerMonth) : undefined,
       status: input.status ? customerStatusMap[input.status] : undefined,
       partnerId,
-      projectStage: input.projectStage !== undefined ? input.projectStage : undefined,
+      projectStage: COMPLETED_PROJECT_STAGE,
       assignedEpc: (input as any).assignedEpc !== undefined ? (input as any).assignedEpc : undefined,
       // When EPC is reassigned, reset acceptance status back to PENDING (null)
       ...((input as any).assignedEpc !== undefined ? { epcAssignmentStatus: null } : {}),
@@ -699,4 +902,3 @@ export async function updateEpcAssignmentStatus(
 
   return serializeCustomer(updated);
 }
-

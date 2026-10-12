@@ -19,6 +19,9 @@ export const listCustomersQuerySchema = z.object({
   status: z.enum(customerStatusValues).optional(),
   city: z.string().trim().optional(),
   partnerId: z.string().uuid().optional(),
+  partnerCode: z.string().trim().optional(),
+  partnerName: z.string().trim().optional(),
+  registrationMonth: z.string().trim().optional(),
   limit: z.coerce.number().int().positive().max(1000).optional(),
 });
 
@@ -62,6 +65,17 @@ export const updateCustomerSchema = createCustomerSchema.partial().extend({
   commissionAmount: z.coerce.number().min(0).optional(),
 });
 
+export const bulkCustomerImportSchema = z.object({
+  mode: z.enum(["fill_missing", "update_existing"]).default("fill_missing"),
+  rows: z.array(
+    createCustomerSchema.extend({
+      rowNumber: z.number().int().positive(),
+      customerCode: z.string().trim().optional(),
+    }),
+  ).min(1).max(1000),
+});
+
 export type ListCustomersQueryInput = z.infer<typeof listCustomersQuerySchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+export type BulkCustomerImportInput = z.infer<typeof bulkCustomerImportSchema>;

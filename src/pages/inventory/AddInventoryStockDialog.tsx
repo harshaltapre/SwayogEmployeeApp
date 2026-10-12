@@ -46,6 +46,7 @@ export default function AddInventoryStockDialog({
   const [entryDate, setEntryDate] = useState(getTodayDate);
   const [pricePerUnit, setPricePerUnit] = useState("");
   const [supplier, setSupplier] = useState("");
+  const [remarks, setRemarks] = useState("");
   const [error, setError] = useState("");
   const selectedItemId = item?.id;
   const selectedPrice = item?.pricePerUnit;
@@ -56,6 +57,7 @@ export default function AddInventoryStockDialog({
       setEntryDate(getTodayDate());
       setPricePerUnit(String(selectedPrice ?? 0));
       setSupplier(item?.supplier ?? "");
+      setRemarks("");
       setError("");
     }
   }, [item?.supplier, selectedItemId, selectedPrice]);
@@ -95,6 +97,8 @@ export default function AddInventoryStockDialog({
         entryDate,
         pricePerUnit: parsedPrice,
         supplier: parsedSupplier,
+        remarks: remarks.trim() || undefined,
+        notes: remarks.trim() || undefined,
       });
     } catch (submitError) {
       setError(getErrorMessage(submitError));
@@ -175,6 +179,18 @@ export default function AddInventoryStockDialog({
                 required
                 value={supplier}
                 onChange={(event) => setSupplier(event.target.value)}
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="restock-remarks">Remarks (optional)</Label>
+              <Input
+                id="restock-remarks"
+                type="text"
+                placeholder="e.g. Batch #104, Vendor delivery"
+                value={remarks}
+                onChange={(event) => setRemarks(event.target.value)}
                 disabled={isLoading}
               />
             </div>

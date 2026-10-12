@@ -321,8 +321,8 @@ export default function InventoryManagementPage() {
                               <button
                                 type="button"
                                 onClick={() => setHistoryItem(item)}
-                                aria-label={`View stock entries for ${item.sku}`}
-                                title="View stock entries"
+                                aria-label={`View inventory history for ${item.name}`}
+                                title="Inventory History"
                                 style={{ padding: 8, borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", color: C.slate }}
                               >
                                 <History size={14} />
@@ -379,7 +379,7 @@ export default function InventoryManagementPage() {
       />
 
       <InventoryStockEntriesDialog
-        item={historyItem}
+        item={historyItem ? (inventory?.find(i => String(i.id) === String(historyItem.id)) || historyItem) : null}
         onClose={() => setHistoryItem(null)}
       />
     </SidebarLayout>

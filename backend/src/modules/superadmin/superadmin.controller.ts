@@ -5,6 +5,7 @@ import { clearManagedRedisCache } from "../../lib/redis.js";
 import { prisma } from "../../lib/prisma.js";
 import { hashPassword } from "../../lib/password.js";
 import { generateUniqueLoginId } from "../../lib/login-id.js";
+import { getOrGeneratePartnerCode } from "../../lib/partner-customer-id.js";
 import { ApiError } from "../../middleware/error.js";
 import { getMaintenanceState, setMaintenanceState } from "../../middleware/maintenance.js";
 import type { AuthContext } from "../../middleware/auth.js";
@@ -96,17 +97,33 @@ export async function getServiceRequestsComplaints(req: Request, res: Response):
 // ─── List Users ───────────────────────────────────────────────────────────────
 
 export async function getAllUsers(req: Request, res: Response): Promise<void> {
-  const { role, isActive, search, limit = "50", offset = "0" } = req.query;
+  const { role, isActive, search, partnerId, partnerCode, limit = "50", offset = "0" } = req.query;
 
   const where: any = {};
   if (role) where.role = role;
   if (isActive !== undefined) where.isActive = isActive === "true";
+
+  if (partnerId) {
+    where.customerProfile = { partnerId: String(partnerId) };
+  }
+  if (partnerCode) {
+    where.customerProfile = {
+      ...where.customerProfile,
+      partner: { partnerCode: { contains: String(partnerCode), mode: "insensitive" } },
+    };
+  }
+
   if (search) {
+    const s = String(search);
     where.OR = [
-      { fullName: { contains: search as string, mode: "insensitive" } },
-      { email: { contains: search as string, mode: "insensitive" } },
-      { loginId: { contains: search as string, mode: "insensitive" } },
-      { phoneNumber: { contains: search as string, mode: "insensitive" } },
+      { fullName: { contains: s, mode: "insensitive" } },
+      { email: { contains: s, mode: "insensitive" } },
+      { loginId: { contains: s, mode: "insensitive" } },
+      { phoneNumber: { contains: s, mode: "insensitive" } },
+      { customerProfile: { customerCode: { contains: s, mode: "insensitive" } } },
+      { customerProfile: { partner: { partnerCode: { contains: s, mode: "insensitive" } } } },
+      { customerProfile: { partner: { user: { fullName: { contains: s, mode: "insensitive" } } } } },
+      { customerProfile: { partner: { businessName: { contains: s, mode: "insensitive" } } } },
     ];
   }
 
@@ -132,7 +149,29 @@ export async function getAllUsers(req: Request, res: Response): Promise<void> {
           createdAt: true,
           updatedAt: true,
           employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true, permissions: true } },
-          partnerProfile: { select: { businessName: true, serviceZone: true } },
+          partnerProfile: { select: { partnerCode: true, businessName: true, serviceZone: true } },
+          customerProfile: {
+            select: {
+              id: true,
+              customerCode: true,
+              partnerId: true,
+              partner: {
+                select: {
+                  id: true,
+                  partnerCode: true,
+                  businessName: true,
+                  user: {
+                    select: {
+                      id: true,
+                      fullName: true,
+                      email: true,
+                      employeeCode: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         take,
@@ -149,7 +188,26 @@ export async function getAllUsers(req: Request, res: Response): Promise<void> {
     }, {});
     roleCounts["CUSTOMER"] = Math.max(roleCounts["CUSTOMER"] || 0, totalCustomerCount);
 
-    res.status(200).json({ data: { users, pagination: { total, limit: take, offset: skip }, roleCounts } });
+    const mappedUsers = users.map((u: any) => {
+      const isCustomer = u.role === UserRole.CUSTOMER;
+      const custCode = isCustomer ? (u.customerProfile?.customerCode || null) : null;
+      const partner = isCustomer && u.customerProfile?.partner ? {
+        id: u.customerProfile.partner.id,
+        name: u.customerProfile.partner.user?.fullName || u.customerProfile.partner.businessName || "Partner",
+        partnerCode: u.customerProfile.partner.partnerCode || null,
+        businessName: u.customerProfile.partner.businessName || null,
+      } : null;
+
+      return {
+        ...u,
+        customerId: custCode,
+        partnerName: partner?.name || null,
+        partnerCode: partner?.partnerCode || null,
+        partner,
+      };
+    });
+
+    res.status(200).json({ data: { users: mappedUsers, pagination: { total, limit: take, offset: skip }, roleCounts } });
   } catch (error) {
     console.error("[SuperAdmin] getAllUsers error:", error);
     throw new ApiError(500, "Failed to fetch users");
@@ -169,12 +227,52 @@ export async function getUserById(req: Request, res: Response): Promise<void> {
       role: true, isActive: true, permissions: true, failedLoginAttempts: true, lockoutUntil: true,
       createdAt: true, updatedAt: true,
       employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true, permissions: true } },
-      partnerProfile: { select: { businessName: true, serviceZone: true } },
+      partnerProfile: { select: { partnerCode: true, businessName: true, serviceZone: true } },
+      customerProfile: {
+        select: {
+          id: true,
+          customerCode: true,
+          partnerId: true,
+          partner: {
+            select: {
+              id: true,
+              partnerCode: true,
+              businessName: true,
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                  employeeCode: true,
+                },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
   if (!user) throw new ApiError(404, "User not found");
-  res.status(200).json({ data: user });
+
+  const isCustomer = user.role === UserRole.CUSTOMER;
+  const custCode = isCustomer ? (user.customerProfile?.customerCode || null) : null;
+  const partner = isCustomer && user.customerProfile?.partner ? {
+    id: user.customerProfile.partner.id,
+    name: user.customerProfile.partner.user?.fullName || user.customerProfile.partner.businessName || "Partner",
+    partnerCode: user.customerProfile.partner.partnerCode || null,
+    businessName: user.customerProfile.partner.businessName || null,
+  } : null;
+
+  const mappedUser = {
+    ...user,
+    customerId: custCode,
+    partnerName: partner?.name || null,
+    partnerCode: partner?.partnerCode || null,
+    partner,
+  };
+
+  res.status(200).json({ data: mappedUser });
 }
 
 // ─── Create User ──────────────────────────────────────────────────────────────
@@ -254,6 +352,13 @@ export async function createUser(req: Request, res: Response): Promise<void> {
       employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true, permissions: true } }
     },
   });
+
+  if (role === UserRole.PARTNER) {
+    const partnerProfile = await prisma.partnerProfile.findUnique({ where: { userId: user.id } });
+    if (partnerProfile) {
+      await getOrGeneratePartnerCode(partnerProfile.id);
+    }
+  }
 
   await prisma.auditLog.create({
     data: { actorId: auth.userId, action: "SUPERADMIN_USER_CREATE", entity: "User", entityId: user.id, metadata: { role, email } },
@@ -620,21 +725,39 @@ export async function exportUsers(_req: Request, res: Response): Promise<void> {
       loginId: true, fullName: true, email: true, phoneNumber: true,
       role: true, isActive: true, createdAt: true,
       employeeProfile: { select: { jobRole: true, zone: true } },
+      customerProfile: {
+        select: {
+          customerCode: true,
+          partner: {
+            select: {
+              partnerCode: true,
+              businessName: true,
+              user: { select: { fullName: true } },
+            },
+          },
+        },
+      },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  const header = "Login ID,Full Name,Email,Phone,Role,Active,Job Role,Zone,Created At\n";
-  const rows = users.map((u: any) =>
-    [
+  const header = "Login ID,Full Name,Email,Phone,Role,Customer ID,Partner Name,Partner Code,Active,Job Role,Zone,Created At\n";
+  const rows = users.map((u: any) => {
+    const isCustomer = u.role === UserRole.CUSTOMER;
+    const customerId = isCustomer ? (u.customerProfile?.customerCode || "") : "";
+    const partnerName = isCustomer ? (u.customerProfile?.partner?.user?.fullName || u.customerProfile?.partner?.businessName || "") : "";
+    const partnerCode = isCustomer ? (u.customerProfile?.partner?.partnerCode || "") : "";
+
+    return [
       u.loginId, u.fullName, u.email, u.phoneNumber || "",
-      u.role, u.isActive ? "Yes" : "No",
+      u.role, customerId, partnerName, partnerCode,
+      u.isActive ? "Yes" : "No",
       u.employeeProfile?.jobRole || "", u.employeeProfile?.zone || "",
       u.createdAt.toISOString(),
     ]
       .map(v => `"${String(v).replace(/"/g, '""')}"`)
-      .join(",")
-  );
+      .join(",");
+  });
 
   const csv = header + rows.join("\n");
   res.setHeader("Content-Type", "text/csv");

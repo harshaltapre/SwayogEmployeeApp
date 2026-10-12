@@ -6,7 +6,6 @@ import { startWaareeScheduler } from "./lib/waaree-scheduler.js";
 import { initWebSocketServer } from "./lib/telemetry-ws.js";
 import { startTelemetryPoller } from "./lib/telemetry-poller.js";
 import { startCheckInReminderScheduler } from "./lib/checkin-reminder-scheduler.js";
-import { startAutoCheckoutScheduler } from "./lib/auto-checkout-scheduler.js";
 
 const server = app.listen(env.PORT, () => {
   console.log(`Solar OS backend listening on port ${env.PORT}`);
@@ -16,13 +15,6 @@ const server = app.listen(env.PORT, () => {
     startCheckInReminderScheduler();
   } catch (error: any) {
     console.error("Failed to start Check-In Reminder background scheduler:", error.message);
-  }
-
-  // Initialize Auto-Checkout Scheduler (fires daily at 7:00 PM IST)
-  try {
-    startAutoCheckoutScheduler();
-  } catch (error: any) {
-    console.error("Failed to start Auto-Checkout background scheduler:", error.message);
   }
 
   // Initialize the Growatt Live Telemetry Polling Scheduler

@@ -143,6 +143,10 @@ export async function getMyRequests(req: Request, res: Response): Promise<void> 
   });
 }
 
+import { generatePartnerCustomerId } from "../../lib/partner-customer-id.js";
+import { hashPassword } from "../../lib/password.js";
+import { UserRole } from "@prisma/client";
+
 /**
  * Submit a customer lead (Partner)
  */
@@ -167,37 +171,87 @@ export async function submitLead(req: Request, res: Response): Promise<void> {
   const commissionAmount = parsedCapacity * 1000;
 
   const partnerProfile = await prisma.partnerProfile.findUnique({
-    where: { userId: auth.userId }
+    where: { userId: auth.userId },
+    include: {
+      user: true,
+    },
   });
 
   if (!partnerProfile) {
     throw new ApiError(404, "Partner profile not found");
   }
 
+  const normalizedPhone = phone.replace(/\s+/g, "").trim();
+
   try {
-    const newLead = await prisma.customer.create({
-      data: {
-        customerCode: `SWY-LEAD-${Date.now()}`,
-        fullName: customerName,
-        email: email && email.trim() !== "" ? email : `${Date.now()}@placeholder.lead.swayog`,
-        phoneNumber: phone,
-        city: location || "Unknown",
-        state: state || null,
-        address: address || "Address Pending",
-        systemSizeKw: parsedCapacity,
-        projectType: projectType || null,
-        commissionAmount,
-        commissionStatus: "PENDING",
-        installationDate: new Date(),
-        projectStage: 0, // 0 usually means Lead
-        partnerId: partnerProfile.id,
+    const newLead = await prisma.$transaction(async (tx) => {
+      const { customerId } = await generatePartnerCustomerId(partnerProfile.id, new Date(), tx);
+      const normalizedEmail = email && email.trim() !== ""
+        ? email.trim().toLowerCase()
+        : `${customerId.toLowerCase().replace(/[^a-z0-9]/g, "")}@placeholder.lead.swayog`;
+
+      // Check if user already exists
+      let user = await tx.user.findFirst({
+        where: {
+          OR: [
+            { email: normalizedEmail },
+            { phoneNumber: normalizedPhone },
+          ],
+        },
+      });
+
+      if (!user) {
+        const defaultPwd = `Swayog@${Date.now().toString().slice(-4)}`;
+        const passwordHash = await hashPassword(defaultPwd);
+        user = await tx.user.create({
+          data: {
+            loginId: customerId,
+            fullName: customerName,
+            email: normalizedEmail,
+            phoneNumber: normalizedPhone,
+            passwordHash,
+            portalPassword: defaultPwd,
+            role: UserRole.CUSTOMER,
+            isActive: true,
+          },
+        });
       }
+
+      const createdCustomer = await tx.customer.create({
+        data: {
+          customerCode: customerId,
+          fullName: customerName,
+          email: normalizedEmail,
+          phoneNumber: normalizedPhone,
+          city: location || "Unknown",
+          state: state || null,
+          address: address || "Address Pending",
+          systemSizeKw: parsedCapacity,
+          projectType: projectType || null,
+          commissionAmount,
+          commissionStatus: "PENDING",
+          installationDate: new Date(),
+          projectStage: 11,
+          partnerId: partnerProfile.id,
+          userId: user.id,
+          partnerLeadStatus: "PENDING",
+        },
+        include: {
+          partner: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      });
+
+      return createdCustomer;
     });
 
     res.status(201).json({
       success: true,
       message: "Lead submitted successfully",
-      lead: newLead
+      lead: newLead,
     });
   } catch (error: any) {
     console.error("[submitLead] Error creating customer lead:", error);
@@ -210,6 +264,9 @@ export async function submitLead(req: Request, res: Response): Promise<void> {
         throw new ApiError(409, "A customer with this email already exists in the system.");
       }
       throw new ApiError(409, "A customer with these details already exists.");
+    }
+    if (error instanceof ApiError) {
+      throw error;
     }
     throw new ApiError(500, "Failed to submit lead to database");
   }

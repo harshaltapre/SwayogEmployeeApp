@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react";
 import { SidebarLayout } from "@/components/SidebarLayout";
 import { PageHeader } from "@/components/PageHeader";
-import { useCreateCustomer, useListCustomers, getEffectiveApiBaseUrl } from "@/lib/api-client";
+import {
+  useCreateCustomer,
+  useListCustomers,
+  getEffectiveApiBaseUrl,
+  useDuplicateCustomerSummary,
+  useRemoveAllDuplicateCustomers,
+} from "@/lib/api-client";
 import { usePollWithVisibility } from "@/lib/data-sync";
 import { subscribeCustomerDataChanged } from "@/lib/entity-sync";
 import { ExcelImportDialog } from "@/components/ExcelImportDialog";
@@ -32,11 +38,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { ValidatedCustomerData, exportCustomersToExcel } from "@/lib/excel-parser";
-
-const serviceHistoryMap: Record<string, number> = {
-  "1": 4, "2": 2, "3": 7, "4": 1, "5": 3, "6": 5, "7": 2,
-  "8": 8, "9": 1, "10": 4, "11": 3, "12": 6, "13": 2, "14": 5, "15": 3,
-};
 
 const createCustomerSchema = z.object({
   fullName: z.string().trim().min(2, "Name must be at least 2 characters"),
@@ -138,6 +139,35 @@ export default function AdminCustomers() {
   const [copiedCredentialField, setCopiedCredentialField] = useState<"loginId" | "password" | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
+  const currentUser = useAuth((state) => state.user);
+  const isDuplicateCleanupAdmin = ["admin", "super_admin"].includes(currentUser?.role ?? "");
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [duplicateConfirmation, setDuplicateConfirmation] = useState("");
+  const [duplicateResult, setDuplicateResult] = useState<any>(null);
+  const { data: duplicateSummary, isLoading: duplicateSummaryLoading, refetch: refetchDuplicateSummary } = useDuplicateCustomerSummary({
+    query: { enabled: isDuplicateCleanupAdmin },
+  });
+  const removeDuplicatesMutation = useRemoveAllDuplicateCustomers({
+    mutation: {
+      onSuccess: (result: any) => {
+        setDuplicateResult(result);
+        setDuplicateConfirmation("");
+        setDuplicateDialogOpen(false);
+        toast({
+          title: result.failed ? "Cleanup completed with warnings" : "Duplicate cleanup completed",
+          description: `${result.duplicateRecordsRemoved} duplicate record(s) removed.`,
+          variant: result.failed ? "destructive" : "default",
+        });
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Duplicate cleanup failed",
+          description: error?.error || error?.message || "Unable to remove duplicates.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -220,11 +250,45 @@ export default function AdminCustomers() {
     });
   };
 
+  const [partnerFilter, setPartnerFilter] = useState<string>("all");
+  const [monthFilter, setMonthFilter] = useState<string>("");
+
   const { data: customersData, isLoading, refetch: refetchCustomers } = useListCustomers({
     search: debouncedSearch || undefined,
     amcStatus: amcStatus === "all" ? undefined : amcStatus,
+    partnerCode: partnerFilter !== "all" ? partnerFilter : undefined,
+    registrationMonth: monthFilter || undefined,
   });
-  const customers = customersData ?? [];
+  const rawCustomers = customersData ?? [];
+  const customers = rawCustomers.filter((c: any) => {
+    if (partnerFilter !== "all") {
+      const matchPartnerCode = c.partner?.partnerCode?.toLowerCase() === partnerFilter.toLowerCase();
+      const matchPartnerName = c.partner?.name?.toLowerCase() === partnerFilter.toLowerCase();
+      if (!matchPartnerCode && !matchPartnerName) return false;
+    }
+    if (monthFilter) {
+      const cDate = c.installationDate || c.createdAt;
+      if (cDate) {
+        const d = new Date(cDate);
+        if (!isNaN(d.getTime())) {
+          const ym = format(d, "yyyy-MM");
+          if (ym !== monthFilter) return false;
+        }
+      }
+    }
+    return true;
+  });
+
+  const uniquePartners = Array.from(
+    new Map(
+      rawCustomers
+        .filter((c: any) => c.partner?.partnerCode || c.partner?.name)
+        .map((c: any) => [c.partner?.partnerCode || c.partner?.name, {
+          code: c.partner?.partnerCode,
+          name: c.partner?.name || c.partner?.companyName,
+        }])
+    ).values()
+  );
 
   useEffect(() => {
     return subscribeCustomerDataChanged(() => {
@@ -302,6 +366,41 @@ export default function AdminCustomers() {
 
   return (
     <SidebarLayout>
+      {isDuplicateCleanupAdmin && (
+        <Dialog open={duplicateDialogOpen} onOpenChange={setDuplicateDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Remove All Duplicate Customers?</DialogTitle>
+              <DialogDescription>
+                This scans the database and keeps one deterministic primary record per duplicate Customer ID.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 rounded-lg border bg-slate-50 p-4 text-sm">
+              <div className="flex justify-between"><span>Duplicate Customer Groups Found</span><strong>{duplicateSummary?.duplicateCustomerIds ?? 0}</strong></div>
+              <div className="flex justify-between"><span>Total Duplicate Records</span><strong>{duplicateSummary?.duplicateRecords ?? 0}</strong></div>
+              <div className="flex justify-between"><span>Records That Will Be Kept</span><strong>{duplicateSummary?.recordsPreserved ?? 0}</strong></div>
+              <div className="flex justify-between"><span>Records That Will Be Removed</span><strong>{duplicateSummary?.duplicateRecords ?? 0}</strong></div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type REMOVE DUPLICATES to confirm</label>
+              <Input value={duplicateConfirmation} onChange={(event) => setDuplicateConfirmation(event.target.value)} placeholder="REMOVE DUPLICATES" />
+            </div>
+            {removeDuplicatesMutation.isPending && (
+              <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Scanning and processing duplicate customer records...</div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDuplicateDialogOpen(false)} disabled={removeDuplicatesMutation.isPending}>Cancel</Button>
+              <Button
+                variant="destructive"
+                disabled={duplicateConfirmation !== "REMOVE DUPLICATES" || !duplicateSummary?.duplicateRecords || removeDuplicatesMutation.isPending}
+                onClick={() => removeDuplicatesMutation.mutate()}
+              >
+                Remove All Duplicates
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
       <Dialog open={!!createdCredentials} onOpenChange={() => setCreatedCredentials(null)}>
         <DialogContent onInteractOutside={(event) => event.preventDefault()} onEscapeKeyDown={(event) => event.preventDefault()}>
           <DialogHeader>
@@ -353,6 +452,22 @@ export default function AdminCustomers() {
           description="Manage customer records, installations, service history, and warranty status."
         />
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+          {isDuplicateCleanupAdmin && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-2"
+              disabled={duplicateSummaryLoading || !duplicateSummary?.duplicateRecords}
+              onClick={() => {
+                setDuplicateResult(null);
+                void refetchDuplicateSummary();
+                setDuplicateDialogOpen(true);
+              }}
+            >
+              Remove All Duplicates
+              {!duplicateSummaryLoading && <Badge variant="secondary">{duplicateSummary?.duplicateRecords ?? 0}</Badge>}
+            </Button>
+          )}
           <Button
             onClick={handleManualRefresh}
             disabled={isRefreshing}
@@ -856,20 +971,65 @@ export default function AdminCustomers() {
         </div>
       </div>
 
-      {/* Filters */}
+      {isDuplicateCleanupAdmin && duplicateResult && (
+        <Card className="mb-6 border-emerald-200 bg-emerald-50">
+          <CardContent className="p-4 text-sm">
+            <div className="font-semibold text-emerald-900">
+              {duplicateResult.failed ? "Cleanup Completed With Warnings" : "Duplicate Cleanup Completed"}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-emerald-800 sm:grid-cols-4">
+              <span>IDs Checked: {duplicateResult.customerIdsChecked}</span>
+              <span>Groups Found: {duplicateResult.duplicateCustomerIdsFound}</span>
+              <span>Removed: {duplicateResult.duplicateRecordsRemoved}</span>
+              <span>Preserved: {duplicateResult.recordsPreserved}</span>
+            </div>
+            {duplicateResult.failedRecords?.length > 0 && (
+              <div className="mt-2 text-red-700">Failed records: {duplicateResult.failedRecords.map((item: any) => item.customerCode).join(", ")}</div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {/* Filters */}
       <Card className="mb-6 shadow-sm border-slate-200">
         <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-            <div className="relative flex-1">
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input
-                placeholder="Search by name, email, phone..."
+                placeholder="Search by Customer ID, name, email, phone, partner..."
                 className="pl-9 h-10"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <div className="w-full sm:w-44">
+              <Select
+                value={partnerFilter}
+                onValueChange={setPartnerFilter}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="All Partners" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Partners</SelectItem>
+                  {uniquePartners.map((p: any) => (
+                    <SelectItem key={p.code || p.name} value={p.code || p.name}>
+                      {p.name} {p.code ? `(${p.code})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-full sm:w-36">
+              <Input
+                type="month"
+                className="h-10 text-xs"
+                title="Registration Month"
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+              />
+            </div>
+            <div className="w-full sm:w-40">
               <Select
                 value={amcStatus}
                 onValueChange={(value) => setAmcStatus(value as "all" | "active" | "expired" | "none")}
@@ -885,7 +1045,20 @@ export default function AdminCustomers() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex rounded-lg border border-slate-200 overflow-hidden shrink-0">
+            {(partnerFilter !== "all" || monthFilter) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-10 text-slate-500"
+                onClick={() => {
+                  setPartnerFilter("all");
+                  setMonthFilter("");
+                }}
+              >
+                Reset Filters
+              </Button>
+            )}
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden shrink-0 ml-auto">
               <Button
                 variant="ghost"
                 size="sm"
@@ -916,6 +1089,7 @@ export default function AdminCustomers() {
                 <TableRow>
                   <TableHead className="font-semibold text-slate-700">Customer ID</TableHead>
                   <TableHead className="font-semibold text-slate-700">Customer Details</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Partner / Lead Source</TableHead>
                   <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Contact Info</TableHead>
                   <TableHead className="hidden md:table-cell font-semibold text-slate-700">Installation</TableHead>
                   <TableHead className="hidden lg:table-cell font-semibold text-slate-700">Warranty</TableHead>
@@ -929,7 +1103,7 @@ export default function AdminCustomers() {
                 {isLoading
                   ? [1, 2, 3, 4, 5].map((i) => (
                       <TableRow key={i}>
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((j) => (
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((j) => (
                           <TableCell key={j}><div className="h-4 bg-slate-100 rounded animate-pulse w-24" /></TableCell>
                         ))}
                       </TableRow>
@@ -937,24 +1111,59 @@ export default function AdminCustomers() {
                   : customers?.length === 0
                   ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-10 text-slate-500">No customers found</TableCell>
+                        <TableCell colSpan={10} className="text-center py-10 text-slate-500">No customers found</TableCell>
                       </TableRow>
                     )
                   : customers?.map((c) => {
-                      const custId = `CUST-${String(c.id).padStart(4, "0")}`;
-                      const services = serviceHistoryMap[String(c.id)] ?? 2;
+                      const custId = c.customerCode || String(c.id);
+                      const services = c.serviceHistoryCount ?? 0;
                       return (
                         <TableRow key={c.id} className="hover:bg-slate-50">
                           <TableCell>
-                            <Badge variant="outline" className="font-mono text-[11px] text-primary border-primary/30 bg-primary/5">
-                              <BadgeCheck className="w-3 h-3 mr-1" />{custId}
-                            </Badge>
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="outline" className={`font-mono text-[11px] ${c.partner ? "text-emerald-700 border-emerald-300 bg-emerald-50" : "text-primary border-primary/30 bg-primary/5"}`}>
+                                <BadgeCheck className="w-3 h-3 mr-1" />{custId}
+                              </Badge>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-slate-400 hover:text-slate-700"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(custId);
+                                  toast({ title: "Copied", description: "Customer ID copied to clipboard" });
+                                }}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            {c.partner?.partnerCode && (
+                              <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+                                Ref: {c.partner.partnerCode}
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <div className="font-medium text-slate-900">{c.name}</div>
                             <div className="flex items-center text-xs text-slate-500 mt-0.5">
                               <MapPin className="w-3 h-3 mr-1" />{c.city}
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            {c.partner ? (
+                              <div>
+                                <div className="font-medium text-xs text-slate-800 flex items-center gap-1.5">
+                                  <span>{c.partner.name || c.partner.companyName}</span>
+                                  {c.partner.partnerCode && (
+                                    <Badge variant="secondary" className="text-[10px] bg-slate-100 text-slate-700 font-mono">
+                                      {c.partner.partnerCode}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <span className="text-[11px] text-emerald-600 font-medium">Partner Lead</span>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic">Direct Lead</span>
+                            )}
                           </TableCell>
                           <TableCell className="hidden sm:table-cell">
                             <div className="flex items-center text-xs text-slate-600 gap-1">
@@ -998,7 +1207,7 @@ export default function AdminCustomers() {
                           <TableCell className="text-right">
                             <Link href={`${basePath}/customers/${c.id}`}>
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-primary">
-                                <Eye className="h-3.5 w-3.5" />
+                                <Eye className="h-4 w-4" />
                               </Button>
                             </Link>
                           </TableCell>
@@ -1017,20 +1226,32 @@ export default function AdminCustomers() {
           {isLoading
             ? [1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-64 bg-slate-100 rounded-xl animate-pulse" />)
             : customers?.map((c) => {
-                const custId = `CUST-${String(c.id).padStart(4, "0")}`;
-                const services = serviceHistoryMap[String(c.id)] ?? 2;
+                const custId = c.customerCode || String(c.id);
+                const services = c.serviceHistoryCount ?? 0;
                 return (
                   <Card key={c.id} className="shadow-sm border-slate-200 hover:shadow-md transition-shadow overflow-hidden">
                     <CardContent className="p-0">
                       <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex justify-between items-start">
                         <div>
-                          <Badge variant="outline" className="font-mono text-[10px] border-white/20 text-white/70 mb-2">
-                            {custId}
-                          </Badge>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Badge variant="outline" className={`font-mono text-[10px] ${c.partner ? "border-emerald-400 text-emerald-300 bg-emerald-950/40" : "border-white/20 text-white/70"}`}>
+                              {custId}
+                            </Badge>
+                            {c.partner && (
+                              <Badge variant="secondary" className="text-[9px] bg-amber-500/20 text-amber-300 font-mono">
+                                {c.partner.partnerCode || "PARTNER"}
+                              </Badge>
+                            )}
+                          </div>
                           <div className="font-semibold text-white">{c.name}</div>
                           <div className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                             <MapPin className="w-3 h-3" /> {c.city}
                           </div>
+                          {c.partner && (
+                            <div className="text-[11px] text-emerald-300 mt-1">
+                              Partner: {c.partner.name || c.partner.companyName}
+                            </div>
+                          )}
                         </div>
                         <StatusBadge status={c.amcStatus} className="text-[10px]" />
                       </div>

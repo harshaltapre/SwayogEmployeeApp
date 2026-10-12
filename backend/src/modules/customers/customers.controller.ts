@@ -11,11 +11,13 @@ import {
   updatePartnerLeadStatus,
   listEpcAssignedLeads,
   updateEpcAssignmentStatus,
+  bulkImportCustomers,
 } from "./customers.service.js";
 import type {
   CreateCustomerInput,
   ListCustomersQueryInput,
   UpdateCustomerInput,
+  BulkCustomerImportInput,
 } from "./customers.schemas.js";
 
 function getAuth(req: Request<any, any, any, any>): AuthContext {
@@ -53,6 +55,14 @@ export async function createCustomerHandler(
 ): Promise<void> {
   const customer = await createCustomer(getAuth(req), req.body);
   res.status(201).json({ data: customer });
+}
+
+export async function bulkImportCustomersHandler(
+  req: Request<unknown, unknown, BulkCustomerImportInput>,
+  res: Response,
+): Promise<void> {
+  const result = await bulkImportCustomers(getAuth(req), req.body);
+  res.status(200).json({ data: result });
 }
 
 export async function updateCustomerHandler(

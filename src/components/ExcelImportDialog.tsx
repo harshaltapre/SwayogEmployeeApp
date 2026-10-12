@@ -26,6 +26,7 @@ import {
   generateEmployeeTemplate,
   generateCustomerTemplate,
   generatePartnerTemplate,
+  exportCustomersToExcel,
   type ValidatedEmployeeData,
   type ValidatedCustomerData,
   type ValidatedPartnerData,
@@ -80,12 +81,16 @@ export function ExcelImportDialog({
   // Download template
   const handleDownloadTemplate = () => {
     if (importType === "customer") {
-      const a = document.createElement("a");
-      a.href = "/Customer_Directory_template.xlsx";
-      a.download = "Swayog_Customer_Import_Template.xlsx";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      exportCustomersToExcel([]).then((blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "Swayog_Customer_Import_Template.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      });
       return;
     }
     const csv = getTemplate();

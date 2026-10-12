@@ -7,11 +7,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
   useCreateInternalUser,
-  useCreateCustomer,
+  requestApi,
   type EmployeeRecord,
   type CustomerRecord,
   type CreateInternalUserInput,
-  type CreateCustomerInput,
 } from "@/lib/api-client";
 import type {
   ValidatedEmployeeData,
@@ -98,20 +97,25 @@ export function useBulkEmployeeImport() {
 export function useBulkCustomerImport() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { mutateAsync: createCustomer } = useCreateCustomer();
 
   return useMutation({
     mutationFn: async (customers: ValidatedCustomerData[]) => {
-      const results = {
-        successful: 0,
-        failed: 0,
-        errors: [] as Array<{ row: number; fullName: string; error: string }>,
-      };
-
-      for (const customer of customers) {
-        try {
-          const input: CreateCustomerInput = {
+      return requestApi<{
+        successful: number;
+        failed: number;
+        created: number;
+        updated: number;
+        unchanged: number;
+        ambiguous: number;
+        conflicts: number;
+        errors: Array<{ row: number; fullName: string; error: string }>;
+      }>("/customers/bulk-import", {
+        method: "POST",
+        body: JSON.stringify({
+          mode: "fill_missing",
+          rows: customers.map((customer) => ({
             fullName: customer.fullName,
+            customerCode: customer.customerCode,
             email: customer.email,
             phoneNumber: customer.phoneNumber,
             city: customer.city,
@@ -124,6 +128,8 @@ export function useBulkCustomerImport() {
             inverterPassword: customer.inverterPassword,
             inverterApiKey: customer.inverterApiKey,
             inverterModel: customer.inverterModel,
+            dataLoggerSrNo: customer.dataLoggerSrNo,
+            inverterSrNo: customer.inverterSrNo,
             contractStartDate: customer.contractStartDate ? formatDate(customer.contractStartDate) : undefined,
             cleaningsPerMonth: customer.cleaningsPerMonth,
             status: "active",
@@ -131,21 +137,10 @@ export function useBulkCustomerImport() {
             monthlyCleaningRate: customer.monthlyCleaningRate,
             paymentTerms: customer.paymentTerms,
             remarks: customer.remarks,
-          };
-
-          await createCustomer({ data: input });
-          results.successful++;
-        } catch (error) {
-          results.failed++;
-          results.errors.push({
-            row: customer.rowNumber,
-            fullName: customer.fullName,
-            error: error instanceof Error ? error.message : "Unknown error",
-          });
-        }
-      }
-
-      return results;
+            rowNumber: customer.rowNumber,
+          })),
+        }),
+      });
     },
     onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ["admin-customers"] });

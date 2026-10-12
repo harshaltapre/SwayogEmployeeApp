@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma.js";
-import { TaskStatus } from "@prisma/client";
+import { TaskStatus, UserRole } from "@prisma/client";
 
 function startOfDay(date: Date) {
   const value = new Date(date);
@@ -327,7 +327,11 @@ export function determineAttendanceSource(record: {
   reviewedBy?: string | null;
   checkInTime?: Date | null;
   status: string;
+  displayAsSelfPunch?: boolean;
 }): string {
+  if (record.displayAsSelfPunch) {
+    return "EMPLOYEE_CHECK_IN";
+  }
   if (record.manualOverride || record.reviewedBy) {
     return record.checkInTime ? "ADMIN_CORRECTION" : "ADMIN_MARKED";
   }
@@ -361,7 +365,9 @@ export async function checkOut(employeeId: string) {
     throw new Error("No attendance record found for today");
   }
   if (record.checkOutTime) {
-    throw new Error("Already checked out today");
+    // If the employee already checked out (e.g. from mobile or duplicate request),
+    // return the authoritative record cleanly rather than crashing with 400
+    return record;
   }
   if (record.manualOverride && !record.checkInTime) {
     throw new Error("Attendance was completed by administrator; check-out is not required.");
@@ -383,7 +389,7 @@ export async function checkOut(employeeId: string) {
   return updated;
 }
 
-export async function getTodayAttendance(employeeId: string) {
+export async function getTodayAttendance(employeeId: string, viewerRole?: UserRole) {
   const today = startOfDay(new Date());
   const record = await prisma.attendanceRecord.findUnique({
     where: { employeeId_date: { employeeId, date: today } },
@@ -399,6 +405,8 @@ export async function getTodayAttendance(employeeId: string) {
     reviewerName = reviewer?.fullName || "Administrator";
   }
 
+  const isSelfPunchDisplay = Boolean(record.displayAsSelfPunch);
+  const isSuperAdminViewer = viewerRole === UserRole.SUPER_ADMIN;
   const source = determineAttendanceSource(record);
   const isAttendanceCompleted = isRecordAttendanceCompleted(record);
 
@@ -425,19 +433,81 @@ export async function getTodayAttendance(employeeId: string) {
     }
   }
 
+  const actualSource = record.source || (record.manualOverride ? "ADMIN_ASSIGNED" : "EMPLOYEE_CHECK_IN");
+  const displaySource = isSelfPunchDisplay ? "SELF_PUNCH" : source;
+
+  if (isSelfPunchDisplay) {
+    return {
+      ...record,
+      source: "EMPLOYEE_CHECK_IN",
+      display_source: "SELF_PUNCH",
+      displaySource: "SELF_PUNCH",
+      actual_source: actualSource,
+      actualSource,
+      display_as_self_punch: true,
+      displayAsSelfPunch: true,
+      manualOverride: false,
+      reviewerName: null,
+      overrideReason: null,
+      notes: null,
+      admin_remark: null,
+      applied_by: null,
+      isAttendanceCompleted,
+      requiresCheckIn: !isAttendanceCompleted && record.checkInTime == null,
+      latitude,
+      longitude,
+      selfieUrl,
+      audit: isSuperAdminViewer ? {
+        appliedBy: reviewerName || record.reviewedBy,
+        appliedById: record.reviewedBy,
+        appliedAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        remark: record.overrideReason || record.notes,
+        actualSource,
+        displayAsSelfPunch: true,
+        verificationBypasses: [
+          "Face matching / biometric verification bypassed (manual admin entry)",
+          "GPS geofence location verification bypassed (manual admin entry)",
+          "Device signature verification bypassed (manual admin entry)",
+        ],
+      } : null,
+    };
+  }
+
   return {
     ...record,
-    source,
+    source: source,
+    display_source: displaySource,
+    displaySource,
+    actual_source: actualSource,
+    actualSource,
+    display_as_self_punch: false,
+    displayAsSelfPunch: false,
+    applied_by: record.reviewedBy,
+    applied_at: record.createdAt,
+    admin_remark: record.overrideReason || record.notes,
     reviewerName,
     isAttendanceCompleted,
     requiresCheckIn: !isAttendanceCompleted && record.checkInTime == null,
     latitude,
     longitude,
     selfieUrl,
+    audit: isSuperAdminViewer ? {
+      appliedBy: reviewerName || record.reviewedBy,
+      appliedById: record.reviewedBy,
+      appliedAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      remark: record.overrideReason || record.notes,
+      actualSource,
+      displayAsSelfPunch: false,
+      verificationBypasses: [
+        "Manual administration override",
+      ],
+    } : null,
   };
 }
 
-export async function getMonthlyAttendance(employeeId: string, month: number, year: number) {
+export async function getMonthlyAttendance(employeeId: string, month: number, year: number, viewerRole?: UserRole) {
   const start = startOfMonth(new Date(year, month - 1));
   const end = endOfMonth(new Date(year, month - 1));
 
@@ -457,6 +527,15 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
     getRulesAsync(),
   ]);
 
+  // Index check-ins by YYYY-MM-DD date string so genuine GPS/selfie can be matched
+  const checkInByDate = new Map<string, any>();
+  checkIns.forEach((ci) => {
+    const dStr = ci.createdAt ? new Date(ci.createdAt).toISOString().slice(0, 10) : "";
+    if (dStr && !checkInByDate.has(dStr)) {
+      checkInByDate.set(dStr, ci);
+    }
+  });
+
   // Enrich records with reviewer name if manualOverride / reviewedBy is present
   const reviewerIds = [...new Set(records.map((r) => r.reviewedBy).filter(Boolean))] as string[];
   const reviewers = reviewerIds.length > 0
@@ -468,14 +547,89 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
   const reviewerMap = new Map(reviewers.map((u) => [u.id, u.fullName]));
 
   const enrichedRecords = records.map((r) => {
+    const isSelfPunchDisplay = Boolean(r.displayAsSelfPunch);
+    const isSuperAdminViewer = viewerRole === UserRole.SUPER_ADMIN;
     const source = determineAttendanceSource(r);
     const isAttendanceCompleted = isRecordAttendanceCompleted(r);
+
+    const actualSource = r.source || (r.manualOverride ? "ADMIN_ASSIGNED" : "EMPLOYEE_CHECK_IN");
+    const displaySource = isSelfPunchDisplay ? "SELF_PUNCH" : source;
+    const reviewerName = r.reviewedBy ? reviewerMap.get(r.reviewedBy) || "Administrator" : null;
+
+    const dateStr = r.date ? new Date(r.date).toISOString().slice(0, 10) : "";
+    const matchedCheckIn = checkInByDate.get(dateStr);
+    const latitude = matchedCheckIn?.latitude ?? null;
+    const longitude = matchedCheckIn?.longitude ?? null;
+    const selfieUrl = matchedCheckIn?.selfieUrl ?? null;
+
+    if (isSelfPunchDisplay) {
+      return {
+        ...r,
+        source: "EMPLOYEE_CHECK_IN",
+        display_source: "SELF_PUNCH",
+        displaySource: "SELF_PUNCH",
+        actual_source: actualSource,
+        actualSource,
+        display_as_self_punch: true,
+        displayAsSelfPunch: true,
+        manualOverride: false,
+        reviewerName: null,
+        overrideReason: null,
+        notes: null,
+        admin_remark: null,
+        applied_by: null,
+        isAttendanceCompleted,
+        requiresCheckIn: !isAttendanceCompleted && r.checkInTime == null,
+        latitude,
+        longitude,
+        selfieUrl,
+        audit: isSuperAdminViewer ? {
+          appliedBy: reviewerName || r.reviewedBy,
+          appliedById: r.reviewedBy,
+          appliedAt: r.createdAt,
+          updatedAt: r.updatedAt,
+          remark: r.overrideReason || r.notes,
+          actualSource,
+          displayAsSelfPunch: true,
+          verificationBypasses: [
+            "Face matching / biometric verification bypassed (manual admin entry)",
+            "GPS geofence location verification bypassed (manual admin entry)",
+            "Device signature verification bypassed (manual admin entry)",
+          ],
+        } : null,
+      };
+    }
+
     return {
       ...r,
-      source,
-      reviewerName: r.reviewedBy ? reviewerMap.get(r.reviewedBy) || "Administrator" : null,
+      source: source,
+      display_source: displaySource,
+      displaySource,
+      actual_source: actualSource,
+      actualSource,
+      display_as_self_punch: false,
+      displayAsSelfPunch: false,
+      applied_by: r.reviewedBy,
+      applied_at: r.createdAt,
+      admin_remark: r.overrideReason || r.notes,
+      reviewerName,
       isAttendanceCompleted,
       requiresCheckIn: !isAttendanceCompleted && r.checkInTime == null,
+      latitude,
+      longitude,
+      selfieUrl,
+      audit: isSuperAdminViewer ? {
+        appliedBy: reviewerName || r.reviewedBy,
+        appliedById: r.reviewedBy,
+        appliedAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        remark: r.overrideReason || r.notes,
+        actualSource,
+        displayAsSelfPunch: false,
+        verificationBypasses: [
+          "Manual administration override",
+        ],
+      } : null,
     };
   });
 
@@ -541,21 +695,37 @@ export async function applyOrUpdateAttendanceRecord(params: {
   status: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE";
   checkInTime?: string | null;
   checkOutTime?: string | null;
-  remark: string;
+  remark?: string;
   adminUserId: string;
   source?: string;
+  displayAsSelfPunch?: boolean;
 }) {
-  const { employeeId, date, status, checkInTime, checkOutTime, remark, adminUserId, source } = params;
+  const { employeeId, date, status, checkInTime, checkOutTime, remark, adminUserId, source, displayAsSelfPunch } = params;
 
-  if (!remark || remark.trim().length < 3) {
+  const isSelfPunch = Boolean(displayAsSelfPunch);
+  if (!isSelfPunch && (!remark || remark.trim().length < 3)) {
     throw new Error("A remark explaining why the employee forgot or why attendance is being updated is required (at least 3 characters).");
   }
+
+  const finalRemark = (remark && remark.trim().length > 0)
+    ? remark.trim()
+    : (isSelfPunch ? "Self Punch Regularization" : "");
+
+  const employee = await prisma.user.findUnique({
+    where: { id: employeeId },
+    select: { id: true, isActive: true, role: true },
+  });
+  if (!employee) throw new Error("Employee not found.");
+  if (!employee.isActive) throw new Error("Attendance can only be applied to an active employee.");
 
   // Parse date - handles YYYY-MM-DD cleanly in UTC for @db.Date
   let targetDay: Date;
   if (typeof date === "string") {
     const cleanDateStr = date.split("T")[0];
     const parts = cleanDateStr.split("-").map(Number);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDateStr) || parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
+      throw new Error("Attendance date must use YYYY-MM-DD format.");
+    }
     if (parts.length === 3) {
       targetDay = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0));
     } else {
@@ -563,6 +733,15 @@ export async function applyOrUpdateAttendanceRecord(params: {
     }
   } else {
     targetDay = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0));
+  }
+  if (Number.isNaN(targetDay.getTime())) throw new Error("Attendance date is invalid.");
+  if (
+    typeof date === "string"
+    && (targetDay.getUTCFullYear() !== Number(date.slice(0, 4))
+      || targetDay.getUTCMonth() !== Number(date.slice(5, 7)) - 1
+      || targetDay.getUTCDate() !== Number(date.slice(8, 10)))
+  ) {
+    throw new Error("Attendance date is invalid.");
   }
 
   let checkInDateTime: Date | null = null;
@@ -572,7 +751,9 @@ export async function applyOrUpdateAttendanceRecord(params: {
   const parseTimeToUtcDate = (timeInput: string, isCheckOut = false): Date => {
     const clean = timeInput.trim();
     if (clean.includes("T")) {
-      return new Date(clean);
+      const parsed = new Date(clean);
+      if (Number.isNaN(parsed.getTime())) throw new Error("Attendance time is invalid.");
+      return parsed;
     }
 
     let isPm = false;
@@ -586,18 +767,33 @@ export async function applyOrUpdateAttendanceRecord(params: {
       isAm = true;
       timeOnly = clean.replace(/am/i, "").trim();
     }
+    if (!/^\d{1,2}:\d{2}$/.test(timeOnly)) {
+      throw new Error("Attendance times must be valid HH:MM values.");
+    }
 
     const parts = timeOnly.split(":").map((p) => parseInt(p, 10));
     let hours = isNaN(parts[0]) ? 0 : parts[0];
     const minutes = isNaN(parts[1]) ? 0 : parts[1];
+    if (
+      parts.length !== 2
+      || !Number.isInteger(hours)
+      || !Number.isInteger(minutes)
+      || hours < 0
+      || hours > 23
+      || minutes < 0
+      || minutes > 59
+      || (isPm || isAm) && hours > 12
+    ) {
+      throw new Error("Attendance times must be valid HH:MM values.");
+    }
 
     if (isPm && hours < 12) {
       hours += 12;
     } else if (isAm && hours === 12) {
       hours = 0;
     } else if (!isPm && !isAm) {
-      // For check-out in work shift, if hour is 1-7 (e.g. 6:30 or 06:30), admin intended afternoon/evening PM (18:30)
-      if (isCheckOut && hours >= 1 && hours <= 7) {
+      // For check-out in work shift, if hour is 1-11 (e.g. 6:30, 7:30, 8:30), admin intended afternoon/evening PM
+      if (isCheckOut && hours >= 1 && hours <= 11) {
         hours += 12;
       }
     }
@@ -634,6 +830,9 @@ export async function applyOrUpdateAttendanceRecord(params: {
   if (checkOutTime && typeof checkOutTime === "string" && checkOutTime.trim() !== "" && status !== "ABSENT" && status !== "LEAVE") {
     checkOutDateTime = parseTimeToUtcDate(checkOutTime, true);
   }
+  if (checkInDateTime && checkOutDateTime && checkOutDateTime < checkInDateTime) {
+    throw new Error("Check-out time cannot be before check-in time.");
+  }
 
   let totalMinutes: number | null = null;
   if (checkInDateTime && checkOutDateTime) {
@@ -656,10 +855,11 @@ export async function applyOrUpdateAttendanceRecord(params: {
       checkOutTime: checkOutDateTime,
       totalMinutes,
       manualOverride: true,
-      overrideReason: remark.trim(),
-      notes: remark.trim(),
+      overrideReason: finalRemark,
+      notes: finalRemark,
       reviewedBy: adminUserId,
       flagged: false,
+      displayAsSelfPunch: Boolean(displayAsSelfPunch),
     },
     update: {
       status: status as any,
@@ -668,10 +868,11 @@ export async function applyOrUpdateAttendanceRecord(params: {
       checkOutTime: checkOutDateTime,
       totalMinutes,
       manualOverride: true,
-      overrideReason: remark.trim(),
-      notes: remark.trim(),
+      overrideReason: finalRemark,
+      notes: finalRemark,
       reviewedBy: adminUserId,
       flagged: false,
+      ...(displayAsSelfPunch !== undefined ? { displayAsSelfPunch: Boolean(displayAsSelfPunch) } : {}),
     },
   });
 
@@ -692,7 +893,7 @@ export async function applyOrUpdateAttendanceRecord(params: {
       where: { id: existingCheckIn.id },
       data: {
         manualOverride: true,
-        overrideReason: remark.trim(),
+        overrideReason: finalRemark,
         reviewedBy: adminUserId,
         flagged: false,
         status: status === "ABSENT" || status === "LEAVE" ? "CHECKED_OUT" : "CHECKED_IN",
@@ -704,7 +905,7 @@ export async function applyOrUpdateAttendanceRecord(params: {
         employeeId,
         status: "CHECKED_IN",
         manualOverride: true,
-        overrideReason: remark.trim(),
+        overrideReason: finalRemark,
         reviewedBy: adminUserId,
         createdAt: checkInDateTime || targetDay,
       },

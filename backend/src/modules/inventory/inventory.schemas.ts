@@ -34,6 +34,8 @@ export const restockInventorySchema = z.object({
     .refine((value) => !Number.isNaN(Date.parse(value)), "Entry date must be a valid date"),
   pricePerUnit: z.coerce.number().finite().nonnegative("Price must be 0 or greater"),
   supplier: z.string().trim().min(1, "Supplier name is required"),
+  remarks: z.string().trim().optional().nullable(),
+  notes: z.string().trim().optional().nullable(),
 });
 
 export const createDispatchSchema = z.object({

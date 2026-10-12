@@ -18,12 +18,15 @@ function getErrorMessage(error: unknown): string {
 export const useTodayAttendance = () => useQuery({
   queryKey: ["attendance", "today"],
   queryFn: () => apiClient.get("/attendance/today").then((r) => r.data.record),
-  refetchInterval: 30_000,
+  refetchInterval: 15_000,
+  refetchOnWindowFocus: true,
 });
 
 export const useMonthlyAttendance = (month: number, year: number) => useQuery({
   queryKey: ["attendance", "monthly", month, year],
   queryFn: () => apiClient.get(`/attendance/monthly?month=${month}&year=${year}`).then((r) => r.data),
+  refetchInterval: 30_000,
+  refetchOnWindowFocus: true,
 });
 
 export const useMyPerformance = (month: number, year: number) => useQuery({
@@ -222,7 +225,8 @@ export interface ApplyAttendancePayload {
   status: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE";
   checkInTime?: string | null;
   checkOutTime?: string | null;
-  remark: string;
+  remark?: string;
+  displayAsSelfPunch?: boolean;
 }
 
 /** Admin/SuperAdmin: manually apply or update attendance with remark */
@@ -235,6 +239,7 @@ export const useApplyAttendance = () => {
       qc.invalidateQueries({ queryKey: ["admin", "team-performance"] });
       qc.invalidateQueries({ queryKey: ["admin", "employee-attendance"] });
       qc.invalidateQueries({ queryKey: ["admin", "employee-performance"] });
+      qc.invalidateQueries({ queryKey: ["admin", "attendance", "today-summary"] });
       qc.invalidateQueries({ queryKey: ["attendance"] });
       qc.invalidateQueries({ queryKey: ["performance"] });
     },
@@ -352,7 +357,9 @@ export interface TodaySummaryData {
 export const useAdminTodaySummary = () => useQuery({
   queryKey: ["admin", "attendance", "today-summary"],
   queryFn: () => apiClient.get("/attendance/admin/today-summary").then((r) => r.data as TodaySummaryData),
-  refetchInterval: 15_000,
+  refetchInterval: 60_000,
+  refetchIntervalInBackground: true,
+  refetchOnWindowFocus: true,
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -447,6 +454,8 @@ export const useAcceptRegularizationRequest = () => {
       qc.invalidateQueries({ queryKey: ["my-regularization-requests"] });
       qc.invalidateQueries({ queryKey: ["admin", "attendance", "today-summary"] });
       qc.invalidateQueries({ queryKey: ["admin", "team-performance"] });
+      qc.invalidateQueries({ queryKey: ["admin", "employee-attendance"] });
+      qc.invalidateQueries({ queryKey: ["admin", "employee-performance"] });
       qc.invalidateQueries({ queryKey: ["attendance"] });
       qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
       qc.invalidateQueries({ queryKey: ["performance"] });
@@ -463,7 +472,10 @@ export const useRejectRegularizationRequest = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "regularization-requests"] });
       qc.invalidateQueries({ queryKey: ["my-regularization-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin", "employee-attendance"] });
+      qc.invalidateQueries({ queryKey: ["admin", "employee-performance"] });
+      qc.invalidateQueries({ queryKey: ["admin", "team-performance"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
     },
   });
 };
-

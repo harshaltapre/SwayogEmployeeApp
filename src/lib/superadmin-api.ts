@@ -75,6 +75,15 @@ export type UserRole = "SUPER_ADMIN" | "ADMIN" | "SUB_ADMIN" | "EMPLOYEE" | "PAR
 export interface SAUser {
   id: string;
   loginId: string;
+  customerId?: string | null;
+  partnerName?: string | null;
+  partnerCode?: string | null;
+  partner?: {
+    id: string;
+    name: string;
+    partnerCode?: string | null;
+    businessName?: string | null;
+  } | null;
   email: string;
   fullName: string;
   phoneNumber: string | null;
@@ -87,7 +96,23 @@ export interface SAUser {
   portalPassword?: string | null;
   permissions?: string[];
   employeeProfile?: { jobRole: string; zone: string; monthlySalaryInr?: number | null; permissions?: string[] } | null;
-  partnerProfile?: { businessName: string; serviceZone: string } | null;
+  partnerProfile?: { partnerCode?: string | null; businessName: string; serviceZone: string } | null;
+  customerProfile?: {
+    id: number;
+    customerCode: string;
+    partnerId?: string | null;
+    partner?: {
+      id: string;
+      partnerCode?: string | null;
+      businessName?: string | null;
+      user?: {
+        id: string;
+        fullName: string;
+        email: string;
+        employeeCode?: string | null;
+      } | null;
+    } | null;
+  } | null;
 }
 
 export interface SAUsersResponse {
@@ -217,11 +242,13 @@ export interface MaintenanceModeState {
 
 export const superAdminApi = {
   /** Fetch all users with optional filters */
-  fetchUsers: (params?: { role?: string; isActive?: boolean; search?: string; limit?: number; offset?: number }) => {
+  fetchUsers: (params?: { role?: string; isActive?: boolean; search?: string; partnerId?: string; partnerCode?: string; limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params?.role) qs.set("role", params.role);
     if (params?.isActive !== undefined) qs.set("isActive", String(params.isActive));
     if (params?.search) qs.set("search", params.search);
+    if (params?.partnerId) qs.set("partnerId", params.partnerId);
+    if (params?.partnerCode) qs.set("partnerCode", params.partnerCode);
     if (params?.limit) qs.set("limit", String(params.limit));
     if (params?.offset) qs.set("offset", String(params.offset));
     const q = qs.toString();

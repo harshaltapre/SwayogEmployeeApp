@@ -400,6 +400,153 @@ function LoginHistoryModal({ user, onClose }: { user: SAUser; onClose: () => voi
   );
 }
 
+// ─── User Details View Modal ──────────────────────────────────────────────────
+function UserDetailsModal({ user, onClose }: { user: SAUser; onClose: () => void }) {
+  const isCustomer = user.role === "CUSTOMER";
+  const customerId = user.customerId || user.customerProfile?.customerCode;
+  const partnerName = user.partnerName || user.customerProfile?.partner?.name || user.partner?.name;
+  const partnerCode = user.partnerCode || user.customerProfile?.partner?.partnerCode || user.partner?.partnerCode;
+
+  return (
+    <Modal title={`User Details — ${user.fullName}`} onClose={onClose} width={520}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Header Summary */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 16, borderBottom: "1px solid #F1F5F9" }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 12,
+            background: `${ROLE_COLOR[user.role]}22`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, fontWeight: 800, color: ROLE_COLOR[user.role], flexShrink: 0,
+          }}>
+            {user.fullName.split(" ").map(w => w[0]).slice(0, 2).join("")}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>{user.fullName}</div>
+            <div style={{ fontSize: 12, color: C.slate, display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+              <span>{user.email}</span>
+              <span>•</span>
+              <span style={{ fontFamily: "monospace" }}>{user.loginId}</span>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            <RolePill role={user.role} />
+            <StatusDot active={user.isActive} />
+          </div>
+        </div>
+
+        {/* Customer Attribution Card (Only for CUSTOMER role) */}
+        {isCustomer && (
+          <div style={{
+            background: "linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 100%)",
+            border: "1px solid #C7D2FE",
+            borderRadius: 12,
+            padding: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: "#4338CA", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Customer Identification</span>
+                <span style={{ fontSize: 10, background: "#4338CA18", color: "#4338CA", padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>
+                  Verified Customer ID
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, background: "#fff", padding: "10px 14px", borderRadius: 8, border: "1px solid #E0E7FF" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: C.slate }}>Partner-Based Customer ID</div>
+                  <div style={{ fontFamily: "monospace", fontWeight: 800, fontSize: 15, color: "#312E81", marginTop: 2 }}>
+                    {customerId || "—"}
+                  </div>
+                </div>
+                {customerId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(customerId);
+                    }}
+                    title="Copy Customer ID"
+                    style={{ border: "1px solid #C7D2FE", background: "#EEF2FF", borderRadius: 6, padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: "#4338CA" }}
+                  >
+                    <Copy size={12} /> Copy
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div style={{ borderTop: "1px solid #E0E7FF", paddingTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: C.slate, marginBottom: 6 }}>
+                Referring Partner & Lead Attribution
+              </div>
+              {partnerName || partnerCode ? (
+                <div style={{ background: "#fff", padding: "10px 12px", borderRadius: 8, border: "1px solid #E0E7FF", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{partnerName || "Partner"}</div>
+                    <div style={{ fontSize: 11, color: C.slate }}>Lead Source: Authenticated Partner Submission</div>
+                  </div>
+                  {partnerCode && (
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      background: "#ECFDF5",
+                      color: "#065F46",
+                      padding: "3px 8px",
+                      borderRadius: 6,
+                      border: "1px solid #A7F3D0",
+                    }}>
+                      {partnerCode}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div style={{ background: "#fff", padding: "8px 12px", borderRadius: 8, border: "1px solid #E0E7FF", fontSize: 12, color: C.slate }}>
+                  Direct Lead (Created without referring partner)
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Employee Profile */}
+        {user.role === "EMPLOYEE" && user.employeeProfile && (
+          <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: C.slate, marginBottom: 8 }}>Employee Profile</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
+              <div><span style={{ color: C.slate }}>Job Role:</span> <strong>{user.employeeProfile.jobRole || "—"}</strong></div>
+              <div><span style={{ color: C.slate }}>Zone:</span> <strong>{user.employeeProfile.zone || "—"}</strong></div>
+              <div><span style={{ color: C.slate }}>Monthly Salary:</span> <strong>₹{(user.employeeProfile.monthlySalaryInr || 0).toLocaleString()}</strong></div>
+            </div>
+          </div>
+        )}
+
+        {/* Partner Profile */}
+        {user.role === "PARTNER" && user.partnerProfile && (
+          <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: C.slate, marginBottom: 8 }}>Partner Profile</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
+              <div><span style={{ color: C.slate }}>Partner Code:</span> <strong>{user.partnerCode || user.partnerProfile.partnerCode || "—"}</strong></div>
+              <div><span style={{ color: C.slate }}>Business:</span> <strong>{user.partnerProfile.businessName || "—"}</strong></div>
+              <div><span style={{ color: C.slate }}>Zone:</span> <strong>{user.partnerProfile.serviceZone || "—"}</strong></div>
+            </div>
+          </div>
+        )}
+
+        {/* Account Details */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12, padding: "12px 14px", background: "#FAFAFA", borderRadius: 10, border: "1px solid #F1F5F9" }}>
+          <div><span style={{ color: C.slate }}>Phone:</span> <span style={{ fontWeight: 600 }}>{user.phoneNumber || "Not set"}</span></div>
+          <div><span style={{ color: C.slate }}>Joined:</span> <span style={{ fontWeight: 600 }}>{new Date(user.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span></div>
+          <div><span style={{ color: C.slate }}>Failed Logins:</span> <span style={{ fontWeight: 600 }}>{user.failedLoginAttempts || 0}</span></div>
+          <div><span style={{ color: C.slate }}>Lockout:</span> <span style={{ fontWeight: 600 }}>{user.lockoutUntil ? "Locked" : "None"}</span></div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+          <Btn variant="ghost" onClick={onClose}>Close</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── Import Templates & Config ────────────────────────────────────────────────
 type ImportCategory = "EMPLOYEE" | "CUSTOMER" | "ADMIN" | "PARTNER";
 
@@ -977,13 +1124,16 @@ export default function UsersTab() {
   // Filters
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("");
+  const [partnerFilter, setPartnerFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [partnersList, setPartnersList] = useState<Array<{ id: string; name: string; partnerCode?: string }>>([]);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 15;
 
   // Modals
   const [createOpen, setCreateOpen] = useState(false);
   const [editUser, setEditUser] = useState<SAUser | null>(null);
+  const [viewUser, setViewUser] = useState<SAUser | null>(null);
   const [permissionsUser, setPermissionsUser] = useState<SAUser | null>(null);
   const [deleteUser, setDeleteUser] = useState<SAUser | null>(null);
   const [resetPwUser, setResetPwUser] = useState<SAUser | null>(null);
@@ -994,19 +1144,34 @@ export default function UsersTab() {
   const { toasts, push } = useToast();
   const queryClient = useQueryClient();
 
+  useEffect(() => {
+    superAdminApi.fetchUsers({ role: "PARTNER", limit: 100 })
+      .then(res => {
+        setPartnersList(
+          res.users.map(u => ({
+            id: u.partnerProfile?.id || u.id,
+            name: u.fullName || u.partnerProfile?.businessName || u.email,
+            partnerCode: u.partnerCode || u.partnerProfile?.partnerCode || undefined,
+          }))
+        );
+      })
+      .catch(() => {});
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
       const params: any = { limit: PAGE_SIZE, offset: page * PAGE_SIZE };
       if (search) params.search = search;
       if (roleFilter) params.role = roleFilter;
+      if (partnerFilter) params.partnerCode = partnerFilter;
       if (statusFilter !== "") params.isActive = statusFilter === "active";
       const res = await superAdminApi.fetchUsers(params);
       setUsers(res.users); setTotal(res.pagination.total);
       setRoleCounts(res.roleCounts || {});
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
-  }, [search, roleFilter, statusFilter, page]);
+  }, [search, roleFilter, partnerFilter, statusFilter, page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1086,6 +1251,7 @@ export default function UsersTab() {
       </div>
 
       {/* Modals */}
+      {viewUser && <UserDetailsModal user={viewUser} onClose={() => setViewUser(null)} />}
       {createOpen && <UserFormModal onClose={() => setCreateOpen(false)} onSaved={onUserSaved} />}
       {editUser && <UserFormModal user={editUser} onClose={() => setEditUser(null)} onSaved={onUserSaved} />}
       {permissionsUser && (
@@ -1166,17 +1332,27 @@ export default function UsersTab() {
         {/* Search */}
         <div style={{ position: "relative", flex: "1 1 220px", minWidth: 180 }}>
           <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.slate }} />
-          <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Search name, email, login ID…" value={search} onChange={e => onSearch(e.target.value)} />
+          <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Search name, email, login ID, Customer ID, partner…" value={search} onChange={e => onSearch(e.target.value)} />
         </div>
 
         {/* Role filter */}
-        <select style={{ ...inputStyle, width: 160 }} value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(0); }}>
+        <select style={{ ...inputStyle, width: 150 }} value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(0); }}>
           <option value="">All Roles</option>
           {ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
         </select>
 
+        {/* Partner filter */}
+        <select style={{ ...inputStyle, width: 170 }} value={partnerFilter} onChange={e => { setPartnerFilter(e.target.value); setPage(0); }}>
+          <option value="">All Partners</option>
+          {partnersList.map(p => (
+            <option key={p.id} value={p.partnerCode || p.id}>
+              {p.name} {p.partnerCode ? `(${p.partnerCode})` : ""}
+            </option>
+          ))}
+        </select>
+
         {/* Status filter */}
-        <select style={{ ...inputStyle, width: 130 }} value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(0); }}>
+        <select style={{ ...inputStyle, width: 125 }} value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(0); }}>
           <option value="">All Status</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
@@ -1192,124 +1368,202 @@ export default function UsersTab() {
 
       {/* Table */}
       <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, overflow: "hidden" }}>
-        {/* Header */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(120px, 2fr) minmax(180px, 2fr) minmax(100px, 1fr) minmax(100px, 1fr) minmax(120px, 1fr) minmax(140px, 140px)", padding: "10px 18px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", fontSize: 11, fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          <div>User</div>
-          <div>Email / Login ID</div>
-          <div>Role</div>
-          <div>Status</div>
-          <div>Joined</div>
-          <div style={{ textAlign: "right" }}>Actions</div>
-        </div>
-
         <div className="overflow-x-auto">
+          <div style={{ minWidth: 1080 }}>
+            {/* Header */}
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1.8fr) minmax(170px, 1.8fr) minmax(90px, 0.9fr) minmax(170px, 1.7fr) minmax(140px, 1.4fr) minmax(80px, 0.8fr) minmax(95px, 0.9fr) minmax(160px, 160px)", padding: "10px 18px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", fontSize: 11, fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              <div>User</div>
+              <div>Email / Login ID</div>
+              <div>Role</div>
+              <div>Customer ID</div>
+              <div>Referring Partner</div>
+              <div>Status</div>
+              <div>Joined</div>
+              <div style={{ textAlign: "right" }}>Actions</div>
+            </div>
 
-        {loading && (
-          <div style={{ padding: 40, textAlign: "center", color: C.slate }}>
-            <RefreshCw size={20} style={{ animation: "spin 1s linear infinite", display: "inline-block" }} />
-            <div style={{ marginTop: 8 }}>Loading users…</div>
-          </div>
-        )}
-        {!loading && error && (
-          <div style={{ padding: 32, textAlign: "center", color: C.rose }}>
-            <XCircle size={32} style={{ display: "block", margin: "0 auto 8px" }} />
-            {error}
-            <div style={{ marginTop: 12 }}><Btn small onClick={load}>Retry</Btn></div>
-          </div>
-        )}
-        {!loading && !error && users.length === 0 && (
-          <div style={{ padding: 40, textAlign: "center", color: C.slate }}>
-            <Users size={36} style={{ display: "block", margin: "0 auto 12px", opacity: 0.3 }} />
-            No users found
-          </div>
-        )}
-        {!loading && !error && users.map((user, i) => (
-          <div key={user.id} style={{
-            display: "grid", gridTemplateColumns: "minmax(120px, 2fr) minmax(180px, 2fr) minmax(100px, 1fr) minmax(100px, 1fr) minmax(120px, 1fr) minmax(140px, 140px)",
-            padding: "12px 18px", borderBottom: i < users.length - 1 ? "1px solid #F1F5F9" : "none",
-            alignItems: "center", transition: "background 0.1s",
-          }}
-            onMouseEnter={e => (e.currentTarget.style.background = "#FAFCFF")}
-            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-          >
-            {/* User */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: `${ROLE_COLOR[user.role]}22`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: ROLE_COLOR[user.role], flexShrink: 0 }}>
-                {user.fullName.split(" ").map(w => w[0]).slice(0, 2).join("")}
+            {loading && (
+              <div style={{ padding: 40, textAlign: "center", color: C.slate }}>
+                <RefreshCw size={20} style={{ animation: "spin 1s linear infinite", display: "inline-block" }} />
+                <div style={{ marginTop: 8 }}>Loading users…</div>
               </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 13, color: C.ink }}>{user.fullName}</div>
-                {user.phoneNumber && <div style={{ fontSize: 11, color: C.slate }}>{user.phoneNumber}</div>}
+            )}
+            {!loading && error && (
+              <div style={{ padding: 32, textAlign: "center", color: C.rose }}>
+                <XCircle size={32} style={{ display: "block", margin: "0 auto 8px" }} />
+                {error}
+                <div style={{ marginTop: 12 }}><Btn small onClick={load}>Retry</Btn></div>
               </div>
-            </div>
-
-            {/* Email / Login */}
-            <div>
-              <div style={{ fontSize: 13, color: C.ink }}>{user.email}</div>
-              <div style={{ fontSize: 11, color: C.slate, fontFamily: "monospace" }}>{user.loginId}</div>
-            </div>
-
-            {/* Role */}
-            <div><RolePill role={user.role} /></div>
-
-            {/* Status */}
-            <div><StatusDot active={user.isActive} /></div>
-
-            {/* Joined */}
-            <div style={{ fontSize: 12, color: C.slate }}>
-              {new Date(user.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-            </div>
-
-            {/* Actions */}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
-              {/* Toggle active */}
-              <button
-                onClick={() => toggleActive(user)}
-                disabled={busy[user.id]}
-                title={user.isActive ? "Deactivate" : "Activate"}
-                style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: user.isActive ? C.rose : C.emerald, transition: "background 0.15s" }}
+            )}
+            {!loading && !error && users.length === 0 && (
+              <div style={{ padding: 40, textAlign: "center", color: C.slate }}>
+                <Users size={36} style={{ display: "block", margin: "0 auto 12px", opacity: 0.3 }} />
+                No users found
+              </div>
+            )}
+            {!loading && !error && users.map((user, i) => (
+              <div key={user.id} style={{
+                display: "grid", gridTemplateColumns: "minmax(140px, 1.8fr) minmax(170px, 1.8fr) minmax(90px, 0.9fr) minmax(170px, 1.7fr) minmax(140px, 1.4fr) minmax(80px, 0.8fr) minmax(95px, 0.9fr) minmax(160px, 160px)",
+                padding: "12px 18px", borderBottom: i < users.length - 1 ? "1px solid #F1F5F9" : "none",
+                alignItems: "center", transition: "background 0.1s",
+              }}
+                onMouseEnter={e => (e.currentTarget.style.background = "#FAFCFF")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
-                {user.isActive ? <UserX size={14} /> : <UserCheck size={14} />}
-              </button>
+                {/* User */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: `${ROLE_COLOR[user.role]}22`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: ROLE_COLOR[user.role], flexShrink: 0 }}>
+                    {user.fullName.split(" ").map(w => w[0]).slice(0, 2).join("")}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: C.ink }}>{user.fullName}</div>
+                    {user.phoneNumber && <div style={{ fontSize: 11, color: C.slate }}>{user.phoneNumber}</div>}
+                  </div>
+                </div>
 
-              {/* Permissions */}
-              {(user.role === "EMPLOYEE" || user.role === "SUB_ADMIN") && (
-                <button
-                  onClick={() => setPermissionsUser(user)}
-                  title="Configure Sidebar Permissions"
-                  style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: "#D97706" }}
-                >
-                  <Shield size={14} />
-                </button>
-              )}
+                {/* Email / Login */}
+                <div>
+                  <div style={{ fontSize: 13, color: C.ink }}>{user.email}</div>
+                  <div style={{ fontSize: 11, color: C.slate, fontFamily: "monospace" }}>{user.loginId}</div>
+                </div>
 
-              {/* Edit */}
-              <button onClick={() => setEditUser(user)} title="Edit" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.slate }}>
-                <Edit2 size={14} />
-              </button>
+                {/* Role */}
+                <div><RolePill role={user.role} /></div>
 
-              {/* Reset Password */}
-              <button onClick={() => setResetPwUser(user)} title="Reset Password" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.violet }}>
-                <Key size={14} />
-              </button>
+                {/* Customer ID (only for CUSTOMER role) */}
+                <div>
+                  {user.role === "CUSTOMER" ? (
+                    (user.customerId || user.customerProfile?.customerCode) ? (
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                        <span style={{
+                          fontFamily: "monospace",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: "#EEF2FF",
+                          color: "#4338CA",
+                          padding: "2px 7px",
+                          borderRadius: 6,
+                          border: "1px solid #C7D2FE",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {user.customerId || user.customerProfile?.customerCode}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(user.customerId || user.customerProfile?.customerCode || "");
+                            push("Customer ID copied");
+                          }}
+                          title="Copy Customer ID"
+                          style={{ border: "none", background: "none", cursor: "pointer", padding: 2, color: "#6366F1", display: "inline-flex" }}
+                        >
+                          <Copy size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>
+                    )
+                  ) : (
+                    <span style={{ color: "#CBD5E1", fontSize: 13 }}>—</span>
+                  )}
+                </div>
 
-              {/* Force Logout */}
-              <button onClick={() => handleForceLogout(user)} disabled={busy[`fl-${user.id}`]} title="Force Logout" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.gold }}>
-                <LogOut size={14} />
-              </button>
+                {/* Referring Partner (only for CUSTOMER role) */}
+                <div>
+                  {user.role === "CUSTOMER" ? (
+                    (user.partnerName || user.partnerCode || user.customerProfile?.partner?.name) ? (
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>
+                          {user.partnerName || user.customerProfile?.partner?.name || "Partner Lead"}
+                        </div>
+                        {(user.partnerCode || user.customerProfile?.partner?.partnerCode) && (
+                          <span style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            background: "#ECFDF5",
+                            color: "#065F46",
+                            padding: "1px 6px",
+                            borderRadius: 4,
+                            border: "1px solid #A7F3D0",
+                            display: "inline-block",
+                            marginTop: 2,
+                          }}>
+                            {user.partnerCode || user.customerProfile?.partner?.partnerCode}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11, color: C.slate, fontWeight: 500 }}>Direct Lead</span>
+                    )
+                  ) : (
+                    <span style={{ color: "#CBD5E1", fontSize: 13 }}>—</span>
+                  )}
+                </div>
 
-              {/* Login History */}
-              <button onClick={() => setHistoryUser(user)} title="Login History" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.sky }}>
-                <History size={14} />
-              </button>
+                {/* Status */}
+                <div><StatusDot active={user.isActive} /></div>
 
-              {/* Delete */}
-              <button onClick={() => setDeleteUser(user)} title="Delete" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.rose }}>
-                <Trash2 size={14} />
-              </button>
-            </div>
+                {/* Joined */}
+                <div style={{ fontSize: 12, color: C.slate }}>
+                  {new Date(user.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
+                  {/* View Details */}
+                  <button onClick={() => setViewUser(user)} title="View User Details" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.ink }}>
+                    <Eye size={14} />
+                  </button>
+
+                  {/* Toggle active */}
+                  <button
+                    onClick={() => toggleActive(user)}
+                    disabled={busy[user.id]}
+                    title={user.isActive ? "Deactivate" : "Activate"}
+                    style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: user.isActive ? C.rose : C.emerald, transition: "background 0.15s" }}
+                  >
+                    {user.isActive ? <UserX size={14} /> : <UserCheck size={14} />}
+                  </button>
+
+                  {/* Permissions */}
+                  {(user.role === "EMPLOYEE" || user.role === "SUB_ADMIN") && (
+                    <button
+                      onClick={() => setPermissionsUser(user)}
+                      title="Configure Sidebar Permissions"
+                      style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: "#D97706" }}
+                    >
+                      <Shield size={14} />
+                    </button>
+                  )}
+
+                  {/* Edit */}
+                  <button onClick={() => setEditUser(user)} title="Edit" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.slate }}>
+                    <Edit2 size={14} />
+                  </button>
+
+                  {/* Reset Password */}
+                  <button onClick={() => setResetPwUser(user)} title="Reset Password" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.violet }}>
+                    <Key size={14} />
+                  </button>
+
+                  {/* Force Logout */}
+                  <button onClick={() => handleForceLogout(user)} disabled={busy[`fl-${user.id}`]} title="Force Logout" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.gold }}>
+                    <LogOut size={14} />
+                  </button>
+
+                  {/* Login History */}
+                  <button onClick={() => setHistoryUser(user)} title="Login History" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.sky }}>
+                    <History size={14} />
+                  </button>
+
+                  {/* Delete */}
+                  <button onClick={() => setDeleteUser(user)} title="Delete" style={{ border: "none", background: "none", cursor: "pointer", padding: 6, borderRadius: 6, color: C.rose }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
         </div>
       </div>
 

@@ -92,8 +92,9 @@ export function resolveUserDesignation(user: Partial<User> | null | undefined): 
   }
   if (user.jobRole && typeof user.jobRole === 'string' && user.jobRole.trim().length > 0) {
     const jr = user.jobRole.trim();
+    const normalizedJobRole = jr.toLowerCase().replace(/[_\s-]+/g, ' ').trim();
     if (jr.toLowerCase() === 'intern') return 'Intern';
-    if (jr.toLowerCase() === 'inventory_executive') return 'Inventory Executive';
+    if (normalizedJobRole === 'inventory executive' || normalizedJobRole === 'inventory coordinator') return 'Inventory Executive';
     if (jr.toLowerCase() === 'sub_admin' || jr.toLowerCase() === 'service_coordinator') return 'Service Coordinator';
     return jr
       .replace(/_/g, ' ')
@@ -130,8 +131,8 @@ export function isSubAdminJobRole(jobRole?: string): boolean {
 
 export function isInventoryExecutiveJobRole(jobRole?: string): boolean {
   if (!jobRole) return false;
-  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, " ");
-  return normalized === "inventory executive";
+  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, " ").replace(/\s+/g, " ").trim();
+  return normalized === "inventory executive" || normalized === "inventory coordinator";
 }
 
 export function isServiceExecutiveHeadJobRole(jobRole?: string): boolean {

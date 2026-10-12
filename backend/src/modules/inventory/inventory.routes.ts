@@ -35,16 +35,22 @@ const authorizeInventoryManager: RequestHandler = (req, _res, next) => {
   }
 
   const role = req.auth.role;
+  const normalizedJobRole = req.auth.jobRole
+    ?.trim()
+    .toLowerCase()
+    .replace(/[_\s-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const isSuperOrAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.ADMIN;
   const isInventoryExecutive =
     role === UserRole.EMPLOYEE &&
-    req.auth.jobRole?.toLowerCase().trim() === "inventory executive";
+    (normalizedJobRole === "inventory executive" || normalizedJobRole === "inventory coordinator");
 
   if (isSuperOrAdmin || isInventoryExecutive) {
     return next();
   }
 
-  next(new ApiError(403, "Access denied. Only the inventory executive is authorized to manage inventory data."));
+  next(new ApiError(403, "Access denied. Only the inventory executive or coordinator is authorized to manage inventory data."));
 };
 
 // Apply auth check globally on inventory routes

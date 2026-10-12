@@ -207,6 +207,7 @@ model AuditLog {
 model PartnerProfile {
   id             String            @id @default(uuid())
   userId         String            @unique
+  partnerCode    String?           @unique
   businessName   String?
   serviceZone    String?
   isActive       Boolean           @default(true)
@@ -269,7 +270,7 @@ model Customer {
   status              CustomerStatus    @default(ACTIVE)
   partnerId           String?
   userId              String?           @unique
-  projectStage        Int               @default(0)
+  projectStage        Int               @default(11)
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   cleaningWindow1     String?           @default("1-10")
@@ -494,6 +495,7 @@ model AttendanceRecord {
   manualOverride Boolean          @default(false)
   overrideReason String?
   flagged        Boolean          @default(false)
+  displayAsSelfPunch Boolean      @default(false)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @default(now()) @updatedAt
   employee       User             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -503,6 +505,7 @@ model AttendanceRecord {
   @@index([employeeId])
   @@index([flagged])
   @@index([source])
+  @@index([displayAsSelfPunch])
 }
 
 model CheckIn {
@@ -722,16 +725,30 @@ model Inventory {
 }
 
 model InventoryStockEntry {
-  id           Int       @id @default(autoincrement())
-  itemId       Int
-  quantity     Int
-  entryDate    DateTime
-  pricePerUnit Float
-  supplier     String
-  createdAt    DateTime  @default(now())
-  item         Inventory @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  id               Int                    @id @default(autoincrement())
+  itemId           Int
+  quantity         Int
+  previousQuantity Int                    @default(0)
+  newQuantity      Int                    @default(0)
+  transactionType  String                 @default("ADD")
+  movementType     InventoryMovementType  @default(IN)
+  entryDate        DateTime
+  pricePerUnit     Float
+  supplier         String?
+  dispatchedTo     String?
+  notes            String?
+  remarks          String?
+  createdBy        String?
+  createdAt        DateTime               @default(now())
+  item             Inventory              @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([itemId, entryDate])
+}
+
+enum InventoryMovementType {
+  IN
+  OUT
+  RETURN
 }
 
 model DispatchRecord {

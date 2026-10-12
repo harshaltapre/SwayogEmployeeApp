@@ -154,9 +154,9 @@ export function PartnerDetailsModal({ partner, open, onOpenChange }: PartnerDeta
                         <div style={{ fontSize: 12, color: C.slate }}>{cust.city} • {cust.systemSizeKw}kW System</div>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 11, color: C.slate, fontWeight: 600 }}>STAGE {cust.projectStage || 1}/12</div>
+                        <div style={{ fontSize: 11, color: C.slate, fontWeight: 600 }}>STAGE 12/12</div>
                         <div style={{ width: 80, height: 4, background: "#F1F5F9", borderRadius: 2, marginTop: 4 }}>
-                          <div style={{ width: `${((cust.projectStage || 1) / 12) * 100}%`, height: "100%", background: C.amber, borderRadius: 2 }} />
+                          <div style={{ width: "100%", height: "100%", background: C.amber, borderRadius: 2 }} />
                         </div>
                       </div>
 

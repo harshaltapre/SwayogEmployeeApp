@@ -9,6 +9,7 @@
         "build": "tsc -p tsconfig.json",
         "bundle:vercel": "esbuild src/app.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/vercel-app.cjs --packages=external --minify --sourcemap=external",
         "start": "node dist/server.js",
+        "prisma:migrate:deploy:runtime": "prisma migrate deploy",
         "typecheck": "tsc --noEmit",
         "foxess:test": "tsx ./scripts/test-foxess.ts",
         "prisma:generate": "dotenv -o -e .env -- prisma generate",

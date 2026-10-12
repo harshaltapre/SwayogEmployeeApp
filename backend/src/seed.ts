@@ -223,7 +223,7 @@ async function seedPhase1Hierarchy(departmentIds: Record<string, string>) {
         installationDate: new Date(),
         amcStatus: "NONE",
         status: "ACTIVE",
-        projectStage: 0,
+        projectStage: 11,
       },
     });
   }

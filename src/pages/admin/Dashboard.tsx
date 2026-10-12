@@ -41,7 +41,7 @@ import {
   getGetRecentActivityQueryKey,
   useListCustomers,
 } from "@/lib/api-client";
-import { Users, Zap, Wrench, IndianRupee, AlertTriangle, Package, MapPin, TrendingUp, Calendar, ChevronRight, CheckCircle2, RefreshCw } from "lucide-react";
+import { Users, Zap, Wrench, IndianRupee, AlertTriangle, Package, MapPin, TrendingUp, Calendar, ChevronRight, CheckCircle2, RefreshCw, Shield } from "lucide-react";
 import { usePollWithVisibility, useCacheInvalidation } from "@/lib/data-sync";
 import { subscribeCustomerDataChanged } from "@/lib/entity-sync";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,23 +53,7 @@ import {
 import { StatusBadge } from "@/components/StatusBadge";
 import { format } from "date-fns";
 import { Link } from "wouter";
-
-const activeJobs = [
-  { zone: "Mumbai Metro", state: "MH", jobs: 14, kw: 87.5, lat: 19.07, lng: 72.87, color: "#F59E0B" },
-  { zone: "Pune Region", state: "MH", jobs: 9, kw: 54.0, lat: 18.52, lng: 73.85, color: "#F97316" },
-  { zone: "Nagpur", state: "MH", jobs: 6, kw: 38.0, lat: 21.14, lng: 79.08, color: "#EAB308" },
-  { zone: "Bhopal", state: "MP", jobs: 7, kw: 43.5, lat: 23.25, lng: 77.41, color: "#10B981" },
-  { zone: "Indore", state: "MP", jobs: 11, kw: 67.0, lat: 22.71, lng: 75.85, color: "#22C55E" },
-  { zone: "Lucknow", state: "UP", jobs: 5, kw: 31.5, lat: 26.84, lng: 80.94, color: "#3B82F6" },
-  { zone: "Kanpur", state: "UP", jobs: 4, kw: 25.0, lat: 26.44, lng: 80.32, color: "#6366F1" },
-  { zone: "Jaipur", state: "RJ", jobs: 8, kw: 49.5, lat: 26.91, lng: 75.78, color: "#EC4899" },
-];
-
-const yearlyRevenue = [
-  { month: "FY21", revenue: 4200000 }, { month: "FY22", revenue: 6800000 },
-  { month: "FY23", revenue: 9500000 }, { month: "FY24", revenue: 13200000 },
-  { month: "FY25", revenue: 17800000 },
-];
+import { AdminNotificationBell } from "@/components/AdminNotificationBell";
 
 export default function AdminDashboard() {
   const [revenueView, setRevenueView] = useState<"monthly" | "yearly">("monthly");
@@ -136,17 +120,7 @@ export default function AdminDashboard() {
       }
     });
     
-    const result = Object.values(groups);
-    return result.length > 0 ? result : [
-      { zone: "Mumbai Metro", state: "MH", jobs: 14, kw: 87.5, lat: 19.07, lng: 72.87, color: "#F59E0B" },
-      { zone: "Pune Region", state: "MH", jobs: 9, kw: 54.0, lat: 18.52, lng: 73.85, color: "#F97316" },
-      { zone: "Nagpur", state: "MH", jobs: 6, kw: 38.0, lat: 21.14, lng: 79.08, color: "#EAB308" },
-      { zone: "Bhopal", state: "MP", jobs: 7, kw: 43.5, lat: 23.25, lng: 77.41, color: "#10B981" },
-      { zone: "Indore", state: "MP", jobs: 11, kw: 67.0, lat: 22.71, lng: 75.85, color: "#22C55E" },
-      { zone: "Lucknow", state: "UP", jobs: 5, kw: 31.5, lat: 26.84, lng: 80.94, color: "#3B82F6" },
-      { zone: "Kanpur", state: "UP", jobs: 4, kw: 25.0, lat: 26.44, lng: 80.32, color: "#6366F1" },
-      { zone: "Jaipur", state: "RJ", jobs: 8, kw: 49.5, lat: 26.91, lng: 75.78, color: "#EC4899" },
-    ];
+    return Object.values(groups);
   }, [customers]);
 
   const { data: summary, isLoading: loadingSummary, refetch: refetchSummary } = useGetAdminDashboardSummary({
@@ -198,7 +172,15 @@ export default function AdminDashboard() {
       ]
     : [];
 
-  const chartData = revenueView === "monthly" ? revenueData : yearlyRevenue;
+  const chartData = revenueView === "monthly"
+    ? revenueData
+    : (revenueData ?? []).reduce<Array<{ month: string; revenue: number }>>((years, item) => {
+        const year = item.year ?? item.month;
+        const existing = years.find((entry) => entry.month === year);
+        if (existing) existing.revenue += item.revenue;
+        else years.push({ month: year, revenue: item.revenue });
+        return years;
+      }, []);
   const chartKey = revenueView === "monthly" ? "month" : "month";
 
   const totalJobsOnMap = dynamicActiveJobs.reduce((s, z) => s + z.jobs, 0);
@@ -207,7 +189,11 @@ export default function AdminDashboard() {
   return (
     <SidebarLayout>
       <div className="flex items-center justify-between mb-6">
-        <PageHeader title="Admin Overview" description="Command center for SWAYOG Energy operations." />
+        <PageHeader
+          title="Admin Overview"
+          description="Command center for SWAYOG Energy operations."
+          action={<AdminNotificationBell />}
+        />
         <Button
           onClick={handleManualRefresh}
           disabled={isAutoRefreshing}
@@ -234,6 +220,46 @@ export default function AdminDashboard() {
               value={summary.totalCustomers}
               icon={<Users className="h-5 w-5" />}
               trend={{ value: summary.customersTrend, isPositive: summary.customersTrend >= 0 }}
+            />
+            <StatCard
+              title="Active Customers"
+              value={summary.activeCustomers}
+              icon={<CheckCircle2 className="h-5 w-5 text-green-500" />}
+            />
+            <StatCard
+              title="Inactive Customers"
+              value={summary.inactiveCustomers}
+              icon={<Users className="h-5 w-5 text-slate-500" />}
+            />
+            <StatCard
+              title="Total Inverters"
+              value={summary.totalInverters}
+              icon={<Zap className="h-5 w-5 text-orange-500" />}
+            />
+            <StatCard
+              title="Online Inverters"
+              value={`${summary.onlineInverters} / ${summary.totalInverters}`}
+              icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />}
+            />
+            <StatCard
+              title="Offline Inverters"
+              value={summary.offlineInverters}
+              icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
+            />
+            <StatCard
+              title="Installed Capacity"
+              value={`${summary.totalInstalledCapacityKw.toFixed(2)} kW`}
+              icon={<Zap className="h-5 w-5 text-blue-500" />}
+            />
+            <StatCard
+              title="Active AMC"
+              value={summary.activeAmc}
+              icon={<Shield className="h-5 w-5 text-indigo-500" />}
+            />
+            <StatCard
+              title="Expired AMC"
+              value={summary.expiredAmc}
+              icon={<AlertTriangle className="h-5 w-5 text-red-500" />}
             />
             <StatCard
               title="Pending Installations"

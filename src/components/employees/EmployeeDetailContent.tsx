@@ -1223,6 +1223,17 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                         ))}
                       </SelectContent>
                     </Select>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-2.5 text-slate-500 hover:text-primary hover:border-primary"
+                      onClick={() => refetchAttendance()}
+                      disabled={attendanceLoading}
+                      title="Refresh attendance"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${attendanceLoading ? "animate-spin" : ""}`} />
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -1321,7 +1332,11 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
-                                    {rec.source === "ADMIN_ASSIGNED" || rec.manualOverride ? (
+                                    {rec.displayAsSelfPunch || rec.display_as_self_punch ? (
+                                      <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+                                        Self Punch
+                                      </Badge>
+                                    ) : rec.source === "ADMIN_ASSIGNED" || rec.manualOverride ? (
                                       <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-[10px]" title={rec.overrideReason || "Admin Assigned"}>
                                         Admin Assigned
                                       </Badge>
@@ -1350,7 +1365,7 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                                           </DialogContent>
                                         </Dialog>
                                       )}
-                                      {matchingCheckin?.latitude !== null && matchingCheckin?.longitude !== null && (
+                                      {matchingCheckin && matchingCheckin.latitude != null && matchingCheckin.longitude != null && (
                                         <a 
                                           href={`https://www.google.com/maps?q=${matchingCheckin.latitude},${matchingCheckin.longitude}`}
                                           target="_blank" 

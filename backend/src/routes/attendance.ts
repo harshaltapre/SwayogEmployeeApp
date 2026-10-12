@@ -27,6 +27,37 @@ const superAdminAuth = [authenticateAccessToken, authorizeRoles(UserRole.SUPER_A
 
 const PHOTOS_FILE_PATH = path.join(process.cwd(), "data", "profile-photos.json");
 
+function getIndiaDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  const year = Number(value("year"));
+  const month = Number(value("month"));
+  const day = Number(value("day"));
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(value("weekday"));
+  return {
+    date: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    utcStart: new Date(Date.UTC(year, month - 1, day)),
+    weekday: weekday >= 0 ? weekday : 0,
+  };
+}
+
+function getIndiaMinutes(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value || 0);
+  return value("hour") * 60 + value("minute");
+}
+
 function getAllPhotos(): Record<string, string> {
   try {
     if (!fs.existsSync(path.dirname(PHOTOS_FILE_PATH))) {
@@ -193,24 +224,28 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   }
 }));
 
-router.post("/check-out", employeeAuth, asyncHandler(async (req, res) => {
+const handleCheckOutEndpoint = asyncHandler(async (req, res) => {
   try {
     const record = await AttendanceService.checkOut(req.auth!.userId);
     res.json({ success: true, record });
   } catch (err: any) {
     res.status(400).json({ error: err?.message ?? "Unable to check out" });
   }
-}));
+});
+
+router.post("/check-out", employeeAuth, handleCheckOutEndpoint);
+router.post("/checkout", employeeAuth, handleCheckOutEndpoint);
+router.post("/employee/check-out", employeeAuth, handleCheckOutEndpoint);
 
 router.get("/today", authenticateAccessToken, asyncHandler(async (req, res) => {
-  const record = await AttendanceService.getTodayAttendance(req.auth!.userId);
+  const record = await AttendanceService.getTodayAttendance(req.auth!.userId, req.auth?.role);
   res.json({ record });
 }));
 
 router.get("/monthly", authenticateAccessToken, asyncHandler(async (req, res) => {
   const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
   const year = parseInt(req.query.year as string) || new Date().getFullYear();
-  const data = await AttendanceService.getMonthlyAttendance(req.auth!.userId, month, year);
+  const data = await AttendanceService.getMonthlyAttendance(req.auth!.userId, month, year, req.auth?.role);
   res.json(data);
 }));
 
@@ -295,7 +330,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
     const year = parseInt(req.query.year as string) || new Date().getFullYear();
-    const data = await AttendanceService.getMonthlyAttendance(req.params.employeeId, month, year);
+    const data = await AttendanceService.getMonthlyAttendance(req.params.employeeId, month, year, req.auth?.role);
     res.json(data);
   }),
 );
@@ -388,10 +423,9 @@ router.get(
   "/admin/today-summary",
   adminAuth,
   asyncHandler(async (req, res) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const indiaToday = getIndiaDateParts();
+    const today = indiaToday.utcStart;
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
 
     const [activeEmployees, todayRecords, rules, todayHoliday] = await Promise.all([
       prisma.user.findMany({
@@ -405,7 +439,7 @@ router.get(
           loginId: true,
           role: true,
           employeeProfile: {
-            select: { jobRole: true, zone: true, profilePhoto: true },
+          select: { jobRole: true, zone: true },
           },
         },
         orderBy: { fullName: "asc" },
@@ -425,9 +459,11 @@ router.get(
     ]);
 
     const weeklyOffDays: number[] = rules.weeklyOffDays && rules.weeklyOffDays.length > 0 ? rules.weeklyOffDays : [0];
-    const isWeeklyOff = weeklyOffDays.includes(new Date().getDay());
+    const isWeeklyOff = weeklyOffDays.includes(indiaToday.weekday);
 
     const recordMap = new Map<string, any>(todayRecords.map((r: any) => [r.employeeId, r]));
+    const shiftParts = String(rules.shiftStart || "09:15").split(":").map(Number);
+    const shiftStartMinutes = (shiftParts[0] || 0) * 60 + (shiftParts[1] || 0);
 
     let onTimeCount = 0;
     let lateCount = 0;
@@ -442,10 +478,16 @@ router.get(
 
       if (record) {
         status = record.status;
-        if (record.source === "ADMIN_ASSIGNED") adminAssignedCount++;
-        if (record.status === "PRESENT") onTimeCount++;
-        else if (record.status === "LATE") lateCount++;
-        else if (record.status === "HALF_DAY") halfDayCount++;
+        const isSelfPunchMode = Boolean(record.displayAsSelfPunch);
+        if (!isSelfPunchMode && (record.source?.startsWith("ADMIN") || record.manualOverride)) adminAssignedCount++;
+        if (record.status === "HALF_DAY") {
+          halfDayCount++;
+        } else if (record.status === "PRESENT" || record.status === "LATE" || record.checkInTime) {
+          const isLate = record.status === "LATE"
+            || (record.checkInTime && getIndiaMinutes(new Date(record.checkInTime)) > shiftStartMinutes);
+          if (isLate) lateCount++;
+          else onTimeCount++;
+        }
         else if (record.status === "LEAVE") leaveCount++;
         else if (record.status === "ABSENT") explicitAbsentCount++;
       }
@@ -460,17 +502,18 @@ router.get(
         status,
         checkInTime: record?.checkInTime || null,
         checkOutTime: record?.checkOutTime || null,
-        source: record?.source || null,
+        source: record?.displayAsSelfPunch ? "EMPLOYEE_CHECK_IN" : (record?.source || null),
         totalMinutes: record?.totalMinutes || null,
-        notes: record?.notes || null,
+        notes: record?.displayAsSelfPunch ? null : (record?.notes || null),
       };
     });
 
     const checkedInCount = onTimeCount + lateCount + halfDayCount;
-    const pendingCount = Math.max(0, activeEmployees.length - checkedInCount - leaveCount - explicitAbsentCount);
+    const expectedEmployees = isWeeklyOff || todayHoliday ? 0 : activeEmployees.length;
+    const pendingCount = Math.max(0, expectedEmployees - checkedInCount - leaveCount - explicitAbsentCount);
 
     res.json({
-      date: today.toISOString().split("T")[0],
+      date: indiaToday.date,
       totalEmployees: activeEmployees.length,
       checkedIn: checkedInCount,
       onTime: onTimeCount,
@@ -919,7 +962,7 @@ router.patch(
  * Requires mandatory remark explaining why the employee forgot.
  */
 const handleAdminApplyAttendance = asyncHandler(async (req, res) => {
-  const { employeeId, date, status, checkInTime, checkOutTime, remark } = req.body;
+  const { employeeId, date, status, checkInTime, checkOutTime, remark, displayAsSelfPunch, display_as_self_punch } = req.body;
 
   if (!employeeId) {
     res.status(400).json({ error: "Employee ID is required." });
@@ -933,16 +976,28 @@ const handleAdminApplyAttendance = asyncHandler(async (req, res) => {
     res.status(400).json({ error: "Attendance status is required." });
     return;
   }
-  if (!remark || typeof remark !== "string" || remark.trim().length < 3) {
-    res.status(400).json({ error: "A remark explaining why the employee forgot or why attendance is being updated is required (at least 3 characters)." });
-    return;
-  }
-
   const validStatuses = ["PRESENT", "LATE", "HALF_DAY", "ABSENT", "LEAVE"];
   if (!validStatuses.includes(status)) {
     res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
     return;
   }
+
+  // Authorize displayAsSelfPunch - ONLY Super Admin can set it to true
+  const requestedDisplayAsSelfPunch = displayAsSelfPunch !== undefined ? displayAsSelfPunch : display_as_self_punch;
+  if (requestedDisplayAsSelfPunch === true && req.auth?.role !== UserRole.SUPER_ADMIN) {
+    res.status(403).json({ error: "Unauthorized: Only Super Admin can enable 'Display as Self Punch'." });
+    return;
+  }
+
+  const isSelfPunch = Boolean(requestedDisplayAsSelfPunch);
+  if (!isSelfPunch && (!remark || typeof remark !== "string" || remark.trim().length < 3)) {
+    res.status(400).json({ error: "A remark explaining why the employee forgot or why attendance is being updated is required (at least 3 characters)." });
+    return;
+  }
+
+  const sanitizedRemark = (typeof remark === "string" && remark.trim().length > 0)
+    ? remark.trim()
+    : (isSelfPunch ? "Self Punch Regularization" : "");
 
   const result = await AttendanceService.applyOrUpdateAttendanceRecord({
     employeeId,
@@ -950,8 +1005,9 @@ const handleAdminApplyAttendance = asyncHandler(async (req, res) => {
     status,
     checkInTime,
     checkOutTime,
-    remark,
+    remark: sanitizedRemark,
     adminUserId: req.auth!.userId,
+    displayAsSelfPunch: requestedDisplayAsSelfPunch !== undefined ? Boolean(requestedDisplayAsSelfPunch) : undefined,
   });
 
   res.json({
@@ -1124,4 +1180,3 @@ router.post(
 );
 
 export default router;
-

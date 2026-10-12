@@ -17,7 +17,7 @@ export default function PartnerProjects() {
   
   // Transform CustomerRecord to project format
   const projects = customers.map((c: CustomerRecord) => {
-    const stageStr = c.projectStage === 4 ? 'complete' : c.projectStage === 3 ? 'installation' : c.projectStage === 2 ? 'survey' : 'lead';
+    const stageStr = (c.projectStage ?? 0) >= 11 ? 'complete' : c.projectStage === 3 ? 'installation' : c.projectStage === 2 ? 'survey' : 'lead';
     return {
       id: c.id,
       customerName: c.name,

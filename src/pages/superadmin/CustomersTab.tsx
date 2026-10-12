@@ -1,6 +1,6 @@
 import { Search, Plus, MapPin, Phone, Mail, Zap, Download, LayoutGrid, List, ChevronRight, IndianRupee, Shield, Copy, Check, Upload, Building2, User, Loader2 } from "lucide-react";
 import { C, Pill, StatCard, Card } from "./shared";
-import { useListCustomers, useListApartments, useCreateApartment, useGetAdminDashboardSummary } from "@/lib/api-client";
+import { useListCustomers, useListApartments, useCreateApartment, useGetAdminDashboardSummary, useListPartners } from "@/lib/api-client";
 import { useState, Fragment, useEffect } from "react";
 import { format } from "date-fns";
 import { CustomerDetailContent } from "@/components/customers/CustomerDetailContent";
@@ -16,6 +16,8 @@ import { subscribeCustomerDataChanged } from "@/lib/entity-sync";
 export default function CustomersTab() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [partnerFilter, setPartnerFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -25,7 +27,12 @@ export default function CustomersTab() {
   }, [search]);
 
   const { data: summary, refetch: refetchSummary } = useGetAdminDashboardSummary();
-  const { data: customers, isLoading, refetch } = useListCustomers({ search: debouncedSearch || undefined });
+  const { data: partnersData = [] } = useListPartners();
+  const { data: customers, isLoading, refetch } = useListCustomers({
+    search: debouncedSearch || undefined,
+    partnerCode: partnerFilter || undefined,
+    registrationMonth: monthFilter || undefined,
+  });
   const { data: apartments, isLoading: isApartmentsLoading, refetch: refetchApartments } = useListApartments();
   const createApartmentMutation = useCreateApartment();
 
@@ -130,7 +137,42 @@ export default function CustomersTab() {
           borderLeft: isNested ? "4px solid #6366F1" : "none"
         }}
       >
-        <td style={{ padding: "16px 24px", paddingLeft: isNested ? 36 : 24 }}>
+        {/* Customer ID */}
+        <td style={{ padding: "16px 20px", paddingLeft: isNested ? 32 : 20 }}>
+          {c.customerCode ? (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{
+                fontFamily: "monospace",
+                fontSize: 11,
+                fontWeight: 700,
+                background: "#EEF2FF",
+                color: "#4338CA",
+                padding: "2px 7px",
+                borderRadius: 6,
+                border: "1px solid #C7D2FE",
+                whiteSpace: "nowrap",
+              }}>
+                {c.customerCode}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.clipboard.writeText(c.customerCode || "");
+                  toast({ title: "Copied", description: "Customer ID copied to clipboard" });
+                }}
+                title="Copy Customer ID"
+                style={{ border: "none", background: "none", cursor: "pointer", padding: 2, color: "#6366F1", display: "inline-flex" }}
+              >
+                <Copy size={12} />
+              </button>
+            </div>
+          ) : (
+            <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>
+          )}
+        </td>
+
+        {/* Customer Name & City / Apartment */}
+        <td style={{ padding: "16px 20px" }}>
            <div style={{ fontWeight: 800, color: C.ink }}>{c.name}</div>
            <div style={{ fontSize: 11, color: C.slate, display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
              {c.apartment ? (
@@ -143,33 +185,62 @@ export default function CustomersTab() {
              )}
            </div>
         </td>
-        <td style={{ padding: "16px 24px" }}>
+
+        {/* Partner / Lead Source */}
+        <td style={{ padding: "16px 20px" }}>
+          {c.partner ? (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>
+                {c.partner.name || c.partner.businessName || "Partner Lead"}
+              </div>
+              {(c.partner.partnerCode || c.partnerCode) && (
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: "#ECFDF5",
+                  color: "#065F46",
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  border: "1px solid #A7F3D0",
+                  display: "inline-block",
+                  marginTop: 2,
+                }}>
+                  {c.partner.partnerCode || c.partnerCode}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span style={{ fontSize: 11, color: C.slate, fontWeight: 500 }}>Direct Lead</span>
+          )}
+        </td>
+
+        <td style={{ padding: "16px 20px" }}>
            <div style={{ fontSize: 13, fontWeight: 600 }}>{c.phone}</div>
            <div style={{ fontSize: 11, color: C.slate }}>{c.email}</div>
         </td>
-        <td style={{ padding: "16px 24px" }}>
+        <td style={{ padding: "16px 20px" }}>
            <div style={{ fontSize: 13, fontWeight: 600 }}>
              {c.installationDate && !isNaN(new Date(c.installationDate).getTime()) 
                ? format(new Date(c.installationDate), "dd MMM yyyy") 
                : "N/A"}
            </div>
         </td>
-        <td style={{ padding: "16px 24px" }}>
+        <td style={{ padding: "16px 20px" }}>
            <div style={{ fontSize: 13, fontWeight: 700 }}>{c.projectStage !== undefined && c.projectStage >= 0 ? `Stage ${c.projectStage + 1}` : "Not started"}</div>
            <div style={{ fontSize: 11, color: C.slate }}>{c.projectStage !== undefined && c.projectStage >= 0 ? `Stage ${c.projectStage + 1} of 12` : "No stage"}</div>
         </td>
-        <td style={{ padding: "16px 24px" }}>
+        <td style={{ padding: "16px 20px" }}>
            <div style={{ fontSize: 13, fontWeight: 800, color: C.amber }}>{c.systemSizeKw} kW</div>
         </td>
-        <td style={{ padding: "16px 24px" }}>
+        <td style={{ padding: "16px 20px" }}>
            <Pill text={c.amcStatus.toUpperCase()} variant={c.amcStatus === "active" ? "green" : "gray"} />
         </td>
-        <td style={{ padding: "16px 24px" }}>
+        <td style={{ padding: "16px 20px" }}>
            <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>
              {c.cleaningsPerMonth ? `${c.cleaningsPerMonth} / Mo` : "—"}
            </div>
         </td>
-        <td style={{ padding: "16px 24px" }}>
+        <td style={{ padding: "16px 20px" }}>
            <button onClick={() => setSelectedCustomerId(c.id)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 800 }}>View</button>
         </td>
       </tr>
@@ -179,7 +250,7 @@ export default function CustomersTab() {
   const renderApartmentHeaderRow = (apt: any, count: number) => {
     return (
       <tr key={`apt-hdr-${apt.id}`} style={{ background: "#EEF2F6", borderBottom: "1px solid #E2E8F0" }}>
-        <td colSpan={8} style={{ padding: "12px 24px" }}>
+        <td colSpan={10} style={{ padding: "12px 24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ background: "#6366F118", borderRadius: 8, padding: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -226,7 +297,7 @@ export default function CustomersTab() {
   const renderApartmentEmptyRow = (apt: any) => {
     return (
       <tr key={`apt-empty-${apt.id}`} style={{ borderBottom: "1px solid #F1F5F9", background: "#FAF9FF", borderLeft: "4px solid #6366F1" }}>
-        <td colSpan={8} style={{ padding: "20px 24px", textAlign: "center", color: C.slate, fontSize: 12, fontStyle: "italic" }}>
+        <td colSpan={10} style={{ padding: "20px 24px", textAlign: "center", color: C.slate, fontSize: 12, fontStyle: "italic" }}>
           No customers in this building yet. Click "+ Add Customer" on the right to add one.
         </td>
       </tr>
@@ -238,7 +309,23 @@ export default function CustomersTab() {
       <div key={c.id} style={{ borderRadius: 20, border: "1px solid #E2E8F0", overflow: "hidden", background: "#fff", display: "flex", flexDirection: "column", height: "100%" }}>
         <div style={{ background: C.ink, padding: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: 15 }}>{c.name}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ color: "#fff", fontWeight: 800, fontSize: 15 }}>{c.name}</span>
+              {c.customerCode && (
+                <span style={{
+                  fontFamily: "monospace",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: "rgba(255,255,255,0.18)",
+                  color: "#E0E7FF",
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  border: "1px solid rgba(255,255,255,0.25)",
+                }}>
+                  {c.customerCode}
+                </span>
+              )}
+            </div>
             <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, display: "flex", alignItems: "center", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
               <MapPin size={11} /> {c.city}
               {c.apartment && (
@@ -254,6 +341,19 @@ export default function CustomersTab() {
         </div>
         <div style={{ padding: 20, flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div>
+            {/* Referring Partner Attribution Badge */}
+            <div style={{ marginBottom: 12, padding: "8px 10px", background: "#F8FAFC", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: 10, color: C.slate, fontWeight: 700, textTransform: "uppercase" }}>Referring Partner / Source</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.ink, marginTop: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span>{c.partner?.name || c.partner?.businessName || "Direct Lead"}</span>
+                {(c.partner?.partnerCode || c.partnerCode) && (
+                  <span style={{ fontSize: 10, fontWeight: 700, background: "#ECFDF5", color: "#065F46", padding: "1px 6px", borderRadius: 4, border: "1px solid #A7F3D0" }}>
+                    {c.partner?.partnerCode || c.partnerCode}
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
               <div>
                 <div style={{ fontSize: 10, color: C.slate, fontWeight: 700, textTransform: "uppercase" }}>Phone</div>
@@ -677,18 +777,42 @@ export default function CustomersTab() {
         </div>
 
         <Card>
-          <div style={{ padding: "20px 24px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ padding: "20px 24px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <span style={{ fontWeight: 800, fontSize: 16 }}>Customer Directory</span>
               <div style={{ position: "relative" }}>
                 <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.slate }} />
                 <input 
-                  placeholder="Search name, phone..." 
+                  placeholder="Search name, ID, partner, phone..." 
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  style={{ padding: "6px 10px 6px 32px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13, width: 220, background: "#F8FAFC" }}
+                  style={{ padding: "6px 10px 6px 32px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13, width: 230, background: "#F8FAFC" }}
                 />
               </div>
+
+              {/* Partner Filter */}
+              <select
+                value={partnerFilter}
+                onChange={e => setPartnerFilter(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13, background: "#F8FAFC", color: C.ink }}
+              >
+                <option value="">All Partners</option>
+                {partnersData.map((p: any) => (
+                  <option key={p.id} value={p.partnerCode || p.id}>
+                    {p.name} {p.partnerCode ? `(${p.partnerCode})` : ""}
+                  </option>
+                ))}
+              </select>
+
+              {/* Month Filter */}
+              <input
+                type="month"
+                value={monthFilter}
+                onChange={e => setMonthFilter(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13, background: "#F8FAFC", color: C.ink }}
+                title="Filter by registration month (YYYY-MM)"
+              />
+
               <div style={{ display: "flex", background: "#F1F5F9", padding: 3, borderRadius: 10, gap: 2 }}>
                 <button 
                   type="button"
@@ -857,22 +981,22 @@ export default function CustomersTab() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
                 <tr>
-                  {["Name", "Contact", "Installation", "Stage", "System", "AMC Status", "Cleanings", "Actions"].map(h => (
-                    <th key={h} style={{ textAlign: "left", padding: "14px 24px", fontSize: 11, fontWeight: 800, color: C.slate, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                  {["Customer ID", "Customer", "Partner / Source", "Contact", "Installation", "Stage", "System", "AMC Status", "Cleanings", "Actions"].map(h => (
+                    <th key={h} style={{ textAlign: "left", padding: "14px 20px", fontSize: 11, fontWeight: 800, color: C.slate, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={8} style={{ padding: 40, textAlign: "center", color: C.slate }}>Loading customers...</td></tr>
+                  <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: C.slate }}>Loading customers...</td></tr>
                 ) : filtered?.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: 40, textAlign: "center", color: C.slate }}>No customers found.</td></tr>
+                  <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: C.slate }}>No customers found.</td></tr>
                 ) : (
                   <>
                     {/* 1. Render Individual Customers */}
                     {showIndividualHeader && (
                       <tr style={{ background: "#F1F5F9", borderBottom: "1px solid #E2E8F0" }}>
-                        <td colSpan={8} style={{ padding: "10px 24px", fontWeight: 800, fontSize: 11, color: C.slate, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        <td colSpan={10} style={{ padding: "10px 24px", fontWeight: 800, fontSize: 11, color: C.slate, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <User size={13} className="text-slate-500" />
                             <span>Individual / Unlinked Customers ({individualCustomers.length})</span>

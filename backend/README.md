@@ -45,6 +45,7 @@ Compose provisions:
 - Redis on port 6379
 
 The backend container automatically runs Prisma migrate deploy before start.
+Render attempts pending Prisma migrations before startup and logs a warning if migration deployment fails, so the API can still start. Vercel migrations are opt-in via `RUN_PRISMA_MIGRATE=1` because production database migrations should not run during every build.
 
 ## View Database Data
 - Run Prisma Studio to inspect all tables (users, refresh tokens, audit logs, customers, profiles):

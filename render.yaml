@@ -4,7 +4,7 @@ services:
     env: node
     rootDir: backend
     buildCommand: npm install && npm run build
-    startCommand: npm run start
+    startCommand: npm run prisma:migrate:deploy:runtime || echo 'WARNING: Prisma migrations failed; starting backend anyway' ; npm run start
     envVars:
       - key: NODE_ENV
         value: production

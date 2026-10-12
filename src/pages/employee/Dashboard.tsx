@@ -3,7 +3,7 @@ import { SidebarLayout } from "@/components/SidebarLayout";
 import { Redirect } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
 import { StatCard } from "@/components/StatCard";
-import { CheckCircle, Clock, Calendar, Send, MapPin, Phone } from "lucide-react";
+import { CheckCircle, Clock, Calendar, Send } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth, isInventoryExecutiveJobRole, isSubAdminJobRole } from "@/lib/auth";
 import { useSaveWorkDescription, useListTasks } from "@/lib/api-client";
-import { useTodayAttendance, useMyPerformance, useCheckIn, useCheckOut } from "@/hooks/useAttendance";
 import { cn } from "@/lib/utils";
 
 export default function EmployeeDashboard() {
@@ -19,11 +18,6 @@ export default function EmployeeDashboard() {
   const [workDescription, setWorkDescription] = useState("");
   const { toast } = useToast();
   const saveWorkDescriptionMutation = useSaveWorkDescription();
-  const checkInMutation = useCheckIn();
-  const checkOutMutation = useCheckOut();
-  const { data: todayAttendance, isFetching: attendanceLoading } = useTodayAttendance();
-  const now = new Date();
-  const { data: myPerformance, isFetching: performanceLoading } = useMyPerformance(now.getMonth() + 1, now.getFullYear());
 
   const { data: tasks, isLoading: tasksLoading } = useListTasks(
     { employeeUserId: user?.id },
@@ -71,17 +65,13 @@ export default function EmployeeDashboard() {
     }
   };
 
-  const attendanceStatus = todayAttendance ? (
-    todayAttendance.checkOutTime
-      ? `Checked out (${new Date(todayAttendance.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
-      : `Checked in (${new Date(todayAttendance.checkInTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
-  ) : "Not checked in yet";
+
 
   return (
     <SidebarLayout>
       <PageHeader title="My Dashboard" description="Overview of your tasks and performance." />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <StatCard 
           title="Active Tasks" 
           value={tasksLoading ? "..." : activeCount} 
@@ -97,51 +87,6 @@ export default function EmployeeDashboard() {
           value={tasksLoading ? "..." : (tasks?.length ?? 0)} 
           icon={<Calendar className="h-5 w-5 text-amber-500" />} 
         />
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="border-b bg-slate-50/50">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-primary" />
-              Attendance
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-5 space-y-4">
-            <div className="text-sm text-slate-600">{attendanceStatus}</div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm">
-                <div className="text-slate-500 text-xs uppercase tracking-widest">Status</div>
-                <div className="mt-2 font-semibold text-slate-900">{todayAttendance?.status ?? "No record"}</div>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm">
-                <div className="text-slate-500 text-xs uppercase tracking-widest">Performance</div>
-                <div className="mt-2 font-semibold text-slate-900">{myPerformance?.performanceScore !== undefined && myPerformance?.performanceScore !== null ? `${myPerformance.performanceScore.toFixed(1)}/5` : "No data yet"}</div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button
-                className="w-full"
-                onClick={() => checkInMutation.mutate(undefined)}
-                disabled={!!todayAttendance?.checkInTime || checkInMutation.isPending}
-              >
-                {checkInMutation.isPending ? "Checking in…" : "Check In"}
-              </Button>
-              <Button
-                className="w-full"
-                variant="outline"
-                onClick={() => checkOutMutation.mutate()}
-                disabled={!todayAttendance?.checkInTime || !!todayAttendance?.checkOutTime || checkOutMutation.isPending}
-              >
-                {checkOutMutation.isPending ? "Checking out…" : "Check Out"}
-              </Button>
-            </div>
-            {myPerformance ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-medium text-slate-700">
-                Attendance: {myPerformance.attendancePercent}% • Tasks: {myPerformance.tasksCompleted}/{myPerformance.tasksAssigned}
-              </div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-500">No performance data for this month yet.</div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

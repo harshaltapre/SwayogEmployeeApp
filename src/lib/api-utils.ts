@@ -40,10 +40,16 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config;
 
     // If error is 401 and we haven't retried yet
-    if (error.response?.status === 401 && originalRequest && !originalRequest.headers.get('X-Retry')) {
+    const retryHeader = originalRequest?.headers
+      ? typeof originalRequest.headers.get === "function"
+        ? originalRequest.headers.get("X-Retry")
+        : (originalRequest.headers as Record<string, unknown>)["X-Retry"]
+      : undefined;
+
+    if (error.response?.status === 401 && originalRequest && !retryHeader) {
       try {
         // Try to refresh token
-        const refreshToken = cookie.get('refreshToken');
+        const refreshToken = useAuth.getState().refreshToken || cookie.get("refreshToken");
         
         if (!refreshToken) {
           throw new Error('No refresh token available');
@@ -57,10 +63,14 @@ apiClient.interceptors.response.use(
         const { login } = useAuth.getState();
         
         // Update auth state with new token
-        login(data.accessToken, data.user);
+        login(data.accessToken, data.user, data.refreshToken);
 
         // Mark request as retried and retry it
-        originalRequest.headers.set('X-Retry', 'true');
+        if (typeof originalRequest.headers.set === "function") {
+          originalRequest.headers.set("X-Retry", "true");
+        } else {
+          (originalRequest.headers as Record<string, string>)["X-Retry"] = "true";
+        }
         originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
         
         return apiClient(originalRequest);

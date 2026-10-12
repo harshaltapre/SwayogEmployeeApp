@@ -30,8 +30,8 @@ export default function PartnerDashboard() {
   const queryClient = useQueryClient();
 
   const formattedCustomers = apiCustomers.map((c: any) => {
-    const stageStr = c.projectStage === 4 ? 'Complete' : c.projectStage === 3 ? 'Installation' : c.projectStage === 2 ? 'Survey' : 'Lead';
-    const progress = c.projectStage === 4 ? 100 : c.projectStage === 3 ? 75 : c.projectStage === 2 ? 50 : 25;
+    const stageStr = (c.projectStage ?? 0) >= 11 ? 'Complete' : c.projectStage === 3 ? 'Installation' : c.projectStage === 2 ? 'Survey' : 'Lead';
+    const progress = (c.projectStage ?? 0) >= 11 ? 100 : c.projectStage === 3 ? 75 : c.projectStage === 2 ? 50 : 25;
     const amount = (c.systemSizeKw || 1) * 50000;
     const commission = (c.systemSizeKw || 1) * 2500;
     return {

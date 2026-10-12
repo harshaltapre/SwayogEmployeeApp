@@ -246,7 +246,7 @@ CREATE TABLE "Customer" (
     "status" "CustomerStatus" NOT NULL DEFAULT 'ACTIVE',
     "partnerId" TEXT,
     "userId" TEXT,
-    "projectStage" INTEGER NOT NULL DEFAULT 0,
+    "projectStage" INTEGER NOT NULL DEFAULT 11,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "cleaningWindow1" TEXT DEFAULT '1-10',

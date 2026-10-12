@@ -321,8 +321,8 @@ export const EmployeeCalendar = ({
           const start = new Date(y, m - 1, d, 9, 0, 0);
 
           let title = "Attendance: Present";
-          let subtitle = "Working Day";
-          const isAdmin = r.manualOverride || r.source?.startsWith("ADMIN");
+          const isSelfPunchDisplay = Boolean(r.displayAsSelfPunch || r.display_as_self_punch);
+          const isAdmin = !isSelfPunchDisplay && (r.manualOverride || r.source?.startsWith("ADMIN"));
 
           if (r.status === "PRESENT") {
             if (isAdmin) {
@@ -964,66 +964,74 @@ export const EmployeeCalendar = ({
                     {selectedEvent.title}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Attendance Source</span>
-                  <span className="font-semibold text-slate-800">
-                    {selectedEvent.raw?.manualOverride || selectedEvent.raw?.source?.startsWith("ADMIN")
-                      ? "Admin Marked / Assigned"
-                      : selectedEvent.raw?.source || "Employee Check-in"}
-                  </span>
-                </div>
-                {selectedEvent.raw?.reviewerName && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Marked / Reviewed By</span>
-                    <span className="font-semibold text-indigo-700">
-                      {selectedEvent.raw.reviewerName}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Check-In Time</span>
-                  <span className="font-medium text-slate-700">
-                    {selectedEvent.raw?.checkInTime
-                      ? format(new Date(selectedEvent.raw.checkInTime), "hh:mm a")
-                      : selectedEvent.raw?.manualOverride
-                      ? "Not applicable (Admin marked)"
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Check-Out Time</span>
-                  <span className="font-medium text-slate-700">
-                    {selectedEvent.raw?.checkOutTime
-                      ? format(new Date(selectedEvent.raw.checkOutTime), "hh:mm a")
-                      : "—"}
-                  </span>
-                </div>
-                {selectedEvent.raw?.totalMinutes !== undefined && selectedEvent.raw?.totalMinutes !== null && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Total Hours</span>
-                    <span className="font-semibold text-indigo-700">
-                      {Math.floor(selectedEvent.raw.totalMinutes / 60)}h {selectedEvent.raw.totalMinutes % 60}m
-                    </span>
-                  </div>
-                )}
-                {(selectedEvent.raw?.notes || selectedEvent.raw?.overrideReason) && (
-                  <div className="border-t border-slate-200/50 pt-2 mt-1">
-                    <span className="text-slate-500 block mb-1">Remarks / Reason</span>
-                    <p className="text-slate-700 italic bg-white p-2 rounded border border-slate-100">
-                      "{selectedEvent.raw?.notes || selectedEvent.raw?.overrideReason}"
-                    </p>
-                  </div>
-                )}
-                <div className="flex justify-between border-t border-slate-200/50 pt-2 mt-1">
-                  <span className="text-slate-500">Location Verification</span>
-                  <span className="font-medium text-slate-600">
-                    {selectedEvent.raw?.manualOverride || selectedEvent.raw?.source?.startsWith("ADMIN")
-                      ? "Not applicable / Marked by administrator"
-                      : selectedEvent.raw?.checkInTime
-                      ? "GPS Verified"
-                      : "Not applicable"}
-                  </span>
-                </div>
+                {(() => {
+                  const isSelfPunchDisplay = Boolean(selectedEvent.raw?.displayAsSelfPunch || selectedEvent.raw?.display_as_self_punch);
+                  const isAdminEvent = !isSelfPunchDisplay && (selectedEvent.raw?.manualOverride || selectedEvent.raw?.source?.startsWith("ADMIN"));
+                  return (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Attendance Source</span>
+                        <span className="font-semibold text-slate-800">
+                          {isAdminEvent
+                            ? "Admin Marked / Assigned"
+                            : selectedEvent.raw?.source || "Employee Check-in"}
+                        </span>
+                      </div>
+                      {!isSelfPunchDisplay && selectedEvent.raw?.reviewerName && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Marked / Reviewed By</span>
+                          <span className="font-semibold text-indigo-700">
+                            {selectedEvent.raw.reviewerName}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Check-In Time</span>
+                        <span className="font-medium text-slate-700">
+                          {selectedEvent.raw?.checkInTime
+                            ? format(new Date(selectedEvent.raw.checkInTime), "hh:mm a")
+                            : isAdminEvent
+                            ? "Not applicable (Admin marked)"
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Check-Out Time</span>
+                        <span className="font-medium text-slate-700">
+                          {selectedEvent.raw?.checkOutTime
+                            ? format(new Date(selectedEvent.raw.checkOutTime), "hh:mm a")
+                            : "—"}
+                        </span>
+                      </div>
+                      {selectedEvent.raw?.totalMinutes !== undefined && selectedEvent.raw?.totalMinutes !== null && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Total Hours</span>
+                          <span className="font-semibold text-indigo-700">
+                            {Math.floor(selectedEvent.raw.totalMinutes / 60)}h {selectedEvent.raw.totalMinutes % 60}m
+                          </span>
+                        </div>
+                      )}
+                      {!isSelfPunchDisplay && (selectedEvent.raw?.notes || selectedEvent.raw?.overrideReason) && (
+                        <div className="border-t border-slate-200/50 pt-2 mt-1">
+                          <span className="text-slate-500 block mb-1">Remarks / Reason</span>
+                          <p className="text-slate-700 italic bg-white p-2 rounded border border-slate-100">
+                            "{selectedEvent.raw?.notes || selectedEvent.raw?.overrideReason}"
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t border-slate-200/50 pt-2 mt-1">
+                        <span className="text-slate-500">Location Verification</span>
+                        <span className="font-medium text-slate-600">
+                          {isAdminEvent
+                            ? "Not applicable / Marked by administrator"
+                            : selectedEvent.raw?.checkInTime
+                            ? "Self Punch"
+                            : "Not applicable"}
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
           </div>

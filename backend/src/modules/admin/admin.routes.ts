@@ -14,9 +14,25 @@ import {
   getTaskDetails,
   updateTaskStatus,
   exportCustomerTemplate,
+  getDuplicateCustomerSummary,
+  removeAllDuplicateCustomers,
 } from "./admin.controller.js";
 
 export const adminRoutes = Router();
+
+adminRoutes.get(
+  "/customers/duplicates",
+  authenticateAccessToken,
+  authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(getDuplicateCustomerSummary),
+);
+
+adminRoutes.post(
+  "/customers/remove-all-duplicates",
+  authenticateAccessToken,
+  authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(removeAllDuplicateCustomers),
+);
 
 // Get admin dashboard with stats
 adminRoutes.get(

@@ -19,11 +19,19 @@ type AdminDashboardSummary = {
   pendingServices: number;
   monthlyRevenue: number;
   openComplaints: number;
+  activeCustomers: number;
+  inactiveCustomers: number;
+  totalInverters: number;
+  onlineInverters: number;
+  offlineInverters: number;
+  totalInstalledCapacityKw: number;
+  activeAmc: number;
+  expiredAmc: number;
   customersTrend: number;
   revenueTrend: number;
 };
 
-type RevenueChart = Array<{ month: string; revenue: number }>;
+type RevenueChart = Array<{ month: string; year?: string; revenue: number }>;
 
 type ComplaintStats = { new: number; assigned: number; inProgress: number; resolved: number };
 
@@ -122,6 +130,7 @@ export type CustomerRecord = {
   cleaningWindow7?: string;
   cleaningWindow8?: string;
   completedVisits?: number;
+  serviceHistoryCount?: number;
   pendingVisits?: number;
   contractStartDate?: string;
   contractEndDate?: string;
@@ -137,7 +146,8 @@ export type CustomerRecord = {
   apartmentId?: number | null;
   apartment?: { id: number; name: string; address: string; city: string } | null;
   assignedEmployee?: { id: string; name: string } | null;
-  partner?: { id: string; businessName?: string; companyName?: string; name?: string; email?: string | null; phone?: string | null; zone?: string | null } | null;
+  partnerCode?: string | null;
+  partner?: { id: string; businessName?: string; companyName?: string; name?: string; partnerCode?: string; email?: string | null; phone?: string | null; zone?: string | null } | null;
 };
 
 export type ApartmentRecord = {
@@ -179,12 +189,15 @@ export type AmcVisitRecord = {
   photoRemarks?: Record<number, string> | Record<string, string> | null;
 };
 
-type ListCustomersParams = {
+export type ListCustomersParams = {
   search?: string;
   amcStatus?: CustomerAmcStatus;
   status?: CustomerStatus;
   city?: string;
   partnerId?: string;
+  partnerCode?: string;
+  partnerName?: string;
+  registrationMonth?: string;
   limit?: number;
 };
 
@@ -380,16 +393,35 @@ export type RestockInventoryInput = {
   entryDate: string;
   pricePerUnit: number;
   supplier: string;
+  remarks?: string;
+  notes?: string;
 };
 
 export type InventoryStockEntry = {
   id: number | string;
   itemId: number;
+  inventoryItemId?: number;
   quantity: number;
+  previousQuantity?: number;
+  newQuantity?: number;
+  balance?: number;
+  transactionType?: "ADD" | "REMOVE" | "ADJUSTMENT" | "RETURN" | "TRANSFER" | string;
+  movementType?: "IN" | "OUT" | "RETURN" | string;
   entryDate: string;
+  transactionDate?: string;
   pricePerUnit: number;
-  supplier: string;
+  supplier: string | null;
+  dispatchedTo: string | null;
+  notes: string | null;
+  remarks?: string | null;
+  createdBy?: string | null;
   createdAt: string;
+};
+
+export type InventoryStockEntriesResult = {
+  entries: InventoryStockEntry[];
+  historyAvailable: boolean;
+  item?: InventoryRecord;
 };
 
 export type DispatchedMaterialRecord = {
@@ -496,9 +528,32 @@ function getStoredInventoryStockEntries(itemId: number | string): InventoryStock
     if (!stored) return [];
     const entries = JSON.parse(stored) as InventoryStockEntry[];
     if (!Array.isArray(entries)) return [];
+    let runningBalance = 0;
     return entries
       .filter((entry) => String(entry.itemId) === String(itemId))
-      .sort((left, right) => right.entryDate.localeCompare(left.entryDate));
+      .sort((left, right) => (left.transactionDate || left.entryDate).localeCompare(right.transactionDate || right.entryDate))
+      .map((entry) => {
+        let prev = entry.previousQuantity ?? runningBalance;
+        let tType = entry.transactionType ?? (entry.movementType === "OUT" ? "REMOVE" : entry.movementType === "RETURN" ? "RETURN" : "ADD");
+        let next = entry.newQuantity ?? (tType === "REMOVE" ? Math.max(0, prev - entry.quantity) : prev + entry.quantity);
+        runningBalance = next;
+        return {
+          ...entry,
+          itemId: Number(entry.itemId),
+          inventoryItemId: Number(entry.itemId),
+          movementType: entry.movementType ?? (tType === "REMOVE" ? "OUT" : tType === "RETURN" ? "RETURN" : "IN"),
+          transactionType: tType,
+          previousQuantity: prev,
+          newQuantity: next,
+          balance: next,
+          supplier: entry.supplier ?? null,
+          dispatchedTo: entry.dispatchedTo ?? null,
+          notes: entry.notes ?? entry.remarks ?? null,
+          remarks: entry.remarks ?? entry.notes ?? null,
+          createdBy: entry.createdBy ?? "Admin",
+          transactionDate: entry.transactionDate ?? entry.entryDate,
+        };
+      });
   } catch {
     return [];
   }
@@ -646,6 +701,7 @@ export type PartnerPayout = typeof mockPartnerPayouts[number];
 export type PartnerRecord = {
   id: string; // userId
   partnerProfileId?: string;
+  partnerCode?: string;
   name: string;
   email?: string;
   companyName: string;
@@ -1102,7 +1158,7 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
     city: String(raw?.city ?? ""),
     address: String(raw?.address ?? ""),
     systemSizeKw: Number(raw?.systemSizeKw ?? 0),
-    projectStage: Number(raw?.projectStage ?? 0),
+    projectStage: 11,
     installationDate: normalizeDateValue(raw?.installationDate) ?? new Date().toISOString(),
     warrantyExpiry: normalizeDateValue(raw?.warrantyExpiry),
     panelBrand: typeof raw?.panelBrand === "string" ? raw.panelBrand : null,
@@ -1169,11 +1225,13 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
       id: String(raw.assignedEmployee.id),
       name: String(raw.assignedEmployee.fullName || raw.assignedEmployee.name || ""),
     } : null,
+    partnerCode: raw?.partnerCode ? String(raw.partnerCode) : (raw?.partner?.partnerCode ? String(raw.partner.partnerCode) : null),
     partner: raw?.partner ? {
       id: String(raw.partner.id || ""),
       businessName: raw.partner.businessName ? String(raw.partner.businessName) : undefined,
       companyName: raw.partner.companyName ? String(raw.partner.companyName) : undefined,
       name: raw.partner.name ? String(raw.partner.name) : undefined,
+      partnerCode: raw.partner.partnerCode ? String(raw.partner.partnerCode) : (raw?.partnerCode ? String(raw.partnerCode) : undefined),
       email: raw.partner.email ? String(raw.partner.email) : null,
       phone: raw.partner.phone ? String(raw.partner.phone) : null,
       zone: raw.partner.zone ? String(raw.partner.zone) : null,
@@ -1241,6 +1299,7 @@ function normalizePartnerRecord(raw: any): PartnerRecord {
   return {
     id,
     partnerProfileId: raw?.partnerProfile?.id,
+    partnerCode: raw?.partnerProfile?.partnerCode || raw?.partnerCode || undefined,
     name: fullName,
     email: raw?.email,
     companyName: businessName || fullName,
@@ -1270,6 +1329,9 @@ function buildCustomerQueryString(params?: ListCustomersParams): string {
   if (params?.status) query.set("status", params.status);
   if (params?.city) query.set("city", params.city);
   if (params?.partnerId) query.set("partnerId", params.partnerId);
+  if (params?.partnerCode) query.set("partnerCode", params.partnerCode);
+  if (params?.partnerName) query.set("partnerName", params.partnerName);
+  if (params?.registrationMonth) query.set("registrationMonth", params.registrationMonth);
   if (params?.limit) query.set("limit", String(params.limit));
   const serialized = query.toString();
   return serialized.length > 0 ? `?${serialized}` : "";
@@ -1354,6 +1416,45 @@ export const getListInvoicesQueryKey = (params?: any) => ["invoices", params] as
 export const getListTasksQueryKey = (params?: { employeeUserId?: string | number; status?: string }) => ["tasks", params ?? {}] as const;
 export const getListCustomerServiceRequestsQueryKey = () => ["customerServiceRequests"] as const;
 
+export type DuplicateCustomerSummary = {
+  customerIdsChecked: number;
+  duplicateCustomerIds: number;
+  duplicateRecords: number;
+  recordsPreserved: number;
+};
+
+export type DuplicateCleanupResult = {
+  customerIdsChecked: number;
+  duplicateCustomerIdsFound: number;
+  duplicateRecordsRemoved: number;
+  recordsPreserved: number;
+  failed: number;
+  failedRecords: Array<{ customerCode: string; recordIds: number[]; reason: string }>;
+  status: "SUCCESS" | "COMPLETED_WITH_WARNINGS";
+};
+
+export function useDuplicateCustomerSummary(opts?: any) {
+  return useQuery<DuplicateCustomerSummary>({
+    queryKey: ["admin", "customers", "duplicates"],
+    queryFn: () => requestApi<DuplicateCustomerSummary>("/admin/customers/duplicates"),
+    ...opts?.query,
+  });
+}
+
+export function useRemoveAllDuplicateCustomers(opts?: any) {
+  const queryClient = useQueryClient();
+  return useMutation<DuplicateCleanupResult, unknown, void>({
+    mutationFn: () => requestApi<DuplicateCleanupResult>("/admin/customers/remove-all-duplicates", { method: "POST" }),
+    ...opts?.mutation,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "customers", "duplicates"] });
+      queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetAdminDashboardSummaryQueryKey() });
+      opts?.mutation?.onSuccess?.(result);
+    },
+  });
+}
+
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
 const delay = <T,>(data: T, ms = 400): Promise<T> =>
@@ -1375,6 +1476,14 @@ export function useGetAdminDashboardSummary(opts?: any) {
         pendingServices: payload.summary.pendingServices ?? 0,
         monthlyRevenue: payload.summary.monthlyRevenue || 0,
         openComplaints: payload.summary.openComplaints || 0,
+        activeCustomers: payload.summary.activeCustomers || 0,
+        inactiveCustomers: payload.summary.inactiveCustomers || 0,
+        totalInverters: payload.summary.totalInverters || 0,
+        onlineInverters: payload.summary.onlineInverters || 0,
+        offlineInverters: payload.summary.offlineInverters || 0,
+        totalInstalledCapacityKw: payload.summary.totalInstalledCapacityKw || 0,
+        activeAmc: payload.summary.activeAmc || 0,
+        expiredAmc: payload.summary.expiredAmc || 0,
         customersTrend: payload.summary.customersTrend || 0,
         revenueTrend: payload.summary.revenueTrend || 0,
       };
@@ -2539,6 +2648,32 @@ export function useCreateInventory(opts?: any) {
       };
 
       setStoredInventoryRecords([created, ...records]);
+      if (inStock > 0) {
+        const storedEntries = localStorage.getItem(INVENTORY_STOCK_ENTRIES_STORAGE_KEY);
+        const allEntries = storedEntries ? JSON.parse(storedEntries) as InventoryStockEntry[] : [];
+        const entryDateIso = created.entryDate;
+        allEntries.push({
+          id: `${Date.now()}-${allEntries.length}`,
+          itemId: nextId,
+          inventoryItemId: nextId,
+          quantity: inStock,
+          previousQuantity: 0,
+          newQuantity: inStock,
+          balance: inStock,
+          transactionType: "ADD",
+          movementType: "IN",
+          entryDate: entryDateIso,
+          transactionDate: entryDateIso,
+          pricePerUnit: created.pricePerUnit,
+          supplier: created.supplier,
+          dispatchedTo: null,
+          notes: "Opening stock",
+          remarks: "Opening stock",
+          createdBy: "Admin",
+          createdAt: new Date().toISOString(),
+        });
+        localStorage.setItem(INVENTORY_STOCK_ENTRIES_STORAGE_KEY, JSON.stringify(allEntries));
+      }
       queryClient.setQueryData(getListInventoryQueryKey(), [created, ...records]);
       notifyInventoryChanged();
       return delay(created, 200);
@@ -2606,24 +2741,40 @@ export function useRestockInventory(opts?: any) {
         throw new Error("Item not found");
       }
 
+      const previousQuantity = records[idx].inStock;
+      const newQuantity = previousQuantity + data.quantity;
+
+      // DO NOT overwrite master item's entryDate!
       const updated = normalizeInventoryRecord({
         ...records[idx],
-        inStock: records[idx].inStock + data.quantity,
-        entryDate: data.entryDate,
+        inStock: newQuantity,
         pricePerUnit: data.pricePerUnit,
         supplier: data.supplier,
       });
       records[idx] = updated;
       setStoredInventoryRecords(records);
+
       const storedEntries = localStorage.getItem(INVENTORY_STOCK_ENTRIES_STORAGE_KEY);
       const allEntries = storedEntries ? JSON.parse(storedEntries) as InventoryStockEntry[] : [];
+      const entryDateIso = new Date(`${data.entryDate}T00:00:00`).toISOString();
       allEntries.push({
         id: `${Date.now()}-${allEntries.length}`,
         itemId: Number(id),
+        inventoryItemId: Number(id),
         quantity: data.quantity,
-        entryDate: new Date(`${data.entryDate}T00:00:00`).toISOString(),
+        previousQuantity,
+        newQuantity,
+        balance: newQuantity,
+        transactionType: "ADD",
+        movementType: "IN",
+        entryDate: entryDateIso,
+        transactionDate: entryDateIso,
         pricePerUnit: data.pricePerUnit,
         supplier: data.supplier,
+        dispatchedTo: null,
+        notes: data.remarks || data.notes || "Stock added",
+        remarks: data.remarks || data.notes || "Stock added",
+        createdBy: "Admin",
         createdAt: new Date().toISOString(),
       });
       localStorage.setItem(INVENTORY_STOCK_ENTRIES_STORAGE_KEY, JSON.stringify(allEntries));
@@ -2642,7 +2793,7 @@ export function useRestockInventory(opts?: any) {
 }
 
 export function useListInventoryStockEntries(itemId: number | string | null) {
-  return useQuery<InventoryStockEntry[]>({
+  return useQuery<InventoryStockEntriesResult>({
     queryKey: ["inventory-stock-entries", itemId],
     enabled: itemId !== null,
     queryFn: async () => {
@@ -2650,9 +2801,12 @@ export function useListInventoryStockEntries(itemId: number | string | null) {
         throw new Error("An inventory item must be selected to load stock entries.");
       }
       if (getApiBaseUrl()) {
-        return requestApi<InventoryStockEntry[]>(`/inventory/${itemId}/stock-entries`);
+        return requestApi<InventoryStockEntriesResult>(`/inventory/${itemId}/stock-entries`);
       }
-      return getStoredInventoryStockEntries(itemId);
+      return {
+        entries: getStoredInventoryStockEntries(itemId),
+        historyAvailable: true,
+      };
     },
   });
 }

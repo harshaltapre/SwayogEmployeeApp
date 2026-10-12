@@ -222,11 +222,6 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
     }
   };
 
-  const handleStageChange = (stage: number) => {
-    if (stage < 0 || stage >= PROJECT_STAGES.length) return;
-    updateCustomerMutation.mutate({ id: customerId, data: { projectStage: stage } });
-  };
-
   const handleEditClick = () => {
     editForm.reset({
       fullName: customer.name ?? "",
@@ -241,7 +236,7 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
       inverterBrand: customer.inverterBrand ?? "",
       inverterName: customer.inverterName ?? "",
       inverterUid: customer.inverterUid ?? "",
-      projectStage: customer.projectStage ?? 0,
+      projectStage: 11,
       amcStatus: (customer.amcStatus as any) ?? "none",
       amcExpiryDate: customer.amcExpiryDate ? format(new Date(customer.amcExpiryDate), "yyyy-MM-dd") : "",
       status: (customer.status as any) ?? "active",
@@ -307,9 +302,7 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
                     <Select onValueChange={(value) => field.onChange(Number(value))} value={String(field.value ?? 0)}>
                       <SelectTrigger><SelectValue placeholder="Select stage" /></SelectTrigger>
                       <SelectContent>
-                        {Array.from({ length: 12 }, (_, index) => (
-                          <SelectItem key={index} value={String(index)}>{`${index + 1} / 12`}</SelectItem>
-                        ))}
+                        <SelectItem value="11">12 / 12</SelectItem>
                       </SelectContent>
                     </Select>
                   </FormControl><FormMessage /></FormItem>
@@ -439,6 +432,7 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
       {!hideHeader && (
         <PageHeader 
           title={customer.name}
+          description={customer.customerCode ? `Customer ID: ${customer.customerCode}` : undefined}
           action={
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleEditClick} disabled={isActionPending}>Edit</Button>
@@ -451,9 +445,17 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
 
       {hideHeader && onBack && (
         <div className="flex justify-between items-center mb-4">
-          <Button variant="ghost" onClick={onBack}>
-            <ArrowLeft className="w-4 h-4 mr-2" /> Back to Directory
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" onClick={onBack}>
+              <ArrowLeft className="w-4 h-4 mr-2" /> Back to Directory
+            </Button>
+            <h2 className="text-xl font-bold text-slate-900">{customer.name}</h2>
+            {customer.customerCode && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                {customer.customerCode}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={handleEditClick} disabled={isActionPending} className="border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50 hover:border-indigo-300 font-semibold shadow-sm h-9">
               <Edit className="w-4 h-4 mr-2" /> Edit Customer
@@ -467,11 +469,69 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="col-span-1 shadow-sm">
-          <CardHeader><CardTitle className="text-lg">Contact Info</CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg">Contact Info</CardTitle>
+              {customer.customerCode && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {customer.customerCode}
+                </span>
+              )}
+            </div>
+          </CardHeader>
           <CardContent className="space-y-4 text-sm">
-            <div className="flex items-center gap-3"><Phone className="w-4 h-4" /> {customer.phone}</div>
-            <div className="flex items-center gap-3"><Mail className="w-4 h-4" /> {customer.email}</div>
-            <div className="flex items-start gap-3"><MapPin className="w-4 h-4 shrink-0 mt-0.5" /> <span>{customer.address}, {customer.city}</span></div>
+            {/* Customer ID & Referring Partner summary card */}
+            <div className="p-3 bg-gradient-to-br from-indigo-50/70 to-blue-50/50 border border-indigo-100 rounded-lg space-y-2.5">
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold text-indigo-700 uppercase tracking-wider">
+                  <span>Customer ID</span>
+                  {customer.customerCode && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100"
+                      onClick={() => {
+                        navigator.clipboard.writeText(customer.customerCode || "");
+                        toast({ title: "Copied", description: "Customer ID copied to clipboard" });
+                      }}
+                      title="Copy Customer ID"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+                <div className="font-mono font-bold text-sm text-indigo-950 mt-0.5">
+                  {customer.customerCode || "—"}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-indigo-100/80">
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  Referring Partner / Lead Source
+                </div>
+                {customer.partner ? (
+                  <div className="space-y-0.5">
+                    <div className="font-medium text-slate-900 text-sm flex items-center gap-1.5 flex-wrap">
+                      <span>{customer.partner.name || customer.partner.businessName}</span>
+                      {customer.partner.partnerCode && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          {customer.partner.partnerCode}
+                        </span>
+                      )}
+                    </div>
+                    {customer.partner.businessName && customer.partner.businessName !== customer.partner.name && (
+                      <div className="text-xs text-slate-500">{customer.partner.businessName}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-600 font-medium">Direct / Swayog Energy</div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3"><Phone className="w-4 h-4 text-slate-500" /> {customer.phone}</div>
+            <div className="flex items-center gap-3"><Mail className="w-4 h-4 text-slate-500" /> {customer.email}</div>
+            <div className="flex items-start gap-3"><MapPin className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" /> <span>{customer.address}, {customer.city}</span></div>
             <div className="pt-4 border-t flex items-center justify-between"><span>Status</span><StatusBadge status={customer.status} /></div>
             
             {/* Inverter login info */}
@@ -632,22 +692,19 @@ export function CustomerDetailContent({ id: customerId, onBack, hideHeader = fal
               <div className="text-sm font-medium text-slate-600">Project Stage</div>
               <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                 <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  {customer.projectStage !== undefined && customer.projectStage >= 0
-                    ? `${customer.projectStage + 1}. ${PROJECT_STAGES[customer.projectStage]}`
-                    : "Not started"}
+                  12. {PROJECT_STAGES[11]}
                 </div>
                 <Select
-                  value={String(customer.projectStage ?? 0)}
-                  onValueChange={(value) => handleStageChange(Number(value))}
-                  disabled={updateCustomerMutation.isPending}
+                  value="11"
+                  disabled
                 >
                   <SelectTrigger className="w-full sm:w-[240px]">
                     <SelectValue placeholder="Select stage" />
                   </SelectTrigger>
                   <SelectContent>
-                    {PROJECT_STAGES.map((stage, index) => (
-                      <SelectItem key={stage} value={String(index)}>
-                        {`${index + 1}. ${stage}`}
+                    {PROJECT_STAGES.slice(-1).map((stage) => (
+                      <SelectItem key={stage} value="11">
+                        12. {stage}
                       </SelectItem>
                     ))}
                   </SelectContent>

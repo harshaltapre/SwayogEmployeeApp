@@ -134,7 +134,7 @@ async function findUserByIdentifier(identifier: string): Promise<AuthUser | null
     const userByEmail = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: trimmed.toLowerCase() },
+          { email: { equals: trimmed, mode: "insensitive" } },
           { loginId: trimmed.toLowerCase() },
           { loginId: trimmed },
         ],
