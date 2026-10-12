@@ -125,9 +125,9 @@ class TasksViewModel @Inject constructor(
     }
 
     fun completeTask(
-        taskId: String, 
-        message: String, 
-        documentUrl: String?, 
+        taskId: String,
+        message: String,
+        documentUrl: String?,
         beforeImageUrl: String? = null,
         afterImageUrl: String? = null,
         beforeLatitude: Double? = null,
@@ -139,12 +139,18 @@ class TasksViewModel @Inject constructor(
         beforeImages: List<String>? = null,
         afterImages: List<String>? = null,
         sitePhotos: List<String>? = null,
+        maintenanceVideos: List<String>? = null,
+        photoRemarks: Map<Int, String>? = null,
         onResult: (Result<Task>) -> Unit
     ) {
         viewModelScope.launch {
+            android.util.Log.d(
+                "VIDEO_TRACE_2",
+                "taskId=$taskId, maintenanceVideoCount=${maintenanceVideos?.size ?: 0}, lengths=${maintenanceVideos?.map { it.length } ?: emptyList()}, firstPrefix=${maintenanceVideos?.firstOrNull()?.take(32) ?: "n/a"}"
+            )
             val res = taskRepository.completeTask(
-                taskId = taskId, 
-                completionMessage = message, 
+                taskId = taskId,
+                completionMessage = message,
                 completionDocumentUrl = documentUrl,
                 beforeImageUrl = beforeImageUrl,
                 afterImageUrl = afterImageUrl,
@@ -156,7 +162,9 @@ class TasksViewModel @Inject constructor(
                 images = images,
                 beforeImages = beforeImages,
                 afterImages = afterImages,
-                sitePhotos = sitePhotos
+                sitePhotos = sitePhotos,
+                maintenanceVideos = maintenanceVideos,
+                photoRemarks = photoRemarks
             )
             
             // Auto-sync if offline exception occurs but we are actually online

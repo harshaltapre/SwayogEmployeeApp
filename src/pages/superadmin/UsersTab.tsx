@@ -4,6 +4,7 @@ import {
   Edit2, Trash2, LogOut, Key, History, ChevronDown,
   Shield, ShieldCheck, UserCheck, UserX, CheckCircle, XCircle, X,
   AlertTriangle, Eye, EyeOff,
+  Copy, Check, FileDown, Sparkles, Info, HelpCircle, Code, FolderArchive,
 } from "lucide-react";
 import { C, SectionTitle } from "./shared";
 import {
@@ -399,85 +400,565 @@ function LoginHistoryModal({ user, onClose }: { user: SAUser; onClose: () => voi
   );
 }
 
+// ─── Import Templates & Config ────────────────────────────────────────────────
+type ImportCategory = "EMPLOYEE" | "CUSTOMER" | "ADMIN" | "PARTNER";
+
+const ROLE_TEMPLATES: Record<ImportCategory, {
+  label: string;
+  roleBadge: string;
+  tagline: string;
+  color: string;
+  sample: any[];
+  requiredFields: string[];
+  formOptions: Array<{ name: string; type: string; required?: boolean; desc: string }>;
+  allowedValues?: { label: string; values: string[] };
+}> = {
+  EMPLOYEE: {
+    label: "Employee",
+    roleBadge: "EMPLOYEE",
+    tagline: "Field technicians, engineers, coordinators, and support staff",
+    color: C.sky,
+    requiredFields: ["fullName", "email", "password", "jobRole", "zone"],
+    allowedValues: {
+      label: "Standard Job Roles in Employee Form",
+      values: [
+        "Solar Design Engineer",
+        "Electrical Engineer",
+        "Inventory Executive",
+        "Site Survey Engineer",
+        "O&M Technician",
+        "Service Engineer",
+        "Monitoring Analyst",
+        "Intern",
+        "Service Coordinator",
+        "Service & Executive Head",
+        "Isphere Green head",
+        "Sub Admin",
+        "Other Position",
+      ],
+    },
+    formOptions: [
+      { name: "fullName", type: "string", required: true, desc: "Employee full name" },
+      { name: "email", type: "string", required: true, desc: "Official email address (used for login)" },
+      { name: "password", type: "string", required: true, desc: "Initial portal password (minimum 8 characters)" },
+      { name: "role", type: "string", required: false, desc: 'Defaults to "EMPLOYEE" (or "SUB_ADMIN")' },
+      { name: "phoneNumber", type: "string", required: false, desc: "Mobile contact number (e.g. +91 9876543210)" },
+      { name: "jobRole", type: "string", required: false, desc: "Assigned job post/designation from employee form" },
+      { name: "zone", type: "string", required: false, desc: "Operational service zone (e.g. Mumbai Metro, Pune, Nashik)" },
+      { name: "monthlySalaryInr", type: "number", required: false, desc: "Monthly base compensation in INR (e.g. 25000)" },
+      { name: "permissions", type: "string[]", required: false, desc: "Custom access permissions array (optional)" },
+    ],
+    sample: [
+      {
+        role: "EMPLOYEE",
+        fullName: "Rahul Sharma",
+        email: "rahul.sharma@swayog.com",
+        phoneNumber: "+91 9876543210",
+        password: "Employee@123",
+        jobRole: "Solar Design Engineer",
+        zone: "Mumbai Metro",
+        monthlySalaryInr: 35000,
+        permissions: []
+      },
+      {
+        role: "EMPLOYEE",
+        fullName: "Sachin Kadam",
+        email: "sachin.kadam@swayog.com",
+        phoneNumber: "+91 9822334455",
+        password: "Employee@123",
+        jobRole: "O&M Technician",
+        zone: "Pune",
+        monthlySalaryInr: 22000,
+        permissions: []
+      }
+    ],
+  },
+  CUSTOMER: {
+    label: "Customer",
+    roleBadge: "CUSTOMER",
+    tagline: "Solar system owners, solar plant, inverter details & AMC contract",
+    color: C.rose,
+    requiredFields: ["fullName", "email", "phoneNumber", "password", "city", "address", "systemSizeKw", "installationDate"],
+    formOptions: [
+      { name: "fullName", type: "string", required: true, desc: "Customer full name / organization" },
+      { name: "email", type: "string", required: true, desc: "Customer email address (login credential)" },
+      { name: "phoneNumber", type: "string", required: true, desc: "Primary phone / WhatsApp number" },
+      { name: "password", type: "string", required: true, desc: "Portal access password (min 8 characters)" },
+      { name: "city", type: "string", required: true, desc: "Installation city / district (e.g. Pune)" },
+      { name: "address", type: "string", required: true, desc: "Full installation address" },
+      { name: "systemSizeKw", type: "number", required: true, desc: "Solar plant installed capacity in kW (e.g. 5.5)" },
+      { name: "installationDate", type: "string", required: true, desc: "Date commissioned in YYYY-MM-DD format" },
+      { name: "warrantyExpiry", type: "string", required: false, desc: "Warranty expiry date in YYYY-MM-DD format" },
+      { name: "panelBrand", type: "string", required: false, desc: "PV panel brand/spec (e.g. Waaree 540W Mono PERC)" },
+      { name: "inverterBrand", type: "string", required: false, desc: "Inverter make (e.g. Growatt, FoxESS, Sungrow)" },
+      { name: "inverterName", type: "string", required: false, desc: "Display name for inverter" },
+      { name: "inverterModel", type: "string", required: false, desc: "Inverter model code (e.g. MIN 5000TL-X)" },
+      { name: "inverterUid", type: "string", required: false, desc: "Plant / inverter UID or plant ID" },
+      { name: "inverterLoginId", type: "string", required: false, desc: "Inverter monitoring portal login ID" },
+      { name: "inverterPassword", type: "string", required: false, desc: "Inverter monitoring portal password" },
+      { name: "inverterApiKey", type: "string", required: false, desc: "API key for automated telemetry pull" },
+      { name: "dataLoggerSrNo", type: "string", required: false, desc: "Datalogger / WiFi stick serial number" },
+      { name: "inverterSrNo", type: "string", required: false, desc: "Inverter hardware serial number" },
+      { name: "amcStatus", type: "string", required: false, desc: 'AMC status: "active", "expired", or "none"' },
+      { name: "amcExpiryDate", type: "string", required: false, desc: "AMC expiry date in YYYY-MM-DD" },
+      { name: "contractStartDate", type: "string", required: false, desc: "AMC start date in YYYY-MM-DD" },
+      { name: "contractEndDate", type: "string", required: false, desc: "AMC end date in YYYY-MM-DD" },
+      { name: "cleaningsPerMonth", type: "number", required: false, desc: "Scheduled cleaning frequency (e.g. 1, 2, 4)" },
+      { name: "monthlyCleaningRate", type: "number", required: false, desc: "Monthly cleaning cost in INR (e.g. 1500)" },
+      { name: "paymentTerms", type: "string", required: false, desc: "Payment terms (e.g. Quarterly in advance)" },
+      { name: "remarks", type: "string", required: false, desc: "Site/customer special notes" },
+      { name: "status", type: "string", required: false, desc: '"active" or "inactive"' },
+    ],
+    sample: [
+      {
+        role: "CUSTOMER",
+        fullName: "Amit Patel",
+        email: "amit.patel@example.com",
+        phoneNumber: "+91 9823456789",
+        password: "Customer@123",
+        city: "Pune",
+        address: "Flat 402, Green Acres, Baner",
+        systemSizeKw: 5.5,
+        installationDate: "2024-01-15",
+        warrantyExpiry: "2029-01-15",
+        panelBrand: "Waaree 540W Mono PERC",
+        inverterBrand: "Growatt",
+        inverterName: "Baner Rooftop Inverter",
+        inverterModel: "MIN 5000TL-X",
+        inverterUid: "GROW-BANER-01",
+        inverterLoginId: "growatt_amit",
+        inverterPassword: "InverterPass123",
+        inverterApiKey: "",
+        dataLoggerSrNo: "DL99887766",
+        inverterSrNo: "INV12345678",
+        amcStatus: "active",
+        amcExpiryDate: "2025-01-15",
+        contractStartDate: "2024-01-15",
+        contractEndDate: "2025-01-15",
+        cleaningsPerMonth: 2,
+        monthlyCleaningRate: 1500,
+        paymentTerms: "Quarterly in advance",
+        remarks: "Priority residential customer",
+        status: "active"
+      }
+    ],
+  },
+  ADMIN: {
+    label: "Admin / Sub-Admin",
+    roleBadge: "ADMIN",
+    tagline: "Administrative personnel, sub-admins, and departmental managers",
+    color: C.violet,
+    requiredFields: ["fullName", "email", "password", "role"],
+    formOptions: [
+      { name: "fullName", type: "string", required: true, desc: "Administrator full name" },
+      { name: "email", type: "string", required: true, desc: "Official admin email" },
+      { name: "password", type: "string", required: true, desc: "Secure password (minimum 8 characters)" },
+      { name: "role", type: "string", required: true, desc: '"ADMIN", "SUB_ADMIN", or "SUPER_ADMIN"' },
+      { name: "phoneNumber", type: "string", required: false, desc: "Mobile contact number" },
+      { name: "designationTitle", type: "string", required: false, desc: "Designation title (e.g. Operations Head)" },
+      { name: "permissions", type: "string[]", required: false, desc: "Assigned dashboard module permissions" },
+    ],
+    sample: [
+      {
+        role: "ADMIN",
+        fullName: "Priya Deshmukh",
+        email: "priya.admin@swayog.com",
+        phoneNumber: "+91 9811122233",
+        password: "AdminSecret@123",
+        designationTitle: "Operations Manager",
+        permissions: []
+      },
+      {
+        role: "SUB_ADMIN",
+        fullName: "Vikram Joshi",
+        email: "vikram.subadmin@swayog.com",
+        phoneNumber: "+91 9844556677",
+        password: "SubAdminSecret@123",
+        designationTitle: "Regional Coordinator",
+        permissions: []
+      }
+    ],
+  },
+  PARTNER: {
+    label: "Partner",
+    roleBadge: "PARTNER",
+    tagline: "Channel partners, EPC contractors, and service vendors",
+    color: C.emerald,
+    requiredFields: ["fullName", "email", "password"],
+    formOptions: [
+      { name: "fullName", type: "string", required: true, desc: "Partner representative full name" },
+      { name: "email", type: "string", required: true, desc: "Partner login email address" },
+      { name: "password", type: "string", required: true, desc: "Portal access password (min 8 characters)" },
+      { name: "role", type: "string", required: false, desc: 'Defaults to "PARTNER"' },
+      { name: "businessName", type: "string", required: false, desc: "Registered business / entity name" },
+      { name: "serviceZone", type: "string", required: false, desc: "Territory / serviced zone" },
+      { name: "phoneNumber", type: "string", required: false, desc: "Contact phone number" },
+    ],
+    sample: [
+      {
+        role: "PARTNER",
+        fullName: "Sunil Verma",
+        email: "sunil@sunilenterprises.com",
+        phoneNumber: "+91 9765432100",
+        password: "PartnerSecret@123",
+        businessName: "Verma Solar Solutions",
+        serviceZone: "Nashik & North Maharashtra"
+      }
+    ],
+  },
+};
+
 // ─── Import Modal ─────────────────────────────────────────────────────────────
 function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: (summary: any) => void }) {
+  const [selectedRole, setSelectedRole] = useState<ImportCategory>("EMPLOYEE");
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [showOptionsGuide, setShowOptionsGuide] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const activeConfig = ROLE_TEMPLATES[selectedRole];
 
   function loadFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
     const r = new FileReader();
-    r.onload = ev => setText((ev.target?.result as string) ?? "");
+    r.onload = ev => {
+      setText((ev.target?.result as string) ?? "");
+      setError("");
+    };
     r.readAsText(f);
   }
 
-  async function submit() {
-    setError("");
-    let users: ImportUserRow[];
-    try { users = JSON.parse(text); }
-    catch { setError("Invalid JSON. Please paste a valid JSON array."); return; }
-    if (!Array.isArray(users)) { setError("JSON must be an array of user objects"); return; }
-    setLoading(true);
-    try {
-      const res = await superAdminApi.importUsers(users);
-      setResult(res);
-    } catch (err: any) { setError(err.message); }
-    finally { setLoading(false); }
+  function handleCopyTemplate() {
+    navigator.clipboard.writeText(JSON.stringify(activeConfig.sample, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
-  const EXAMPLE = JSON.stringify([{ fullName: "Jane Doe", email: "jane@example.com", password: "Secret@123", role: "EMPLOYEE", phoneNumber: "+91 9876543210" }], null, 2);
+  function handleDownloadTemplate() {
+    const blob = new Blob([JSON.stringify(activeConfig.sample, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `swayog-${selectedRole.toLowerCase()}-import-template.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleInsertTemplate() {
+    setText(JSON.stringify(activeConfig.sample, null, 2));
+    setError("");
+  }
+
+  // Parse check for real-time validation indicator
+  const parsedStatus = (() => {
+    if (!text.trim()) return null;
+    try {
+      const p = JSON.parse(text);
+      if (!Array.isArray(p)) return { valid: false, message: "JSON must be an array of objects [ { ... } ]" };
+      return { valid: true, count: p.length };
+    } catch (e: any) {
+      return { valid: false, message: e.message || "Invalid JSON syntax" };
+    }
+  })();
+
+  async function submit() {
+    setError("");
+    let parsedUsers: any[];
+    try {
+      parsedUsers = JSON.parse(text);
+    } catch {
+      setError("Invalid JSON format. Please verify quotation marks and commas.");
+      return;
+    }
+
+    if (!Array.isArray(parsedUsers)) {
+      setError("JSON must be an array of user objects [ { ... } ]");
+      return;
+    }
+
+    if (parsedUsers.length === 0) {
+      setError("JSON array is empty. Please provide at least one record.");
+      return;
+    }
+
+    // Auto-fill role if missing on items
+    const usersToImport: ImportUserRow[] = parsedUsers.map(u => ({
+      ...u,
+      role: u.role || selectedRole,
+    }));
+
+    // Quick client-side check on required fields
+    const invalidRecord = usersToImport.find(
+      u => !u.fullName?.toString().trim() || !u.email?.toString().trim() || !u.password
+    );
+    if (invalidRecord) {
+      setError(`Record for "${invalidRecord.fullName || invalidRecord.email || "Unknown"}" is missing required fields (fullName, email, or password).`);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await superAdminApi.importUsers(usersToImport);
+      setResult(res);
+    } catch (err: any) {
+      setError(err.message || "Import failed");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <Modal title="Bulk Import Users" onClose={onClose} width={560}>
+    <Modal title="Bulk Import Users" onClose={onClose} width={760}>
       {result ? (
         <div>
           <div style={{ textAlign: "center", marginBottom: 20 }}>
-            <CheckCircle size={40} color={C.emerald} style={{ display: "block", margin: "0 auto 12px" }} />
-            <div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>Import Complete</div>
+            <CheckCircle size={44} color={C.emerald} style={{ display: "block", margin: "0 auto 12px" }} />
+            <div style={{ fontWeight: 800, fontSize: 18, color: C.ink }}>Import Complete</div>
+            <div style={{ fontSize: 13, color: C.slate, marginTop: 4 }}>
+              Processed batch for role <strong>{activeConfig.label}</strong>
+            </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
-            {[["Total", result.summary.total, C.sky], ["Created", result.summary.created, C.emerald], ["Skipped", result.summary.skipped, C.rose]].map(([l, v, c]) => (
-              <div key={l as string} style={{ background: `${c as string}12`, border: `1px solid ${c as string}30`, borderRadius: 10, padding: "12px", textAlign: "center" }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color: c as string }}>{v as number}</div>
-                <div style={{ fontSize: 11, color: C.slate, fontWeight: 600 }}>{l as string}</div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 20 }}>
+            {[["Total Processed", result.summary.total, C.sky], ["Created Successfully", result.summary.created, C.emerald], ["Skipped / Failed", result.summary.skipped, C.rose]].map(([l, v, c]) => (
+              <div key={l as string} style={{ background: `${c as string}12`, border: `1px solid ${c as string}30`, borderRadius: 12, padding: "14px", textAlign: "center" }}>
+                <div style={{ fontSize: 26, fontWeight: 800, color: c as string }}>{v as number}</div>
+                <div style={{ fontSize: 11, color: C.slate, fontWeight: 700, marginTop: 2 }}>{l as string}</div>
               </div>
             ))}
           </div>
-          <div style={{ maxHeight: 200, overflow: "auto" }}>
-            {result.results.filter((r: any) => r.status === "skipped").map((r: any, i: number) => (
-              <div key={i} style={{ fontSize: 12, color: C.rose, padding: "4px 0", borderBottom: "1px solid #FEE2E2" }}>
-                ⚠ {r.email} — {r.reason}
+
+          {result.results.filter((r: any) => r.status === "created").length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.emerald, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                ✓ Created Users ({result.results.filter((r: any) => r.status === "created").length})
               </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-            <Btn onClick={() => { onDone(result.summary); onClose(); }}>Done</Btn>
+              <div style={{ maxHeight: 130, overflow: "auto", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "8px 12px" }}>
+                {result.results.filter((r: any) => r.status === "created").map((r: any, i: number) => (
+                  <div key={i} style={{ fontSize: 12, color: "#166534", padding: "3px 0", display: "flex", justifyContent: "space-between" }}>
+                    <span>{r.email}</span>
+                    <span style={{ fontWeight: 700, fontFamily: "monospace" }}>{r.loginId}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.results.filter((r: any) => r.status === "skipped").length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.rose, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                ⚠ Skipped Items ({result.results.filter((r: any) => r.status === "skipped").length})
+              </div>
+              <div style={{ maxHeight: 130, overflow: "auto", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 12px" }}>
+                {result.results.filter((r: any) => r.status === "skipped").map((r: any, i: number) => (
+                  <div key={i} style={{ fontSize: 12, color: C.rose, padding: "4px 0", borderBottom: "1px solid #FEE2E2" }}>
+                    <strong>{r.email}</strong> — {r.reason}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+            <Btn onClick={() => { onDone(result.summary); onClose(); }}>Done & Refresh</Btn>
           </div>
         </div>
       ) : (
         <div>
-          {error && <div style={{ background: "#FEF2F2", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: C.rose, marginBottom: 16 }}>{error}</div>}
-          <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, padding: 14, fontSize: 12, color: C.slate, marginBottom: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6, color: C.ink }}>Required JSON format:</div>
-            <pre style={{ margin: 0, overflow: "auto", fontSize: 11 }}>{EXAMPLE}</pre>
+          {error && (
+            <div style={{ background: "#FEF2F2", border: `1px solid ${C.rose}40`, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: C.rose, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+              <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+              <div>{error}</div>
+            </div>
+          )}
+
+          {/* ─── Step 1: Ask which type of user to import ─────────────────────── */}
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              1. Which User Type Do You Want To Import?
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+              {(["EMPLOYEE", "CUSTOMER", "ADMIN", "PARTNER"] as ImportCategory[]).map(cat => {
+                const conf = ROLE_TEMPLATES[cat];
+                const active = selectedRole === cat;
+                return (
+                  <div
+                    key={cat}
+                    onClick={() => {
+                      setSelectedRole(cat);
+                      setError("");
+                    }}
+                    style={{
+                      border: `2px solid ${active ? conf.color : "#E2E8F0"}`,
+                      borderRadius: 12,
+                      padding: "12px",
+                      cursor: "pointer",
+                      background: active ? `${conf.color}0D` : "#FAFAFA",
+                      transition: "all 0.15s",
+                      boxShadow: active ? `0 0 0 3px ${conf.color}25` : "none",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontWeight: 800, fontSize: 14, color: active ? conf.color : C.ink }}>
+                        {conf.label}
+                      </span>
+                      <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 12, background: `${conf.color}20`, color: conf.color }}>
+                        {conf.roleBadge}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: C.slate, lineHeight: 1.3 }}>
+                      {conf.tagline}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <label style={{ fontSize: 12, fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: "0.05em" }}>Paste JSON or upload file</label>
-            <input ref={fileRef} type="file" accept=".json" style={{ display: "none" }} onChange={loadFile} />
-            <Btn small variant="ghost" onClick={() => fileRef.current?.click()}><Upload size={13} /> Upload .json</Btn>
+
+          {/* ─── Step 2: Required JSON Format & Options ───────────────────────── */}
+          <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: 16, marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              <div>
+                <span style={{ fontWeight: 800, fontSize: 13, color: C.ink }}>
+                  Required JSON Format for {activeConfig.label}:
+                </span>
+                <span style={{ fontSize: 11, color: C.slate, marginLeft: 8 }}>
+                  Includes all fields from the {activeConfig.label.toLowerCase()} form
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={handleCopyTemplate}
+                  style={{ border: "1px solid #CBD5E1", background: "#fff", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, color: C.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                >
+                  {copied ? <Check size={12} color={C.emerald} /> : <Copy size={12} color={C.slate} />}
+                  {copied ? "Copied!" : "Copy Sample"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  style={{ border: "1px solid #CBD5E1", background: "#fff", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, color: C.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                >
+                  <Download size={12} color={C.slate} />
+                  Download .json
+                </button>
+                <button
+                  type="button"
+                  onClick={handleInsertTemplate}
+                  style={{ border: `1px solid ${activeConfig.color}40`, background: `${activeConfig.color}15`, borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, color: activeConfig.color, cursor: "pointer" }}
+                >
+                  Insert into Editor
+                </button>
+              </div>
+            </div>
+
+            {/* Template Preview */}
+            <pre style={{ margin: 0, padding: 12, background: "#0F172A", color: "#E2E8F0", borderRadius: 8, fontSize: 11, maxHeight: 160, overflow: "auto", fontFamily: "monospace", lineHeight: 1.4 }}>
+              {JSON.stringify(activeConfig.sample, null, 2)}
+            </pre>
+
+            {/* Field Guide Toggle */}
+            <div style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowOptionsGuide(g => !g)}
+                style={{ border: "none", background: "none", color: C.sky, fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
+              >
+                <ChevronDown size={14} style={{ transform: showOptionsGuide ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+                {showOptionsGuide ? "Hide Field Reference & Options" : `View All ${activeConfig.formOptions.length} Form Fields & Allowed Values`}
+              </button>
+
+              {showOptionsGuide && (
+                <div style={{ marginTop: 10, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, padding: 12 }}>
+                  {activeConfig.allowedValues && (
+                    <div style={{ marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: C.ink, marginBottom: 6 }}>
+                        {activeConfig.allowedValues.label}:
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                        {activeConfig.allowedValues.values.map(val => (
+                          <span key={val} style={{ fontSize: 10, background: "#F1F5F9", color: C.ink, padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>
+                            {val}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.ink, marginBottom: 6 }}>
+                    Form Fields Reference:
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6, maxHeight: 150, overflowY: "auto" }}>
+                    {activeConfig.formOptions.map(opt => (
+                      <div key={opt.name} style={{ display: "flex", alignItems: "baseline", gap: 6, fontSize: 11 }}>
+                        <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: 3, fontWeight: 700, color: opt.required ? C.rose : C.ink }}>
+                          {opt.name}{opt.required && "*"}
+                        </code>
+                        <span style={{ color: C.slate, fontSize: 10 }}>({opt.type})</span>
+                        <span style={{ color: C.slate }}>— {opt.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          <textarea
-            value={text} onChange={e => setText(e.target.value)}
-            style={{ ...inputStyle, minHeight: 160, fontFamily: "monospace", resize: "vertical" }}
-            placeholder='[{"fullName":"...", "email":"...", "password":"...", "role":"EMPLOYEE"}]'
-          />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 }}>
-            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-            <Btn onClick={submit} disabled={loading || !text.trim()}>{loading ? "Importing…" : "Import Users"}</Btn>
+
+          {/* ─── Step 3: Editor / Upload ──────────────────────────────────────── */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 800, color: C.ink, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  2. Paste JSON Or Upload File
+                </label>
+                {parsedStatus && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: parsedStatus.valid ? C.emerald : C.rose }}>
+                    {parsedStatus.valid ? `✓ ${parsedStatus.count} record(s) ready` : `⚠ ${parsedStatus.message}`}
+                  </span>
+                )}
+              </div>
+              <div>
+                <input ref={fileRef} type="file" accept=".json" style={{ display: "none" }} onChange={loadFile} />
+                <Btn small variant="ghost" onClick={() => fileRef.current?.click()}>
+                  <Upload size={13} /> Upload .json
+                </Btn>
+              </div>
+            </div>
+
+            <textarea
+              value={text}
+              onChange={e => {
+                setText(e.target.value);
+                if (error) setError("");
+              }}
+              style={{
+                ...inputStyle,
+                minHeight: 160,
+                fontFamily: "monospace",
+                fontSize: 12,
+                resize: "vertical",
+                lineHeight: 1.4,
+                borderColor: parsedStatus?.valid === false ? "#FCA5A5" : parsedStatus?.valid ? "#86EFAC" : "#E2E8F0",
+              }}
+              placeholder={`Paste JSON array of ${activeConfig.label.toLowerCase()} objects or click 'Insert into Editor' above...`}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+            <div style={{ fontSize: 11, color: C.slate }}>
+              {selectedRole ? `Role "${selectedRole}" will be automatically applied if omitted.` : ""}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+              <Btn onClick={submit} disabled={loading || !text.trim()}>
+                {loading ? "Importing…" : `Import ${activeConfig.label}${parsedStatus?.valid && parsedStatus.count ? ` (${parsedStatus.count})` : ""}`}
+              </Btn>
+            </div>
           </div>
         </div>
       )}
@@ -650,7 +1131,22 @@ export default function UsersTab() {
       )}
       {resetPwUser && <ResetPasswordModal user={resetPwUser} onClose={() => setResetPwUser(null)} onDone={() => push("Password reset successfully")} />}
       {historyUser && <LoginHistoryModal user={historyUser} onClose={() => setHistoryUser(null)} />}
-      {importOpen && <ImportModal onClose={() => setImportOpen(false)} onDone={() => { load(); }} />}
+      {importOpen && (
+        <ImportModal
+          onClose={() => setImportOpen(false)}
+          onDone={(summary) => {
+            load();
+            notifyEmployeeDataChanged();
+            notifyCustomerDataChanged();
+            queryClient.invalidateQueries({ queryKey: ["customers"] });
+            queryClient.invalidateQueries({ queryKey: ["admin-customers"] });
+            queryClient.invalidateQueries({ queryKey: ["admin-employees"] });
+            queryClient.invalidateQueries({ queryKey: ["amc-customers"] });
+            queryClient.invalidateQueries({ queryKey: ["adminDashboardSummary"] });
+            push(`Import completed: ${summary?.created ?? 0} user(s) created`);
+          }}
+        />
+      )}
 
       <SectionTitle><Users size={18} />User Management</SectionTitle>
 

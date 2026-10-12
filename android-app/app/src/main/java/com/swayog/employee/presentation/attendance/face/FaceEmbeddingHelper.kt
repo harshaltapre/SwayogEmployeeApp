@@ -2,6 +2,7 @@ package com.swayog.employee.presentation.attendance.face
 
 import android.content.Context
 import android.graphics.Bitmap
+import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -9,6 +10,10 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 
 class FaceEmbeddingHelper(context: Context) {
+
+    companion object {
+        const val EMBEDDING_DIMENSION = 128
+    }
 
     private var interpreter: Interpreter? = null
     // Assuming MobileFaceNet 112x112 input
@@ -22,12 +27,22 @@ class FaceEmbeddingHelper(context: Context) {
     init {
         try {
             val assetManager = context.assets
-            val fileDescriptor = assetManager.openFd("mobile_face_net.tflite")
-            val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-            val fileChannel = inputStream.channel
-            val startOffset = fileDescriptor.startOffset
-            val declaredLength = fileDescriptor.declaredLength
-            val modelBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+            val modelBuffer = try {
+                val fileDescriptor = assetManager.openFd("mobile_face_net.tflite")
+                val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
+                val fileChannel = inputStream.channel
+                val startOffset = fileDescriptor.startOffset
+                val declaredLength = fileDescriptor.declaredLength
+                fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+            } catch (e: Exception) {
+                // If openFd fails (e.g. compressed asset in APK), read directly into ByteBuffer
+                val bytes = assetManager.open("mobile_face_net.tflite").use { it.readBytes() }
+                ByteBuffer.allocateDirect(bytes.size).apply {
+                    order(ByteOrder.nativeOrder())
+                    put(bytes)
+                    rewind()
+                }
+            }
             
             val options = Interpreter.Options().apply {
                 setNumThreads(4)
@@ -35,15 +50,29 @@ class FaceEmbeddingHelper(context: Context) {
             interpreter = Interpreter(modelBuffer, options)
         } catch (e: Exception) {
             e.printStackTrace()
-            // Model not found or invalid
+            interpreter = null
         }
     }
 
-    fun getFaceEmbedding(bitmap: Bitmap): List<Float> {
-        if (interpreter == null) {
-            // Robust fallback: extract a 128-element normalized facial spatial luminance descriptor
-            return extractSpatialLuminanceDescriptor(bitmap)
-        }
+    fun isModelLoaded(): Boolean = interpreter != null
+
+    val modelOutputDimension: Int?
+        get() = interpreter?.getOutputTensor(0)?.shape()?.lastOrNull()
+
+    val modelInputShape: List<Int>?
+        get() = interpreter?.getInputTensor(0)?.shape()?.toList()
+
+    fun isModelCompatible(): Boolean {
+        val currentInterpreter = interpreter ?: return false
+        return modelInputShape == listOf(1, inputSize, inputSize, 3) &&
+            currentInterpreter.getInputTensor(0).dataType() == DataType.FLOAT32 &&
+            (modelOutputDimension ?: 0) >= EMBEDDING_DIMENSION &&
+            currentInterpreter.getOutputTensor(0).dataType() == DataType.FLOAT32
+    }
+
+    fun getFaceEmbedding(bitmap: Bitmap): List<Float>? {
+        val currentInterpreter = interpreter ?: return null
+        if (!isModelCompatible()) return null
 
         val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
         resizedBitmap.getPixels(intValues, 0, resizedBitmap.width, 0, 0, resizedBitmap.width, resizedBitmap.height)
@@ -60,20 +89,14 @@ class FaceEmbeddingHelper(context: Context) {
             }
         }
 
-        val outputTensor = interpreter?.getOutputTensor(0)
-        val outputDim = outputTensor?.shape()?.get(1) ?: 128
+        val outputDim = modelOutputDimension ?: return null
+        if (outputDim < EMBEDDING_DIMENSION) return null
         val embeddings = Array(1) { FloatArray(outputDim) }
 
         interpreter?.run(imgData, embeddings)
         
-        val rawList = if (outputDim == 128) {
-            embeddings[0].toList()
-        } else {
-            // Resample or take 128 elements to match backend requirement
-            embeddings[0].take(128).let {
-                if (it.size < 128) it + List(128 - it.size) { 0f } else it
-            }
-        }
+        val rawList = embeddings[0].take(EMBEDDING_DIMENSION)
+        if (rawList.any { !it.isFinite() }) return null
 
         // Normalize output
         val l2 = rawList.map { it * it }.sum()
@@ -83,33 +106,6 @@ class FaceEmbeddingHelper(context: Context) {
         } else {
             rawList
         }
-    }
-
-    private fun extractSpatialLuminanceDescriptor(faceBitmap: Bitmap): List<Float> {
-        // Sample an 8x16 (128 cells) grid of luminance from the centered face
-        val gridWidth = 8
-        val gridHeight = 16
-        val scaled = Bitmap.createScaledBitmap(faceBitmap, gridWidth, gridHeight, true)
-        val pixels = IntArray(gridWidth * gridHeight)
-        scaled.getPixels(pixels, 0, gridWidth, 0, 0, gridWidth, gridHeight)
-        scaled.recycle()
-
-        val rawValues = FloatArray(128)
-        var sumSquares = 0.0
-
-        for (i in pixels.indices) {
-            val p = pixels[i]
-            val r = (p shr 16) and 0xFF
-            val g = (p shr 8) and 0xFF
-            val b = p and 0xFF
-            // Standard perceptual luminance normalized to [-1.0, 1.0]
-            val lum = (0.299f * r + 0.587f * g + 0.114f * b - 128f) / 128f
-            rawValues[i] = lum
-            sumSquares += lum * lum
-        }
-
-        val norm = kotlin.math.sqrt(sumSquares).toFloat().coerceAtLeast(0.00001f)
-        return rawValues.map { it / norm }
     }
     
     fun close() {

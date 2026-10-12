@@ -46,6 +46,8 @@ fun FaceVerificationScreen(
 
     val faceEmbeddingHelper = remember { FaceEmbeddingHelper(context) }
     val analyzerExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    var recognitionTargets by remember { mutableStateOf<List<List<Float>>>(emptyList()) }
+    var isCheckingEnrollment by remember { mutableStateOf(true) }
     
     DisposableEffect(Unit) {
         onDispose {
@@ -54,17 +56,65 @@ fun FaceVerificationScreen(
         }
     }
 
-    val activeDescriptors = remember(faceDescriptors, faceIndexManager) {
-        if (faceDescriptors.isNotEmpty()) {
-            faceDescriptors
-        } else {
-            faceIndexManager?.getIndexSnapshot() ?: emptyList()
+    if (!faceEmbeddingHelper.isModelLoaded() || !faceEmbeddingHelper.isModelCompatible()) {
+        LaunchedEffect(Unit) {
+            android.util.Log.e(
+                "FACE_DEBUG",
+                "[FACE_UPDATE_9] modelLoaded=${faceEmbeddingHelper.isModelLoaded()} " +
+                    "modelCompatible=${faceEmbeddingHelper.isModelCompatible()} " +
+                    "modelInputShape=${faceEmbeddingHelper.modelInputShape} " +
+                    "modelOutputDimension=${faceEmbeddingHelper.modelOutputDimension} " +
+                    "version=${com.swayog.employee.BuildConfig.VERSION_CODE}/${com.swayog.employee.BuildConfig.VERSION_NAME}"
+            )
+            onVerificationFailed("Face recognition model is unavailable or incompatible with this app version. Your saved enrollment was preserved.")
         }
+        return
     }
 
-    if (activeDescriptors.isEmpty()) {
+    LaunchedEffect(faceIndexManager, faceDescriptors) {
+        isCheckingEnrollment = true
+        val refreshedTargets = if (faceIndexManager != null) {
+            faceIndexManager.loadFromDataStore(FaceEmbeddingHelper.EMBEDDING_DIMENSION)
+        } else {
+            faceDescriptors.filter {
+                com.swayog.employee.data.local.preferences.DataStoreManager.isValidFaceDescriptor(
+                    it,
+                    FaceEmbeddingHelper.EMBEDDING_DIMENSION
+                )
+            }
+        }
+        recognitionTargets = refreshedTargets.filter {
+            com.swayog.employee.data.local.preferences.DataStoreManager.isValidFaceDescriptor(
+                it,
+                FaceEmbeddingHelper.EMBEDDING_DIMENSION
+            )
+        }
+        android.util.Log.d(
+            "FACE_DEBUG",
+            "[FACE_UPDATE_1] appVersion=${com.swayog.employee.BuildConfig.VERSION_CODE}/${com.swayog.employee.BuildConfig.VERSION_NAME} " +
+                "[FACE_UPDATE_9] modelLoaded=${faceEmbeddingHelper.isModelLoaded()} " +
+                "modelCompatible=${faceEmbeddingHelper.isModelCompatible()} " +
+                "modelInputShape=${faceEmbeddingHelper.modelInputShape} " +
+                "[FACE_UPDATE_10] modelOutputDimension=${faceEmbeddingHelper.modelOutputDimension} " +
+                "activeDimension=${FaceEmbeddingHelper.EMBEDDING_DIMENSION} " +
+                "indexCount=${faceIndexManager?.getIndexSnapshot()?.size ?: recognitionTargets.size} " +
+                "indexVersion=${faceIndexManager?.activeIndexVersion ?: -1}"
+        )
+        isCheckingEnrollment = false
+    }
+
+    val hasEnrolledFaces = recognitionTargets.size == 3
+
+    if (!isCheckingEnrollment && !hasEnrolledFaces) {
         LaunchedEffect(Unit) {
-            onVerificationFailed("No face enrolled. Please enroll in Settings.")
+            onVerificationFailed("No valid saved face enrollment is available. Existing saved data was not deleted; check enrollment status in Settings.")
+        }
+        return
+    }
+
+    if (isCheckingEnrollment) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+            Text("Preparing face recognition...", color = Color.White, style = MaterialTheme.typography.titleMedium)
         }
         return
     }
@@ -76,6 +126,7 @@ fun FaceVerificationScreen(
                 val previewView = PreviewView(ctx)
 
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                var lastDiagnosticLogTime = 0L
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
 
@@ -98,7 +149,30 @@ fun FaceVerificationScreen(
                                     faceStatusText = "No face detected"
                                 }
                             } else {
-                                val matchScore = FaceMatcher.findBestMatch(embedding, activeDescriptors)
+                                val currentTargets = recognitionTargets
+
+                                if (currentTargets.isEmpty()) {
+                                    ContextCompat.getMainExecutor(ctx).execute {
+                                        faceStatusText = "No face enrolled. Please enroll in Settings."
+                                    }
+                                    return@FaceAnalyzer
+                                }
+
+                                val matchScore = FaceMatcher.findBestMatch(embedding, currentTargets)
+                                val now = System.currentTimeMillis()
+                                if (now - lastDiagnosticLogTime >= 3000L) {
+                                    lastDiagnosticLogTime = now
+                                    val result = if (matchScore >= FaceMatcher.THRESHOLD) "MATCH" else "NO_MATCH"
+                                    android.util.Log.d(
+                                        "FACE_DEBUG",
+                                        "[FACE_UPDATE_3] storedCount=${currentTargets.size} " +
+                                            "[FACE_UPDATE_4] storedDimensions=${currentTargets.map { it.size }} " +
+                                            "[FACE_UPDATE_11] liveDimension=${embedding.size} " +
+                                            "[FACE_UPDATE_12] bestScore=$matchScore " +
+                                            "[FACE_UPDATE_13] threshold=${FaceMatcher.THRESHOLD} " +
+                                            "[FACE_UPDATE_14] result=$result"
+                                    )
+                                }
                                 if (matchScore >= FaceMatcher.THRESHOLD) {
                                     isProcessing = true
                                     // Update UI and trigger success on main thread

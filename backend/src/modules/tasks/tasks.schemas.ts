@@ -52,6 +52,8 @@ export const completeTaskSchema = z.object({
   images: z.array(z.string()).optional().nullable(),
   beforeImages: z.array(z.string()).optional().nullable(),
   afterImages: z.array(z.string()).optional().nullable(),
+  maintenanceVideos: z.array(z.string()).optional().nullable(),
+  photoRemarks: z.record(z.string()).optional().nullable(),
 });
 
 export const rateTaskSchema = z.object({

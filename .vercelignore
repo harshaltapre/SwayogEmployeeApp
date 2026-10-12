@@ -1,5 +1,128 @@
+# ============================================================
+# .vercelignore — Vercel deployment exclusions
+# Vercel reads this like .gitignore: patterns here are excluded
+# from the upload context sent to Vercel's build servers.
+#
+# IMPORTANT: Only exclude things NOT needed at build or runtime.
+# Do NOT exclude: src/, public/, prisma/, api/, backend/src/,
+# backend/prisma/, scripts/, vercel.json, package.json, etc.
+# ============================================================
+
+# ── Dependency directories ──────────────────────────────────
+# Vercel installs these itself during build; never upload them.
+node_modules
+backend/node_modules
+web-update/node_modules
+
+# ── Android application (entire directory) ──────────────────
+# Vercel hosts the web app only; Android source/build is irrelevant.
+android-app
+
+# ── Git internals ────────────────────────────────────────────
+.git
+.gitattributes
+
+# ── Local Gradle caches (root-level) ────────────────────────
+.gradle
+
+# ── Previous build outputs ───────────────────────────────────
+# Vercel re-builds from source; uploading old outputs wastes quota.
+dist
+build
+
+# ── APK / Android binary files ──────────────────────────────
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore-base64.txt
+release.jks.base64
+build-22-temp.apk
+downloaded-build-27.apk
+
+# ── Backend runtime uploads (user-generated, not build input) ─
+# Profile photos, task images, etc. are stored at runtime; they
+# are NOT needed to build or serve the web app.
+backend/uploads
+
+# ── Backend scratch / debug / one-off scripts ───────────────
+# These are local development helpers only; not used by the app.
+backend/scratch
+backend/exports
+backend/mock-tasks.json
+backend/users_dump.json
+backend/mock-users.json
+backend/mock-users.runtime.json
+
+# ── Local environment files ──────────────────────────────────
 .env
 .env.local
+.env*.local
 backend/.env
+backend/.env.local
+backend/.env.production
+
+# ── IDE / editor directories ────────────────────────────────
+.idea
+.vscode
+.cursor
+.devin
+
+# ── OS / temp files ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Vite timestamp/cache files ───────────────────────────────
+vite.config.ts.timestamp-*.mjs
+
+# ── Log files ────────────────────────────────────────────────
+*.log
+crash_log.txt
+build_output.txt
+replay_pid*.log
+hs_err_pid*.log
+
+# ── Local development / test artifacts ──────────────────────
 employee-login-system
 workflow-dashboard
+docker-compose.yml
+dev-startup.bat
+local.properties
+render.yaml
+
+# ── CI report / documentation files (not needed at runtime) ──
+CI_FIX_REPORT.md
+IMPLEMENTATION_PLAN.md
+IMPLEMENTATION_REPORT.md
+IMPLEMENTATION_GUIDE.md
+QUICK_SETUP_GUIDE.md
+STATUS.md
+WEB_APP_CHANGELOG.md
+WEB_ANDROID_FEATURE_COMPARISON.md
+WEB_ANDROID_PARITY_ANALYSIS.md
+WEB_TO_ANDROID_PARITY_REPORT.md
+ANDROID_PARITY_TASKLIST.md
+BUG_FIX_IMPLEMENTATION_REPORT.md
+DATABASE_SCHEMA_DOCUMENTATION.md
+API_ENDPOINTS_DOCUMENTATION.md
+
+# ── Credential / secret files ────────────────────────────────
+production
+Swayog_Employees_and_Credentials.csv
+Swayog_Employees_and_Credentials.xlsx
+database.sql
+backend/database.sql
+backend/schema.sql
+
+# ── HTML prototype files (not part of the Vite/React app) ────
+security-settings.html
+security-settings-premium.html
+settings-page.html
+sub-admin-dashboard.html
+
+# ── Test / integration scripts at root ──────────────────────
+e2e-integration-test.js
+module-verification-test.js
+test-data-isolation.js
+check.py
+check_labels.py

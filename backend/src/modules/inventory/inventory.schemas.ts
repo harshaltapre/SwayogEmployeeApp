@@ -28,6 +28,14 @@ export const updateInventorySchema = z.object({
   entryDate: z.string().optional().nullable(),
 });
 
+export const restockInventorySchema = z.object({
+  quantity: z.coerce.number().int().positive("Quantity must be at least 1"),
+  entryDate: z.string().trim().min(1, "Entry date is required")
+    .refine((value) => !Number.isNaN(Date.parse(value)), "Entry date must be a valid date"),
+  pricePerUnit: z.coerce.number().finite().nonnegative("Price must be 0 or greater"),
+  supplier: z.string().trim().min(1, "Supplier name is required"),
+});
+
 export const createDispatchSchema = z.object({
   customerId: z.number().int().positive("Customer ID is required"),
   itemId: z.number().int().positive("Item ID is required"),
@@ -43,5 +51,6 @@ export const updateDispatchSchema = z.object({
 
 export type CreateInventoryInput = z.infer<typeof createInventorySchema>;
 export type UpdateInventoryInput = z.infer<typeof updateInventorySchema>;
+export type RestockInventoryInput = z.infer<typeof restockInventorySchema>;
 export type CreateDispatchInput = z.infer<typeof createDispatchSchema>;
 export type UpdateDispatchInput = z.infer<typeof updateDispatchSchema>;

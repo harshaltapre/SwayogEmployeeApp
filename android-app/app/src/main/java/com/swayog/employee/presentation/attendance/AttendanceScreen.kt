@@ -68,7 +68,7 @@ import java.util.*
 import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.presentation.common.utils.WatermarkHelper
 import com.swayog.employee.data.model.SubmitOvertimeRequest
-import com.swayog.employee.presentation.attendance.components.RequestOvertimeDialog
+import com.swayog.employee.presentation.attendance.components.OvertimeRequestDialog
 import com.swayog.employee.presentation.attendance.components.WorkforceOvertimeSection
 
 @Composable
@@ -85,6 +85,7 @@ fun AttendanceScreen(
     val monthlySummary by viewModel.monthlySummary.collectAsState()
     val state by viewModel.attendanceState.collectAsState()
     val faceDescriptors by viewModel.faceDescriptors.collectAsState()
+    val isFaceEnrolled by viewModel.isFaceEnrolled.collectAsState()
     val performance by viewModel.performance.collectAsState()
     val currentTask by viewModel.currentTask.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
@@ -126,6 +127,7 @@ fun AttendanceScreen(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 viewModel.loadData()
+                viewModel.refreshFaceEnrollmentIndex()
                 viewModel.refreshOvertime()
             }
         }
@@ -164,7 +166,7 @@ fun AttendanceScreen(
     val record = todayAttendance
     val isAdminMarked = record?.isAdminMarked == true
     val isCheckedIn = record?.checkInTime != null
-    val isAttendanceCompleted = record?.isCompleted == true || isAdminMarked || (record != null && (record.status == "PRESENT" || record.status == "LEAVE" || record.status == "HOLIDAY"))
+    val isAttendanceCompleted = record?.isCompleted == true || isAdminMarked
     val checkInLat = record?.latitude
     val checkInLng = record?.longitude
     val displayLat = checkInLat ?: currentLatitude ?: attendanceRules.officeLat
@@ -216,6 +218,17 @@ fun AttendanceScreen(
     }
     val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.getDefault()) }
     val formattedTime = timeFormat.format(Date(currentTime))
+    // Derived from the live currentTime clock (updated every second) so the UI recomposes
+    // automatically when the clock crosses 6:30 PM.  Uses local system calendar so the
+    // comparison is always in the device's own timezone — consistent with how the rest of
+    // the attendance screen handles dates.
+    val isPast630Today: Boolean = remember(currentTime) {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = currentTime
+        val hour = cal.get(Calendar.HOUR_OF_DAY)
+        val minute = cal.get(Calendar.MINUTE)
+        hour > 18 || (hour == 18 && minute >= 30)
+    }
 
     // Permission launchers
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -258,20 +271,22 @@ fun AttendanceScreen(
     if (showCamera) {
         FaceVerificationScreen(
             faceDescriptors = faceDescriptors,
+            faceIndexManager = viewModel.faceIndexManager,
             onVerificationSuccess = { bitmap, matchConfidence ->
-                showCamera = false
                 // Apply Watermark
                 val format = java.text.SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a", java.util.Locale.getDefault())
                 val timestamp = format.format(java.util.Date())
                 val watermarkedBitmap = WatermarkHelper.addWatermark(bitmap, currentLatitude, currentLongitude, "Attendance Check-in", "Self", "N/A", timestamp)
-                
+
                 // Convert to Base64
                 val outputStream = ByteArrayOutputStream()
                 watermarkedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
                 val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-                
-                // Call checkIn
+
+                // Dismiss camera AFTER dispatching checkIn so the ViewModel
+                // coroutine is not cancelled by an early recomposition.
                 viewModel.checkIn(base64String, currentLatitude, currentLongitude, matchConfidence) { result ->
+                    showCamera = false
                     if (result.isSuccess) {
                         Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
                     } else {
@@ -347,7 +362,7 @@ fun AttendanceScreen(
     val windowSize = com.swayog.employee.presentation.common.responsive.LocalWindowSizeInfo.current
 
     if (showRequestOtDialog) {
-        RequestOvertimeDialog(
+        OvertimeRequestDialog(
             initialDate = selectedOtDate,
             onDismiss = { showRequestOtDialog = false },
             onSubmit = { request ->
@@ -444,7 +459,10 @@ fun AttendanceScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
 
+                                val isNotCheckedIn = record == null || (record.checkInTime == null && !record.isAdminMarked && record.status != "PRESENT" && record.status != "LATE" && record.status != "HALF_DAY" && record.status != "HALF-DAY" && record.status != "LEAVE")
+
                                 val statusText = when {
+                                    record == null && isPast630Today -> "Absent (Not Checked In till 6:30 PM)"
                                     record == null -> "Not Checked In"
                                     record.isAdminMarked -> "Present — Marked by Administrator"
                                     record.status == "LEAVE" -> "On Leave"
@@ -452,6 +470,7 @@ fun AttendanceScreen(
                                     record.status == "ABSENT" -> "Absent"
                                     record.checkOutTime != null -> "Checked Out"
                                     record.checkInTime != null -> "Checked In"
+                                    isPast630Today && isNotCheckedIn -> "Absent (Not Checked In till 6:30 PM)"
                                     else -> "Attendance Completed"
                                 }
 
@@ -466,7 +485,9 @@ fun AttendanceScreen(
                                             style = MaterialTheme.typography.titleLarge,
                                             fontWeight = FontWeight.Bold,
                                             color = when {
+                                                (record == null || isNotCheckedIn) && isPast630Today -> MaterialTheme.colorScheme.error
                                                 record == null -> MaterialTheme.colorScheme.error
+                                                record.status == "ABSENT" -> MaterialTheme.colorScheme.error
                                                 record.isAdminMarked -> Color(0xFF0B6E4F)
                                                 record.checkOutTime != null -> MaterialTheme.colorScheme.tertiary
                                                 else -> MaterialTheme.colorScheme.primary
@@ -988,10 +1009,13 @@ fun AttendanceScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
+                                    val isCutoffAbsentToday = isPast630Today && !isCheckedIn && !isAdminMarked && record?.status != "PRESENT" && record?.status != "LATE" && record?.status != "HALF_DAY" && record?.status != "HALF-DAY" && record?.status != "LEAVE"
+
                                     SwayogButton(
-                                        text = if (isAdminMarked) "Attendance Completed" else "Check In",
+                                        text = if (isAdminMarked) "Attendance Completed" else if (isCheckedIn) "Checked In" else if (isCutoffAbsentToday) "Absent (Cutoff 6:30 PM Passed)" else "Check In",
                                         onClick = {
-                                            if (faceDescriptors.isEmpty()) {
+                                            val hasEnrolledFace = isFaceEnrolled || faceDescriptors.isNotEmpty() || viewModel.faceIndexManager.getIndexSnapshot().isNotEmpty()
+                                            if (!hasEnrolledFace) {
                                                 showEnrollmentBlocker = true
                                             } else {
                                                 permissionLauncher.launch(
@@ -1003,7 +1027,7 @@ fun AttendanceScreen(
                                                 )
                                             }
                                         },
-                                        enabled = todayAttendance == null && !isAttendanceCompleted,
+                                        enabled = !isCheckedIn && !isAttendanceCompleted && !isCutoffAbsentToday,
                                         modifier = Modifier.weight(1f)
                                     )
 
@@ -1014,11 +1038,16 @@ fun AttendanceScreen(
                                                 if (result.isSuccess) {
                                                     Toast.makeText(context, "Checked out successfully!", Toast.LENGTH_SHORT).show()
                                                 } else {
-                                                    Toast.makeText(context, "Check-out failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                                    val exception = result.exceptionOrNull()
+                                                    if (exception is OfflinePendingException) {
+                                                        Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                                                    } else {
+                                                        Toast.makeText(context, "Check-out failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                                                    }
                                                 }
                                             }
                                         },
-                                        enabled = todayAttendance != null && todayAttendance?.checkInTime != null && todayAttendance?.checkOutTime == null && !isAdminMarked,
+                                        enabled = isCheckedIn && todayAttendance?.checkOutTime == null && !isAdminMarked,
                                         variant = ButtonVariant.Secondary,
                                         modifier = Modifier.weight(1f)
                                     )
@@ -1132,9 +1161,12 @@ fun AttendanceScreen(
 
                         // Calculate working days up to today for the displayed month
                         // Company works 6 days/week (Mon–Sat); Sundays and declared holidays are off
-                        val workingDays: Int = remember(currentYear, currentMonth, holidays) {
+                        val workingDays: Int = remember(currentYear, currentMonth, holidays, todayAttendance) {
                             var count = 0
                             val today = Calendar.getInstance()
+                            val isPast630Now = today.get(Calendar.HOUR_OF_DAY) > 18 || (today.get(Calendar.HOUR_OF_DAY) == 18 && today.get(Calendar.MINUTE) >= 30)
+                            val hasCheckedInToday = todayAttendance?.checkInTime != null || todayAttendance?.isAdminMarked == true || todayAttendance?.status == "PRESENT" || todayAttendance?.status == "LATE" || todayAttendance?.status == "HALF_DAY" || todayAttendance?.status == "HALF-DAY" || todayAttendance?.status == "LEAVE"
+
                             val target = Calendar.getInstance()
                             target.set(Calendar.YEAR, currentYear)
                             target.set(Calendar.MONTH, currentMonth)
@@ -1144,10 +1176,18 @@ fun AttendanceScreen(
                             var day = 1
                             while (day <= daysInMonth) {
                                 target.set(Calendar.DAY_OF_MONTH, day)
-                                if (target.after(today)) break
+                                val isTargetAfterToday = target.get(Calendar.YEAR) > today.get(Calendar.YEAR) ||
+                                    (target.get(Calendar.YEAR) == today.get(Calendar.YEAR) && target.get(Calendar.DAY_OF_YEAR) > today.get(Calendar.DAY_OF_YEAR))
+                                if (isTargetAfterToday) break
+
+                                val isTargetToday = target.get(Calendar.YEAR) == today.get(Calendar.YEAR) && target.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)
                                 val dow = target.get(Calendar.DAY_OF_WEEK)
                                 val dateStr = String.format(Locale.getDefault(), "%04d-%02d-%02d", currentYear, currentMonth + 1, day)
-                                if (dow != Calendar.SUNDAY && !holidayDateSet.contains(dateStr)) count++
+                                if (dow != Calendar.SUNDAY && !holidayDateSet.contains(dateStr)) {
+                                    if (!isTargetToday || hasCheckedInToday || isPast630Now) {
+                                        count++
+                                    }
+                                }
                                 day++
                             }
                             count
@@ -1332,14 +1372,24 @@ fun AttendanceScreen(
                                                 val record = recordsByDate[dateStr]
                                                 val matchedHoliday = holidaysByDate[dateStr]
                                                 val isHoliday = matchedHoliday != null
-
                                                 val hasRecord = record != null
                                                 val recordStatus = record?.status?.uppercase()
+
+                                                val isPastDate = (calendarYear < todayYear) ||
+                                                    (calendarYear == todayYear && calendarMonth < todayMonth) ||
+                                                    (calendarYear == todayYear && calendarMonth == todayMonth && day < todayDay)
+                                                val nowCal = remember { Calendar.getInstance() }
+                                                val isPast630Now = nowCal.get(Calendar.HOUR_OF_DAY) > 18 || (nowCal.get(Calendar.HOUR_OF_DAY) == 18 && nowCal.get(Calendar.MINUTE) >= 30)
+                                                val hasValidCheckIn = record?.checkInTime != null ||
+                                                    (isToday && todayAttendance?.checkInTime != null) ||
+                                                    recordStatus == "PRESENT" || recordStatus == "LATE" || recordStatus == "HALF_DAY" || recordStatus == "HALF-DAY" || recordStatus == "LEAVE"
+
+                                                val isAutoAbsent = !isSunday && !isHoliday && !hasValidCheckIn && (isPastDate || (isToday && isPast630Now))
 
                                                 val dotColor = when {
                                                     recordStatus == "PRESENT" -> Color(0xFF0B6E4F)
                                                     recordStatus == "LATE" -> Color(0xFFD1603D)
-                                                    recordStatus == "ABSENT" -> Color(0xFFF44336)
+                                                    recordStatus == "ABSENT" || isAutoAbsent -> Color(0xFFF44336)
                                                     recordStatus == "LEAVE" -> Color(0xFF386FA4)
                                                     recordStatus == "HALF_DAY" || recordStatus == "HALF-DAY" -> Color(0xFF7E22CE)
                                                     !hasRecord && isHoliday -> Color(0xFFF43F5E) // Festival Holiday
@@ -1349,16 +1399,22 @@ fun AttendanceScreen(
 
                                                 val subtitleText = when {
                                                     isHoliday -> {
-                                                        val name = matchedHoliday?.name.orEmpty()
-                                                        if (name.isNotBlank()) "🎉 $name" else "🎉 Holiday"
+                                                         val name = matchedHoliday?.name.orEmpty()
+                                                         if (name.isNotBlank()) "🎉 $name" else "🎉 Holiday"
                                                     }
                                                     isSunday -> "Sun Off"
+                                                    recordStatus == "ABSENT" || isAutoAbsent -> "Absent"
+                                                    recordStatus == "PRESENT" -> "Present"
+                                                    recordStatus == "LATE" -> "Late"
+                                                    recordStatus == "HALF_DAY" || recordStatus == "HALF-DAY" -> "Half Day"
+                                                    recordStatus == "LEAVE" -> "Leave"
                                                     else -> null
                                                 }
 
                                                 val cellBgColor = when {
                                                     isHoliday -> Color(0xFFFFF1F2)
                                                     isSunday -> Color(0xFFFFFBEB)
+                                                    recordStatus == "ABSENT" || isAutoAbsent -> Color(0xFFFEF2F2)
                                                     hasRecord -> Color(0xFFF8FAFC).copy(alpha = 0.5f)
                                                     else -> Color.Transparent
                                                 }
@@ -1367,6 +1423,7 @@ fun AttendanceScreen(
                                                     isToday -> Color(0xFFD1603D)
                                                     isHoliday -> Color(0xFFFECDD3)
                                                     isSunday -> Color(0xFFFDE68A)
+                                                    recordStatus == "ABSENT" || isAutoAbsent -> Color(0xFFFECACA)
                                                     else -> Color.Transparent
                                                 }
 
@@ -1374,12 +1431,14 @@ fun AttendanceScreen(
                                                     isToday -> Color(0xFFD1603D)
                                                     isHoliday -> Color(0xFFBE123C)
                                                     isSunday -> Color(0xFFB45309)
+                                                    recordStatus == "ABSENT" || isAutoAbsent -> Color(0xFFDC2626)
                                                     else -> MaterialTheme.colorScheme.onSurface
                                                 }
 
                                                 val subtitleColor = when {
                                                     isHoliday -> Color(0xFFE11D48)
                                                     isSunday -> Color(0xFFD97706)
+                                                    recordStatus == "ABSENT" || isAutoAbsent -> Color(0xFFDC2626)
                                                     else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                                 }
 
@@ -1400,9 +1459,10 @@ fun AttendanceScreen(
                                                             val regMins = minOf(totalMins, 480)
                                                             val extMins = maxOf(0, totalMins - 480)
                                                             val statusDisplay = when {
-                                                                record != null -> record.status.replace("_", " ").replace("-", " ")
+                                                                record != null && record.status.isNotBlank() -> record.status.replace("_", " ").replace("-", " ")
                                                                 isHoliday -> "Holiday: ${matchedHoliday?.name ?: "Holiday"}"
                                                                 isSunday -> "Weekly Off (Sunday)"
+                                                                isAutoAbsent -> if (isToday) "Absent (Not checked in till 6:30 PM)" else "Absent"
                                                                 else -> "No Record / Off"
                                                             }
                                                             selectedCalendarDayInfo = CalendarDayDetailInfo(
@@ -1413,7 +1473,7 @@ fun AttendanceScreen(
                                                                 totalWorkedMinutes = totalMins,
                                                                 regularMinutes = regMins,
                                                                 extraMinutes = extMins,
-                                                                notes = record?.notes ?: (if (isHoliday) matchedHoliday?.name else null)
+                                                                notes = record?.notes ?: (if (isHoliday) matchedHoliday?.name else if (isAutoAbsent) "Auto-marked as Absent (No check-in till 6:30 PM)" else null)
                                                             )
                                                         },
                                                     contentAlignment = Alignment.Center
@@ -1786,7 +1846,7 @@ fun AttendanceScreen(
 
             // Request Overtime Dialog
             if (showRequestOtDialog) {
-                RequestOvertimeDialog(
+                OvertimeRequestDialog(
                     initialDate = selectedOtDate,
                     onDismiss = { showRequestOtDialog = false },
                     onSubmit = { request ->
@@ -1852,14 +1912,8 @@ private fun formatUtcToLocalTime(isoString: String?): String {
 private fun formatUtcToLocalDate(isoString: String?): String {
     if (isoString.isNullOrBlank()) return "N/A"
     return try {
-        val cleanIso = isoString.substringBefore("T")
-        val utcFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).apply {
-            timeZone = java.util.TimeZone.getTimeZone("UTC")
-        }
-        val date = utcFormat.parse(cleanIso) ?: return "N/A"
-        
-        val localFormat = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
-        localFormat.format(date)
+        val date = java.time.LocalDate.parse(isoString.substringBefore("T"))
+        date.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale.getDefault()))
     } catch (e: Exception) {
         isoString.substringBefore("T")
     }
@@ -3053,6 +3107,34 @@ fun AttendanceRegularizationDialog(
                             if (regReason.trim().length < 3) {
                                 localError = "A reason explaining why you forgot attendance is required (minimum 3 characters)."
                                 return@Button
+                            }
+
+                            // Validation for current date: Out-Time cannot be greater than current time
+                            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                            if (regDate == todayStr && regStatus != "ABSENT" && regStatus != "LEAVE" && regCheckOutTime.isNotBlank()) {
+                                try {
+                                    val parts = regCheckOutTime.trim().split(":")
+                                    if (parts.size == 2) {
+                                        var hours = parts[0].toInt()
+                                        val minutes = parts[1].toInt()
+                                        if (regCheckOutPeriod.equals("PM", ignoreCase = true) && hours < 12) hours += 12
+                                        if (regCheckOutPeriod.equals("AM", ignoreCase = true) && hours == 12) hours = 0
+
+                                        val outTimeCal = Calendar.getInstance().apply {
+                                            set(Calendar.HOUR_OF_DAY, hours)
+                                            set(Calendar.MINUTE, minutes)
+                                            set(Calendar.SECOND, 0)
+                                            set(Calendar.MILLISECOND, 0)
+                                        }
+
+                                        if (outTimeCal.after(Calendar.getInstance())) {
+                                            localError = "Out-Time cannot be greater than the current time for today's forgot attendance request. It must be equal to or earlier than the current time."
+                                            return@Button
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    // Ignore parse errors, server handles backend validation
+                                }
                             }
 
                             localError = null

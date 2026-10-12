@@ -29,7 +29,9 @@ data class Task(
     val invoice: Invoice? = null,
     val taskType: String? = null, // "SITE_VISIT", "AMC_VISIT", "REGULAR"
     val images: List<String>? = null, // Multiple images for site visits
-    val sitePhotos: List<String>? = null, // Site visit photo gallery (4-5 photos)
+    val sitePhotos: List<String>? = null, // Site visit photo gallery
+    val maintenanceVideos: List<String>? = null, // Maintenance videos for maintenance visits
+    val photoRemarks: Map<Int, String>? = null,
     val assignedEmployees: List<TaskAssigneeSummary>? = null,
     val assignedEmployeeName: String? = null, // Employee name for customer notifications
     val assignedEmployeePhone: String? = null // Employee phone for customer notifications
@@ -38,22 +40,28 @@ data class Task(
     val isAmcVisit: Boolean
         get() = taskType == "AMC_VISIT" || jobType?.lowercase()?.contains("amc") == true || id.startsWith("amc_") || id.startsWith("TASK-amc_")
 
-    // Site visits are the only task type that uses the 4-10 photo workflow.
+    // Site visits are the only task type that uses the photo workflow.
     val isSiteVisit: Boolean
         get() = taskType == "SITE_VISIT" || 
             jobType == "Site Visit" || 
             jobType?.lowercase()?.contains("site") == true || 
             jobType?.lowercase()?.contains("survey") == true
 
+    // Maintenance visits use a gallery of photos (min 2) — no before/after split
+    val isMaintenanceVisit: Boolean
+        get() = jobType?.lowercase() == "maintenance visit" || 
+            (jobType?.lowercase()?.contains("maintenance") == true && !isAmcVisit)
+
     // Helper to check if this is a regular task
     val isRegularTask: Boolean
-        get() = !isSiteVisit && !isAmcVisit
+        get() = !isSiteVisit && !isAmcVisit && !isMaintenanceVisit
 
     // Get required image count based on task type
     val requiredImageCount: Int
         get() = when {
-            isSiteVisit -> 4
-            else -> 2 // 1 before + 1 after for maintenance, cleaning, and regular tasks
+            isSiteVisit -> 1
+            isMaintenanceVisit -> 2 // min 2 photos for maintenance documentation
+            else -> 2 // 1 before + 1 after for cleaning and regular tasks
         }
 
     // Extract the actual visit ID if this is an AMC visit
@@ -104,6 +112,8 @@ data class CompleteTaskRequest(
     val sitePhotos: List<String>? = null, // Site visit photo gallery
     val beforeImages: List<String>? = null, // Multiple before images for AMC visits
     val afterImages: List<String>? = null, // Multiple after images for AMC visits
+    val maintenanceVideos: List<String>? = null, // Maintenance videos for maintenance visits
+    val photoRemarks: Map<Int, String>? = null,
     val clientUploadId: String? = null // Idempotency key to prevent duplicate submissions
 )
 

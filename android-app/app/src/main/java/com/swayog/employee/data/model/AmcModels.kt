@@ -36,6 +36,8 @@ data class AmcVisit(
     val afterImageUrl: String? = null,
     val sitePhotos: List<String>? = null,
     val images: List<String>? = null,
+    val maintenanceVideos: List<String>? = null,
+    val photoRemarks: Map<Int, String>? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null,
     val customer: AmcCustomerInfo? = null,
@@ -59,6 +61,17 @@ data class UpdateAmcVisitRequest(
     val beforeImageUrl: String? = null,
     val afterImageUrl: String? = null,
     val visitNotes: String? = null
+)
+
+data class MarkAmcVisitDoneRequest(
+    val notes: String? = null,
+    val visitNotes: String? = null,
+    val beforeImageUrl: String? = null,
+    val afterImageUrl: String? = null,
+    val sitePhotos: List<String>? = null,
+    val images: List<String>? = null,
+    val maintenanceVideos: List<String>? = null,
+    val photoRemarks: Map<Int, String>? = null
 )
 
 

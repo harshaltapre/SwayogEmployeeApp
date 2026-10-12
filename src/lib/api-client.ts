@@ -160,9 +160,9 @@ export type AmcVisitRecord = {
   completedAt?: string;
   notes?: string;
   assignedEmployeeId?: string;
-  customer?: { 
-    fullName: string; 
-    city: string; 
+  customer?: {
+    fullName: string;
+    city: string;
     phoneNumber: string;
     apartmentId?: number | null;
     apartment?: { id: number; name: string; address: string; city: string } | null;
@@ -174,6 +174,9 @@ export type AmcVisitRecord = {
   visitNotes?: string | null;
   beforeImageUrl?: string | null;
   afterImageUrl?: string | null;
+  sitePhotos?: string[] | null;
+  maintenanceVideos?: string[];
+  photoRemarks?: Record<number, string> | Record<string, string> | null;
 };
 
 type ListCustomersParams = {
@@ -372,6 +375,23 @@ export type InventoryRecord = {
   entryDate: string;
 };
 
+export type RestockInventoryInput = {
+  quantity: number;
+  entryDate: string;
+  pricePerUnit: number;
+  supplier: string;
+};
+
+export type InventoryStockEntry = {
+  id: number | string;
+  itemId: number;
+  quantity: number;
+  entryDate: string;
+  pricePerUnit: number;
+  supplier: string;
+  createdAt: string;
+};
+
 export type DispatchedMaterialRecord = {
   id: string;
   customerId: number;
@@ -385,6 +405,7 @@ export type DispatchedMaterialRecord = {
 };
 
 const INVENTORY_STORAGE_KEY = "swayog_inventory_registry";
+const INVENTORY_STOCK_ENTRIES_STORAGE_KEY = "swayog_inventory_stock_entries";
 const INVENTORY_CHANGED_EVENT = "swayog-inventory-updated";
 const DISPATCHED_MATERIALS_STORAGE_KEY = "swayog_dispatched_materials";
 const DISPATCH_CHANGED_EVENT = "swayog-dispatch-updated";
@@ -469,6 +490,20 @@ function setStoredInventoryRecords(items: InventoryRecord[]): void {
   localStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(items));
 }
 
+function getStoredInventoryStockEntries(itemId: number | string): InventoryStockEntry[] {
+  try {
+    const stored = localStorage.getItem(INVENTORY_STOCK_ENTRIES_STORAGE_KEY);
+    if (!stored) return [];
+    const entries = JSON.parse(stored) as InventoryStockEntry[];
+    if (!Array.isArray(entries)) return [];
+    return entries
+      .filter((entry) => String(entry.itemId) === String(itemId))
+      .sort((left, right) => right.entryDate.localeCompare(left.entryDate));
+  } catch {
+    return [];
+  }
+}
+
 function notifyInventoryChanged(): void {
   window.dispatchEvent(new Event(INVENTORY_CHANGED_EVENT));
 }
@@ -524,9 +559,11 @@ export type TaskRecord = {
   afterLatitude?: number | null;
   afterLongitude?: number | null;
   sitePhotos?: string[] | null;
+  maintenanceVideos?: string[] | null;
   customerRating?: number | null;
   customerFeedback?: string | null;
   fixCharges?: number | null;
+  photoRemarks?: Record<string, string> | null;
 };
 
 export type CustomerServiceRequestRecord = {
@@ -592,6 +629,8 @@ export type CompleteTaskInput = {
   afterLatitude?: number | null;
   afterLongitude?: number | null;
   sitePhotos?: string[];
+  maintenanceVideos?: string[];
+  photoRemarks?: Record<number, string>;
 };
 
 export type RateTaskInput = {
@@ -2546,6 +2585,78 @@ export function useUpdateInventory(opts?: any) {
   });
 }
 
+export function useRestockInventory(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number | string; data: RestockInventoryInput }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (apiBaseUrl) {
+        return requestApi<InventoryRecord>(`/inventory/${id}/restock`, {
+          method: "POST",
+          body: JSON.stringify(data),
+        });
+      }
+
+      const records = getStoredInventoryRecords();
+      const idx = records.findIndex((item) => String(item.id) === String(id));
+      if (idx === -1) {
+        throw new Error("Item not found");
+      }
+
+      const updated = normalizeInventoryRecord({
+        ...records[idx],
+        inStock: records[idx].inStock + data.quantity,
+        entryDate: data.entryDate,
+        pricePerUnit: data.pricePerUnit,
+        supplier: data.supplier,
+      });
+      records[idx] = updated;
+      setStoredInventoryRecords(records);
+      const storedEntries = localStorage.getItem(INVENTORY_STOCK_ENTRIES_STORAGE_KEY);
+      const allEntries = storedEntries ? JSON.parse(storedEntries) as InventoryStockEntry[] : [];
+      allEntries.push({
+        id: `${Date.now()}-${allEntries.length}`,
+        itemId: Number(id),
+        quantity: data.quantity,
+        entryDate: new Date(`${data.entryDate}T00:00:00`).toISOString(),
+        pricePerUnit: data.pricePerUnit,
+        supplier: data.supplier,
+        createdAt: new Date().toISOString(),
+      });
+      localStorage.setItem(INVENTORY_STOCK_ENTRIES_STORAGE_KEY, JSON.stringify(allEntries));
+      queryClient.setQueryData(getListInventoryQueryKey(), records);
+      queryClient.setQueryData(["inventory-stock-entries", id], getStoredInventoryStockEntries(id));
+      notifyInventoryChanged();
+      return delay(updated, 200);
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: getListInventoryQueryKey() });
+      queryClient.invalidateQueries({ queryKey: ["inventory-stock-entries", variables.id] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useListInventoryStockEntries(itemId: number | string | null) {
+  return useQuery<InventoryStockEntry[]>({
+    queryKey: ["inventory-stock-entries", itemId],
+    enabled: itemId !== null,
+    queryFn: async () => {
+      if (itemId === null) {
+        throw new Error("An inventory item must be selected to load stock entries.");
+      }
+      if (getApiBaseUrl()) {
+        return requestApi<InventoryStockEntry[]>(`/inventory/${itemId}/stock-entries`);
+      }
+      return getStoredInventoryStockEntries(itemId);
+    },
+  });
+}
+
 export function useDeleteInventory(opts?: any) {
   const queryClient = useQueryClient();
   const mutationOptions = opts?.mutation ?? {};
@@ -3159,6 +3270,12 @@ export function useCompleteTask(opts?: any) {
       if (data.sitePhotos) {
         task.sitePhotos = data.sitePhotos;
       }
+      if (data.maintenanceVideos) {
+        task.maintenanceVideos = data.maintenanceVideos;
+      }
+      if (data.photoRemarks) {
+        task.photoRemarks = data.photoRemarks;
+      }
       task.completedAt = new Date().toISOString();
 
       const storedTasks = getStoredMockTasks();
@@ -3177,6 +3294,8 @@ export function useCompleteTask(opts?: any) {
           afterLongitude: data.afterLongitude ?? null,
           completedAt: new Date().toISOString(),
           sitePhotos: data.sitePhotos ?? storedTasks[storedIdx].sitePhotos,
+          maintenanceVideos: data.maintenanceVideos ?? storedTasks[storedIdx].maintenanceVideos,
+          photoRemarks: data.photoRemarks ?? storedTasks[storedIdx].photoRemarks,
         };
         saveStoredMockTasks(storedTasks);
       }
@@ -3932,8 +4051,38 @@ export function useMarkCustomerNotificationRead(opts?: any) {
   });
 }
 
-// Aliases for employee notifications
-export const useGetEmployeeNotifications = useGetCustomerNotifications;
-export const useGetEmployeeUnreadNotificationsCount = useGetCustomerUnreadNotificationsCount;
-export const useMarkEmployeeNotificationRead = useMarkCustomerNotificationRead;
+// Dedicated hooks for employee notifications
+export function useGetEmployeeNotifications(options?: { query?: any }) {
+  return useQuery({
+    queryKey: ["employee-notifications"],
+    queryFn: async () => {
+      const res = await requestApi<any>("/employee/notifications", { method: "GET" });
+      return res?.notifications || res?.data || [];
+    },
+    ...(options?.query || {}),
+  });
+}
 
+export function useGetEmployeeUnreadNotificationsCount(options?: { query?: any }) {
+  return useQuery({
+    queryKey: ["employee-notifications-unread-count"],
+    queryFn: async () => {
+      const res = await requestApi<any>("/employee/notifications/unread-count", { method: "GET" });
+      return res?.count ?? res?.data?.count ?? 0;
+    },
+    ...(options?.query || {}),
+  });
+}
+
+export function useMarkEmployeeNotificationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      return await requestApi<any>(`/employee/notifications/${id}/read`, { method: "PATCH" });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-notifications"] });
+      qc.invalidateQueries({ queryKey: ["employee-notifications-unread-count"] });
+    },
+  });
+}

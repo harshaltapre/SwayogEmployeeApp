@@ -360,7 +360,7 @@ interface ApiService {
     @POST("subadmin/amc-visits/{visitId}/complete")
     suspend fun markAmcVisitDone(
         @Path("visitId") visitId: String,
-        @Body request: @JvmSuppressWildcards Map<String, Any?>
+        @Body request: MarkAmcVisitDoneRequest
     ): Response<ApiResponse<AmcVisit>>
     
     // Inventory endpoints
@@ -575,4 +575,3 @@ interface ApiService {
     @GET("workforce/requests")
     suspend fun getUnifiedRequests(): Response<UnifiedRequestsResponse>
 }
-

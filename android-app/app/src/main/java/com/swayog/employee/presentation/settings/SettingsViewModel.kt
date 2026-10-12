@@ -7,6 +7,8 @@ import com.swayog.employee.data.api.ApiService
 import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.swayog.employee.data.model.UserSettingsDto
 import com.swayog.employee.data.repository.AuthRepository
+import com.swayog.employee.data.repository.AttendanceRepository
+import com.swayog.employee.presentation.attendance.face.FaceIndexManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,6 +22,8 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
     private val authRepository: AuthRepository,
+    private val attendanceRepository: AttendanceRepository,
+    private val faceIndexManager: FaceIndexManager,
     private val apiService: ApiService,
     private val appUpdateManager: com.swayog.employee.core.update.AppUpdateManager,
     @ApplicationContext private val context: Context
@@ -196,20 +200,7 @@ class SettingsViewModel @Inject constructor(
 
     private suspend fun syncFaceEnrollmentWithServer() {
         try {
-            val response = apiService.getFaceEnrollmentStatus()
-            if (response.isSuccessful) {
-                val status = response.body()
-                if (status != null && status.enrolled) {
-                    val e = status.enrollment
-                    if (e != null && e.descriptor1.isNotEmpty() && e.descriptor2.isNotEmpty() && e.descriptor3.isNotEmpty()) {
-                        dataStoreManager.saveFaceEnrollment(e.descriptor1, e.descriptor2, e.descriptor3)
-                    } else {
-                        dataStoreManager.saveFaceEnrollment(emptyList(), emptyList(), emptyList())
-                    }
-                } else if (status != null && !status.enrolled) {
-                    dataStoreManager.clearFaceEnrollment()
-                }
-            }
+            attendanceRepository.syncFaceEnrollment()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -247,15 +238,15 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val dto = UserSettingsDto(
-                    darkMode = darkMode,
-                    biometricEnabled = biometricEnabled,
-                    notificationsEnabled = notificationsEnabled,
-                    compactViewEnabled = compactViewEnabled,
-                    animationsEnabled = animationsEnabled,
-                    profileVisibilityEnabled = profileVisibilityEnabled,
-                    showStatusEnabled = showStatusEnabled,
-                    activitySharingEnabled = activitySharingEnabled,
-                    language = language
+                    darkMode = darkMode ?: this@SettingsViewModel.darkMode.value,
+                    biometricEnabled = biometricEnabled ?: this@SettingsViewModel.biometricEnabled.value,
+                    notificationsEnabled = notificationsEnabled ?: this@SettingsViewModel.notificationsEnabled.value,
+                    compactViewEnabled = compactViewEnabled ?: this@SettingsViewModel.compactViewEnabled.value,
+                    animationsEnabled = animationsEnabled ?: this@SettingsViewModel.animationsEnabled.value,
+                    profileVisibilityEnabled = profileVisibilityEnabled ?: this@SettingsViewModel.profileVisibilityEnabled.value,
+                    showStatusEnabled = showStatusEnabled ?: this@SettingsViewModel.showStatusEnabled.value,
+                    activitySharingEnabled = activitySharingEnabled ?: this@SettingsViewModel.activitySharingEnabled.value,
+                    language = language ?: this@SettingsViewModel.language.value
                 )
                 try {
                     apiService.updatePreferences(dto)
@@ -413,6 +404,7 @@ class SettingsViewModel @Inject constructor(
                 e.printStackTrace()
             } finally {
                 dataStoreManager.clearFaceEnrollment()
+                faceIndexManager.clear()
             }
         }
     }

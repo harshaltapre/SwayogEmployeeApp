@@ -52,9 +52,20 @@ class FaceEnrollmentViewModel @Inject constructor(
     private var lastCaptureTime = 0L
     private var step2Direction = 0f
 
+    init {
+        if (!faceEmbeddingHelper.isModelLoaded()) {
+            _uiState.update { it.copy(error = "Face recognition model failed to initialize. Please restart the app.") }
+        }
+    }
+
     fun processFace(face: Face?, embedding: List<Float>?) {
         if (uiState.value.isLoading || uiState.value.enrollmentComplete) return
         
+        if (!faceEmbeddingHelper.isModelLoaded()) {
+            _uiState.update { it.copy(error = "Face recognition model failed to initialize.") }
+            return
+        }
+
         _uiState.update { it.copy(isFaceDetected = face != null) }
         
         if (face == null || embedding == null) return
@@ -114,6 +125,10 @@ class FaceEnrollmentViewModel @Inject constructor(
      * when a face is detected, ensuring they are never stuck by strict angle math.
      */
     fun captureCurrentStep() {
+        if (!faceEmbeddingHelper.isModelLoaded()) {
+            _uiState.update { it.copy(error = "Face recognition model failed to initialize.") }
+            return
+        }
         val embedding = latestEmbedding ?: return
         if (uiState.value.isLoading || uiState.value.enrollmentComplete) return
 
@@ -164,9 +179,6 @@ class FaceEnrollmentViewModel @Inject constructor(
                 val d2 = descriptor2!!
                 val d3 = descriptor3!!
 
-                // Update in-memory index immediately for zero-lag recognition
-                faceIndexManager.atomicUpdate(listOf(d1, d2, d3))
-
                 // Save locally first with PENDING status
                 val currentVersion = try { dataStoreManager.faceEnrollmentVersion.first() } catch (_: Exception) { 0 }
                 val nextVersion = currentVersion + 1
@@ -177,6 +189,7 @@ class FaceEnrollmentViewModel @Inject constructor(
                     syncVersion = nextVersion,
                     syncStatus = "PENDING"
                 )
+                faceIndexManager.loadFromDataStore()
                 
                 val request = FaceEnrollRequest(
                     descriptor1 = d1,
@@ -197,14 +210,24 @@ class FaceEnrollmentViewModel @Inject constructor(
                         updatedAt = body.enrolledAt,
                         syncStatus = "SYNCED"
                     )
+                    faceIndexManager.loadFromDataStore()
                     _uiState.update { it.copy(isLoading = false, enrollmentComplete = true) }
                 } else {
                     val errorMsg = ErrorUtils.formatResponseError(response)
                     dataStoreManager.setFaceSyncStatus("FAILED")
+                    
+                    // Provide specific guidance for authentication errors
+                    val userFriendlyError = if (response.code() == 401 || errorMsg.contains("401", ignoreCase = true) || 
+                        errorMsg.contains("unauthorized", ignoreCase = true) || errorMsg.contains("authentication", ignoreCase = true)) {
+                        "Authentication failed. Please log out and log in again, then retry face enrollment."
+                    } else {
+                        "Enrollment saved locally, but server returned: $errorMsg"
+                    }
+                    
                     _uiState.update { 
                         it.copy(
                             isLoading = false,
-                            error = "Enrollment saved locally, but server returned: $errorMsg"
+                            error = userFriendlyError
                         )
                     }
                 }

@@ -314,7 +314,11 @@ fun TasksScreen(
                             }
                         }
                     },
-                    onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng, taskType, images, beforeImages, afterImages, sitePhotos ->
+                    onCompleteTask = { msg, doc, beforeImg, afterImg, bLat, bLng, aLat, aLng, taskType, images, beforeImages, afterImages, sitePhotos, maintenanceVideos, photoRemarks ->
+                        android.util.Log.d(
+                            "VIDEO_TRACE_1",
+                            "taskId=${task.id}, videoCount=${maintenanceVideos?.size ?: 0}, firstVideoLength=${maintenanceVideos?.firstOrNull()?.length ?: 0}, firstVideoPrefix=${maintenanceVideos?.firstOrNull()?.take(32) ?: "n/a"}"
+                        )
                         viewModel.completeTask(
                             taskId = task.id,
                             message = msg,
@@ -329,7 +333,9 @@ fun TasksScreen(
                             images = images,
                             beforeImages = beforeImages,
                             afterImages = afterImages,
-                            sitePhotos = sitePhotos
+                            sitePhotos = sitePhotos,
+                            maintenanceVideos = maintenanceVideos,
+                            photoRemarks = photoRemarks
                         ) { result ->
                             if (result.isSuccess) {
                                 selectedTask = null
@@ -696,7 +702,7 @@ fun TaskDetailDialog(
     task: Task,
     onDismiss: () -> Unit,
     onStartTask: () -> Unit,
-    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?, List<String>?) -> Unit,
+    onCompleteTask: (String, String?, String?, String?, Double?, Double?, Double?, Double?, String?, List<String>?, List<String>?, List<String>?, List<String>?, List<String>?, Map<Int, String>?) -> Unit,
     serverUrl: String? = null,
     viewModel: TasksViewModel = hiltViewModel()
 ) {
@@ -712,6 +718,12 @@ fun TaskDetailDialog(
     var uploadedImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var beforeImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var afterImages by remember { mutableStateOf<List<String>>(emptyList()) }
+    var maintenancePhotoRemarks by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingMaintenancePhoto by remember { mutableStateOf<Pair<String, Bitmap>?>(null) }
+    var maintenancePhotoRemark by remember { mutableStateOf("") }
+    var showMaintenancePhotoRemarkDialog by remember { mutableStateOf(false) }
+    // Maintenance videos
+    var maintenanceVideos by remember { mutableStateOf<List<String>>(emptyList()) }
     
     // Photo state: watermarked bitmaps for preview
     var beforeBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -739,6 +751,17 @@ fun TaskDetailDialog(
         else -> "REGULAR"
     }
 
+    fun savePendingMaintenancePhoto(remark: String) {
+        val pendingPhoto = pendingMaintenancePhoto ?: return
+        val updatedPhotos = uploadedImages + pendingPhoto.first
+        val updatedRemarks = maintenancePhotoRemarks + remark.trim()
+        uploadedImages = updatedPhotos
+        imageBitmaps = imageBitmaps + pendingPhoto.second
+        maintenancePhotoRemarks = updatedRemarks
+        pendingMaintenancePhoto = null
+        maintenancePhotoRemark = ""
+        showMaintenancePhotoRemarkDialog = false
+    }
 
     // Helper to get current GPS, watermark the bitmap, and convert to base64
     fun processPhoto(bitmap: Bitmap, type: String, addressOverride: String? = null) {
@@ -800,11 +823,17 @@ fun TaskDetailDialog(
                         afterLng = lng
                     }
                     "site_visit" -> {
-                        val updatedList = uploadedImages + base64String
-                        uploadedImages = updatedList
-                        imageBitmaps = imageBitmaps + watermarked
-                        if (NetworkUtils.isNetworkAvailable(context)) {
-                            viewModel.updateTaskPhotos(task.id, updatedList)
+                        if (task.isMaintenanceVisit) {
+                            pendingMaintenancePhoto = base64String to watermarked
+                            maintenancePhotoRemark = ""
+                            showMaintenancePhotoRemarkDialog = true
+                        } else {
+                            val updatedList = uploadedImages + base64String
+                            uploadedImages = updatedList
+                            imageBitmaps = imageBitmaps + watermarked
+                            if (NetworkUtils.isNetworkAvailable(context)) {
+                                viewModel.updateTaskPhotos(task.id, updatedList)
+                            }
                         }
                     }
                     "amc_before" -> {
@@ -854,6 +883,26 @@ fun TaskDetailDialog(
             }
         }
         pendingPhotoType = null
+    }
+
+    // Video launcher for maintenance videos
+    val videoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+                if (bytes != null) {
+                    val base64String = "data:video/mp4;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    maintenanceVideos = maintenanceVideos + base64String
+                    Toast.makeText(context, "Video added successfully", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to load video: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     var isCustomCameraOpen by remember { mutableStateOf(false) }
@@ -966,6 +1015,33 @@ fun TaskDetailDialog(
                     galleryLauncher.launch("image/*")
                 }) {
                     Text("Gallery")
+                }
+            }
+        )
+    }
+
+    if (showMaintenancePhotoRemarkDialog) {
+        AlertDialog(
+            onDismissRequest = { savePendingMaintenancePhoto("") },
+            title = { Text("Photo Remark") },
+            text = {
+                OutlinedTextField(
+                    value = maintenancePhotoRemark,
+                    onValueChange = { maintenancePhotoRemark = it },
+                    label = { Text("Remark (Optional)") },
+                    placeholder = { Text("Describe this maintenance photo") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { savePendingMaintenancePhoto(maintenancePhotoRemark) }) {
+                    Text("Save Photo")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { savePendingMaintenancePhoto("") }) {
+                    Text("Skip Remark")
                 }
             }
         )
@@ -1107,6 +1183,7 @@ fun TaskDetailDialog(
                     } else if (task.status?.equals("in_progress", ignoreCase = true) == true || task.status?.equals("pending", ignoreCase = true) == true) {
                         val isSiteVisitTask = task.isSiteVisit
                         val isAmcVisitTask = task.isAmcVisit
+                        val isMaintenanceVisitTask = task.isMaintenanceVisit
 
                         if (isSiteVisitTask) {
                             // Site Visit Photo Upload Flow (Gallery + Description)
@@ -1117,9 +1194,9 @@ fun TaskDetailDialog(
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
                             Text(
-                                text = "Minimum 4 photos required (${uploadedImages.size}/4 uploaded)",
+                                text = "Minimum 1 photo required (${uploadedImages.size} uploaded)",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (uploadedImages.size >= 4) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.error,
+                                color = if (uploadedImages.size >= 1) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.SemiBold
                             )
 
@@ -1142,10 +1219,10 @@ fun TaskDetailDialog(
                                             IconButton(
                                                 onClick = {
                                                      imageBitmaps = imageBitmaps.toMutableList().apply { removeAt(idx) }
-                                                     val updatedList = uploadedImages.toMutableList().apply { removeAt(idx) }
+                                                                                                         val updatedList = uploadedImages.toMutableList().apply { removeAt(idx) }
                                                      uploadedImages = updatedList
                                                      if (NetworkUtils.isNetworkAvailable(context)) {
-                                                        viewModel.updateTaskPhotos(task.id, updatedList)
+                                                                                                                viewModel.updateTaskPhotos(task.id, updatedList)
                                                      }
                                                 },
                                                 modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
@@ -1169,7 +1246,7 @@ fun TaskDetailDialog(
                                             CircularProgressIndicator(modifier = Modifier.size(20.dp))
                                         } else {
                                             Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
-                                            Text("Add Site Photo (${uploadedImages.size}/10)", style = MaterialTheme.typography.labelMedium)
+                                            Text("Add Site Photo", style = MaterialTheme.typography.labelMedium)
                                         }
                                     }
                                 }
@@ -1194,10 +1271,10 @@ fun TaskDetailDialog(
 
                             SwayogButton(
                                 text = if (isSubmitting) "Submitting..." else if (isProcessing) "Processing..." else "Submit Site Visit",
-                                enabled = uploadedImages.size >= 4 && completionMessage.trim().length >= 3 && !isProcessing && !isSubmitting,
+                                enabled = uploadedImages.size >= 1 && completionMessage.trim().length >= 3 && !isProcessing && !isSubmitting,
                                 onClick = {
-                                    if (uploadedImages.size < 4) {
-                                        Toast.makeText(context, "Minimum 4 site photos required", Toast.LENGTH_SHORT).show()
+                                    if (uploadedImages.size < 1) {
+                                        Toast.makeText(context, "Minimum 1 site photo required", Toast.LENGTH_SHORT).show()
                                     } else if (completionMessage.trim().length < 3) {
                                         Toast.makeText(context, "Observations description must be at least 3 characters", Toast.LENGTH_SHORT).show()
                                     } else {
@@ -1216,7 +1293,9 @@ fun TaskDetailDialog(
                                             uploadedImages,
                                             null,
                                             null,
-                                            uploadedImages
+                                            uploadedImages,
+                                            null,
+                                            null
                                         )
                                     }
                                 }
@@ -1328,12 +1407,193 @@ fun TaskDetailDialog(
                                         null,
                                         beforeImages,
                                         afterImages,
+                                        null,
+                                        null,
                                         null
                                     )
                                 }
                             )
+                        } else if (isMaintenanceVisitTask) {
+                            // Maintenance Visit: Gallery Photo Flow (Min 2 photos, no before/after)
+                            Text(
+                                text = "Maintenance Photos (Min 2 Required)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "Required: At least 2 maintenance photos (${uploadedImages.size} uploaded)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (uploadedImages.size >= 2) Color(0xFF0B6E4F) else MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            // Display Grid of uploaded maintenance photo thumbnails
+                            if (imageBitmaps.isNotEmpty()) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    itemsIndexed(imageBitmaps) { idx, bitmap ->
+                                        Box(modifier = Modifier.size(100.dp)) {
+                                            Image(
+                                                bitmap = bitmap.asImageBitmap(),
+                                                contentDescription = "Maintenance Photo ${idx + 1}",
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                     imageBitmaps = imageBitmaps.toMutableList().apply { removeAt(idx) }
+                                                     val updatedList = uploadedImages.toMutableList().apply { removeAt(idx) }
+                                                     maintenancePhotoRemarks = maintenancePhotoRemarks.toMutableList().apply { removeAt(idx) }
+                                                     uploadedImages = updatedList
+                                                     if (NetworkUtils.isNetworkAvailable(context)) {
+                                                        viewModel.updateTaskPhotos(task.id, updatedList)
+                                                     }
+                                                },
+                                                modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove photo", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = { launchPhotoPicker("site_visit") },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                enabled = !isProcessing,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (isProcessing && pendingPhotoType == "site_visit") {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                    } else {
+                                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                                        Text("Add Maintenance Photo", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Maintenance Videos Section
+                            Text(
+                                text = "Maintenance Videos (Optional)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "Videos uploaded: ${maintenanceVideos.size}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            if (maintenanceVideos.isNotEmpty()) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    itemsIndexed(maintenanceVideos) { idx, _ ->
+                                        Box(modifier = Modifier.size(100.dp)) {
+                                            Card(
+                                                modifier = Modifier.fillMaxSize(),
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.VideoLibrary,
+                                                        contentDescription = "Video ${idx + 1}",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(32.dp)
+                                                    )
+                                                }
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    maintenanceVideos = maintenanceVideos.toMutableList().apply { removeAt(idx) }
+                                                },
+                                                modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove video", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = { videoLauncher.launch("video/*") },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Default.VideoLibrary, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Text("Add Maintenance Video", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text("Maintenance Notes (Optional)", fontWeight = FontWeight.Bold)
+
+                            SwayogTextField(
+                                value = completionMessage,
+                                onValueChange = { completionMessage = it },
+                                label = "Maintenance Report / Notes",
+                                placeholder = "Describe the maintenance work done...",
+                                singleLine = false
+                            )
+
+                            SwayogTextField(
+                                value = docUrl,
+                                onValueChange = { docUrl = it },
+                                label = "Document Link (Optional)",
+                                placeholder = "URL of report blueprint, or proof"
+                            )
+
+                            SwayogButton(
+                                text = if (isSubmitting) "Submitting..." else if (isProcessing) "Processing..." else "Mark Task Completed",
+                                enabled = uploadedImages.size >= 2 && !isProcessing && !isSubmitting,
+                                onClick = {
+                                    if (uploadedImages.size < 2) {
+                                        Toast.makeText(context, "Minimum 2 maintenance photos required", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        isSubmitting = true
+                                        val finalMessage = completionMessage.trim().ifEmpty { "Task completed successfully." }
+                                        onCompleteTask(
+                                            finalMessage,
+                                            docUrl.trim().ifEmpty { null },
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            "REGULAR",
+                                            uploadedImages,
+                                            maintenanceVideos.ifEmpty { null },
+                                            null,
+                                            uploadedImages,
+                                            null,
+                                            maintenancePhotoRemarks.mapIndexedNotNull { index, remark ->
+                                                remark.takeIf { it.isNotBlank() }?.let { index to it }
+                                            }.toMap().takeIf { it.isNotEmpty() }
+                                        )
+                                    }
+                                }
+                            )
                         } else {
-                            // Cleaning / Maintenance / Regular Before & After Flow
+                            // Cleaning / Regular Before & After Flow
                             Text(
                                 text = "📷 Before & After Photos (GPS Proof)",
                                 style = MaterialTheme.typography.labelLarge,
@@ -1487,6 +1747,8 @@ fun TaskDetailDialog(
                                             afterLat,
                                             afterLng,
                                             taskType,
+                                            null,
+                                            null,
                                             null,
                                             null,
                                             null,

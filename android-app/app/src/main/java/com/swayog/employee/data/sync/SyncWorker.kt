@@ -8,6 +8,7 @@ import androidx.work.WorkerParameters
 import com.google.gson.Gson
 import com.swayog.employee.core.util.LocalFileHelper
 import com.swayog.employee.data.api.ApiService
+import com.swayog.employee.data.local.dao.AttendanceDao
 import com.swayog.employee.data.local.dao.DailyCommitDao
 import com.swayog.employee.data.local.dao.OutboxQueueDao
 import com.swayog.employee.data.local.dao.TaskDao
@@ -28,6 +29,7 @@ class SyncWorker @AssistedInject constructor(
     private val outboxQueueDao: OutboxQueueDao,
     private val taskDao: TaskDao,
     private val dailyCommitDao: DailyCommitDao,
+    private val attendanceDao: AttendanceDao,
     private val apiService: ApiService,
     private val dataStoreManager: com.swayog.employee.data.local.preferences.DataStoreManager
 ) : CoroutineWorker(appContext, workerParams) {
@@ -43,7 +45,13 @@ class SyncWorker @AssistedInject constructor(
                 val faceSyncStatus = dataStoreManager.faceEnrollmentSyncStatus.first()
                 if (faceSyncStatus == "PENDING" || faceSyncStatus == "FAILED") {
                     val descriptors = dataStoreManager.faceDescriptors.first()
-                    if (descriptors.size >= 3) {
+                    val validDescriptors = descriptors.size == 3 && descriptors.all {
+                        com.swayog.employee.data.local.preferences.DataStoreManager.isValidFaceDescriptor(
+                            it,
+                            com.swayog.employee.presentation.attendance.face.FaceEmbeddingHelper.EMBEDDING_DIMENSION
+                        )
+                    }
+                    if (validDescriptors) {
                         Log.d("TASK_SYNC", "SyncWorker attempting to sync pending face enrollment")
                         val req = FaceEnrollRequest(
                             descriptor1 = descriptors[0],
@@ -68,6 +76,9 @@ class SyncWorker @AssistedInject constructor(
                         } else {
                             hasFailure = true
                         }
+                    } else if (descriptors.isNotEmpty()) {
+                        Log.e("TASK_SYNC", "Refusing to sync invalid local face descriptor set")
+                        dataStoreManager.setFaceSyncStatus("FAILED")
                     }
                 }
             } catch (e: Exception) {
@@ -146,6 +157,21 @@ class SyncWorker @AssistedInject constructor(
                                     LocalFileHelper.readFileToBase64(it) 
                                 }
 
+                                val maintenanceVideoFilePathsArray = json.optJSONArray("maintenanceVideoFilePaths")
+                                val maintenanceVideoFilePaths = if (maintenanceVideoFilePathsArray != null) {
+                                    List(maintenanceVideoFilePathsArray.length()) { maintenanceVideoFilePathsArray.getString(it) }
+                                } else null
+                                val maintenanceVideos = maintenanceVideoFilePaths?.mapNotNull { 
+                                    filesToDelete.add(it)
+                                    LocalFileHelper.readFileToBase64(it)
+                                } ?: run {
+                                    val payloadVideos = json.optJSONArray("maintenanceVideos")
+                                    if (payloadVideos != null) {
+                                        List(payloadVideos.length()) { index -> payloadVideos.getString(index) }
+                                            .filter { it.isNotBlank() }
+                                    } else null
+                                }
+
                                 val clientUploadId = item.clientUploadId ?: json.optString("clientUploadId").takeIf { it.isNotEmpty() }
                                 val request = CompleteTaskRequest(
                                     message = json.optString("message"),
@@ -161,6 +187,7 @@ class SyncWorker @AssistedInject constructor(
                                     sitePhotos = images,
                                     beforeImages = beforeImages,
                                     afterImages = afterImages,
+                                    maintenanceVideos = maintenanceVideos,
                                     clientUploadId = clientUploadId
                                 )
                                 val response = apiService.completeTask(taskId, request)
@@ -198,6 +225,7 @@ class SyncWorker @AssistedInject constructor(
                                             sitePhotosJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
                                             beforeImagesJson = beforeImages?.let { gson.toJson(it) },
                                             afterImagesJson = afterImages?.let { gson.toJson(it) },
+                                            maintenanceVideosJson = task.maintenanceVideos?.filter { it.isNotBlank() }?.let { gson.toJson(it) },
                                             assignedEmployeeName = task.assignedEmployeeName,
                                             assignedEmployeePhone = task.assignedEmployeePhone
                                         )
@@ -233,6 +261,19 @@ class SyncWorker @AssistedInject constructor(
                             )
                             val response = apiService.checkIn(request)
                             response.isSuccessful
+                        }
+                        item.endpoint.contains("check-out") && item.method == "POST" -> {
+                            val response = apiService.checkOut()
+                            if (response.isSuccessful) {
+                                val userId = dataStoreManager.userId.first()
+                                val todayRecord = userId?.let { attendanceDao.getTodayAttendance(it) }
+                                if (todayRecord != null) {
+                                    attendanceDao.updateAttendance(todayRecord.copy(isSynced = true))
+                                }
+                                true
+                            } else {
+                                false
+                            }
                         }
                         item.endpoint.contains("daily-commits") && item.method == "POST" -> {
                             val json = JSONObject(item.payload)

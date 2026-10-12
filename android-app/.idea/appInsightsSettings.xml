@@ -8,10 +8,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.swayog.employee" />
+                  <option name="mobileSdkAppId" value="YOUR_APP_ID" />
+                  <option name="projectId" value="YOUR_PROJECT_ID" />
+                  <option name="projectNumber" value="YOUR_PROJECT_NUMBER" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

@@ -6,6 +6,8 @@ import {
   getInventoryItemById,
   createInventoryItem,
   updateInventoryItem,
+  restockInventoryItem,
+  listInventoryStockEntries,
   deleteInventoryItem,
   listDispatchRecords,
   createDispatchRecord,
@@ -15,6 +17,7 @@ import {
 import type {
   CreateInventoryInput,
   UpdateInventoryInput,
+  RestockInventoryInput,
   CreateDispatchInput,
   UpdateDispatchInput,
 } from "./inventory.schemas.js";
@@ -58,6 +61,19 @@ export async function updateInventoryItemHandler(
   res: Response,
 ): Promise<void> {
   const data = await updateInventoryItem(getAuth(req), parseItemId(req.params.id), req.body);
+  res.status(200).json({ data });
+}
+
+export async function restockInventoryItemHandler(
+  req: Request<{ id: string }, unknown, RestockInventoryInput>,
+  res: Response,
+): Promise<void> {
+  const data = await restockInventoryItem(getAuth(req), parseItemId(req.params.id), req.body);
+  res.status(200).json({ data });
+}
+
+export async function listInventoryStockEntriesHandler(req: Request, res: Response): Promise<void> {
+  const data = await listInventoryStockEntries(getAuth(req), parseItemId(req.params.id));
   res.status(200).json({ data });
 }
 

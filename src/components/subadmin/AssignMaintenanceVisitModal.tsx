@@ -1,0 +1,344 @@
+import React, { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { getListTasksQueryKey, useCreateTaskAssignment } from "@/lib/api-client";
+import { useQueryClient } from "@tanstack/react-query";
+import { MapPin, Calendar, User, Phone, Wrench, Loader2, FileText, Video, Camera } from "lucide-react";
+import { format } from "date-fns";
+
+interface AssignMaintenanceVisitModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  employees: Array<{
+    id: number;
+    userId?: string;
+    name: string;
+    role?: string;
+    email?: string;
+    zone?: string;
+  }>;
+  onSuccess?: () => void;
+}
+
+export const AssignMaintenanceVisitModal: React.FC<AssignMaintenanceVisitModalProps> = ({
+  isOpen,
+  onClose,
+  employees = [],
+  onSuccess,
+}) => {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const assignTaskMutation = useCreateTaskAssignment();
+
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+  const [maintenanceAddress, setMaintenanceAddress] = useState<string>("");
+  const [taskDescription, setTaskDescription] = useState<string>("");
+  const [customerName, setCustomerName] = useState<string>("");
+  const [customerPhone, setCustomerPhone] = useState<string>("");
+  const [scheduledDateTime, setScheduledDateTime] = useState<string>(
+    format(new Date(), "yyyy-MM-dd'T'HH:mm")
+  );
+  const [additionalNotes, setAdditionalNotes] = useState<string>("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!selectedEmployeeId) {
+      toast({
+        title: "Employee Required",
+        description: "Please select an employee to assign the maintenance visit.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!maintenanceAddress.trim()) {
+      toast({
+        title: "Address Required",
+        description: "Please enter the maintenance visit address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!taskDescription.trim()) {
+      toast({
+        title: "Task Description Required",
+        description: "Please describe the maintenance task.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedEmp = employees.find(
+      (emp) =>
+        String(emp.userId || "") === selectedEmployeeId ||
+        String(emp.id) === selectedEmployeeId ||
+        String(emp.email || "") === selectedEmployeeId
+    );
+
+    const targetUserId = String(
+      selectedEmp?.userId || (selectedEmp?.id !== undefined ? String(selectedEmp.id) : selectedEmployeeId)
+    );
+
+    const formattedDescription = `Maintenance Task: ${taskDescription.trim()}${
+      additionalNotes.trim() ? `\nAdditional Notes: ${additionalNotes.trim()}` : ""
+    }`;
+
+    assignTaskMutation.mutate(
+      {
+        data: {
+          employeeUserId: targetUserId,
+          jobType: "Maintenance Visit",
+          customerName: customerName.trim() || "Maintenance Customer",
+          customerPhone: customerPhone.trim().length >= 8 ? customerPhone.trim() : "9876543210",
+          address: maintenanceAddress.trim(),
+          description: formattedDescription,
+          scheduledTime: new Date(scheduledDateTime).toISOString(),
+        },
+      },
+      {
+        onSuccess: (createdTask: any) => {
+          toast({
+            title: "Maintenance Visit Assigned 🔧",
+            description: `Maintenance Visit Task successfully assigned to ${selectedEmp?.name || "Employee"}. Employee can upload images and videos.`,
+          });
+
+          const normalizedTask = {
+            ...createdTask,
+            status: String(createdTask?.status ?? "assigned").toLowerCase(),
+            scheduledTime: createdTask?.scheduledTime ?? new Date(scheduledDateTime).toISOString(),
+            employeeUserId: createdTask?.employeeUserId ?? targetUserId,
+            assignedEmployees: Array.isArray(createdTask?.assignedEmployees)
+              ? createdTask.assignedEmployees
+              : [{ userId: targetUserId, name: selectedEmp?.name ?? "Employee" }],
+            taskAssignments: Array.isArray(createdTask?.taskAssignments)
+              ? createdTask.taskAssignments
+              : [{ employeeUserId: targetUserId, status: "assigned" }],
+          };
+
+          queryClient.setQueriesData({ queryKey: ["tasks"] }, (prev: any) => {
+            if (!Array.isArray(prev)) return [normalizedTask];
+            const alreadyExists = prev.some((task: any) => String(task.id) === String(normalizedTask.id));
+            return alreadyExists ? prev : [normalizedTask, ...prev];
+          });
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["employees"] });
+          queryClient.invalidateQueries({ queryKey: getListTasksQueryKey({ employeeUserId: targetUserId }) });
+          if (onSuccess) onSuccess();
+          handleResetAndClose();
+        },
+        onError: (err: any) => {
+          console.error("Maintenance Visit Assignment Error:", err);
+          const errorMessage = err?.response?.data?.error || err?.message || err?.error || (typeof err === "string" ? err : "Failed to create maintenance visit task. Please try again.");
+          toast({
+            title: "Assignment Failed",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        },
+      }
+    );
+  };
+
+  const resetForm = () => {
+    setSelectedEmployeeId("");
+    setMaintenanceAddress("");
+    setTaskDescription("");
+    setCustomerName("");
+    setCustomerPhone("");
+    setScheduledDateTime(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+    setAdditionalNotes("");
+  };
+
+  const handleResetAndClose = () => {
+    resetForm();
+    onClose();
+  };
+
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      resetForm();
+      onClose();
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleDialogOpenChange}>
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="space-y-1">
+          <DialogTitle className="text-xl font-bold flex items-center gap-2 text-emerald-700">
+            <Wrench className="h-6 w-6 text-emerald-600" />
+            Assign Maintenance Visit Task
+          </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Assign a maintenance visit task to an employee. Employee can upload images and videos to document the work.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+          {/* Select Employee */}
+          <div className="space-y-1.5">
+            <Label className="text-sm font-semibold flex items-center gap-1.5">
+              <User className="h-4 w-4 text-emerald-600" />
+              Select Employee <span className="text-red-500">*</span>
+            </Label>
+            <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="-- Choose staff member to assign --" />
+              </SelectTrigger>
+              <SelectContent>
+                {employees.map((emp) => {
+                  const empValue = String(emp.userId || emp.id);
+                  return (
+                    <SelectItem key={emp.id} value={empValue}>
+                      <div className="flex items-center justify-between gap-2 w-full">
+                        <span className="font-medium">{emp.name}</span>
+                        {emp.role && (
+                          <span className="text-[11px] text-muted-foreground capitalize">
+                            ({emp.role.replace(/_/g, " ")}) {emp.zone ? `- ${emp.zone}` : ""}
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Task Description & Scheduled Date */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5 md:col-span-2">
+              <Label className="text-sm font-semibold flex items-center gap-1.5">
+                <FileText className="h-4 w-4 text-blue-500" />
+                Task Description <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                placeholder="Describe the maintenance task (e.g., Panel cleaning, inverter check, wiring inspection...)"
+                rows={2}
+                value={taskDescription}
+                onChange={(e) => setTaskDescription(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold flex items-center gap-1.5">
+                <Calendar className="h-4 w-4 text-blue-500" />
+                Scheduled Date & Time <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                type="datetime-local"
+                value={scheduledDateTime}
+                onChange={(e) => setScheduledDateTime(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold flex items-center gap-1.5">
+                <Phone className="h-4 w-4 text-slate-500" />
+                Contact Phone
+              </Label>
+              <Input
+                placeholder="+91 9876543210"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-sm font-semibold flex items-center gap-1.5">
+              <MapPin className="h-4 w-4 text-red-500" />
+              Maintenance Address <span className="text-red-500">*</span>
+            </Label>
+            <Textarea
+              placeholder="Enter full maintenance address, landmark, city, pin code..."
+              rows={2}
+              value={maintenanceAddress}
+              onChange={(e) => setMaintenanceAddress(e.target.value)}
+              required
+            />
+          </div>
+
+          {/* Customer / Contact Person */}
+          <div className="space-y-1.5">
+            <Label className="text-sm font-semibold flex items-center gap-1.5">
+              <User className="h-4 w-4 text-slate-500" />
+              Customer / Contact Person
+            </Label>
+            <Input
+              placeholder="Customer Name"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+            />
+          </div>
+
+          {/* Additional Notes */}
+          <div className="space-y-1.5">
+            <Label className="text-sm font-semibold flex items-center gap-1.5">
+              <FileText className="h-4 w-4 text-emerald-600" />
+              Additional Notes & Instructions
+            </Label>
+            <Textarea
+              placeholder="Enter any additional notes, special instructions, equipment needed, or safety requirements..."
+              rows={2}
+              value={additionalNotes}
+              onChange={(e) => setAdditionalNotes(e.target.value)}
+            />
+          </div>
+
+          {/* Info Banner */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+            <div className="flex items-start gap-2">
+              <Camera className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold mb-1">Employee will be able to upload:</p>
+                <ul className="list-disc list-inside space-y-0.5 text-blue-700">
+                  <li>Images (min 2 required, no maximum limit) with GPS stamps</li>
+                  <li>Optional remarks for each photo</li>
+                  <li>Videos (optional, no limit) for documentation</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-3 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleResetAndClose}
+              disabled={assignTaskMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              disabled={assignTaskMutation.isPending}
+            >
+              {assignTaskMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Assigning Task...
+                </>
+              ) : (
+                <>
+                  <Wrench className="mr-2 h-4 w-4" />
+                  Assign Maintenance Visit
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};

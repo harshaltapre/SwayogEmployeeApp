@@ -853,6 +853,31 @@ export async function createRegularizationRequest(params: {
     throw new Error("Cannot submit attendance regularization for future dates.");
   }
 
+  // Out-Time Validation for Current Date (Forgot Attendance)
+  // When applying for current date, Out-Time must be <= current time.
+  const now = new Date();
+  const todayYear = now.getFullYear();
+  const todayMonth = String(now.getMonth() + 1).padStart(2, "0");
+  const todayDay = String(now.getDate()).padStart(2, "0");
+  const todayStr = `${todayYear}-${todayMonth}-${todayDay}`;
+
+  if (cleanDateStr === todayStr) {
+    if (status !== "ABSENT" && status !== "LEAVE" && checkOutTime && checkOutTime.trim()) {
+      let [hours, minutes] = checkOutTime.trim().split(":").map(Number);
+      if (!isNaN(hours) && !isNaN(minutes)) {
+        if (checkOutPeriod) {
+          const p = checkOutPeriod.toUpperCase();
+          if (p === "PM" && hours < 12) hours += 12;
+          if (p === "AM" && hours === 12) hours = 0;
+        }
+        const outTimeDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0);
+        if (outTimeDate.getTime() > now.getTime()) {
+          throw new Error("Out-Time cannot be greater than the current time for today's forgot attendance request. It must be equal to or earlier than the current time.");
+        }
+      }
+    }
+  }
+
   // Check if there is already a PENDING request for this employee on this date
   const existingPending = await prisma.attendanceRegularizationRequest.findFirst({
     where: {

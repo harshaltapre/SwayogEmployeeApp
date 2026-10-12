@@ -288,7 +288,7 @@ private fun OvertimeHistoryItem(ot: OvertimeRequestDto) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RequestOvertimeDialog(
+fun OvertimeRequestDialog(
     initialDate: String? = null,
     onDismiss: () -> Unit,
     onSubmit: (SubmitOvertimeRequest) -> Unit

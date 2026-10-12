@@ -16,6 +16,8 @@ import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.data.sync.SyncWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
@@ -44,27 +46,31 @@ class AttendanceRepository @Inject constructor(
         }
     }
 
-    /**
-     * Reactive Flow for today's attendance record, queried by date only (no employeeId filter).
-     * This is the reliable source of truth for the dashboard badge — it always reflects
-     * whatever record the server wrote after check-in/check-out, regardless of employeeId format.
-     */
+    /** Current user's cached attendance only; another account's row must never feed this flow. */
     fun getTodayAttendanceFlow(): Flow<AttendanceRecord?> {
         val todayStr = java.time.LocalDate.now().toString()
-        return attendanceDao.getTodayAttendanceFlow(todayStr).map { entity ->
-            entity?.toAttendanceRecord()
+        return dataStoreManager.userId.flatMapLatest { userId ->
+            if (userId.isNullOrBlank()) {
+                flowOf(null)
+            } else {
+                attendanceDao.getTodayAttendanceFlow(userId, todayStr).map { entity ->
+                    entity?.takeIf { it.employeeId == userId }?.toAttendanceRecord()
+                }
+            }
         }
     }
 
     suspend fun getTodayAttendance(): Result<AttendanceRecord?> {
         val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val userId = dataStoreManager.userId.first()
+        if (userId.isNullOrBlank()) return Result.success(null)
         return try {
             val response = apiService.getTodayAttendance()
             
             if (response.isSuccessful && response.body() != null) {
                 val record = response.body()!!.record
                 if (record != null) {
-                    val existingLoc = try { attendanceDao.getTodayAttendance(todayStr)?.checkInLocation } catch (_: Exception) { null }
+                    val existingLoc = try { attendanceDao.getTodayAttendance(userId, todayStr)?.checkInLocation } catch (_: Exception) { null }
                     val locStr = if (record.latitude != null && record.longitude != null) {
                         "Lat ${record.latitude}, Lng ${record.longitude}"
                     } else existingLoc
@@ -72,7 +78,7 @@ class AttendanceRepository @Inject constructor(
                     attendanceDao.insertAttendance(
                         AttendanceEntity(
                             id = record.id,
-                            employeeId = record.employeeId,
+                            employeeId = userId,
                             date = formatDate(record.date),
                             checkInTime = record.checkInTime,
                             checkOutTime = record.checkOutTime,
@@ -92,11 +98,11 @@ class AttendanceRepository @Inject constructor(
                 }
                 Result.success(record)
             } else {
-                val cached = attendanceDao.getTodayAttendance(todayStr)
+                val cached = attendanceDao.getTodayAttendance(userId, todayStr)
                 Result.success(cached?.toAttendanceRecord())
             }
         } catch (e: Exception) {
-            val cached = try { attendanceDao.getTodayAttendance(todayStr) } catch (_: Exception) { null }
+            val cached = try { attendanceDao.getTodayAttendance(userId, todayStr) } catch (_: Exception) { null }
             if (cached != null) {
                 Result.success(cached.toAttendanceRecord())
             } else {
@@ -111,6 +117,8 @@ class AttendanceRepository @Inject constructor(
         longitude: Double?,
         matchConfidence: Float? = null
     ): Result<CheckInResponse> {
+        val userId = dataStoreManager.userId.first()
+        if (userId.isNullOrBlank()) return Result.failure(Exception("User is not authenticated"))
         val isOnline = NetworkUtils.isNetworkAvailable(context)
         
         return if (isOnline) {
@@ -125,7 +133,7 @@ class AttendanceRepository @Inject constructor(
                     // Save to local database
                     val attendanceEntity = AttendanceEntity(
                         id = attRecord?.id ?: UUID.randomUUID().toString(),
-                        employeeId = attRecord?.employeeId ?: (dataStoreManager.userId.first() ?: ""),
+                        employeeId = userId,
                         date = formatDate(attRecord?.date ?: java.time.LocalDate.now().toString()),
                         checkInTime = attRecord?.checkInTime ?: java.time.LocalDateTime.now().toString(),
                         checkOutTime = attRecord?.checkOutTime,
@@ -144,7 +152,16 @@ class AttendanceRepository @Inject constructor(
                     // Return the actual server error so the user sees the real problem.
                     val errorMsg = ErrorUtils.formatResponseError(response)
                     android.util.Log.e("AttendanceRepository", "Check-in rejected by server (online): $errorMsg")
-                    Result.failure(OnlineSubmissionFailedException(errorMsg))
+                    
+                    // Provide specific guidance for authentication errors
+                    val userFriendlyError = if (response.code() == 401 || errorMsg.contains("401", ignoreCase = true) || 
+                        errorMsg.contains("unauthorized", ignoreCase = true) || errorMsg.contains("authentication", ignoreCase = true)) {
+                        "Authentication failed. Please log out and log in again, then retry check-in."
+                    } else {
+                        errorMsg
+                    }
+                    
+                    Result.failure(OnlineSubmissionFailedException(userFriendlyError))
                 }
             } catch (e: Exception) {
                 // Check if this is a genuine connectivity/network exception.
@@ -165,7 +182,7 @@ class AttendanceRepository @Inject constructor(
             val tempId = UUID.randomUUID().toString()
             // Use the real employeeId so the DashboardViewModel's Room Flow
             // (which filters by userId) can pick up this record immediately.
-            val realEmployeeId = dataStoreManager.userId.first() ?: "temp"
+            val realEmployeeId = userId
 
             saveCheckInToOutbox(selfie, latitude, longitude, matchConfidence)
 
@@ -233,29 +250,71 @@ class AttendanceRepository @Inject constructor(
     }
     
     suspend fun checkOut(): Result<Unit> {
-        return try {
-            val response = apiService.checkOut()
-            if (response.isSuccessful) {
-                // Write the local DB update immediately so the UI updates even before
-                // we re-fetch from the server.
-                val todayAttendance = attendanceDao.getTodayAttendance()
-                todayAttendance?.let {
-                    attendanceDao.updateAttendance(
-                        it.copy(checkOutTime = java.time.LocalDateTime.now().toString())
-                    )
+        val isOnline = NetworkUtils.isNetworkAvailable(context)
+        return if (isOnline) {
+            try {
+                val response = apiService.checkOut()
+                if (response.isSuccessful) {
+                    // Write the local DB update immediately so the UI updates even before
+                    // we re-fetch from the server.
+                    val userId = dataStoreManager.userId.first()
+                    val todayAttendance = userId?.let { attendanceDao.getTodayAttendance(it) }
+                    todayAttendance?.let {
+                        attendanceDao.updateAttendance(
+                            it.copy(checkOutTime = java.time.LocalDateTime.now().toString(), isSynced = true)
+                        )
+                    }
+                    // Re-fetch authoritative record from server
+                    getTodayAttendance()
+                    Result.success(Unit)
+                } else {
+                    val errorMsg = ErrorUtils.formatResponseError(response)
+                    android.util.Log.e("AttendanceRepository", "Check-out rejected by server: $errorMsg")
+                    Result.failure(Exception(errorMsg))
                 }
-                // Re-fetch the authoritative record from the server (includes totalMinutes
-                // computed by the backend) and persist it so the dashboard shows accurate data.
-                getTodayAttendance()
-                Result.success(Unit)
-            } else {
-                val errorMsg = ErrorUtils.formatResponseError(response)
-                android.util.Log.e("AttendanceRepository", "Check-out rejected by server: $errorMsg")
-                Result.failure(Exception(errorMsg))
+            } catch (e: Exception) {
+                if (ErrorUtils.isNetworkException(e)) {
+                    saveCheckOutToOutbox()
+                    updateLocalCheckOut()
+                    Result.failure(OfflinePendingException("Check-out saved offline. Will sync automatically when online."))
+                } else {
+                    Result.failure(e)
+                }
+            }
+        } else {
+            saveCheckOutToOutbox()
+            updateLocalCheckOut()
+            Result.failure(OfflinePendingException("Check-out saved offline. Will sync automatically when online."))
+        }
+    }
+
+    private suspend fun updateLocalCheckOut() {
+        try {
+            val userId = dataStoreManager.userId.first()
+            val todayAttendance = userId?.let { attendanceDao.getTodayAttendance(it) }
+            todayAttendance?.let {
+                attendanceDao.updateAttendance(
+                    it.copy(
+                        checkOutTime = java.time.LocalDateTime.now().toString(),
+                        isSynced = false
+                    )
+                )
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            android.util.Log.w("AttendanceRepository", "Local check-out update notice: ${e.message}")
         }
+    }
+
+    private suspend fun saveCheckOutToOutbox() {
+        val outboxItem = OutboxQueueEntity(
+            id = UUID.randomUUID().toString(),
+            endpoint = "employee/attendance/check-out",
+            method = "POST",
+            payload = "{}",
+            createdAt = System.currentTimeMillis().toString()
+        )
+        outboxQueueDao.insertItem(outboxItem)
+        scheduleSync()
     }
     
     suspend fun saveWorkDescription(
@@ -295,7 +354,7 @@ class AttendanceRepository @Inject constructor(
 
         // 2. Update local attendance notes if available
         try {
-            val todayAttendance = attendanceDao.getTodayAttendance()
+            val todayAttendance = attendanceDao.getTodayAttendance(employeeId)
             todayAttendance?.let {
                 attendanceDao.updateAttendance(it.copy(notes = trimmed))
             }
@@ -338,10 +397,12 @@ class AttendanceRepository @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 val data = response.body()!!
                 val records = data.records
+                val userId = dataStoreManager.userId.first()
+                    ?: return Result.failure(Exception("User is not authenticated"))
                 val entities = records.map { record ->
                     AttendanceEntity(
                         id = record.id,
-                        employeeId = record.employeeId,
+                        employeeId = userId,
                         date = formatDate(record.date),
                         checkInTime = record.checkInTime,
                         checkOutTime = record.checkOutTime,
@@ -390,9 +451,17 @@ class AttendanceRepository @Inject constructor(
                 if (status.enrolled && status.enrollment != null && !status.enrollment.isDeleted) {
                     val e = status.enrollment
                     val localVersion = try { dataStoreManager.faceEnrollmentVersion.first() } catch (_: Exception) { 0 }
-                    
-                    if (e.descriptor1.isNotEmpty() && e.descriptor2.isNotEmpty() && e.descriptor3.isNotEmpty()) {
-                        if (e.syncVersion >= localVersion) {
+                    val localDescriptors = dataStoreManager.faceDescriptors.first()
+
+                    val serverDescriptors = listOf(e.descriptor1, e.descriptor2, e.descriptor3)
+                    val serverDescriptorsValid = serverDescriptors.all {
+                        com.swayog.employee.data.local.preferences.DataStoreManager.isValidFaceDescriptor(
+                            it,
+                            com.swayog.employee.presentation.attendance.face.FaceEmbeddingHelper.EMBEDDING_DIMENSION
+                        )
+                    }
+                    if (serverDescriptorsValid) {
+                        if (e.syncVersion > localVersion || localDescriptors.size != 3) {
                             dataStoreManager.saveFaceEnrollment(
                                 descriptor1 = e.descriptor1,
                                 descriptor2 = e.descriptor2,
@@ -402,29 +471,42 @@ class AttendanceRepository @Inject constructor(
                                 updatedAt = e.updatedAt,
                                 syncStatus = "SYNCED"
                             )
-                            faceIndexManager.atomicUpdate(listOf(e.descriptor1, e.descriptor2, e.descriptor3))
-                        } else if (faceIndexManager.index.isEmpty()) {
+                            faceIndexManager.loadFromDataStore()
+                        } else {
+                            android.util.Log.w(
+                                "AttendanceRepository",
+                                "[FACE_UPDATE_5] Keeping newer local enrollment version=$localVersion over server version=${e.syncVersion}"
+                            )
                             faceIndexManager.loadFromDataStore()
                         }
+                    } else {
+                        android.util.Log.w("AttendanceRepository", "Ignoring invalid server face descriptors; preserving local enrollment")
+                        faceIndexManager.loadFromDataStore()
                     }
                     Result.success(true)
-                } else {
+                } else if (status.enrollment?.isDeleted == true) {
                     dataStoreManager.clearFaceEnrollment()
                     faceIndexManager.clear()
                     Result.success(false)
+                } else {
+                    val localDescriptors = faceIndexManager.loadFromDataStore()
+                    if (localDescriptors.isNotEmpty()) {
+                        android.util.Log.w(
+                            "AttendanceRepository",
+                            "Server reports no face enrollment; preserving valid local descriptors for offline recognition"
+                        )
+                        dataStoreManager.setFaceSyncStatus("PENDING")
+                    }
+                    Result.success(localDescriptors.isNotEmpty())
                 }
             } else {
                 // If network/server fails, warm up in-memory index from local cache so offline face match works
-                if (faceIndexManager.index.isEmpty()) {
-                    faceIndexManager.loadFromDataStore()
-                }
+                faceIndexManager.loadFromDataStore()
                 Result.failure(Exception("Failed to fetch face enrollment status: ${response.message()}"))
             }
         } catch (e: Exception) {
             // Offline fallback: load cached embeddings into in-memory index
-            if (faceIndexManager.index.isEmpty()) {
-                try { faceIndexManager.loadFromDataStore() } catch (_: Exception) {}
-            }
+            try { faceIndexManager.loadFromDataStore() } catch (_: Exception) {}
             Result.failure(e)
         }
     }

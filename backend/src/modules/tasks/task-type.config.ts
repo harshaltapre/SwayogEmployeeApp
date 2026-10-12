@@ -1,4 +1,4 @@
-export type TaskTypeKey = "AMC_VISIT" | "SITE_VISIT" | "REGULAR";
+export type TaskTypeKey = "AMC_VISIT" | "SITE_VISIT" | "MAINTENANCE_VISIT" | "REGULAR";
 
 export type TaskTypeConfig = {
   key: TaskTypeKey;
@@ -24,7 +24,15 @@ export const TASK_TYPE_CONFIG: Record<TaskTypeKey, TaskTypeConfig> = {
     requiresBeforeImage: false,
     requiresAfterImage: false,
     sitePhotoMin: 4,
-    sitePhotoMax: 10,
+    sitePhotoMax: null,
+  },
+  MAINTENANCE_VISIT: {
+    key: "MAINTENANCE_VISIT",
+    label: "Maintenance Visit",
+    requiresBeforeImage: false,
+    requiresAfterImage: false,
+    sitePhotoMin: 2,
+    sitePhotoMax: null,
   },
   REGULAR: {
     key: "REGULAR",
@@ -42,7 +50,8 @@ const explicitTypeAliases: Record<string, TaskTypeKey> = {
   amcmaintenance: "AMC_VISIT",
   amcmaintenancevisit: "AMC_VISIT",
   cleaning: "AMC_VISIT",
-  maintenance: "AMC_VISIT",
+  maintenancevisit: "MAINTENANCE_VISIT",
+  maintenance_visit: "MAINTENANCE_VISIT",
   service: "AMC_VISIT",
   installation: "AMC_VISIT",
   complaint: "AMC_VISIT",
@@ -67,6 +76,11 @@ export function resolveTaskType(taskType?: string | null, jobType?: string | nul
     return "REGULAR";
   }
 
+  // Check for maintenance visit first (before general maintenance)
+  if (normalizedJobType.includes("maintenancevisit") || normalizedJobType.includes("maintenance visit")) {
+    return "MAINTENANCE_VISIT";
+  }
+
   if (normalizedJobType.includes("amc")) {
     return "AMC_VISIT";
   }
@@ -77,7 +91,6 @@ export function resolveTaskType(taskType?: string | null, jobType?: string | nul
 
   if (
     normalizedJobType.includes("cleaning") ||
-    normalizedJobType.includes("maintenance") ||
     normalizedJobType.includes("service") ||
     normalizedJobType.includes("installation") ||
     normalizedJobType.includes("complaint")

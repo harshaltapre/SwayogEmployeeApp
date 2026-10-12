@@ -5,9 +5,13 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import com.swayog.employee.core.config.AppConfig
 import javax.inject.Inject
@@ -19,6 +23,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 class DataStoreManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private object PreferencesKeys {
         val AUTH_TOKEN = stringPreferencesKey("auth_token")
         val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
@@ -48,6 +53,7 @@ class DataStoreManager @Inject constructor(
         val FACE_DESCRIPTOR_2 = stringPreferencesKey("face_descriptor_2")
         val FACE_DESCRIPTOR_3 = stringPreferencesKey("face_descriptor_3")
         val FACE_ENROLLMENT_ID = stringPreferencesKey("face_enrollment_id")
+        val FACE_ENROLLMENT_USER_ID = stringPreferencesKey("face_enrollment_user_id")
         val FACE_ENROLLMENT_VERSION = intPreferencesKey("face_enrollment_version")
         val FACE_ENROLLMENT_UPDATED_AT = stringPreferencesKey("face_enrollment_updated_at")
         val FACE_ENROLLMENT_SYNC_STATUS = stringPreferencesKey("face_enrollment_sync_status") // "SYNCED", "PENDING", "FAILED"
@@ -83,6 +89,42 @@ class DataStoreManager @Inject constructor(
         )
     }
     
+    /**
+     * In-memory token cache — kept in sync with DataStore.
+     * The OkHttp auth interceptor reads this field directly (no runBlocking / coroutine needed)
+     * to avoid the DataStore thread-dispatch deadlock that causes HTTP 401 in release builds.
+     */
+    @Volatile
+    private var cachedAuthToken: String? = null
+
+    @Volatile
+    private var cachedRefreshToken: String? = null
+
+    init {
+        // Eagerly prime the in-memory cache from DataStore on the IO thread at startup.
+        // This runs once when the singleton is created (Hilt @Singleton), well before any
+        // network request is made, so the interceptor always has a valid token on hand.
+        scope.launch {
+            try {
+                cachedAuthToken = context.dataStore.data.map { prefs ->
+                    prefs[PreferencesKeys.AUTH_TOKEN]
+                }.first()
+                cachedRefreshToken = context.dataStore.data.map { prefs ->
+                    prefs[PreferencesKeys.REFRESH_TOKEN]
+                }.first()
+            } catch (e: Exception) {
+                // Swallow — cache stays null; interceptor falls back to unauthenticated
+                android.util.Log.w("DataStoreManager", "Failed to prime auth token cache: ${e.message}")
+            }
+        }
+    }
+
+    /** Returns the current auth token without blocking any thread. Safe to call from OkHttp interceptors. */
+    fun getCachedAuthToken(): String? = cachedAuthToken
+
+    /** Returns the current refresh token without blocking any thread. Safe to call from OkHttp interceptors. */
+    fun getCachedRefreshToken(): String? = cachedRefreshToken
+
     val authToken: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.AUTH_TOKEN]
     }
@@ -192,6 +234,7 @@ class DataStoreManager @Inject constructor(
     }
     
     suspend fun saveAuthToken(token: String) {
+        cachedAuthToken = token  // Update in-memory cache immediately (thread-safe via @Volatile)
         try {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.AUTH_TOKEN] = token
@@ -200,8 +243,9 @@ class DataStoreManager @Inject constructor(
             e.printStackTrace()
         }
     }
-    
+
     suspend fun saveRefreshToken(token: String) {
+        cachedRefreshToken = token  // Update in-memory cache immediately (thread-safe via @Volatile)
         try {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.REFRESH_TOKEN] = token
@@ -221,6 +265,19 @@ class DataStoreManager @Inject constructor(
     ) {
         try {
             context.dataStore.edit { preferences ->
+                val previousUserId = preferences[PreferencesKeys.USER_ID]
+                if (!previousUserId.isNullOrBlank() && previousUserId != userId) {
+                    preferences.remove(PreferencesKeys.FACE_ENROLLED)
+                    preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_1)
+                    preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
+                    preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_ID)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_USER_ID)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_VERSION)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_UPDATED_AT)
+                    preferences.remove(PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS)
+                    preferences.remove(PreferencesKeys.FACE_LAST_SYNC_AT)
+                }
                 preferences[PreferencesKeys.USER_ID] = userId
                 preferences[PreferencesKeys.USER_EMAIL] = email
                 preferences[PreferencesKeys.USER_NAME] = name
@@ -242,6 +299,8 @@ class DataStoreManager @Inject constructor(
     }
     
     suspend fun clearAuthData() {
+        cachedAuthToken = null  // Clear in-memory cache
+        cachedRefreshToken = null  // Clear in-memory cache
         context.dataStore.edit { preferences ->
             preferences.remove(PreferencesKeys.AUTH_TOKEN)
             preferences.remove(PreferencesKeys.REFRESH_TOKEN)
@@ -253,13 +312,14 @@ class DataStoreManager @Inject constructor(
             preferences.remove(PreferencesKeys.IS_LOGGED_IN)
             preferences.remove(PreferencesKeys.PROFILE_PHOTO_URL)
             preferences.remove(PreferencesKeys.LAST_ACTIVE_TIME)
-            
+
             // Clear face enrollment data on logout
             preferences.remove(PreferencesKeys.FACE_ENROLLED)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_1)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_ID)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_USER_ID)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_VERSION)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_UPDATED_AT)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS)
@@ -268,6 +328,11 @@ class DataStoreManager @Inject constructor(
     }
     
     // Face Enrollment Storage & Sync
+    companion object {
+        fun isValidFaceDescriptor(descriptor: List<Float>, expectedDimension: Int): Boolean =
+            expectedDimension > 0 && descriptor.size == expectedDimension && descriptor.all { it.isFinite() }
+    }
+
     val isFaceEnrolled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.FACE_ENROLLED] ?: false
     }
@@ -289,10 +354,25 @@ class DataStoreManager @Inject constructor(
     }
 
     val faceDescriptors: Flow<List<List<Float>>> = context.dataStore.data.map { preferences ->
-        val d1 = preferences[PreferencesKeys.FACE_DESCRIPTOR_1]?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
-        val d2 = preferences[PreferencesKeys.FACE_DESCRIPTOR_2]?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
-        val d3 = preferences[PreferencesKeys.FACE_DESCRIPTOR_3]?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: emptyList()
-        listOf(d1, d2, d3).filter { it.isNotEmpty() }
+        val enrollmentUserId = preferences[PreferencesKeys.FACE_ENROLLMENT_USER_ID]
+        if (enrollmentUserId != null && enrollmentUserId != preferences[PreferencesKeys.USER_ID]) {
+            return@map emptyList()
+        }
+        val descriptors = listOf(
+            preferences[PreferencesKeys.FACE_DESCRIPTOR_1],
+            preferences[PreferencesKeys.FACE_DESCRIPTOR_2],
+            preferences[PreferencesKeys.FACE_DESCRIPTOR_3]
+        ).map { stored ->
+            stored?.split(",")?.map { it.toFloatOrNull() }
+                ?.takeIf { values -> values.isNotEmpty() && values.all { it != null && it.isFinite() } }
+                ?.map { it!! }
+        }
+        val validDescriptors = descriptors.filterNotNull()
+        if (validDescriptors.size == 3 && validDescriptors.map { it.size }.distinct().size == 1) {
+            validDescriptors
+        } else {
+            emptyList()
+        }
     }
 
     suspend fun saveFaceEnrollment(
@@ -304,8 +384,15 @@ class DataStoreManager @Inject constructor(
         updatedAt: String? = null,
         syncStatus: String = "SYNCED"
     ) {
+        require(listOf(descriptor1, descriptor2, descriptor3).all { descriptor ->
+            descriptor.isNotEmpty() && descriptor.all { it.isFinite() }
+        }) { "Face enrollment descriptors must be non-empty and contain only finite values" }
+        require(listOf(descriptor1, descriptor2, descriptor3).map { it.size }.distinct().size == 1) {
+            "Face enrollment descriptors must have matching dimensions"
+        }
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.FACE_ENROLLED] = true
+            preferences[PreferencesKeys.USER_ID]?.let { preferences[PreferencesKeys.FACE_ENROLLMENT_USER_ID] = it }
             preferences[PreferencesKeys.FACE_DESCRIPTOR_1] = descriptor1.joinToString(",")
             preferences[PreferencesKeys.FACE_DESCRIPTOR_2] = descriptor2.joinToString(",")
             preferences[PreferencesKeys.FACE_DESCRIPTOR_3] = descriptor3.joinToString(",")
@@ -336,6 +423,7 @@ class DataStoreManager @Inject constructor(
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_2)
             preferences.remove(PreferencesKeys.FACE_DESCRIPTOR_3)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_ID)
+            preferences.remove(PreferencesKeys.FACE_ENROLLMENT_USER_ID)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_VERSION)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_UPDATED_AT)
             preferences.remove(PreferencesKeys.FACE_ENROLLMENT_SYNC_STATUS)
@@ -482,15 +570,26 @@ class DataStoreManager @Inject constructor(
     suspend fun updateSettingsFromServer(settings: com.swayog.employee.data.model.UserSettingsDto) {
         try {
             context.dataStore.edit { preferences ->
-                settings.darkMode?.let { preferences[PreferencesKeys.DARK_MODE] = it }
+                // Account and notification settings synced from server
                 settings.biometricEnabled?.let { preferences[PreferencesKeys.BIOMETRIC_ENABLED] = it }
                 settings.notificationsEnabled?.let { preferences[PreferencesKeys.NOTIFICATIONS_ENABLED] = it }
-                settings.compactViewEnabled?.let { preferences[PreferencesKeys.COMPACT_VIEW_ENABLED] = it }
-                settings.animationsEnabled?.let { preferences[PreferencesKeys.ANIMATIONS_ENABLED] = it }
                 settings.profileVisibilityEnabled?.let { preferences[PreferencesKeys.PROFILE_VISIBILITY_ENABLED] = it }
                 settings.showStatusEnabled?.let { preferences[PreferencesKeys.SHOW_STATUS_ENABLED] = it }
                 settings.activitySharingEnabled?.let { preferences[PreferencesKeys.ACTIVITY_SHARING_ENABLED] = it }
                 settings.language?.let { preferences[PreferencesKeys.LANGUAGE] = it }
+
+                // Local Device Visual Settings:
+                // Only adopt from server if the user has NOT explicitly set a local preference on this device yet.
+                // This prevents server default "false" values from turning off Dark Mode or Compact View after the user enabled them.
+                if (!preferences.contains(PreferencesKeys.DARK_MODE) && settings.darkMode != null) {
+                    preferences[PreferencesKeys.DARK_MODE] = settings.darkMode
+                }
+                if (!preferences.contains(PreferencesKeys.COMPACT_VIEW_ENABLED) && settings.compactViewEnabled != null) {
+                    preferences[PreferencesKeys.COMPACT_VIEW_ENABLED] = settings.compactViewEnabled
+                }
+                if (!preferences.contains(PreferencesKeys.ANIMATIONS_ENABLED) && settings.animationsEnabled != null) {
+                    preferences[PreferencesKeys.ANIMATIONS_ENABLED] = settings.animationsEnabled
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()

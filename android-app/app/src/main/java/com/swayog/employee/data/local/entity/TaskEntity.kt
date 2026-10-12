@@ -47,6 +47,8 @@ data class TaskEntity(
     val sitePhotosJson: String? = null, // JSON array of site photo URLs
     val beforeImagesJson: String? = null, // JSON array of before image URLs for AMC visits
     val afterImagesJson: String? = null, // JSON array of after image URLs for AMC visits
+    val maintenanceVideosJson: String? = null, // JSON array of maintenance video URLs
+    val photoRemarksJson: String? = null, // JSON object keyed by photo index for remarks
     val assignedEmployeeName: String? = null, // Employee name for customer notifications
     val assignedEmployeePhone: String? = null // Employee phone for customer notifications
 ) {
@@ -61,6 +63,16 @@ data class TaskEntity(
             if (!afterImageUrl.isNullOrBlank() && afterImageUrl != beforeImageUrl) fallbackList.add(afterImageUrl)
             if (fallbackList.isNotEmpty()) {
                 sitePhotosList = fallbackList
+            }
+        }
+
+        val maintenanceVideosList = maintenanceVideosJson?.let { try { gson.fromJson(it, Array<String>::class.java).toList().filter { p -> p.isNotBlank() } } catch(_: Exception) { null } }
+        val photoRemarksMap = photoRemarksJson?.let {
+            try {
+                val rawMap = gson.fromJson<Map<String, String>>(it, object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type)
+                rawMap.mapNotNull { (key, value) -> key.toIntOrNull()?.let { it to value } }.toMap().takeIf { it.isNotEmpty() }
+            } catch (_: Exception) {
+                null
             }
         }
 
@@ -104,6 +116,8 @@ data class TaskEntity(
             taskType = inferredTaskType,
             images = sitePhotosList,
             sitePhotos = sitePhotosList,
+            maintenanceVideos = maintenanceVideosList,
+            photoRemarks = photoRemarksMap,
             assignedEmployeeName = assignedEmployeeName,
             assignedEmployeePhone = assignedEmployeePhone
         )

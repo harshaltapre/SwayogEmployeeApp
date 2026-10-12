@@ -1,6 +1,7 @@
 package com.swayog.employee.core.update
 
 import android.content.Context
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -396,42 +397,76 @@ class AppUpdateManager @Inject constructor(
                     throw IllegalStateException(errorType)
                 }
 
-                val body = response.body!!
-                val contentLength = body.contentLength().takeIf { it > 0 } ?: (manifest.fileSize ?: -1L)
-                val tempFile = File(updatesDir, "download-${System.currentTimeMillis()}.tmp")
+                response.close()
+                val tempFile = File(updatesDir, "swayog-v${manifest.versionName}-${manifest.versionCode}.part")
+                var attempt = 0
+                var completed = false
+                var lastError: Exception? = null
+                while (attempt < 3 && !completed) {
+                    attempt++
+                    try {
+                        val existingBytes = tempFile.takeIf { it.exists() }?.length() ?: 0L
+                        val requestBuilder = Request.Builder()
+                            .url(manifest.apkUrl)
+                            .header("User-Agent", "SwayogEmployeeApp/${installedVersionName}")
+                        if (existingBytes > 0L) {
+                            requestBuilder.header("Range", "bytes=$existingBytes-")
+                        }
 
-                body.byteStream().use { input ->
-                    FileOutputStream(tempFile).use { output ->
-                        val buffer = ByteArray(8192)
-                        var bytesRead: Int
-                        var totalRead = 0L
-                        var lastProgressPercent = 0
+                        okHttpClient.newCall(requestBuilder.build()).execute().use { downloadResponse ->
+                            if (!downloadResponse.isSuccessful || downloadResponse.body == null) {
+                                throw IllegalStateException("Failed to download update package (HTTP ${downloadResponse.code}).")
+                            }
+                            val append = existingBytes > 0L && downloadResponse.code == 206
+                            if (!append && existingBytes > 0L) {
+                                tempFile.delete()
+                            }
+                            val startingBytes = if (append) existingBytes else 0L
+                            val contentLength = downloadResponse.body!!.contentLength().takeIf { it > 0 }
+                                ?.let { it + startingBytes }
+                                ?: (manifest.fileSize ?: -1L)
 
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
-                            totalRead += bytesRead
-
-                            if (contentLength > 0) {
-                                val percent = ((totalRead * 100) / contentLength).toInt().coerceIn(0, 100)
-                                if (percent != lastProgressPercent) {
-                                    lastProgressPercent = percent
-                                    _updateState.value = AppUpdateState.Downloading(
-                                        progressPercent = percent,
-                                        bytesDownloaded = totalRead,
-                                        totalBytes = contentLength,
-                                        manifest = manifest
-                                    )
+                            downloadResponse.body!!.byteStream().use { input ->
+                                FileOutputStream(tempFile, append).use { output ->
+                                    val buffer = ByteArray(8192)
+                                    var bytesRead: Int
+                                    var totalRead = startingBytes
+                                    var lastProgressPercent = 0
+                                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                                        output.write(buffer, 0, bytesRead)
+                                        totalRead += bytesRead
+                                        if (contentLength > 0) {
+                                            val percent = ((totalRead * 100) / contentLength)
+                                                .toInt().coerceIn(0, 100)
+                                            if (percent != lastProgressPercent) {
+                                                lastProgressPercent = percent
+                                                _updateState.value = AppUpdateState.Downloading(
+                                                    progressPercent = percent,
+                                                    bytesDownloaded = totalRead,
+                                                    totalBytes = contentLength,
+                                                    manifest = manifest
+                                                )
+                                            }
+                                        }
+                                    }
+                                    output.flush()
                                 }
                             }
                         }
-                        output.flush()
+                        completed = true
+                    } catch (e: Exception) {
+                        lastError = e
+                        if (attempt < 3) {
+                            Log.w(TAG, "Download attempt $attempt failed; retrying: ${e.message}")
+                        }
                     }
                 }
-                response.close()
+                if (!completed) {
+                    throw lastError ?: IllegalStateException("Download failed after retries.")
+                }
 
                 if (manifest.fileSize != null && tempFile.length() != manifest.fileSize) {
-                    tempFile.delete()
-                    throw IllegalStateException("Downloaded update is incomplete (expected ${manifest.fileSize} bytes, got ${tempFile.length()}).")
+                    throw IllegalStateException("Downloaded update is incomplete (expected ${manifest.fileSize} bytes, got ${tempFile.length()}). It can be resumed.")
                 }
 
                 // Verify Checksum
@@ -452,7 +487,9 @@ class AppUpdateManager @Inject constructor(
 
                 // Move temp file to final target APK
                 if (targetApkFile.exists()) targetApkFile.delete()
-                tempFile.renameTo(targetApkFile)
+                if (!tempFile.renameTo(targetApkFile)) {
+                    throw IllegalStateException("Unable to finalize the verified update file.")
+                }
 
                 _updateState.value = AppUpdateState.ReadyToInstall(targetApkFile, manifest)
 
@@ -478,6 +515,29 @@ class AppUpdateManager @Inject constructor(
         val certificateSha256: String?
     )
 
+    private fun normalizeFingerprint(fingerprint: String?): String? {
+        if (fingerprint.isNullOrBlank()) return null
+        return fingerprint.replace(":", "").replace(" ", "").trim().lowercase()
+    }
+
+    private fun extractActiveCertificateBytes(packageInfo: android.content.pm.PackageInfo): ByteArray? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = packageInfo.signingInfo
+            if (signingInfo != null) {
+                val apkSigners = signingInfo.apkContentsSigners
+                if (!apkSigners.isNullOrEmpty()) {
+                    return apkSigners.first().toByteArray()
+                }
+                val history = signingInfo.signingCertificateHistory
+                if (!history.isNullOrEmpty()) {
+                    return history.last().toByteArray()
+                }
+            }
+        }
+        @Suppress("DEPRECATION")
+        return packageInfo.signatures?.firstOrNull()?.toByteArray()
+    }
+
     /**
      * Extracts the SHA-256 fingerprint of the currently installed application certificate.
      */
@@ -490,19 +550,7 @@ class AppUpdateManager @Inject constructor(
                 android.content.pm.PackageManager.GET_SIGNATURES
             }
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, flags)
-            val certBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val signingInfo = packageInfo.signingInfo
-                if (signingInfo != null) {
-                    if (signingInfo.hasMultipleSigners()) {
-                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
-                    } else {
-                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
-                    }
-                } else null
-            } else {
-                @Suppress("DEPRECATION")
-                packageInfo.signatures?.firstOrNull()?.toByteArray()
-            }
+            val certBytes = extractActiveCertificateBytes(packageInfo)
             certBytes?.let { computeSha256(it) }
         } catch (e: Exception) {
             Log.e(TAG, "Error obtaining installed certificate fingerprint: ${e.message}")
@@ -512,30 +560,67 @@ class AppUpdateManager @Inject constructor(
 
     /**
      * Inspects a downloaded APK file to extract its package metadata and signing certificate fingerprint.
+     *
+     * Implementation note: [android.content.pm.PackageManager.getPackageArchiveInfo] has a
+     * well-known platform bug (Android Issue 159537841) where [android.content.pm.PackageInfo.signingInfo]
+     * is null for archive APKs even when GET_SIGNING_CERTIFICATES is requested, particularly for
+     * APKs that are signed with v2/v3 schemes only (no v1 JAR signing).  To be resilient against
+     * devices that have not yet installed a v1-signed build, we try three strategies in order:
+     *
+     *  1. GET_SIGNING_CERTIFICATES  (API 28+)  — preferred, handles key rotation
+     *  2. GET_SIGNATURES (deprecated fallback)   — works when v1 (JAR) signing is present
+     *  3. Bitwise OR of both flags               — some OEM firmwares need this combination
+     *
+     * Starting with Build 28 all new APKs are signed with BOTH v1+v2 (enforced in build.gradle.kts),
+     * so strategy 1 or 2 will always succeed going forward.
      */
     fun getApkArchiveDetails(apkFile: File): ApkArchiveDetails? {
         return try {
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+            @Suppress("DEPRECATION")
+            val legacyFlag = android.content.pm.PackageManager.GET_SIGNATURES
+
+            val flagsToTry: List<Int> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val modernFlag = android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+                listOf(
+                    modernFlag,                   // strategy 1: modern only
+                    legacyFlag,                   // strategy 2: legacy only (works for v1-signed APKs)
+                    modernFlag or legacyFlag      // strategy 3: combined (some OEM firmwares)
+                )
             } else {
-                @Suppress("DEPRECATION")
-                android.content.pm.PackageManager.GET_SIGNATURES
+                listOf(legacyFlag)
             }
-            val packageInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags) ?: return null
+
+            var packageInfo: android.content.pm.PackageInfo? = null
+            var certBytes: ByteArray? = null
+
+            for (flags in flagsToTry) {
+                val pi = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags)
+                    ?: continue
+                val bytes = extractActiveCertificateBytes(pi)
+                if (bytes != null) {
+                    packageInfo = pi
+                    certBytes = bytes
+                    Log.d(TAG, "getApkArchiveDetails: certificate extracted using flags=0x${flags.toString(16)}")
+                    break
+                }
+                // Even if cert is null, keep the packageInfo for metadata (package/version)
+                if (packageInfo == null) packageInfo = pi
+            }
+
+            if (packageInfo == null) {
+                Log.w(TAG, "getApkArchiveDetails: getPackageArchiveInfo returned null for all flag combinations")
+                return null
+            }
+
+            if (certBytes == null) {
+                // APK metadata is readable but certificate could not be extracted.
+                // This happens on Android < 28 or for v2-only APKs on older platform builds.
+                // Log a warning; installApk() will fall back to manifest.certificateSha256 as
+                // the authoritative certificate reference in this case.
+                Log.w(TAG, "getApkArchiveDetails: package metadata available but certificate bytes could not be extracted (v2-only APK on API ${Build.VERSION.SDK_INT}?). Will rely on manifest.certificateSha256 for cert validation.")
+            }
+
             val versionCode = PackageInfoCompat.getLongVersionCode(packageInfo)
-            val certBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val signingInfo = packageInfo.signingInfo
-                if (signingInfo != null) {
-                    if (signingInfo.hasMultipleSigners()) {
-                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
-                    } else {
-                        signingInfo.apkContentsSigners?.firstOrNull()?.toByteArray()
-                    }
-                } else null
-            } else {
-                @Suppress("DEPRECATION")
-                packageInfo.signatures?.firstOrNull()?.toByteArray()
-            }
             val certSha256 = certBytes?.let { computeSha256(it) }
             ApkArchiveDetails(
                 packageName = packageInfo.packageName,
@@ -569,9 +654,19 @@ class AppUpdateManager @Inject constructor(
         val downloadedCode = archiveDetails?.versionCode ?: -1L
         val downloadedName = archiveDetails?.versionName ?: "N/A"
         val downloadedCertSha256 = archiveDetails?.certificateSha256
+        val downloadedApkSha256 = manifest?.sha256 ?: calculateSha256(apkFile)
+        val manifestCertSha256 = normalizeFingerprint(manifest?.certificateSha256)
 
         val latestCode = manifest?.versionCode ?: downloadedCode
         val latestName = manifest?.versionName ?: downloadedName
+
+        val normInstalledCert = normalizeFingerprint(expectedCertSha256)
+        // normDownloadedCert may be null when getPackageArchiveInfo() cannot extract certificate
+        // bytes from a v2-only APK.  In that case, fall back to manifest.certificateSha256 which
+        // is injected by deploy-release.ts from the actual APK cert verified at build time.
+        val normDownloadedCert = normalizeFingerprint(downloadedCertSha256) ?: manifestCertSha256
+        val certArchiveExtracted = normalizeFingerprint(downloadedCertSha256) != null
+        val certInstalledEqualsDownloaded = (normInstalledCert != null && normInstalledCert == normDownloadedCert)
 
         // Log required diagnostic format
         Log.i(TAG, "==================== APP UPDATE DIAGNOSTICS ====================")
@@ -583,8 +678,14 @@ class AppUpdateManager @Inject constructor(
         Log.i(TAG, "Downloaded APK path:                      ${apkFile.absolutePath}")
         Log.i(TAG, "Downloaded APK package name:              ${downloadedPackage ?: "UNKNOWN"}")
         Log.i(TAG, "Downloaded APK versionCode:               $downloadedCode")
-        Log.i(TAG, "Downloaded APK signing cert fingerprint:  ${downloadedCertSha256 ?: "UNKNOWN"}")
-        Log.i(TAG, "Expected signing certificate fingerprint: ${expectedCertSha256 ?: "UNKNOWN"}")
+        Log.i(TAG, "Downloaded APK SHA-256:                   $downloadedApkSha256")
+        Log.i(TAG, "Manifest sha256:                          ${manifest?.sha256 ?: "N/A"}")
+        Log.i(TAG, "Manifest certificateSha256:               ${manifestCertSha256 ?: "N/A"}")
+        Log.i(TAG, "INSTALLED_CERT_SHA256=$normInstalledCert")
+        Log.i(TAG, "DOWNLOADED_CERT_SHA256=${normalizeFingerprint(downloadedCertSha256) ?: "NULL (extracted from manifest fallback)"}")
+        Log.i(TAG, "CERT_ARCHIVE_EXTRACTED=$certArchiveExtracted")
+        Log.i(TAG, "CERT_INSTALLED_EQUALS_DOWNLOADED=$certInstalledEqualsDownloaded")
+        Log.i(TAG, "Downloaded APK file size:                 ${apkFile.length()} bytes")
         Log.i(TAG, "================================================================")
 
         // 2. Pre-installation Compatibility Checks
@@ -610,27 +711,44 @@ class AppUpdateManager @Inject constructor(
         }
 
         // 3. Signing Certificate Verification (Prevents "package conflicts with an existing package")
-        if (expectedCertSha256 == null || downloadedCertSha256 == null ||
-            !expectedCertSha256.equals(downloadedCertSha256, ignoreCase = true)) {
-                val errorMsg = "Installation blocked: Signing certificate mismatch.\n" +
-                    "The downloaded APK is signed with a different key than the installed app.\n" +
-                    "Installed: $expectedCertSha256\n" +
-                    "Downloaded: $downloadedCertSha256"
-                Log.e(TAG, "CRITICAL SIGNING MISMATCH: $errorMsg")
-                _updateState.value = AppUpdateState.Error(
-                    message = "Update cannot be installed due to a certificate signature mismatch. Please ensure updates are built with the production release key.",
-                    manifest = manifest
-                )
-                return
+        //
+        // normDownloadedCert is the APK-archive cert (or manifest cert as fallback when the
+        // archive API returned null — see getApkArchiveDetails() for explanation).
+        // We require both:
+        //   (a) installed cert == downloaded cert  (OTA compatibility)
+        //   (b) downloaded cert == production cert (tamper guard)
+        //
+        // If normDownloadedCert is still null here it means we have neither archive bytes nor a
+        // manifest cert, which indicates a broken manifest — block the install.
+        if (normDownloadedCert == null) {
+            val errorMsg = "Installation blocked: Certificate could not be verified (no certificate data in APK or manifest)."
+            Log.e(TAG, "CERT VERIFICATION FAILURE: $errorMsg")
+            _updateState.value = AppUpdateState.Error(
+                message = "Update cannot be installed: certificate information is missing from the update manifest.",
+                manifest = manifest
+            )
+            return
         }
 
-        // Validate manifest certificateSha256 when provided
-        val manifestCert = manifest?.certificateSha256
-        if (!manifestCert.isNullOrBlank()) {
-            val cleanManifestCert = manifestCert.replace(":", "").trim()
-            val cleanDownloadedCert = downloadedCertSha256.replace(":", "").trim()
-            if (!cleanManifestCert.equals(cleanDownloadedCert, ignoreCase = true)) {
-                val errorMsg = "Installation blocked: Manifest certificate ($cleanManifestCert) does not match downloaded APK ($cleanDownloadedCert)."
+        if (normInstalledCert == null || normInstalledCert != normDownloadedCert) {
+            val errorMsg = "Installation blocked: Signing certificate mismatch.\n" +
+                "The downloaded APK is signed with a different key than the installed app.\n" +
+                "Installed: $normInstalledCert\n" +
+                "Downloaded/Manifest: $normDownloadedCert"
+            Log.e(TAG, "CRITICAL SIGNING MISMATCH: $errorMsg")
+            _updateState.value = AppUpdateState.Error(
+                message = "Update cannot be installed due to a certificate signature mismatch. Please ensure updates are built with the production release key.",
+                manifest = manifest
+            )
+            return
+        }
+
+        // Validate manifest certificateSha256 when provided AND archive cert was successfully extracted
+        // (If archive cert was null, normDownloadedCert already equals manifestCertSha256 by construction)
+        if (!manifestCertSha256.isNullOrBlank() && certArchiveExtracted) {
+            val normManifestCert = manifestCertSha256
+            if (normManifestCert != normalizeFingerprint(downloadedCertSha256)) {
+                val errorMsg = "Installation blocked: Manifest certificate ($normManifestCert) does not match downloaded APK cert (${normalizeFingerprint(downloadedCertSha256)})."
                 Log.e(TAG, "CRITICAL MANIFEST CERT MISMATCH: $errorMsg")
                 _updateState.value = AppUpdateState.Error(
                     message = "Update manifest certificate validation failed. The release payload may have been modified or misconfigured.",
@@ -663,12 +781,13 @@ class AppUpdateManager @Inject constructor(
 
             Log.i(TAG, "Launching Android package installer with URI: $contentUri")
 
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
                 setDataAndType(contentUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                clipData = ClipData.newRawUri("update-apk", contentUri)
             }
 
             context.startActivity(installIntent)

@@ -208,6 +208,7 @@ function CalendarCell({
   isWeeklyOff,
   weeklyOffLabel = "Off",
   festivalHolidayName,
+  isAutoAbsent,
 }: {
   record?: AttendanceRecord;
   day: number;
@@ -215,11 +216,15 @@ function CalendarCell({
   isWeeklyOff: boolean;
   weeklyOffLabel?: string;
   festivalHolidayName?: string;
+  isAutoAbsent?: boolean;
 }) {
   let effectiveStatus: AttendanceStatus | null = record ? record.status : null;
   if (!effectiveStatus) {
     if (festivalHolidayName) effectiveStatus = "festival-holiday";
     else if (isWeeklyOff) effectiveStatus = "weekly-off";
+    else if (isAutoAbsent) effectiveStatus = "absent";
+  } else if (isAutoAbsent && effectiveStatus !== "present" && effectiveStatus !== "late" && effectiveStatus !== "half-day" && effectiveStatus !== "leave") {
+    effectiveStatus = "absent";
   }
 
   const cfg = effectiveStatus ? statusConfig[effectiveStatus] : null;
@@ -231,6 +236,8 @@ function CalendarCell({
           ? `🎉 Festival Holiday: ${festivalHolidayName}`
           : isWeeklyOff
           ? `🏖️ ${weeklyOffLabel}`
+          : effectiveStatus === "absent" && isAutoAbsent
+          ? "Absent (Cutoff 6:30 PM passed without check-in)"
           : effectiveStatus
           ? statusConfig[effectiveStatus].label
           : undefined
@@ -242,6 +249,8 @@ function CalendarCell({
           ? "bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/30"
           : isWeeklyOff
           ? "bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30"
+          : effectiveStatus === "absent"
+          ? "bg-red-50/70 dark:bg-red-950/20 border border-red-200/60 dark:border-red-900/30"
           : record
           ? "hover:scale-105 cursor-default bg-slate-50/50 dark:bg-slate-800/30"
           : "opacity-40"
@@ -256,6 +265,8 @@ function CalendarCell({
             ? "text-rose-700 dark:text-rose-400 font-bold"
             : isWeeklyOff
             ? "text-amber-700 dark:text-amber-400 font-bold"
+            : effectiveStatus === "absent"
+            ? "text-red-700 dark:text-red-400 font-bold"
             : "text-slate-700 dark:text-slate-300"
         )}
       >
@@ -268,6 +279,10 @@ function CalendarCell({
       ) : isWeeklyOff ? (
         <span className="text-[8px] font-semibold text-amber-600 dark:text-amber-400">
           {weeklyOffLabel}
+        </span>
+      ) : effectiveStatus === "absent" ? (
+        <span className="text-[8px] font-bold text-red-600 dark:text-red-400">
+          Absent
         </span>
       ) : null}
       {cfg && <span className={cn("w-2 h-2 rounded-full mx-auto mt-0.5", cfg.dot)} />}
@@ -734,13 +749,6 @@ export default function SubAdminAttendance() {
     setBreakTimeRemaining(0);
   };
 
-  // ── Stats ───────────────────────────────────────────────────────────────────
-  const thisMonthRecords = records.filter((r) => r.date.startsWith(`${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}`));
-  const presentCount = monthlyData?.present ?? thisMonthRecords.filter((r) => r.status === "present" || r.status === "late" || r.status === "half-day").length;
-  const absentCount = monthlyData?.absent ?? thisMonthRecords.filter((r) => r.status === "absent").length;
-  const lateCount = thisMonthRecords.filter((r) => r.status === "late").length;
-  const totalHours = thisMonthRecords.reduce((acc, r) => acc + r.workHours, 0);
-
   // Check if today is a weekly off or declared festival holiday
   const weeklyOffDays: number[] = rules?.weeklyOffDays || monthlyData?.rules?.weeklyOffDays || [0];
   const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -749,6 +757,7 @@ export default function SubAdminAttendance() {
   const isTodayWeeklyOff = weeklyOffDays.includes(todayDateObj.getDay());
   const todayDayName = dayNames[todayDateObj.getDay()];
   const todayHoliday = monthlyData?.holidays?.find((h: any) => (h.dateStr || h.date?.slice(0, 10)) === today);
+  const isPast630Today = todayDateObj.getHours() > 18 || (todayDateObj.getHours() === 18 && todayDateObj.getMinutes() >= 30);
 
   // ── Calendar ─────────────────────────────────────────────────────────────────
   const year = currentDate.getFullYear();
@@ -766,6 +775,40 @@ export default function SubAdminAttendance() {
   ];
 
   const todayChecked = records.find((r) => r.date === today);
+
+  // Auto-calculated absent days considering past working days and 6:30 PM cutoff for today
+  const calculatedAbsentDays = useMemo(() => {
+    let count = 0;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const isPast630 = now.getHours() > 18 || (now.getHours() === 18 && now.getMinutes() >= 30);
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dDate = new Date(year, month, d);
+      if (dDate > todayStart) break;
+      const isDToday = dDate.getTime() === todayStart.getTime();
+      const dStr = `${year}-${pad(month + 1)}-${pad(d)}`;
+      const isWOff = weeklyOffDays.includes(dDate.getDay());
+      const isHol = monthlyData?.holidays?.some((h: any) => (h.dateStr || h.date?.slice(0, 10)) === dStr);
+      if (isWOff || isHol) continue;
+
+      const r = records.find((rec) => rec.date === dStr);
+      const hasCheckedIn = Boolean(r?.checkIn || (r?.status && ["present", "late", "half-day", "leave"].includes(r.status)));
+      if (isDToday) {
+        if (!hasCheckedIn && isPast630) count++;
+      } else {
+        if (!hasCheckedIn) count++;
+      }
+    }
+    return count;
+  }, [year, month, daysInMonth, weeklyOffDays, monthlyData?.holidays, records]);
+
+  // ── Stats ───────────────────────────────────────────────────────────────────
+  const thisMonthRecords = records.filter((r) => r.date.startsWith(`${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}`));
+  const presentCount = monthlyData?.present ?? thisMonthRecords.filter((r) => r.status === "present" || r.status === "late" || r.status === "half-day").length;
+  const absentCount = monthlyData?.absent ? Math.max(monthlyData.absent, calculatedAbsentDays) : calculatedAbsentDays;
+  const lateCount = thisMonthRecords.filter((r) => r.status === "late").length;
+  const totalHours = thisMonthRecords.reduce((acc, r) => acc + r.workHours, 0);
 
   // Recent records (last 10 working days)
   const recentRecords = [...records].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
@@ -857,6 +900,17 @@ export default function SubAdminAttendance() {
                         </div>
                       )}
                     </div>
+                  ) : isPast630Today && !isTodayWeeklyOff && !todayHoliday ? (
+                    <div className="flex flex-col items-center gap-1.5 bg-red-950/60 border border-red-500/40 rounded-2xl p-4 text-center max-w-sm">
+                      <div className="flex items-center gap-2 text-red-300 font-semibold text-sm">
+                        <XCircle className="h-4 w-4 text-red-400" />
+                        <span>Marked as Absent</span>
+                      </div>
+                      <Badge className="border text-xs uppercase px-2.5 py-1 font-bold bg-red-100 text-red-800 border-red-200">
+                        Absent (No Check-in till 6:30 PM)
+                      </Badge>
+                      <span className="text-xs text-slate-400">Shift ended at 6:30 PM without check-in</span>
+                    </div>
                   ) : (
                     <div className="text-slate-400 text-sm">You haven't checked in yet today.</div>
                   )}
@@ -895,25 +949,33 @@ export default function SubAdminAttendance() {
                         <span className="text-slate-200 font-medium text-sm">Marked as {statusConfig[todayChecked.status]?.label}</span>
                       </div>
                     ) : !todayChecked?.checkIn ? (
-                      <>
-                        <Button
-                          id="btn-check-in"
-                          size="lg"
-                          className="bg-emerald-500 hover:bg-emerald-400 text-white px-8 py-6 text-base font-semibold shadow-lg shadow-emerald-900/50 transition-all hover:scale-105"
-                          onClick={startCamera}
-                          disabled={isCapturingCheckIn}
-                        >
-                          {isCapturingCheckIn ? (
-                            <>
-                              <Upload className="mr-2 h-5 w-5 animate-pulse" /> Capturing...
-                            </>
-                          ) : (
-                            <>
-                              <Camera className="mr-2 h-5 w-5" /> Selfie & Check In
-                            </>
-                          )}
-                        </Button>
-                      </>
+                      isPast630Today && !isTodayWeeklyOff && !todayHoliday ? (
+                        <div className="flex flex-col items-center gap-1.5 bg-slate-800/80 border border-red-500/30 px-5 py-3 rounded-xl text-center">
+                          <AlertCircle className="h-5 w-5 text-red-400" />
+                          <span className="text-slate-200 font-medium text-sm">Shift Ended — Marked Absent</span>
+                          <span className="text-slate-400 text-xs">Cutoff was 6:30 PM. Apply for regularization if needed.</span>
+                        </div>
+                      ) : (
+                        <>
+                          <Button
+                            id="btn-check-in"
+                            size="lg"
+                            className="bg-emerald-500 hover:bg-emerald-400 text-white px-8 py-6 text-base font-semibold shadow-lg shadow-emerald-900/50 transition-all hover:scale-105"
+                            onClick={startCamera}
+                            disabled={isCapturingCheckIn}
+                          >
+                            {isCapturingCheckIn ? (
+                              <>
+                                <Upload className="mr-2 h-5 w-5 animate-pulse" /> Capturing...
+                              </>
+                            ) : (
+                              <>
+                                <Camera className="mr-2 h-5 w-5" /> Selfie & Check In
+                              </>
+                            )}
+                          </Button>
+                        </>
+                      )
                     ) : !todayChecked.checkOut ? (
                       <Button
                         id="btn-check-out"
@@ -1299,6 +1361,11 @@ export default function SubAdminAttendance() {
                       (h: any) => (h.dateStr || h.date?.slice(0, 10)) === dateStr
                     );
 
+                    const todayStart = new Date(todayDateObj.getFullYear(), todayDateObj.getMonth(), todayDateObj.getDate());
+                    const isPastDate = cellDate < todayStart;
+                    const hasCheckedIn = Boolean(rec?.checkIn || (rec?.status && ["present", "late", "half-day", "leave"].includes(rec.status)));
+                    const isAutoAbsent = !isWeeklyOff && !matchedHoliday && !hasCheckedIn && (isPastDate || (isToday && isPast630Today));
+
                     return (
                       <CalendarCell
                         key={dateStr}
@@ -1308,6 +1375,7 @@ export default function SubAdminAttendance() {
                         isWeeklyOff={isWeeklyOff}
                         weeklyOffLabel={weeklyOffLabel}
                         festivalHolidayName={matchedHoliday?.name}
+                        isAutoAbsent={isAutoAbsent}
                       />
                     );
                   })}

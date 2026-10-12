@@ -157,6 +157,16 @@ fun FaceEnrollmentScreen(
                 progress = uiState.currentStep / 3f,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = { viewModel.captureCurrentStep() },
+                enabled = uiState.isFaceDetected && !uiState.isLoading,
+                modifier = Modifier.fillMaxWidth(0.8f)
+            ) {
+                Text(if (uiState.isFaceDetected) "Capture Step ${uiState.currentStep} of 3" else "Position face in circle to capture")
+            }
             
             if (uiState.isLoading) {
                 Spacer(modifier = Modifier.height(16.dp))

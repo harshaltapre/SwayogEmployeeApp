@@ -22,6 +22,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.swayog.employee.data.model.CalendarDayDto
+import java.util.Calendar
+import java.util.Locale
 
 @Composable
 fun WorkforceCalendarView(
@@ -135,6 +137,14 @@ private fun CalendarDayCell(
     day: CalendarDayDto,
     onClick: () -> Unit
 ) {
+    val nowCal = remember { Calendar.getInstance() }
+    val todayStr = String.format(Locale.US, "%04d-%02d-%02d", nowCal.get(Calendar.YEAR), nowCal.get(Calendar.MONTH) + 1, nowCal.get(Calendar.DAY_OF_MONTH))
+    val isToday = day.date == todayStr
+    val isPastCutoffToday = isToday && (nowCal.get(Calendar.HOUR_OF_DAY) > 18 || (nowCal.get(Calendar.HOUR_OF_DAY) == 18 && nowCal.get(Calendar.MINUTE) >= 30))
+    val isPastDate = day.date < todayStr
+    val hasValidAttendance = day.checkInTime != null || day.isPresent || day.isHalfDay || day.isPaidLeave || day.isUnpaidLeave
+    val isAutoAbsent = !day.isSunday && !day.isHoliday && !hasValidAttendance && (day.isAbsent || isPastDate || isPastCutoffToday)
+
     // Determine cell styling
     val (dotColor, backgroundColor, textColor) = when {
         day.isSunday -> Triple(Color(0xFFE53935), Color(0xFFFFEBEE), Color(0xFFC62828))
@@ -142,7 +152,7 @@ private fun CalendarDayCell(
         day.isPaidLeave || day.isUnpaidLeave -> Triple(Color(0xFF3949AB), Color(0xFFE8EAF6), Color(0xFF283593))
         day.isPresent -> Triple(Color(0xFF2E7D32), Color(0xFFE8F5E9), Color(0xFF1B5E20))
         day.isHalfDay -> Triple(Color(0xFFF57C00), Color(0xFFFFF3E0), Color(0xFFE65100))
-        day.isAbsent -> Triple(Color(0xFFD32F2F), Color(0xFFFFEBEE), Color(0xFFB71C1C))
+        day.isAbsent || isAutoAbsent -> Triple(Color(0xFFD32F2F), Color(0xFFFFEBEE), Color(0xFFB71C1C))
         else -> Triple(Color.Transparent, MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), MaterialTheme.colorScheme.onSurface)
     }
 
