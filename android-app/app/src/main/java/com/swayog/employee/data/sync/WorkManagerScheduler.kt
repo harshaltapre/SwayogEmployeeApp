@@ -2,6 +2,8 @@ package com.swayog.employee.data.sync
 
 import android.content.Context
 import androidx.work.*
+import java.util.Calendar
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 object WorkManagerScheduler {
@@ -18,7 +20,7 @@ object WorkManagerScheduler {
             .build()
         
         val periodicWorkRequest = PeriodicWorkRequestBuilder<PeriodicTaskRefreshWorker>(
-            15, TimeUnit.MINUTES // Refresh every 15 minutes
+            15, TimeUnit.MINUTES
         )
             .setConstraints(constraints)
             .setBackoffCriteria(
@@ -29,7 +31,7 @@ object WorkManagerScheduler {
         
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PeriodicTaskRefreshWorker.WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE, // Update if already exists
+            ExistingPeriodicWorkPolicy.UPDATE,
             periodicWorkRequest
         )
         
@@ -95,5 +97,58 @@ object WorkManagerScheduler {
     fun cancelCheckInReminder(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(CheckInReminderWorker.WORK_NAME)
         android.util.Log.d("WorkManagerScheduler", "Cancelled check-in reminder")
+    }
+
+    /**
+     * Schedule the auto-checkout one-shot worker to fire at 7:00 PM IST today
+     * (or tomorrow if it's already past 7 PM IST).
+     *
+     * IST = UTC + 05:30 -> 19:00 IST = 13:30 UTC
+     *
+     * This function is idempotent: calling it again simply replaces any pending
+     * work, ensuring the timer is always fresh.
+     */
+    fun scheduleAutoCheckout(context: Context) {
+        val istZone = TimeZone.getTimeZone("Asia/Kolkata")
+        val nowIst = Calendar.getInstance(istZone)
+
+        // Build target: today at 19:00:00 IST
+        val targetIst = Calendar.getInstance(istZone).apply {
+            set(Calendar.HOUR_OF_DAY, 19)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        // If it's already past 7 PM IST, schedule for tomorrow
+        if (nowIst >= targetIst) {
+            targetIst.add(Calendar.DAY_OF_YEAR, 1)
+        }
+
+        val delayMs = targetIst.timeInMillis - nowIst.timeInMillis
+
+        android.util.Log.d(
+            "WorkManagerScheduler",
+            "Auto-checkout scheduled in ${delayMs / 60_000} minutes (fires at ${targetIst.time})"
+        )
+
+        val oneTimeWorkRequest = OneTimeWorkRequestBuilder<AutoCheckoutWorker>()
+            .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
+            .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.MINUTES)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            AutoCheckoutWorker.WORK_NAME,
+            ExistingWorkPolicy.REPLACE, // Replace if already pending - keeps the timer fresh
+            oneTimeWorkRequest
+        )
+    }
+
+    /**
+     * Cancel any pending auto-checkout work (e.g., on logout or when user manually checks out).
+     */
+    fun cancelAutoCheckout(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(AutoCheckoutWorker.WORK_NAME)
+        android.util.Log.d("WorkManagerScheduler", "Cancelled auto-checkout worker")
     }
 }

@@ -36,6 +36,8 @@ class SwayogEmployeeApp : Application(), Configuration.Provider {
         WorkManagerScheduler.schedulePeriodicTaskRefresh(this)
         // Schedule periodic check-in reminder for employees who haven't checked in
         WorkManagerScheduler.scheduleCheckInReminder(this)
+        // Schedule daily auto-checkout at 7:00 PM IST for employees who forgot to check out
+        WorkManagerScheduler.scheduleAutoCheckout(this)
     }
     
     private fun createNotificationChannel() {
