@@ -100,6 +100,7 @@ fun AttendanceScreen(
     var showCamera by remember { mutableStateOf(false) }
     var showEnrollmentBlocker by remember { mutableStateOf(false) }
     var showFullScreenMap by remember { mutableStateOf(false) }
+    var showLocationUnavailableDialog by remember { mutableStateOf(false) }
     var isSatelliteView by remember { mutableStateOf(true) }
     var currentLatitude by remember { mutableStateOf<Double?>(null) }
     var currentLongitude by remember { mutableStateOf<Double?>(null) }
@@ -235,29 +236,62 @@ fun AttendanceScreen(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
         val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
 
-        if (fineGranted && cameraGranted) {
+        if ((fineGranted || coarseGranted) && cameraGranted) {
             try {
-                fusedLocationClient.lastLocation.addOnSuccessListener { loc: Location? ->
-                    if (loc != null) {
-                        currentLatitude = loc.latitude
-                        currentLongitude = loc.longitude
-                    } else {
-                        currentLatitude = 18.5204
-                        currentLongitude = 73.8567
+                // First attempt: fresh high-accuracy GPS fix
+                fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                    .addOnSuccessListener { freshLoc: Location? ->
+                        if (freshLoc != null) {
+                            // Fresh GPS fix obtained — proceed with accurate location
+                            currentLatitude = freshLoc.latitude
+                            currentLongitude = freshLoc.longitude
+                            showCamera = true
+                        } else {
+                            // Fresh fix failed; try the last known location as a quick fallback
+                            fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
+                                if (lastLoc != null) {
+                                    currentLatitude = lastLoc.latitude
+                                    currentLongitude = lastLoc.longitude
+                                    showCamera = true
+                                } else {
+                                    // No location available at all — block check-in
+                                    showLocationUnavailableDialog = true
+                                }
+                            }.addOnFailureListener {
+                                // Last location also failed — block check-in
+                                showLocationUnavailableDialog = true
+                            }
+                        }
                     }
-                    showCamera = true
-                }.addOnFailureListener {
-                    currentLatitude = 18.5204
-                    currentLongitude = 73.8567
-                    showCamera = true
-                }
+                    .addOnFailureListener {
+                        // getCurrentLocation failed; try last known location
+                        try {
+                            fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
+                                if (lastLoc != null) {
+                                    currentLatitude = lastLoc.latitude
+                                    currentLongitude = lastLoc.longitude
+                                    showCamera = true
+                                } else {
+                                    showLocationUnavailableDialog = true
+                                }
+                            }.addOnFailureListener {
+                                showLocationUnavailableDialog = true
+                            }
+                        } catch (_: SecurityException) {
+                            showLocationUnavailableDialog = true
+                        }
+                    }
             } catch (_: SecurityException) {
                 Toast.makeText(context, "Location permission missing", Toast.LENGTH_SHORT).show()
             }
+        } else if (!cameraGranted) {
+            Toast.makeText(context, "Camera permission is required to check-in", Toast.LENGTH_LONG).show()
         } else {
-            Toast.makeText(context, "Location and Camera permissions are required to check-in", Toast.LENGTH_LONG).show()
+            // Location permission was denied — cannot get accurate location, block check-in
+            showLocationUnavailableDialog = true
         }
     }
 
@@ -321,6 +355,64 @@ fun AttendanceScreen(
                     Toast.makeText(context, "Please go to Settings to enroll your face.", Toast.LENGTH_LONG).show()
                 }) {
                     Text("OK")
+                }
+            }
+        )
+    }
+
+    if (showLocationUnavailableDialog) {
+        AlertDialog(
+            onDismissRequest = { showLocationUnavailableDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.LocationOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = { Text("Location Required", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Accurate GPS location is required to check in.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "Your device could not determine your location. Please:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "• Enable GPS / Location Services in device settings\n" +
+                        "• Make sure you are not in a signal-blocked area\n" +
+                        "• Wait a few seconds and try again",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLocationUnavailableDialog = false
+                        // Open device Location Settings so the user can enable GPS
+                        val intent = Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Open Location Settings")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLocationUnavailableDialog = false }) {
+                    Text("Cancel")
                 }
             }
         )
