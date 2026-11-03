@@ -71,11 +71,11 @@ android {
         }
 
         // BuildConfig fields for API configuration
-        buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard-two.vercel.app/api/v1/")}\"")
-        buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard-two.vercel.app")}\"")
-        val rawDistUrl = getLocalProperty("PUBLIC_DISTRIBUTION_URL", "https://swayog-dashboard-two.vercel.app")
+        buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard.vercel.app/api/v1/")}\"")
+        buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
+        val rawDistUrl = getLocalProperty("PUBLIC_DISTRIBUTION_URL", "https://swayog-dashboard.vercel.app")
         val safeDistUrl = if (rawDistUrl.contains(".r2.cloudflarestorage.com") || rawDistUrl.contains("your-public-domain.com") || rawDistUrl.isBlank()) {
-            "https://swayog-dashboard-two.vercel.app"
+            "https://swayog-dashboard.vercel.app"
         } else {
             rawDistUrl
         }
@@ -199,16 +199,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard-two.vercel.app/api/v1/")}\"")
-            buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard-two.vercel.app")}\"")
+            buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard.vercel.app/api/v1/")}\"")
+            buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
             
             // Memory optimization for release builds
             isJniDebuggable = false
         }
         debug {
             isDebuggable = true
-            buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard-two.vercel.app/api/v1/")}\"")
-            buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard-two.vercel.app")}\"")
+            buildConfigField("String", "API_BASE_URL", "\"${getLocalProperty("API_BASE_URL", "https://swayog-dashboard.vercel.app/api/v1/")}\"")
+            buildConfigField("String", "WS_BASE_URL", "\"${getLocalProperty("WS_BASE_URL", "wss://swayog-dashboard.vercel.app")}\"")
         }
     }
     
@@ -371,5 +371,4 @@ tasks.register("cleanRoom") {
         delete(file("${project.projectDir}/app/build/generated"))
     }
 }
-
 
