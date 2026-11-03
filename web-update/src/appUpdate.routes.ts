@@ -24,6 +24,9 @@ appUpdateRouter.get("/api/v1/app/update/latest.json", (req: Request, res: Respon
 });
 
 // Direct APK download routes
+appUpdateRouter.get("/downloads/SwayogEmployeeApp.apk", (req: Request, res: Response, next: NextFunction) => {
+  downloadReleaseApk(req, res).catch(next);
+});
 appUpdateRouter.get(
   "/releases/android/:versionName/build-:versionCode/app-release.apk",
   (req: Request, res: Response, next: NextFunction) => {

@@ -77,13 +77,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ) {
               parsed.appId = parsed.appId || "com.swayog.employee";
               parsed.platform = parsed.platform || "android";
-              // Never return private unauthenticated R2 endpoint to Android clients
-              if (
-                parsed.apkUrl.includes(".r2.cloudflarestorage.com") &&
-                !parsed.apkUrl.includes("X-Amz-Signature")
-              ) {
-                parsed.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${parsed.versionName}/build-${parsed.versionCode}/app-release.apk`;
-              }
+              const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+              const webDomain = (
+                process.env.WEB_DOMAIN ||
+                (productionDomain ? `https://${productionDomain}` : "https://swayog-dashboard-two.vercel.app")
+              ).replace(/\/$/, "");
+              parsed.apkUrl = `${webDomain}/downloads/SwayogEmployeeApp.apk`;
               return res.status(200).json(parsed);
             }
           }

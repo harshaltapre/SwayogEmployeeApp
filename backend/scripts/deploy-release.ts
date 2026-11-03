@@ -174,18 +174,9 @@ async function main() {
   const buildSpecificApkKey = `releases/android/${versionName}/build-${versionCode}/app-release.apk`;
   const latestApkKey = "releases/android/latest.apk";
 
-  // Determine authoritative public APK URL
-  const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
-  let publicApkUrl = "";
-  
-  if (publicBaseUrl && !publicBaseUrl.includes(".r2.cloudflarestorage.com") && !publicBaseUrl.includes("your-public-domain.com")) {
-    publicApkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${buildSpecificApkKey}`;
-    console.log(`[Deploy] Using public CDN URL for APK: ${publicApkUrl}`);
-  } else {
-    const webDomain = process.env.WEB_DOMAIN || "https://swayog-dashboard.vercel.app";
-    publicApkUrl = `${webDomain.replace(/\/$/, "")}/releases/android/${versionName}/build-${versionCode}/app-release.apk`;
-    console.log(`[Deploy] Using web dashboard download URL for APK: ${publicApkUrl}`);
-  }
+  const webDomain = (process.env.WEB_DOMAIN || "https://swayog-dashboard-two.vercel.app").replace(/\/$/, "");
+  const publicApkUrl = `${webDomain}/downloads/SwayogEmployeeApp.apk`;
+  console.log(`[Deploy] Using public APK download URL: ${publicApkUrl}`);
 
   // Step 3: Extract and verify signing certificate directly from the built APK
   let actualApkCertSha256: string | undefined = undefined;
@@ -282,8 +273,24 @@ async function main() {
     console.log(`  1. ${buildSpecificApkKey}`);
     await uploadToR2(r2Client, apkBuffer, buildSpecificApkKey, "application/vnd.android.package-archive", `swayog-v${versionName}-${versionCode}.apk`);
 
+    const uploadedApk = await getFromR2(r2Client, buildSpecificApkKey);
+    const uploadedApkSha256 = crypto.createHash("sha256").update(uploadedApk).digest("hex");
+    if (uploadedApk.length !== fileSize || uploadedApkSha256 !== sha256) {
+      throw new Error(
+        `Uploaded APK verification failed for ${buildSpecificApkKey}: expected ${fileSize} bytes/${sha256}, got ${uploadedApk.length} bytes/${uploadedApkSha256}`
+      );
+    }
+
     console.log(`  2. ${latestApkKey}`);
     await uploadToR2(r2Client, apkBuffer, latestApkKey, "application/vnd.android.package-archive", "app-release.apk");
+
+    const uploadedLatestApk = await getFromR2(r2Client, latestApkKey);
+    const latestApkSha256 = crypto.createHash("sha256").update(uploadedLatestApk).digest("hex");
+    if (uploadedLatestApk.length !== fileSize || latestApkSha256 !== sha256) {
+      throw new Error(
+        `Uploaded latest APK verification failed: expected ${fileSize} bytes/${sha256}, got ${uploadedLatestApk.length} bytes/${latestApkSha256}`
+      );
+    }
 
     console.log(`\n[Deploy] Uploading canonical manifest to R2:`);
     console.log(`  - latest.json (Primary)`);

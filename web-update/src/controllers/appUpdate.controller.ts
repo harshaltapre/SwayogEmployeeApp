@@ -19,36 +19,6 @@ export interface AppUpdateManifest {
 }
 
 /**
- * Fallback manifest used when R2 does not yet contain a latest.json release
- * or for local development environments.
- */
-const DEFAULT_FALLBACK_MANIFEST: AppUpdateManifest = {
-  appId: 'com.swayog.employee',
-  platform: 'android',
-  versionCode: 20,
-  versionName: '1.0.0',
-  minimumVersionCode: 1,
-  mandatory: false,
-  releaseDate: '2026-09-15',
-  title: 'Swayog Employee App v1.0.0 — Build 20',
-  releaseTag: 'v1.0.0-build20',
-  releaseTitle: 'Swayog Employee App v1.0.0 — Build 20',
-  releaseNotes: [
-    'Improved attendance tracking',
-    'Improved attendance working-time calculation',
-    'Improved attendance calendar synchronization',
-    'Improved employee/admin attendance synchronization',
-    'Improved GPS attendance verification',
-    'Improved profile synchronization',
-    'Improved app update system',
-    'Bug fixes and performance improvements'
-  ],
-  apkUrl: 'https://swayog-dashboard.vercel.app/api/v1/app/update/download/latest',
-  sha256: 'dd5422cce433152653308bb0ba04ba6159a35ebf4c4b9f90eeb32670289ba3c4',
-  fileSize: 76872575
-};
-
-/**
  * GET /latest.json
  *
  * Canonical public endpoint that serves the latest application release manifest.
@@ -86,7 +56,7 @@ export async function getLatestAppUpdate(req: Request, res: Response, next: Next
       }
     }
 
-    if (!manifest) {
+    if (!manifest && process.env.NODE_ENV !== 'production') {
       const fs = await import('fs');
       const path = await import('path');
       const localPaths = [
@@ -133,35 +103,12 @@ export async function getLatestAppUpdate(req: Request, res: Response, next: Next
       }
     }
 
-    // Resolve public APK URL if relative or using internal R2 domain
-    const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
-    const hasPublicCdn = !!(
-      publicBaseUrl &&
-      !publicBaseUrl.includes('.r2.cloudflarestorage.com') &&
-      !publicBaseUrl.includes('your-public-domain.com')
-    );
-
-    const rawApk = (manifest.apkUrl || '').trim();
-    const isRelativeOrInternal = !rawApk.startsWith('http') || rawApk.includes('.r2.cloudflarestorage.com');
-
-    if (isRelativeOrInternal) {
-      const targetKey = (!rawApk || rawApk.includes('/download/latest'))
-        ? `releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`
-        : rawApk.replace(/^\//, '');
-
-      if (hasPublicCdn) {
-        manifest.apkUrl = `${publicBaseUrl!.replace(/\/$/, '')}/${targetKey}`;
-      } else if (isR2Configured()) {
-        try {
-          manifest.apkUrl = await generatePresignedUrl(targetKey, 604800); // 7 days
-        } catch (e: any) {
-          console.warn('[AppUpdate] Failed to presign APK URL:', e.message);
-          manifest.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
-        }
-      } else {
-        manifest.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
-      }
-    }
+    const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    const webDomain = (
+      process.env.WEB_DOMAIN ||
+      (productionDomain ? `https://${productionDomain}` : 'https://swayog-dashboard-two.vercel.app')
+    ).replace(/\/$/, '');
+    manifest.apkUrl = `${webDomain}/downloads/SwayogEmployeeApp.apk`;
 
     res.status(200).json(manifest);
   } catch (error: any) {

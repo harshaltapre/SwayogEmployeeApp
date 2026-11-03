@@ -8,6 +8,10 @@ on:
       - 'android-app/**'
       - '.github/workflows/release-apk.yml'
       - 'backend/scripts/deploy-release.ts'
+      - 'backend/src/modules/app-update/**'
+      - 'backend/src/routes/appUpdate.routes.ts'
+      - 'api/latest.json.ts'
+      - 'vercel.json'
       - 'web-update/**'
   workflow_dispatch:
     inputs:
@@ -176,6 +180,15 @@ jobs:
           echo "MIN_VERSION_CODE=$MIN_VERSION_CODE" >> $GITHUB_OUTPUT
           echo "MANDATORY=$MANDATORY" >> $GITHUB_OUTPUT
 
+      - name: Confirm release tag is unused before publishing
+        env:
+          RELEASE_TAG: ${{ steps.versioning.outputs.RELEASE_TAG }}
+        run: |
+          set -Eeuo pipefail
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+            echo "::error::Release tag '$RELEASE_TAG' already exists. Refusing to overwrite production release assets."
+            exit 1
+          fi
 
       - name: Restore and Validate Production Signing Key
         id: signing_secrets
@@ -367,9 +380,9 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           RELEASE_STORE_TYPE: ${{ steps.signing_secrets.outputs.KEYSTORE_FORMAT }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard.vercel.app/api/v1/' }}
-          WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard.vercel.app' }}
-          RAW_DIST_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard-two.vercel.app/api/v1/' }}
+          WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard-two.vercel.app' }}
+          RAW_DIST_URL: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard-two.vercel.app' }}
         run: |
           set -Eeuo pipefail
           echo "========================================"
@@ -382,11 +395,16 @@ jobs:
             exit 1
           fi
           
-          # Sanitize distribution URL to guarantee private R2 S3/API endpoints are NEVER passed to the Android app
-          DIST_URL="${RAW_DIST_URL:-https://swayog-dashboard.vercel.app}"
+          # Keep builds that still have the retired production domain in Actions secrets on the active domain.
+          API_BASE_URL="$(printf '%s' "$API_BASE_URL" | sed 's#swayog-dashboard\.vercel\.app#swayog-dashboard-two.vercel.app#g')"
+          WS_BASE_URL="$(printf '%s' "$WS_BASE_URL" | sed 's#swayog-dashboard\.vercel\.app#swayog-dashboard-two.vercel.app#g')"
+          DIST_URL="$(printf '%s' "$RAW_DIST_URL" | sed 's#swayog-dashboard\.vercel\.app#swayog-dashboard-two.vercel.app#g')"
+
+          # Sanitize distribution URL to guarantee private R2 S3/API endpoints are NEVER passed to the Android app.
+          DIST_URL="${DIST_URL:-https://swayog-dashboard-two.vercel.app}"
           if [[ "$DIST_URL" == *".r2.cloudflarestorage.com"* ]] || [[ "$DIST_URL" == *"your-public-domain.com"* ]] || [ -z "$DIST_URL" ]; then
-            echo "Notice: Overriding private/invalid distribution URL '$DIST_URL' with 'https://swayog-dashboard.vercel.app'"
-            DIST_URL="https://swayog-dashboard.vercel.app"
+            echo "Notice: Overriding private/invalid distribution URL '$DIST_URL' with 'https://swayog-dashboard-two.vercel.app'"
+            DIST_URL="https://swayog-dashboard-two.vercel.app"
           fi
           export PUBLIC_DISTRIBUTION_URL="$DIST_URL"
 
@@ -613,6 +631,44 @@ jobs:
 
           echo "✅ APK integrity checks passed completely"
 
+      - name: Deploy production dashboard and OTA routes to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard-two.vercel.app' }}
+        run: |
+          set -Eeuo pipefail
+
+          PRODUCTION_DOMAIN="${WEB_DOMAIN%/}"
+          case "$PRODUCTION_DOMAIN" in
+            https://*) ;;
+            *) echo "::error::WEB_DOMAIN must be the production HTTPS domain."; exit 1 ;;
+          esac
+          if [[ "$PRODUCTION_DOMAIN" == "https://swayog-dashboard.vercel.app" ]] ||
+             [[ "$PRODUCTION_DOMAIN" == *".r2.cloudflarestorage.com"* ]] ||
+             [[ "$PRODUCTION_DOMAIN" == *"your-public-domain.com"* ]]; then
+            echo "::error::WEB_DOMAIN '$PRODUCTION_DOMAIN' is retired or not a public Vercel app domain. Set it to the active production Vercel domain."
+            exit 1
+          fi
+
+          MISSING=""
+          [ -z "${VERCEL_TOKEN:-}" ] && MISSING="$MISSING VERCEL_TOKEN"
+          [ -z "${VERCEL_ORG_ID:-}" ] && MISSING="$MISSING VERCEL_ORG_ID"
+          [ -z "${VERCEL_PROJECT_ID:-}" ] && MISSING="$MISSING VERCEL_PROJECT_ID"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Vercel deployment cannot proceed; configure GitHub Actions secrets:$MISSING"
+            exit 1
+          fi
+
+          mkdir -p .vercel
+          printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
+          npx --yes vercel@latest pull --yes --environment=production \
+            --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+          npx --yes vercel@latest build --prod --token "$VERCEL_TOKEN"
+          npx --yes vercel@latest deploy --prebuilt --prod --token "$VERCEL_TOKEN" \
+            --scope "$VERCEL_ORG_ID"
+
       - name: Display User-Facing Release Notes
         run: |
           echo "=== Release Notes ==="
@@ -660,7 +716,7 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
           PUBLIC_DISTRIBUTION_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL }}
-          WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard.vercel.app' }}
+          WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard-two.vercel.app' }}
           PRODUCTION_CERT_SHA256: ${{ steps.signing_secrets.outputs.PRODUCTION_CERT_SHA256 }}
           CERTIFICATE_SHA256: ${{ steps.verify_apk_cert.outputs.APK_CERT_SHA256 }}
         run: |
@@ -745,7 +801,7 @@ jobs:
 
       - name: Verify Public /latest.json & APK Download Release Gate
         env:
-          RAW_PUBLIC_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+          WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard-two.vercel.app' }}
           EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
           EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
           EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
@@ -755,159 +811,138 @@ jobs:
           echo "STAGE: Public /latest.json & APK Release Gate"
           echo "========================================"
 
-          cat > /tmp/validate-public-release.js <<'NODE'
-          const https = require("https");
-          const http = require("http");
-          const { URL } = require("url");
+          command -v jq >/dev/null || { echo "::error::jq is required for public release validation."; exit 1; }
+          BASE_URL="${WEB_DOMAIN%/}"
+          case "$BASE_URL" in
+            https://*) ;;
+            *) echo "::error::WEB_DOMAIN must be the production HTTPS Vercel domain, got '$BASE_URL'."; exit 1 ;;
+          esac
 
-          let rawBase = (process.env.RAW_PUBLIC_URL || "https://swayog-dashboard.vercel.app").trim().replace(/\/$/, "");
-          if (rawBase.includes(".r2.cloudflarestorage.com") || rawBase.includes("your-public-domain.com") || !rawBase) {
-            console.log(`[Validation Gate] Notice: Overriding private R2/invalid domain "${rawBase}" with canonical "https://swayog-dashboard.vercel.app"`);
-            rawBase = "https://swayog-dashboard.vercel.app";
+          TEMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TEMP_DIR"' EXIT
+          MANIFEST_URL="$BASE_URL/latest.json"
+          APK_URL="$BASE_URL/downloads/SwayogEmployeeApp.apk"
+          MANIFEST_FILE="$TEMP_DIR/latest.json"
+          MANIFEST_HEADERS="$TEMP_DIR/manifest.headers"
+          echo "Checking Vercel production manifest: $MANIFEST_URL"
+
+          MANIFEST_STATUS="000"
+          for attempt in 1 2 3; do
+            MANIFEST_STATUS="$(curl -sS -L --connect-timeout 15 --max-time 45 \
+              -H 'Cache-Control: no-cache, no-store' \
+              -D "$MANIFEST_HEADERS" -o "$MANIFEST_FILE" -w '%{http_code}' \
+              "$MANIFEST_URL?release-gate=$GITHUB_RUN_ID-$attempt" || true)"
+            echo "Manifest attempt $attempt returned HTTP $MANIFEST_STATUS"
+            if [ "$MANIFEST_STATUS" = "200" ]; then
+              break
+            fi
+            if [ "$MANIFEST_STATUS" = "404" ]; then
+              echo "::error::Production manifest returned HTTP 404 at $MANIFEST_URL. Confirm VERCEL_PROJECT_ID points at the dashboard project, production domain WEB_DOMAIN is correct, and vercel.json rewrites /latest.json to /api/latest.json."
+              head -c 500 "$MANIFEST_FILE" 2>/dev/null || true
+              exit 1
+            fi
+            if [[ "$MANIFEST_STATUS" != "000" && "$MANIFEST_STATUS" -lt 500 ]]; then
+              echo "::error::Manifest request returned non-retryable HTTP $MANIFEST_STATUS from $MANIFEST_URL"
+              head -c 500 "$MANIFEST_FILE" 2>/dev/null || true
+              exit 1
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Transient manifest/network failure; waiting 10 seconds for deployment or service recovery."
+              sleep 10
+            fi
+          done
+          if [ "$MANIFEST_STATUS" != "200" ]; then
+            echo "::error::Manifest remained unavailable (HTTP $MANIFEST_STATUS) at $MANIFEST_URL after transient-error retries."
+            exit 1
+          fi
+
+          MANIFEST_CONTENT_TYPE="$(awk 'tolower($0) ~ /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); value=$0} END{print value}' "$MANIFEST_HEADERS")"
+          case "${MANIFEST_CONTENT_TYPE,,}" in
+            application/json*|application/*+json*) ;;
+            *) echo "::error::Manifest Content-Type must be JSON; got '$MANIFEST_CONTENT_TYPE'."; exit 1 ;;
+          esac
+          jq -e 'type == "object"' "$MANIFEST_FILE" >/dev/null || {
+            echo "::error::Public latest.json is not valid JSON object data."
+            exit 1
           }
-          const endpoint = `${rawBase}/latest.json`;
-          console.log(`[Validation Gate] Verifying authoritative public endpoint: ${endpoint}`);
-
-          function fetchWithRedirects(targetUrl, options = {}, maxRedirects = 5) {
-            return new Promise((resolve, reject) => {
-              if (maxRedirects < 0) return reject(new Error("Too many redirects"));
-              const parsed = new URL(targetUrl);
-              const client = parsed.protocol === "https:" ? https : http;
-
-              const req = client.request(parsed, {
-                method: options.method || "GET",
-                headers: {
-                  "User-Agent": "SwayogReleaseValidator/1.0",
-                  "Cache-Control": "no-cache, no-store",
-                  "Pragma": "no-cache",
-                  ...(options.headers || {})
-                }
-              }, (res) => {
-                if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
-                  const redirectedUrl = new URL(res.headers.location, targetUrl).toString();
-                  console.log(`  ↪ Following redirect (${res.statusCode}) to: ${redirectedUrl.substring(0, 100)}...`);
-                  return resolve(fetchWithRedirects(redirectedUrl, options, maxRedirects - 1));
-                }
-
-                let data = "";
-                res.on("data", chunk => data += chunk);
-                res.on("end", () => resolve({
-                  statusCode: res.statusCode,
-                  headers: res.headers,
-                  body: data
-                }));
-              });
-
-              req.on("error", reject);
-              req.setTimeout(25000, () => {
-                req.destroy();
-                reject(new Error("Request timed out after 25s"));
-              });
-              req.end();
-            });
-          }
-
-          async function main() {
-            const maxAttempts = 6;
-            const delayMs = 5000;
-            let lastError = null;
-
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-              console.log(`\n[Attempt ${attempt}/${maxAttempts}] Testing public OTA manifest: ${endpoint}...`);
-              try {
-                const testUrl = `${endpoint}?t=${Date.now()}`;
-                const result = await fetchWithRedirects(testUrl);
-
-                const contentType = result.headers["content-type"] || "";
-                console.log(`  Manifest HTTP Status:  ${result.statusCode}`);
-                console.log(`  Manifest Content-Type: ${contentType}`);
-
-                if (result.statusCode === 404) throw new Error(`Endpoint returned HTTP 404 Not Found at ${endpoint}`);
-                if (result.statusCode === 400) throw new Error(`Endpoint returned HTTP 400 (R2 S3 API error) at ${endpoint}`);
-                if (result.statusCode >= 500) throw new Error(`Endpoint returned server error HTTP ${result.statusCode} at ${endpoint}`);
-                if (result.statusCode !== 200) throw new Error(`Endpoint returned unexpected HTTP ${result.statusCode} at ${endpoint}`);
-                if (!contentType.toLowerCase().includes("application/json")) {
-                  const preview = result.body.substring(0, 100).replace(/\r?\n/g, " ");
-                  throw new Error(`Endpoint returned non-JSON Content-Type (${contentType}): ${preview}`);
-                }
-
-                let manifest;
-                try {
-                  manifest = JSON.parse(result.body);
-                } catch (e) {
-                  throw new Error(`Endpoint response is not valid JSON: ${e.message}`);
-                }
-
-                if (!manifest || typeof manifest !== "object") throw new Error("Parsed manifest is not a valid JSON object");
-                if (manifest.appId !== "com.swayog.employee") throw new Error(`appId must be 'com.swayog.employee', got '${manifest.appId}'`);
-                if (manifest.platform !== "android") throw new Error(`platform must be 'android', got '${manifest.platform}'`);
-                if (typeof manifest.versionCode !== "number" || manifest.versionCode <= 0) {
-                  throw new Error(`versionCode must be > 0, got ${manifest.versionCode}`);
-                }
-                if (!manifest.versionName || typeof manifest.versionName !== "string") {
-                  throw new Error(`versionName must not be empty, got '${manifest.versionName}'`);
-                }
-                if (!manifest.apkUrl || !manifest.apkUrl.startsWith("https://")) {
-                  throw new Error(`apkUrl must be HTTPS, got '${manifest.apkUrl}'`);
-                }
-                if (!manifest.sha256 || !/^[a-fA-F0-9]{64}$/.test(manifest.sha256)) {
-                  throw new Error(`sha256 must be exactly 64 hex characters, got '${manifest.sha256}'`);
-                }
-                if (String(manifest.versionCode) !== process.env.EXPECTED_VERSION_CODE) {
-                  throw new Error(`Manifest versionCode (${manifest.versionCode}) does not match expected (${process.env.EXPECTED_VERSION_CODE})`);
-                }
-                if (manifest.sha256.toLowerCase() !== process.env.EXPECTED_SHA256.toLowerCase()) {
-                  throw new Error(`Manifest sha256 (${manifest.sha256}) does not match expected APK sha256 (${process.env.EXPECTED_SHA256})`);
-                }
-
-                console.log(`  ✅ Authoritative manifest validated: Version ${manifest.versionName} (Build ${manifest.versionCode})`);
-                console.log(`  ✅ APK URL: ${manifest.apkUrl}`);
-                console.log(`  ✅ SHA-256: ${manifest.sha256}`);
-
-                // Step 2: Validate public APK download accessibility
-                console.log(`\n  [APK Download Check] Testing public accessibility of manifest.apkUrl...`);
-                const apkHead = await fetchWithRedirects(manifest.apkUrl, {
-                  headers: { "Range": "bytes=0-1023" }
-                });
-
-                console.log(`  APK HTTP Status: ${apkHead.statusCode}`);
-                console.log(`  APK Content-Type: ${apkHead.headers["content-type"] || "unknown"}`);
-                console.log(`  APK Content-Range: ${apkHead.headers["content-range"] || "N/A"}`);
-
-                if ([400, 401, 403, 404, 500, 502, 503, 504].includes(apkHead.statusCode)) {
-                  throw new Error(`manifest.apkUrl is NOT publicly accessible: returned HTTP ${apkHead.statusCode}`);
-                }
-
-                if (apkHead.statusCode !== 200 && apkHead.statusCode !== 206) {
-                  throw new Error(`manifest.apkUrl returned unexpected status HTTP ${apkHead.statusCode}`);
-                }
-
-                console.log("  ✅ APK download endpoint confirmed publicly accessible without credentials!");
-                console.log("\n========================================================");
-                console.log("🚀 PUBLIC RELEASE GATE PASSED COMPLETELY");
-                console.log("========================================================");
-                return;
-              } catch (err) {
-                lastError = err;
-                console.warn(`  ⚠️ Attempt ${attempt} failed: ${err.message}`);
-                if (attempt < maxAttempts) {
-                  console.log(`  Waiting ${delayMs / 1000}s before retry...`);
-                  await new Promise(r => setTimeout(r, delayMs));
-                }
-              }
+          jq -e --arg code "$EXPECTED_VERSION_CODE" --arg name "$EXPECTED_VERSION_NAME" \
+            --arg sha "$EXPECTED_SHA256" --arg apk "$APK_URL" '
+              .appId == "com.swayog.employee" and
+              .platform == "android" and
+              .versionName == $name and
+              (.versionCode | type == "number" and . > 0) and
+              (.versionCode | tostring) == $code and
+              (.mandatory | type == "boolean") and
+              (.apkUrl == $apk) and
+              (.sha256 | type == "string" and test("^[A-Fa-f0-9]{64}$")) and
+              (.sha256 | ascii_downcase) == ($sha | ascii_downcase) and
+              (.fileSize | type == "number" and . > 0) and
+              (.releaseNotes | type == "array" or type == "string" or type == "object")
+            ' "$MANIFEST_FILE" >/dev/null || {
+              echo "::error::Manifest is missing required Android OTA fields or its version, APK URL, or checksum does not match this signed release."
+              jq . "$MANIFEST_FILE" || true
+              exit 1
             }
+          echo "Manifest is valid for ${EXPECTED_VERSION_NAME} (build ${EXPECTED_VERSION_CODE}) and uses $APK_URL"
 
-            console.error(`::error::Public Release Gate FAILED after ${maxAttempts} attempts: ${lastError?.message}`);
-            process.exit(1);
+          APK_FILE="$TEMP_DIR/SwayogEmployeeApp.apk"
+          APK_HEADERS="$TEMP_DIR/apk.headers"
+          echo "Downloading APK from the public stable URL and following the R2 redirect: $APK_URL"
+          APK_STATUS="$(curl -sS -L --fail --connect-timeout 20 --max-time 300 \
+            --retry 5 --retry-connrefused --retry-delay 4 \
+            -D "$APK_HEADERS" -o "$APK_FILE" -w '%{http_code}' "$APK_URL" || true)"
+          if [ "$APK_STATUS" != "200" ]; then
+            echo "::error::Public APK route $APK_URL returned HTTP $APK_STATUS; check the Vercel /downloads rewrite, Express route, and uploaded R2 object."
+            exit 1
+          fi
+
+          APK_CONTENT_TYPE="$(awk 'tolower($0) ~ /^content-type:/ {sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); value=$0} END{print value}' "$APK_HEADERS")"
+          case "${APK_CONTENT_TYPE,,}" in
+            application/vnd.android.package-archive*|application/octet-stream*) ;;
+            *) echo "::error::APK URL returned non-APK Content-Type '$APK_CONTENT_TYPE' (likely HTML)."; exit 1 ;;
+          esac
+          if [ ! -s "$APK_FILE" ] || [ "$(od -An -tx1 -N4 "$APK_FILE" | tr -d ' \n')" != "504b0304" ]; then
+            echo "::error::Downloaded content is empty or is not an APK/ZIP binary."
+            exit 1
+          fi
+          unzip -t "$APK_FILE" >/dev/null || {
+            echo "::error::Downloaded APK is not a valid ZIP/APK archive."
+            exit 1
           }
 
-          main().catch(err => {
-            console.error("::error::Validation script unexpected error: " + err.message);
-            process.exit(1);
-          });
-          NODE
+          DOWNLOADED_SIZE="$(stat -c%s "$APK_FILE")"
+          MANIFEST_SIZE="$(jq -r '.fileSize // 0' "$MANIFEST_FILE")"
+          if [ "$MANIFEST_SIZE" -gt 0 ] && [ "$DOWNLOADED_SIZE" -ne "$MANIFEST_SIZE" ]; then
+            echo "::error::Downloaded APK size $DOWNLOADED_SIZE does not match manifest fileSize $MANIFEST_SIZE."
+            exit 1
+          fi
+          DOWNLOADED_SHA256="$(sha256sum "$APK_FILE" | awk '{print $1}')"
+          if [ "${DOWNLOADED_SHA256,,}" != "${EXPECTED_SHA256,,}" ]; then
+            echo "::error::Downloaded APK SHA-256 $DOWNLOADED_SHA256 does not match signed build $EXPECTED_SHA256."
+            exit 1
+          fi
 
-          node /tmp/validate-public-release.js
+          AAPT2="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name aapt2 | sort -V | tail -n 1)"
+          if [ -z "$AAPT2" ] || [ ! -x "$AAPT2" ]; then
+            echo "::error::aapt2 is required to verify the public APK package and version metadata."
+            exit 1
+          fi
+          DOWNLOADED_BADGING="$("$AAPT2" dump badging "$APK_FILE")"
+          grep -q "package: name='com.swayog.employee'" <<<"$DOWNLOADED_BADGING" || {
+            echo "::error::Downloaded APK package name is not com.swayog.employee."
+            exit 1
+          }
+          grep -q "versionCode='$EXPECTED_VERSION_CODE'" <<<"$DOWNLOADED_BADGING" || {
+            echo "::error::Downloaded APK versionCode does not match $EXPECTED_VERSION_CODE."
+            exit 1
+          }
+          grep -q "versionName='$EXPECTED_VERSION_NAME'" <<<"$DOWNLOADED_BADGING" || {
+            echo "::error::Downloaded APK versionName does not match $EXPECTED_VERSION_NAME."
+            exit 1
+          }
+
+          echo "Public APK verified: HTTP $APK_STATUS, $APK_CONTENT_TYPE, $DOWNLOADED_SIZE bytes, SHA-256 $DOWNLOADED_SHA256"
+          echo "Public manifest and APK package/version/checksum checks passed."
 
       - name: Automated Version Consistency Check
         env:
@@ -998,7 +1033,8 @@ jobs:
           echo "- **Distribution Layer:** Cloudflare R2 (\`swayog-dashboard\`)" >> $GITHUB_STEP_SUMMARY
           echo "- **Canonical Manifest:** \`latest.json\`" >> $GITHUB_STEP_SUMMARY
           echo "- **APK Storage Key:** \`releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}/app-release.apk\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Public Endpoint:** \`https://swayog-dashboard.vercel.app/latest.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Public Endpoint:** \`https://swayog-dashboard-two.vercel.app/latest.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **APK Download:** \`https://swayog-dashboard-two.vercel.app/downloads/SwayogEmployeeApp.apk\`" >> $GITHUB_STEP_SUMMARY
           echo "- **GitHub Release:** Published with tag \`${{ steps.versioning.outputs.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
 
 

@@ -18,6 +18,7 @@ appUpdateRoutes.get('/android/latest.json', asyncHandler(getLatestAppUpdate));
 appUpdateRoutes.get('/update/latest.json', asyncHandler(getLatestAppUpdate));
 
 // Direct download endpoints
+appUpdateRoutes.get('/downloads/SwayogEmployeeApp.apk', asyncHandler(downloadLatestApk));
 appUpdateRoutes.get('/releases/android/:versionName/build-:versionCode/app-release.apk', asyncHandler(downloadLatestApk));
 appUpdateRoutes.get('/download/latest', asyncHandler(downloadLatestApk));
 appUpdateRoutes.get('/update/download/latest', asyncHandler(downloadLatestApk));

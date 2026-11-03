@@ -70,6 +70,10 @@
       "destination": "/api/index.ts"
     },
     {
+      "source": "/downloads/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index.ts"
     },
@@ -78,7 +82,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api/|app/|releases/|latest\\.json|update/|download/).*)",
+      "source": "/((?!api/|app/|releases/|downloads/|latest\\.json|update/|download/).*)",
       "destination": "/index.html"
     }
   ]

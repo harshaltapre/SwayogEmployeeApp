@@ -67,8 +67,8 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
       }
     }
 
-    if (!manifest) {
-      // Check if local latest.json is present (e.g. deployed with backend)
+    if (!manifest && process.env.NODE_ENV !== "production") {
+      // Local manifests are only a development fallback; production must use R2.
       const fs = await import("fs");
       const path = await import("path");
       const localPaths = [
@@ -91,7 +91,7 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
     }
 
     if (!manifest) {
-      console.warn("[AppUpdate] No authoritative release manifest found in R2 or local storage");
+      console.warn("[AppUpdate] No authoritative release manifest found in R2");
       res.status(503).json({
         error: "Unable to check for updates right now",
         message: "Authoritative release manifest is temporarily unavailable"
@@ -115,35 +115,12 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
       }
     }
 
-    // Resolve public APK URL if relative or using internal R2 domain
-    const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
-    const hasPublicCdn = !!(
-      publicBaseUrl &&
-      !publicBaseUrl.includes(".r2.cloudflarestorage.com") &&
-      !publicBaseUrl.includes("your-public-domain.com")
-    );
-
-    const rawApk = (manifest.apkUrl || "").trim();
-    const isRelativeOrInternal = !rawApk.startsWith("http") || rawApk.includes(".r2.cloudflarestorage.com");
-
-    if (isRelativeOrInternal) {
-      const targetKey = (!rawApk || rawApk.includes("/download/latest"))
-        ? `releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`
-        : rawApk.replace(/^\//, "");
-
-      if (hasPublicCdn) {
-        manifest.apkUrl = `${publicBaseUrl!.replace(/\/$/, "")}/${targetKey}`;
-      } else if (isR2Configured()) {
-        try {
-          manifest.apkUrl = await generatePresignedUrl(targetKey, 604800); // 7 days
-        } catch (e: any) {
-          console.warn("[AppUpdate] Failed to presign APK URL:", e.message);
-          manifest.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
-        }
-      } else {
-        manifest.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
-      }
-    }
+    const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    const webDomain = (
+      process.env.WEB_DOMAIN ||
+      (productionDomain ? `https://${productionDomain}` : "https://swayog-dashboard-two.vercel.app")
+    ).replace(/\/$/, "");
+    manifest.apkUrl = `${webDomain}/downloads/SwayogEmployeeApp.apk`;
 
     res.status(200).json(manifest);
   } catch (error: any) {
