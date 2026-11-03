@@ -367,9 +367,9 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           RELEASE_STORE_TYPE: ${{ steps.signing_secrets.outputs.KEYSTORE_FORMAT }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard.vercel.app/api/v1/' }}
-          WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard.vercel.app' }}
-          RAW_DIST_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://swayog-dashboard-two.vercel.app/api/v1/' }}
+          WS_BASE_URL: ${{ secrets.WS_BASE_URL || 'wss://swayog-dashboard-two.vercel.app' }}
+          RAW_DIST_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard-two.vercel.app' }}
         run: |
           set -Eeuo pipefail
           echo "========================================"
@@ -383,10 +383,10 @@ jobs:
           fi
           
           # Sanitize distribution URL to guarantee private R2 S3/API endpoints are NEVER passed to the Android app
-          DIST_URL="${RAW_DIST_URL:-https://swayog-dashboard.vercel.app}"
+          DIST_URL="${RAW_DIST_URL:-https://swayog-dashboard-two.vercel.app}"
           if [[ "$DIST_URL" == *".r2.cloudflarestorage.com"* ]] || [[ "$DIST_URL" == *"your-public-domain.com"* ]] || [ -z "$DIST_URL" ]; then
-            echo "Notice: Overriding private/invalid distribution URL '$DIST_URL' with 'https://swayog-dashboard.vercel.app'"
-            DIST_URL="https://swayog-dashboard.vercel.app"
+            echo "Notice: Overriding private/invalid distribution URL '$DIST_URL' with 'https://swayog-dashboard-two.vercel.app'"
+            DIST_URL="https://swayog-dashboard-two.vercel.app"
           fi
           export PUBLIC_DISTRIBUTION_URL="$DIST_URL"
 
@@ -660,7 +660,7 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
           PUBLIC_DISTRIBUTION_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL }}
-          WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard.vercel.app' }}
+          WEB_DOMAIN: ${{ secrets.WEB_DOMAIN || 'https://swayog-dashboard-two.vercel.app' }}
           PRODUCTION_CERT_SHA256: ${{ steps.signing_secrets.outputs.PRODUCTION_CERT_SHA256 }}
           CERTIFICATE_SHA256: ${{ steps.verify_apk_cert.outputs.APK_CERT_SHA256 }}
         run: |
@@ -745,7 +745,7 @@ jobs:
 
       - name: Verify Public /latest.json & APK Download Release Gate
         env:
-          RAW_PUBLIC_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard.vercel.app' }}
+          RAW_PUBLIC_URL: ${{ secrets.PUBLIC_DISTRIBUTION_URL || 'https://swayog-dashboard-two.vercel.app' }}
           EXPECTED_VERSION_CODE: ${{ steps.versioning.outputs.VERSION_CODE }}
           EXPECTED_VERSION_NAME: ${{ steps.versioning.outputs.VERSION_NAME }}
           EXPECTED_SHA256: ${{ steps.apk_info.outputs.SHA256 }}
@@ -760,10 +760,10 @@ jobs:
           const http = require("http");
           const { URL } = require("url");
 
-          let rawBase = (process.env.RAW_PUBLIC_URL || "https://swayog-dashboard.vercel.app").trim().replace(/\/$/, "");
+          let rawBase = (process.env.RAW_PUBLIC_URL || "https://swayog-dashboard-two.vercel.app").trim().replace(/\/$/, "");
           if (rawBase.includes(".r2.cloudflarestorage.com") || rawBase.includes("your-public-domain.com") || !rawBase) {
-            console.log(`[Validation Gate] Notice: Overriding private R2/invalid domain "${rawBase}" with canonical "https://swayog-dashboard.vercel.app"`);
-            rawBase = "https://swayog-dashboard.vercel.app";
+            console.log(`[Validation Gate] Notice: Overriding private R2/invalid domain "${rawBase}" with canonical "https://swayog-dashboard-two.vercel.app"`);
+            rawBase = "https://swayog-dashboard-two.vercel.app";
           }
           const endpoint = `${rawBase}/latest.json`;
           console.log(`[Validation Gate] Verifying authoritative public endpoint: ${endpoint}`);
@@ -998,7 +998,7 @@ jobs:
           echo "- **Distribution Layer:** Cloudflare R2 (\`swayog-dashboard\`)" >> $GITHUB_STEP_SUMMARY
           echo "- **Canonical Manifest:** \`latest.json\`" >> $GITHUB_STEP_SUMMARY
           echo "- **APK Storage Key:** \`releases/android/${{ steps.versioning.outputs.VERSION_NAME }}/build-${{ steps.versioning.outputs.VERSION_CODE }}/app-release.apk\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Public Endpoint:** \`https://swayog-dashboard.vercel.app/latest.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Public Endpoint:** \`https://swayog-dashboard-two.vercel.app/latest.json\`" >> $GITHUB_STEP_SUMMARY
           echo "- **GitHub Release:** Published with tag \`${{ steps.versioning.outputs.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
 
 

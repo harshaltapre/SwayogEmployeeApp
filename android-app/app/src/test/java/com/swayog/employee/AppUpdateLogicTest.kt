@@ -182,7 +182,7 @@ class AppUpdateLogicTest {
             "Improved attendance tracking",
             "Bug fixes and performance improvements"
           ],
-          "apkUrl": "https://swayog-dashboard.vercel.app/releases/android/1.0.0/build-21/app-release.apk",
+          "apkUrl": "https://swayog-dashboard-two.vercel.app/releases/android/1.0.0/build-21/app-release.apk",
           "sha256": "dd5422cce433152653308bb0ba04ba6159a35ebf4c4b9f90eeb32670289ba3c4",
           "fileSize": 76872575
         }

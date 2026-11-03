@@ -7,12 +7,12 @@ import com.swayog.employee.BuildConfig
  * Ensures server/API URLs remain constant, secure, and production-ready.
  */
 object AppConfig {
-    const val PRODUCTION_API_BASE_URL = "https://swayog-dashboard.vercel.app/api/v1/"
-    const val PRODUCTION_WS_BASE_URL = "wss://swayog-dashboard.vercel.app"
+    const val PRODUCTION_API_BASE_URL = "https://swayog-dashboard-two.vercel.app/api/v1/"
+    const val PRODUCTION_WS_BASE_URL = "wss://swayog-dashboard-two.vercel.app"
     
     // Stable public update domain - defaults to production backend which streams directly from R2
     // If a custom R2 public domain or CDN is configured via BuildConfig, that takes precedence.
-    const val PRODUCTION_PUBLIC_URL = "https://swayog-dashboard.vercel.app"
+    const val PRODUCTION_PUBLIC_URL = "https://swayog-dashboard-two.vercel.app"
 
     /**
      * Normalized API Base URL (guaranteed to end with a trailing slash).

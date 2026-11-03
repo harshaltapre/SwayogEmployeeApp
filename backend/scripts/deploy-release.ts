@@ -182,7 +182,7 @@ async function main() {
     publicApkUrl = `${publicBaseUrl.replace(/\/$/, "")}/${buildSpecificApkKey}`;
     console.log(`[Deploy] Using public CDN URL for APK: ${publicApkUrl}`);
   } else {
-    const webDomain = process.env.WEB_DOMAIN || "https://swayog-dashboard.vercel.app";
+    const webDomain = process.env.WEB_DOMAIN || "https://swayog-dashboard-two.vercel.app";
     publicApkUrl = `${webDomain.replace(/\/$/, "")}/releases/android/${versionName}/build-${versionCode}/app-release.apk`;
     console.log(`[Deploy] Using web dashboard download URL for APK: ${publicApkUrl}`);
   }

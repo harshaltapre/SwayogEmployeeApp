@@ -40,7 +40,7 @@ Optional:
 
 ```bash
 PUBLIC_DISTRIBUTION_URL=https://your-public-domain.com
-WEB_DOMAIN=https://swayog-dashboard.vercel.app
+WEB_DOMAIN=https://swayog-dashboard-two.vercel.app
 ```
 
 ## Integration

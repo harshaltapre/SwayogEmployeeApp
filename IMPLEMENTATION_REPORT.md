@@ -214,7 +214,7 @@ R2_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
 ```bash
 R2_PUBLIC_URL=https://your-public-domain.com
 PUBLIC_DISTRIBUTION_URL=https://your-public-domain.com
-WEB_DOMAIN=https://swayog-dashboard.vercel.app
+WEB_DOMAIN=https://swayog-dashboard-two.vercel.app
 ```
 
 ## Integration Instructions
