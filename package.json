@@ -9,7 +9,7 @@
         "dev:frontend": "vite",
         "dev:ports": "kill-port 3000 4000",
         "build": "npm --prefix backend run bundle:vercel && vite build",
-        "vercel-build": "sh ./scripts/vercel-build.sh",
+        "vercel-build": "bash ./scripts/vercel-build.sh",
         "preview": "vite preview",
         "typecheck": "tsc --noEmit",
         "backend:dev": "npm --prefix backend run dev",
