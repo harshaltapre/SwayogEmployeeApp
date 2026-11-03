@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SidebarLayout } from '@/components/SidebarLayout';
 import { useAuth } from '@/lib/auth';
 import { useLocation } from 'wouter';
@@ -21,10 +21,20 @@ import {
   User,
   AlertTriangle,
   Sliders,
+  CheckCircle2,
+  Send,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  isPushSupported,
+  getNotificationPermission,
+  subscribeToPushNotifications,
+  unsubscribeFromPushNotifications,
+  sendTestPushNotification,
+  getExistingSubscription,
+} from '@/lib/pushNotifications';
 
-type SettingsSection = 'profile' | 'general' | 'security' | 'preferences' | 'system';
+type SettingsSection = 'profile' | 'general' | 'security' | 'preferences' | 'notifications' | 'system';
 
 export default function AdminSettings() {
   const { user, logout } = useAuth();
@@ -68,11 +78,77 @@ export default function AdminSettings() {
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [selectedTimezone, setSelectedTimezone] = useState('IST (UTC+5:30)');
 
+  const [pushSupported] = useState(() => isPushSupported());
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(() => getNotificationPermission());
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushStatusMessage, setPushStatusMessage] = useState<string | null>(null);
+
+  // Notification event preferences
+  const [notifyLogin, setNotifyLogin] = useState(() => localStorage.getItem('admin_pref_notify_login') !== 'false');
+  const [notifyCheckIn, setNotifyCheckIn] = useState(() => localStorage.getItem('admin_pref_notify_checkin') !== 'false');
+  const [notifyCheckOut, setNotifyCheckOut] = useState(() => localStorage.getItem('admin_pref_notify_checkout') !== 'false');
+  const [notifyCorrection, setNotifyCorrection] = useState(() => localStorage.getItem('admin_pref_notify_correction') !== 'false');
+
+  useEffect(() => {
+    if (pushSupported) {
+      getExistingSubscription().then((sub) => {
+        setPushSubscribed(!!sub);
+      });
+      setPushPermission(getNotificationPermission());
+    }
+  }, [pushSupported]);
+
+  const handleTogglePush = async () => {
+    setPushLoading(true);
+    setPushStatusMessage(null);
+    try {
+      if (pushSubscribed) {
+        await unsubscribeFromPushNotifications();
+        setPushSubscribed(false);
+        setPushStatusMessage('Browser push notifications disabled.');
+      } else {
+        const res = await subscribeToPushNotifications();
+        setPushPermission(res.permission);
+        if (res.success) {
+          setPushSubscribed(true);
+          setPushStatusMessage('Real-time browser notifications enabled!');
+        } else if (res.permission === 'denied') {
+          setPushStatusMessage('Notifications are blocked by your browser. Please enable notifications in your browser address bar.');
+        } else {
+          setPushStatusMessage(res.error || 'Failed to enable notifications.');
+        }
+      }
+    } catch {
+      setPushStatusMessage('An error occurred while updating push notification settings.');
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const handleSendTestPush = async () => {
+    setPushLoading(true);
+    setPushStatusMessage(null);
+    try {
+      const res = await sendTestPushNotification();
+      if (res.success) {
+        setPushStatusMessage('Test notification dispatched! Check your desktop notification tray.');
+      } else {
+        setPushStatusMessage(res.error || 'Failed to send test push notification.');
+      }
+    } catch {
+      setPushStatusMessage('Failed to trigger test notification.');
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
   const sections = [
     { id: 'profile' as const, label: 'Profile', icon: User },
     { id: 'general' as const, label: 'General', icon: Sliders },
     { id: 'security' as const, label: 'Security', icon: Shield },
     { id: 'preferences' as const, label: 'Preferences', icon: SettingsIcon },
+    { id: 'notifications' as const, label: 'Notifications', icon: Bell },
     { id: 'system' as const, label: 'System', icon: Info },
   ];
 
@@ -454,6 +530,156 @@ export default function AdminSettings() {
                       <p className="text-xs text-muted-foreground">Product updates and newsletters.</p>
                     </div>
                     {renderToggle(marketingUpdatesEnabled, setMarketingUpdatesEnabled)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'notifications':
+        return (
+          <div className="space-y-6">
+            <div className={sectionCardClassName}>
+              <div className="border-b border-border px-6 py-4 bg-muted/30">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-primary" />
+                  Browser Push Notifications
+                </h3>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-xl border border-border bg-muted/10">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-foreground">Web Push Status</p>
+                      <span
+                        className={cn(
+                          "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                          !pushSupported
+                            ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            : pushPermission === "granted" && pushSubscribed
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                            : pushPermission === "denied"
+                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                            : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                        )}
+                      >
+                        {!pushSupported
+                          ? "Unsupported"
+                          : pushPermission === "granted" && pushSubscribed
+                          ? "Active & Enrolled"
+                          : pushPermission === "denied"
+                          ? "Blocked by Browser"
+                          : "Not Enrolled"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                      Receive instant desktop and mobile browser alerts when employees log in, check in, or when attendance is updated.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {pushSupported && pushPermission === "granted" && pushSubscribed && (
+                      <button
+                        type="button"
+                        onClick={handleSendTestPush}
+                        disabled={pushLoading}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 text-foreground"
+                      >
+                        <Send className="h-3.5 w-3.5 text-primary" />
+                        Send Test Push
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleTogglePush}
+                      disabled={pushLoading || !pushSupported}
+                      className={cn(
+                        "px-4 py-1.5 text-xs font-bold rounded-lg transition-colors shadow-sm",
+                        pushSubscribed
+                          ? "bg-rose-600 hover:bg-rose-700 text-white"
+                          : "bg-blue-600 hover:bg-blue-700 text-white"
+                      )}
+                    >
+                      {pushLoading ? "Updating..." : pushSubscribed ? "Disable Notifications" : "Enable Notifications"}
+                    </button>
+                  </div>
+                </div>
+
+                {pushPermission === "denied" && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-200">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-bold">Notifications are blocked in your browser settings</p>
+                        <p className="text-muted-foreground leading-relaxed">
+                          To enable browser notifications on this computer or phone:
+                        </p>
+                        <ol className="list-decimal pl-4 space-y-0.5 text-muted-foreground">
+                          <li>Click the <strong>Tune / Lock icon</strong> on the left side of your browser URL bar.</li>
+                          <li>Find <strong>Notifications</strong> and change the setting to <strong>Allow</strong>.</li>
+                          <li>Refresh the page and click <strong>Enable Notifications</strong> above.</li>
+                        </ol>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {pushStatusMessage && (
+                  <div className="flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <span>{pushStatusMessage}</span>
+                  </div>
+                )}
+
+                <div className="border-t border-border pt-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                    Configurable Notification Events
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-4 py-2 border-b border-border/50">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Employee Logins</p>
+                        <p className="text-xs text-muted-foreground">Alert when an employee logs in successfully.</p>
+                      </div>
+                      {renderToggle(notifyLogin, (val) => {
+                        setNotifyLogin(val);
+                        localStorage.setItem('admin_pref_notify_login', String(val));
+                      })}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4 py-2 border-b border-border/50">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Employee Check-Ins</p>
+                        <p className="text-xs text-muted-foreground">Alert when an employee punches in with selfie verification.</p>
+                      </div>
+                      {renderToggle(notifyCheckIn, (val) => {
+                        setNotifyCheckIn(val);
+                        localStorage.setItem('admin_pref_notify_checkin', String(val));
+                      })}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4 py-2 border-b border-border/50">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Employee Check-Outs</p>
+                        <p className="text-xs text-muted-foreground">Alert when an employee clocks out with calculated hours.</p>
+                      </div>
+                      {renderToggle(notifyCheckOut, (val) => {
+                        setNotifyCheckOut(val);
+                        localStorage.setItem('admin_pref_notify_checkout', String(val));
+                      })}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4 py-2">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Attendance Corrections & Regularizations</p>
+                        <p className="text-xs text-muted-foreground">Alert when attendance is regularized or updated.</p>
+                      </div>
+                      {renderToggle(notifyCorrection, (val) => {
+                        setNotifyCorrection(val);
+                        localStorage.setItem('admin_pref_notify_correction', String(val));
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>

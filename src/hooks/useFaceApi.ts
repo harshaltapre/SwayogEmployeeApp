@@ -2,13 +2,13 @@
  * useFaceApi.ts
  * 
  * Hook to lazily load face-api.js models and expose helpers for
- * face detection and 128-dim descriptor extraction.
+ * face detection, live feedback, and 128-dim descriptor extraction.
  * 
  * Models are served from /public/models (ssd_mobilenetv1, face_landmark_68, face_recognition).
  * They are loaded once per session and cached.
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import * as faceapi from "face-api.js";
 
 export type FaceDescriptor = Float32Array;
@@ -17,6 +17,15 @@ export interface DetectionResult {
   descriptor: FaceDescriptor;
   detection: faceapi.FaceDetection;
   confidence: number;
+}
+
+export interface LiveDetectionFeedback {
+  status: "idle" | "no-face" | "multiple-faces" | "face-detected" | "off-center" | "too-far";
+  message: string;
+  faceCount: number;
+  confidence?: number;
+  box?: faceapi.Box;
+  isReadyForCapture: boolean;
 }
 
 export interface FaceApiState {
@@ -41,10 +50,17 @@ async function loadModels(): Promise<void> {
     faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
     faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
     faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-  ]).then(() => {
-    modelsLoaded = true;
-    modelsLoading = false;
-  });
+  ])
+    .then(() => {
+      modelsLoaded = true;
+      modelsLoading = false;
+    })
+    .catch((err) => {
+      modelsLoaded = false;
+      modelsLoading = false;
+      loadPromise = null;
+      throw err;
+    });
 
   return loadPromise;
 }
@@ -58,7 +74,7 @@ export function useFaceApi() {
 
   const ensureLoaded = useCallback(async (): Promise<void> => {
     if (modelsLoaded) {
-      setState((s) => ({ ...s, isLoaded: true, isLoading: false }));
+      setState((s) => ({ ...s, isLoaded: true, isLoading: false, loadError: null }));
       return;
     }
     setState((s) => ({ ...s, isLoading: true, loadError: null }));
@@ -73,29 +89,135 @@ export function useFaceApi() {
   }, []);
 
   /**
+   * Lightweight non-throwing detection for live video preview loop.
+   * Provides real-time guidance (face detected, centered, too far, etc.).
+   */
+  const detectLiveFace = useCallback(
+    async (
+      input: HTMLVideoElement | HTMLCanvasElement
+    ): Promise<LiveDetectionFeedback> => {
+      if (!modelsLoaded) {
+        return {
+          status: "idle",
+          message: "Loading facial recognition models…",
+          faceCount: 0,
+          isReadyForCapture: false,
+        };
+      }
+
+      if (input instanceof HTMLVideoElement) {
+        if (input.readyState < 2 || input.videoWidth === 0 || input.videoHeight === 0) {
+          return {
+            status: "idle",
+            message: "Initializing camera…",
+            faceCount: 0,
+            isReadyForCapture: false,
+          };
+        }
+      }
+
+      try {
+        const detections = await faceapi.detectAllFaces(
+          input,
+          new faceapi.SsdMobilenetv1Options({ minConfidence: 0.45 })
+        );
+
+        if (!detections || detections.length === 0) {
+          return {
+            status: "no-face",
+            message: "Position your face in the oval guide",
+            faceCount: 0,
+            isReadyForCapture: false,
+          };
+        }
+
+        if (detections.length > 1) {
+          return {
+            status: "multiple-faces",
+            message: "Multiple faces detected — ensure only you are visible",
+            faceCount: detections.length,
+            isReadyForCapture: false,
+          };
+        }
+
+        const det = detections[0];
+        const box = det.box;
+        const videoWidth = (input as HTMLVideoElement).videoWidth || (input as HTMLCanvasElement).width;
+        const videoHeight = (input as HTMLVideoElement).videoHeight || (input as HTMLCanvasElement).height;
+
+        if (videoWidth > 0 && videoHeight > 0) {
+          const faceCenterX = box.x + box.width / 2;
+          const faceCenterY = box.y + box.height / 2;
+          const centerOffsetX = Math.abs(faceCenterX - videoWidth / 2) / videoWidth;
+          const centerOffsetY = Math.abs(faceCenterY - videoHeight / 2) / videoHeight;
+
+          if (box.width < 50 || box.height < 50) {
+            return {
+              status: "too-far",
+              message: "Move closer to the camera",
+              faceCount: 1,
+              confidence: det.score,
+              box,
+              isReadyForCapture: false,
+            };
+          }
+
+          if (centerOffsetX > 0.38 || centerOffsetY > 0.38) {
+            return {
+              status: "off-center",
+              message: "Center your face in the oval guide",
+              faceCount: 1,
+              confidence: det.score,
+              box,
+              isReadyForCapture: false,
+            };
+          }
+        }
+
+        return {
+          status: "face-detected",
+          message: "Face aligned and ready",
+          faceCount: 1,
+          confidence: det.score,
+          box,
+          isReadyForCapture: true,
+        };
+      } catch {
+        return {
+          status: "idle",
+          message: "Tracking face…",
+          faceCount: 0,
+          isReadyForCapture: false,
+        };
+      }
+    },
+    []
+  );
+
+  /**
    * Detects a single face in a video/canvas/image element and returns its 128-dim descriptor.
    * Throws if no face is found, multiple faces found, or quality is too low.
    */
   const detectSingleFace = useCallback(
     async (
       input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
-      options?: { minConfidence?: number }
+      options?: { minConfidence?: number; skipCenteringCheck?: boolean }
     ): Promise<DetectionResult> => {
       await ensureLoaded();
 
-      const minConfidence = options?.minConfidence ?? 0.8;
+      const minConfidence = options?.minConfidence ?? 0.65;
 
       const detections = await faceapi
-        .detectAllFaces(input, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+        .detectAllFaces(input, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.45 }))
         .withFaceLandmarks()
         .withFaceDescriptors();
 
       if (!detections || detections.length === 0) {
-        throw new Error("No face detected. Please ensure your face is visible and well-lit.");
+        throw new Error("No face detected. Please ensure your face is clearly visible and well-lit.");
       }
 
       if (detections.length > 1) {
-        throw new Error("Multiple faces detected. Please ensure only your face is in the frame.");
+        throw new Error("Multiple faces detected. Please ensure only your face is visible in the frame.");
       }
 
       const det = detections[0];
@@ -103,29 +225,29 @@ export function useFaceApi() {
 
       if (confidence < minConfidence) {
         throw new Error(
-          `Face detection confidence too low (${Math.round(confidence * 100)}%). Move closer to the camera or improve lighting.`
+          `Face detection confidence too low (${Math.round(confidence * 100)}%). Please move closer to the camera or improve lighting.`
         );
       }
 
       // Quality checks: check if face is reasonably centered
-      const box = det.detection.box;
-      const videoWidth = (input as HTMLVideoElement).videoWidth || (input as HTMLCanvasElement).width;
-      const videoHeight = (input as HTMLVideoElement).videoHeight || (input as HTMLCanvasElement).height;
+      if (!options?.skipCenteringCheck) {
+        const box = det.detection.box;
+        const videoWidth = (input as HTMLVideoElement).videoWidth || (input as HTMLCanvasElement).width;
+        const videoHeight = (input as HTMLVideoElement).videoHeight || (input as HTMLCanvasElement).height;
 
-      if (videoWidth > 0 && videoHeight > 0) {
-        const faceCenterX = box.x + box.width / 2;
-        const faceCenterY = box.y + box.height / 2;
-        const centerOffsetX = Math.abs(faceCenterX - videoWidth / 2) / videoWidth;
-        const centerOffsetY = Math.abs(faceCenterY - videoHeight / 2) / videoHeight;
+        if (videoWidth > 0 && videoHeight > 0) {
+          const faceCenterX = box.x + box.width / 2;
+          const faceCenterY = box.y + box.height / 2;
+          const centerOffsetX = Math.abs(faceCenterX - videoWidth / 2) / videoWidth;
+          const centerOffsetY = Math.abs(faceCenterY - videoHeight / 2) / videoHeight;
 
-        if (centerOffsetX > 0.35 || centerOffsetY > 0.35) {
-          throw new Error("Face is not centered. Please align your face with the oval guide.");
-        }
+          if (centerOffsetX > 0.4 || centerOffsetY > 0.4) {
+            throw new Error("Face is not centered. Please align your face inside the oval guide.");
+          }
 
-        // Check face covers at least 12% of the frame
-        const faceCoverage = (box.width * box.height) / (videoWidth * videoHeight);
-        if (faceCoverage < 0.08) {
-          throw new Error("Face is too far from the camera. Move closer until your face fills the oval guide.");
+          if (box.width < 50 || box.height < 50) {
+            throw new Error("Face is too far from the camera. Move closer until your face fills the guide.");
+          }
         }
       }
 
@@ -174,7 +296,7 @@ export function useFaceApi() {
         }
       });
 
-      const isMatch = minDistance < threshold;
+      const isMatch = minDistance <= threshold;
       const confidence = Math.max(0, Math.min(1, 1 - minDistance));
 
       return { isMatch, minDistance, confidence, matchIndex };
@@ -185,6 +307,7 @@ export function useFaceApi() {
   return {
     ...state,
     ensureLoaded,
+    detectLiveFace,
     detectSingleFace,
     euclideanDistance,
     matchDescriptors,

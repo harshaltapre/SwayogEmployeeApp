@@ -1,0 +1,21 @@
+{
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install && cd backend && npm install",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30,
+      "includeFiles": "backend/**"
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/attendance-auto-logout",
+      "schedule": "30 13 * * *"
+    }
+  ]
+}

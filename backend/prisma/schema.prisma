@@ -571,6 +571,11 @@ model FaceEnrollment {
   /// detect the deletion via the /face/sync endpoint.
   isDeleted         Boolean   @default(false)
   deletedAt         DateTime?
+  webDescriptor1    Json?
+  webDescriptor2    Json?
+  webDescriptor3    Json?
+  webModelVersion   String?
+  webEnrolledAt     DateTime?
   employee          User      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
@@ -968,8 +973,8 @@ model AttendanceRule {
   shiftStart         String   @default("09:15")
   faceRequired       Boolean  @default(true)
   geofenceEnabled    Boolean  @default(false)
-  officeLat          Float    @default(18.5204)
-  officeLng          Float    @default(73.8567)
+  officeLat          Float    @default(21.175401747696093)
+  officeLng          Float    @default(79.05111036149488)
   officeRadius       Float    @default(150.0)
   faceMatchThreshold Float    @default(0.55)
   // weeklyOffDays: array of day numbers (0=Sun, 1=Mon, ..., 6=Sat)

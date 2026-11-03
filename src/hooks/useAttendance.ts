@@ -143,6 +143,8 @@ export const useUpdateAttendanceRules = () => {
 
 export interface FaceEnrollmentStatus {
   enrolled: boolean;
+  mobileEnrolled?: boolean;
+  message?: string;
   enrollment: {
     id: string;
     employeeId: string;
@@ -157,10 +159,10 @@ export interface FaceEnrollmentStatus {
   } | null;
 }
 
-/** Get current user's face enrollment status + descriptors */
+/** Get current user's face enrollment status + descriptors (web compatible) */
 export const useFaceEnrollmentStatus = (userId?: string) => useQuery({
   queryKey: ["face-enrollment", "status", userId],
-  queryFn: () => apiClient.get("/attendance/face/enrollment").then((r) => r.data as FaceEnrollmentStatus),
+  queryFn: () => apiClient.get("/attendance/face/enrollment?platform=WEB").then((r) => r.data as FaceEnrollmentStatus),
   enabled: !!userId,
   staleTime: 30_000,
   refetchOnWindowFocus: true,

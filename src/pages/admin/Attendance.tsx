@@ -62,6 +62,8 @@ import {
   CalendarDays,
   Sun,
   Info,
+  ArrowLeft,
+  X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -85,8 +87,8 @@ const DEFAULT_RULES: AttendanceRule = {
   shiftStart: "09:15",
   faceRequired: true,
   geofenceEnabled: false,
-  officeLat: 18.5204, // Default Pune lat
-  officeLng: 73.8567, // Default Pune lng
+  officeLat: 21.175401747696093, // Swayog Energy Pvt. Ltd., Nagpur
+  officeLng: 79.05111036149488, // Swayog Energy Pvt. Ltd., Nagpur
   officeRadius: 150,
   faceMatchThreshold: 0.55,
   weeklyOffDays: [0],
@@ -130,6 +132,17 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
       setRules(dbRules);
     }
   }, [dbRules]);
+
+  // Check if an employee ID was passed via query parameter (e.g. from notification click)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const empId = params.get("employeeId");
+      if (empId) {
+        setSelectedEmployeeId(empId);
+      }
+    } catch {}
+  }, []);
 
   // Fetch employees list
   const { data: employees = [], isLoading: loadingEmployees } = useListEmployees();
@@ -1416,7 +1429,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                         <label className="text-[11px] font-bold text-slate-500">Office Latitude</label>
                         <Input
                           type="number"
-                          step={0.000001}
+                          step="any"
                           value={rules.officeLat}
                           onChange={(e) => setRules((r) => ({ ...r, officeLat: parseFloat(e.target.value) || 0 }))}
                         />
@@ -1425,7 +1438,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                         <label className="text-[11px] font-bold text-slate-500">Office Longitude</label>
                         <Input
                           type="number"
-                          step={0.000001}
+                          step="any"
                           value={rules.officeLng}
                           onChange={(e) => setRules((r) => ({ ...r, officeLng: parseFloat(e.target.value) || 0 }))}
                         />
@@ -1453,29 +1466,56 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
 
         {/* ── Employee Detail Modal ────────────────────────────────────────── */}
         <Dialog open={!!selectedEmployeeId} onOpenChange={(open) => { if (!open) setSelectedEmployeeId(null); }}>
-          <DialogContent className="max-w-4xl text-slate-900 dark:text-white bg-slate-900 border border-slate-700 max-h-[85vh] overflow-y-auto">
-            <DialogHeader className="border-b border-slate-700 pb-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <DialogTitle className="text-white text-lg font-bold">
+          <DialogContent className="max-w-4xl w-[95vw] sm:w-full text-slate-900 dark:text-white bg-slate-900 border border-slate-700 max-h-[90vh] sm:max-h-[85vh] p-0 flex flex-col overflow-hidden [&>button.absolute]:hidden shadow-2xl">
+            {/* Modal Header — fixed at top so close & back controls remain permanently accessible even when content scrolls */}
+            <div className="border-b border-slate-700 px-5 py-3.5 bg-slate-900 shrink-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <DialogTitle className="text-white text-base sm:text-lg font-bold truncate">
                     Detailed Log — {employees.find((e: any) => String(e.userId || e.id) === selectedEmployeeId)?.name || "Employee"}
                   </DialogTitle>
-                  <DialogDescription className="text-slate-400 text-xs">
+                  <DialogDescription className="text-slate-400 text-xs mt-0.5">
                     Monthly log records, breakdown status, check-in selfie watermarks, and geolocations.
                   </DialogDescription>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    const emp = employees.find((e: any) => String(e.userId || e.id) === selectedEmployeeId);
-                    handleOpenApplyModal(emp);
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5 shadow-sm shrink-0 self-start sm:self-center"
-                >
-                  <CalendarPlus className="h-3.5 w-3.5" /> + Regularize / Apply Attendance
-                </Button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedEmployeeId(null)}
+                    className="h-8 text-xs border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 gap-1.5 hidden sm:inline-flex"
+                    title="Return to attendance list"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" /> Back
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const emp = employees.find((e: any) => String(e.userId || e.id) === selectedEmployeeId);
+                      handleOpenApplyModal(emp);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5 shadow-sm h-8"
+                  >
+                    <CalendarPlus className="h-3.5 w-3.5" />
+                    <span className="hidden md:inline">+ Regularize / Apply Attendance</span>
+                    <span className="md:hidden">Regularize</span>
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEmployeeId(null)}
+                    aria-label="Close Detailed Log modal"
+                    title="Close (Esc)"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 hover:border-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-900"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            </DialogHeader>
+            </div>
+
+            {/* Modal Body — independently scrollable */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 overscroll-contain">
 
             {loadingDetails ? (
               <div className="text-center py-10 text-slate-400 font-medium">
@@ -1631,16 +1671,31 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                                   <td className="px-4 py-3 whitespace-nowrap">
                                     {(() => {
                                       const isSelfPunchMode = Boolean(rec.displayAsSelfPunch || rec.display_as_self_punch || rec.audit?.displayAsSelfPunch);
-                                      const lat = checkinSnap?.latitude ?? rec.latitude;
-                                      const lng = checkinSnap?.longitude ?? rec.longitude;
+                                      const isWorkplaceFallback = rec.location_source === "WORKPLACE_FALLBACK" || rec.locationSource === "WORKPLACE_FALLBACK" || rec.audit?.locationSource === "WORKPLACE_FALLBACK";
+                                      const lat = isWorkplaceFallback ? rec.latitude : (checkinSnap?.latitude ?? rec.latitude);
+                                      const lng = isWorkplaceFallback ? rec.longitude : (checkinSnap?.longitude ?? rec.longitude);
                                       const hasCoords = lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng));
 
                                       if (hasCoords) {
+                                        const coordsText = isWorkplaceFallback
+                                          ? `${lat}, ${lng}`
+                                          : `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`;
+
                                         return (
                                           <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] text-slate-400 font-mono">
-                                              {Number(lat).toFixed(5)}, {Number(lng).toFixed(5)}
-                                            </span>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="text-[10px] text-slate-400 font-mono">
+                                                {coordsText}
+                                              </span>
+                                              {isWorkplaceFallback && (
+                                                <span
+                                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-800 text-amber-300/90 border border-amber-600/30 shrink-0"
+                                                  title="Configured workplace coordinates for Swayog Energy Pvt. Ltd., Nagpur. Employee device GPS was not captured."
+                                                >
+                                                  Workplace
+                                                </span>
+                                              )}
+                                            </div>
                                             <a
                                               href={`https://www.google.com/maps?q=${lat},${lng}`}
                                               target="_blank"
@@ -1698,8 +1753,32 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                 </div>
               </div>
             )}
-            <div className="flex justify-end pt-3 border-t border-slate-700">
-              <Button variant="outline" onClick={() => setSelectedEmployeeId(null)}>Close Details</Button>
+            </div>
+
+            {/* Modal Footer — fixed at bottom */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-700 bg-slate-900/95 px-5 py-3 shrink-0">
+              <span className="text-xs text-slate-400 font-medium">
+                {monthName} {selectedYear} · Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] text-slate-300">Esc</kbd> or Back to return
+              </span>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedEmployeeId(null)}
+                  className="h-8 text-xs border-slate-700 text-slate-200 hover:text-white hover:bg-slate-800 gap-1.5"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" /> Back to Attendance List
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setSelectedEmployeeId(null)}
+                  className="h-8 text-xs bg-slate-800 hover:bg-slate-700 text-white border border-slate-700"
+                >
+                  Close
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -1776,11 +1855,69 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                   </div>
                 </div>
 
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-white block text-[11px]">Location & Geolocation Provenance</span>
+                    <Badge variant="outline" className="text-[10px] font-mono">
+                      {selectedAuditRecord.audit?.locationSource || selectedAuditRecord.location_source || selectedAuditRecord.locationSource || "UNAVAILABLE"}
+                    </Badge>
+                  </div>
+                  <div className="text-slate-700 dark:text-slate-300 space-y-1 text-xs">
+                    <p>
+                      <strong className="text-slate-900 dark:text-white">Actual Device GPS Captured:</strong>{" "}
+                      <span>
+                        {(selectedAuditRecord.audit?.actualGpsCaptured ?? selectedAuditRecord.actual_gps_captured ?? selectedAuditRecord.actualGpsCaptured)
+                          ? "Yes (Live Employee Device Coordinates)"
+                          : "No (Configured Workplace Coordinates Used as Fallback)"}
+                      </span>
+                    </p>
+                    {(selectedAuditRecord.latitude != null && selectedAuditRecord.longitude != null) && (
+                      <p className="flex items-center gap-2 flex-wrap">
+                        <strong className="text-slate-900 dark:text-white">Resolved Coordinates:</strong>{" "}
+                        <span className="font-mono text-slate-400">
+                          {selectedAuditRecord.location_source === "WORKPLACE_FALLBACK" || selectedAuditRecord.audit?.locationSource === "WORKPLACE_FALLBACK"
+                            ? `${selectedAuditRecord.latitude}, ${selectedAuditRecord.longitude}`
+                            : `${Number(selectedAuditRecord.latitude).toFixed(5)}, ${Number(selectedAuditRecord.longitude).toFixed(5)}`}
+                        </span>
+                        <a
+                          href={`https://www.google.com/maps?q=${selectedAuditRecord.latitude},${selectedAuditRecord.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 font-semibold hover:underline text-[11px]"
+                        >
+                          <MapPin className="h-3 w-3" /> View Map <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
+                      </p>
+                    )}
+                    {(selectedAuditRecord.audit?.workplaceLatitude != null && selectedAuditRecord.audit?.workplaceLongitude != null) && (
+                      <p>
+                        <strong className="text-slate-900 dark:text-white">Configured Workplace Fallback:</strong>{" "}
+                        <span className="font-mono text-slate-400">
+                          {selectedAuditRecord.audit.workplaceLatitude}, {selectedAuditRecord.audit.workplaceLongitude}
+                        </span>
+                      </p>
+                    )}
+                    {(selectedAuditRecord.audit?.workplaceLocationName || selectedAuditRecord.workplace_location_name) && (
+                      <p>
+                        <strong className="text-slate-900 dark:text-white">Facility:</strong>{" "}
+                        <span>{selectedAuditRecord.audit?.workplaceLocationName || selectedAuditRecord.workplace_location_name}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 <div className="space-y-1.5 bg-amber-50/70 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200 dark:border-amber-900/50">
                   <span className="font-bold text-amber-900 dark:text-amber-300 block">Verification Check Status</span>
                   <ul className="space-y-1 text-slate-700 dark:text-slate-300 list-disc list-inside">
                     <li>Face Recognition / Biometric Match: Bypassed via manual regularize</li>
-                    <li>GPS Geofence Location Validation: Bypassed via manual regularize</li>
+                    <li>
+                      GPS Geofence Location Validation:{" "}
+                      {(selectedAuditRecord.audit?.locationSource === "WORKPLACE_FALLBACK" || selectedAuditRecord.location_source === "WORKPLACE_FALLBACK" || selectedAuditRecord.locationSource === "WORKPLACE_FALLBACK")
+                        ? "Configured workplace fallback applied (physical GPS not recorded)"
+                        : (selectedAuditRecord.audit?.actualGpsCaptured || selectedAuditRecord.actual_gps_captured)
+                        ? "Genuine device GPS verified"
+                        : "Bypassed via manual regularize"}
+                    </li>
                     <li>Device Signature Verification: Bypassed via manual regularize</li>
                   </ul>
                 </div>

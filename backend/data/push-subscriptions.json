@@ -1,0 +1,19 @@
+[
+  {
+    "id": "sub_1792064690404_jycnfhw",
+    "userId": "ed369f1d-59cd-48b6-b833-097fa03a3561",
+    "role": "ADMIN",
+    "companyId": null,
+    "subscription": {
+      "endpoint": "https://wns2-pn1p.notify.windows.com/w/?token=BQYAAACBA%2f0PCVS%2f4y3VTuETUQ%2bzEeXBWl2DXZnJfpgvcJvOl5kYxx9P9SzdD0G2k8lq22d4R2cPGsffFxdNXfG800zUsHISYbPcek%2bFz8dTwQS7sQEAvGDFXjRQHnrGTtLXxVTbkhUIIAqBafzYrOA%2fFVBCGZ9xyG4tsvIM%2fYFU9wAweSJuMvLcmR%2b95zlTjf1jhLI8YIQpp1%2f%2fbIEhXA9Tuxhz7obHRrHg0tQxxJEhRmVK07GgEnl9qQvctBjZ2VOwQuyhh9q660Iu8O%2fBg2RNwXtAJUUitujwMyfmVNE0qks2456Rf3R5XQK92a4U8ZrT4Fs%3d",
+      "expirationTime": null,
+      "keys": {
+        "p256dh": "BMifTMp4dFfNDdiEjizqu2Nhpw9--LJrehT3ETRms6S3qQwOsCCVkxKSxT0qTJsAQ_1cvPG_8ZJf1wzcfTxSAy0",
+        "auth": "o-C4FYYmBnTSMVmPU9ZMaQ"
+      }
+    },
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+    "createdAt": "2026-10-15T11:44:50.404Z",
+    "updatedAt": "2026-10-15T11:45:49.175Z"
+  }
+]

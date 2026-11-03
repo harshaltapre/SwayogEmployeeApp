@@ -321,6 +321,7 @@ export const EmployeeCalendar = ({
           const start = new Date(y, m - 1, d, 9, 0, 0);
 
           let title = "Attendance: Present";
+          let subtitle = "";
           const isSelfPunchDisplay = Boolean(r.displayAsSelfPunch || r.display_as_self_punch);
           const isAdmin = !isSelfPunchDisplay && (r.manualOverride || r.source?.startsWith("ADMIN"));
 

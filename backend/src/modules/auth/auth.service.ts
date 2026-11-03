@@ -446,13 +446,16 @@ export async function login(input: LoginInput) {
       console.error("[AUTH] Failed to create audit log:", err);
     });
 
-    await createAdminNotification({
-      type: "USER_LOGIN",
-      message: `${user.fullName || user.email || user.loginId} (${user.role}) logged in`,
-      employeeId: user.id,
-    }).catch((err) => {
-      console.error("[AUTH] Failed to create notification:", err);
-    });
+    if (user.role !== "SUPER_ADMIN") {
+      const nowTime = new Date().toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+      await createAdminNotification({
+        type: "EMPLOYEE_LOGIN",
+        message: `${user.fullName || user.email || user.loginId} logged in successfully at ${nowTime}`,
+        employeeId: user.id,
+      }).catch((err) => {
+        console.error("[AUTH] Failed to create notification:", err);
+      });
+    }
 
     await resetLockoutState(user);
 

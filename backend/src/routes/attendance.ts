@@ -6,6 +6,14 @@ import { prisma } from "../lib/prisma.js";
 import * as AttendanceService from "../services/attendanceService.js";
 import fs from "fs";
 import path from "path";
+import {
+  getVapidPublicKey,
+  saveAdminPushSubscription,
+  removeAdminPushSubscription,
+  getAdminSubscriptionStatus,
+  sendPushToAdmins,
+} from "../services/webPushService.js";
+import { getNotificationTitle } from "../services/notificationService.js";
 
 
 
@@ -78,6 +86,18 @@ function savePhoto(userId: string, photoDataUrl: string) {
   }
   fs.writeFileSync(PHOTOS_FILE_PATH, JSON.stringify(all), "utf8");
 }
+
+const isValidDescriptor = (d: any): d is number[] =>
+  Array.isArray(d) && d.length === 128 && d.every((v: any) => typeof v === "number" && !isNaN(v));
+
+const calcEuclideanDistance = (a: number[], b: number[]): number => {
+  let sum = 0;
+  for (let i = 0; i < 128; i++) {
+    const diff = a[i] - b[i];
+    sum += diff * diff;
+  }
+  return Math.sqrt(sum);
+};
 
 router.get("/rules", authenticateAccessToken, asyncHandler(async (req, res) => {
   const rules = await AttendanceService.getRulesAsync();
@@ -194,29 +214,113 @@ router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, 
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   try {
-    const { selfie, latitude, longitude, matchConfidence, matchDistance, livenessVerified } = req.body;
-    const result = await AttendanceService.checkIn(req.auth!.userId, {
+    const employeeId = req.auth!.userId;
+    const { selfie, latitude, longitude, liveDescriptor, livenessVerified } = req.body;
+
+    const rules = await AttendanceService.getRulesAsync();
+    let verifiedMatchConfidence: number | null = null;
+    let verifiedMatchDistance: number | null = null;
+
+    if (rules.faceRequired) {
+      const enrollment = await prisma.faceEnrollment.findUnique({
+        where: { employeeId },
+      });
+
+      if (!enrollment || enrollment.isDeleted) {
+        res.status(400).json({
+          error: "Face enrollment required. Please go to Settings → Face ID and enroll your face before checking in.",
+        });
+        return;
+      }
+
+      // Determine which descriptors to match against
+      let storedDescriptors: number[][] = [];
+      if (enrollment.webDescriptor1 && enrollment.webDescriptor2 && enrollment.webDescriptor3) {
+        storedDescriptors = [
+          enrollment.webDescriptor1 as number[],
+          enrollment.webDescriptor2 as number[],
+          enrollment.webDescriptor3 as number[],
+        ];
+      } else if (enrollment.modelVersion === "face-api-ssd-mobilenetv1-v1" && enrollment.descriptor1 && enrollment.descriptor2 && enrollment.descriptor3) {
+        storedDescriptors = [
+          enrollment.descriptor1 as number[],
+          enrollment.descriptor2 as number[],
+          enrollment.descriptor3 as number[],
+        ];
+      } else if (enrollment.modelVersion === "mobile-facenet-v1" && !req.headers["user-agent"]?.includes("okhttp") && liveDescriptor) {
+        res.status(400).json({
+          error: "Your face was enrolled using the mobile app model. Please enroll your face once on the website (Settings → Face ID) to check in from your browser.",
+        });
+        return;
+      } else if (enrollment.descriptor1 && enrollment.descriptor2 && enrollment.descriptor3) {
+        storedDescriptors = [
+          enrollment.descriptor1 as number[],
+          enrollment.descriptor2 as number[],
+          enrollment.descriptor3 as number[],
+        ];
+      }
+
+      if (!isValidDescriptor(liveDescriptor)) {
+        // Fallback for legacy mobile app client
+        const isMobileClient = req.headers["user-agent"]?.includes("okhttp") || req.body.source === "MOBILE";
+        if (isMobileClient && req.body.matchConfidence !== undefined) {
+          verifiedMatchConfidence = Number(req.body.matchConfidence);
+          verifiedMatchDistance = req.body.matchDistance !== undefined ? Number(req.body.matchDistance) : null;
+        } else {
+          res.status(400).json({
+            error: "A valid live face descriptor is required for face verification.",
+          });
+          return;
+        }
+      } else {
+        // Authoritative server-side Euclidean distance calculation
+        let minDistance = Infinity;
+        for (const stored of storedDescriptors) {
+          if (isValidDescriptor(stored)) {
+            const dist = calcEuclideanDistance(liveDescriptor, stored);
+            if (dist < minDistance) {
+              minDistance = dist;
+            }
+          }
+        }
+
+        const threshold = rules.faceMatchThreshold != null ? rules.faceMatchThreshold : 0.55;
+        if (minDistance > threshold) {
+          res.status(403).json({
+            error: `Face verification failed. Verification distance (${minDistance.toFixed(3)}) exceeds threshold (${threshold}). Please ensure good lighting and look directly at the camera.`,
+          });
+          return;
+        }
+
+        verifiedMatchDistance = minDistance;
+        verifiedMatchConfidence = Math.max(0, Math.min(1, 1 - minDistance));
+      }
+    } else {
+      // Face matching not strictly enforced by rule; if liveDescriptor provided, record metrics
+      if (isValidDescriptor(liveDescriptor)) {
+        const enrollment = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
+        if (enrollment && !enrollment.isDeleted) {
+          const stored = (enrollment.webDescriptor1 || enrollment.descriptor1) as number[];
+          if (isValidDescriptor(stored)) {
+            const dist = calcEuclideanDistance(liveDescriptor, stored);
+            verifiedMatchDistance = dist;
+            verifiedMatchConfidence = Math.max(0, Math.min(1, 1 - dist));
+          }
+        }
+      } else if (req.body.matchConfidence !== undefined) {
+        verifiedMatchConfidence = Number(req.body.matchConfidence);
+        verifiedMatchDistance = req.body.matchDistance !== undefined ? Number(req.body.matchDistance) : null;
+      }
+    }
+
+    const result = await AttendanceService.checkIn(employeeId, {
       selfieDataUrl: selfie ?? null,
       latitude: latitude ? Number(latitude) : null,
       longitude: longitude ? Number(longitude) : null,
+      matchConfidence: verifiedMatchConfidence,
+      matchDistance: verifiedMatchDistance,
+      livenessVerified: livenessVerified === true,
     });
-
-    // Augment the CheckIn record with face recognition metadata if provided
-    if (result?.checkInRecord?.id && (matchConfidence !== undefined || matchDistance !== undefined)) {
-      await prisma.checkIn.update({
-        where: { id: result.checkInRecord.id },
-        data: {
-          matchConfidence: matchConfidence != null ? Number(matchConfidence) : null,
-          matchDistance: matchDistance != null ? Number(matchDistance) : null,
-          livenessVerified: livenessVerified === true,
-          // Flag entries with low confidence (between threshold and threshold+0.1)
-          flagged: matchConfidence != null
-            ? matchConfidence < (parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55") + 0.1 - 0 + 1 - 1) // keep readable
-              && matchConfidence >= parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55")
-            : false,
-        },
-      }).catch(() => { /* non-critical, don't fail check-in */ });
-    }
 
     res.json({ success: true, result });
   } catch (err: any) {
@@ -544,14 +648,32 @@ router.get("/admin/checkins", adminAuth, asyncHandler(async (req, res) => {
   res.json({ checkins });
 }));
 
-// Admin: get notifications (unread only)
+// Admin: get notifications (with employee details and history preservation)
 router.get("/admin/notifications", adminAuth, asyncHandler(async (req, res) => {
+  const unreadOnly = req.query.unreadOnly === "true";
   const notifications = await prisma.adminNotification.findMany({
-    where: { read: false },
+    where: unreadOnly ? { read: false } : undefined,
     orderBy: { createdAt: "desc" },
     take: 100,
   });
-  res.json({ notifications });
+
+  const employeeIds = [...new Set(notifications.map((n: any) => n.employeeId).filter(Boolean))];
+  const employees = employeeIds.length > 0
+    ? await prisma.user.findMany({
+        where: { id: { in: employeeIds } },
+        select: { id: true, fullName: true, employeeCode: true, email: true, role: true },
+      })
+    : [];
+
+  const employeeMap = new Map(employees.map((e: any) => [e.id, e]));
+
+  const enriched = notifications.map((n: any) => ({
+    ...n,
+    title: getNotificationTitle(n.type),
+    employee: employeeMap.get(n.employeeId) || null,
+  }));
+
+  res.json({ notifications: enriched });
 }));
 
 // Admin: mark all notifications as read
@@ -583,6 +705,60 @@ router.patch("/admin/notifications/:id/read", adminAuth, asyncHandler(async (req
   res.json({ success: true, updated });
 }));
 
+// Admin: Web Push routes
+router.get("/admin/push/public-key", adminAuth, asyncHandler(async (req, res) => {
+  const publicKey = getVapidPublicKey();
+  res.json({ publicKey });
+}));
+
+router.post("/admin/push/subscribe", adminAuth, asyncHandler(async (req, res) => {
+  const { subscription } = req.body;
+  if (!subscription || !subscription.endpoint || !subscription.keys) {
+    res.status(400).json({ error: "Invalid subscription payload" });
+    return;
+  }
+
+  const userAgent = req.headers["user-agent"] || "";
+  await saveAdminPushSubscription({
+    userId: req.auth!.userId,
+    role: req.auth!.role,
+    subscription,
+    userAgent,
+  });
+
+  res.json({ success: true, message: "Push notification subscription enrolled successfully" });
+}));
+
+router.post("/admin/push/unsubscribe", adminAuth, asyncHandler(async (req, res) => {
+  const { endpoint } = req.body;
+  if (!endpoint) {
+    res.status(400).json({ error: "Endpoint is required" });
+    return;
+  }
+
+  const removed = await removeAdminPushSubscription(endpoint);
+  res.json({ success: true, removed });
+}));
+
+router.get("/admin/push/status", adminAuth, asyncHandler(async (req, res) => {
+  const status = await getAdminSubscriptionStatus(req.auth!.userId);
+  res.json(status);
+}));
+
+router.post("/admin/push/test", adminAuth, asyncHandler(async (req, res) => {
+  const result = await sendPushToAdmins({
+    title: "Swayog Admin Notification Test",
+    body: "Browser Web Push notifications are active and connected to live employee events!",
+    data: {
+      url: "/admin/attendance",
+      type: "SYSTEM_TEST",
+    },
+  });
+
+  res.json({ success: true, ...result });
+}));
+
+
 router.patch(
   "/admin/work-submissions/:id/review",
   adminAuth,
@@ -607,12 +783,6 @@ router.patch(
 // ═══════════════════════════════════════════════════════════════════════════════
 // FACE RECOGNITION ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Helper to validate 128-dim float descriptors
- */
-const isValidDescriptor = (d: any) =>
-  Array.isArray(d) && d.length === 128 && d.every((v: any) => typeof v === "number");
 
 /**
  * POST /face/enroll
@@ -644,6 +814,60 @@ router.post(
     const existing = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
     const nextVersion = existing ? existing.syncVersion + 1 : 1;
 
+    if (enrollmentSource === "WEB") {
+      const keepMobile = existing && existing.enrollmentSource === "MOBILE" && !existing.isDeleted;
+      const updateData: any = {
+        webDescriptor1: descriptor1,
+        webDescriptor2: descriptor2,
+        webDescriptor3: descriptor3,
+        webModelVersion: modelVersion,
+        webEnrolledAt: new Date(),
+        syncVersion: nextVersion,
+        isDeleted: false,
+        deletedAt: null,
+      };
+
+      if (!keepMobile) {
+        updateData.descriptor1 = descriptor1;
+        updateData.descriptor2 = descriptor2;
+        updateData.descriptor3 = descriptor3;
+        updateData.modelVersion = modelVersion;
+        updateData.enrollmentSource = "WEB";
+        updateData.enrolledAt = new Date();
+      }
+
+      const enrollment = await prisma.faceEnrollment.upsert({
+        where: { employeeId },
+        create: {
+          employeeId,
+          descriptor1,
+          descriptor2,
+          descriptor3,
+          modelVersion,
+          syncVersion: nextVersion,
+          enrollmentSource: "WEB",
+          webDescriptor1: descriptor1,
+          webDescriptor2: descriptor2,
+          webDescriptor3: descriptor3,
+          webModelVersion: modelVersion,
+          webEnrolledAt: new Date(),
+          isDeleted: false,
+          deletedAt: null,
+        },
+        update: updateData,
+      });
+
+      res.json({
+        success: true,
+        enrolledAt: enrollment.webEnrolledAt || enrollment.enrolledAt,
+        syncVersion: enrollment.syncVersion,
+        enrollmentId: enrollment.id,
+        enrollmentSource: "WEB",
+      });
+      return;
+    }
+
+    // MOBILE enrollment
     const enrollment = await prisma.faceEnrollment.upsert({
       where: { employeeId },
       create: {
@@ -653,7 +877,7 @@ router.post(
         descriptor3,
         modelVersion,
         syncVersion: nextVersion,
-        enrollmentSource,
+        enrollmentSource: "MOBILE",
         isDeleted: false,
         deletedAt: null,
       },
@@ -664,7 +888,7 @@ router.post(
         enrolledAt: new Date(),
         modelVersion,
         syncVersion: nextVersion,
-        enrollmentSource,
+        enrollmentSource: "MOBILE",
         isDeleted: false,
         deletedAt: null,
       },
@@ -715,6 +939,60 @@ router.post(
     const existing = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
     const nextVersion = existing ? existing.syncVersion + 1 : 1;
 
+    if (enrollmentSource === "WEB") {
+      const keepMobile = existing && existing.enrollmentSource === "MOBILE" && !existing.isDeleted;
+      const updateData: any = {
+        webDescriptor1: descriptor1,
+        webDescriptor2: descriptor2,
+        webDescriptor3: descriptor3,
+        webModelVersion: modelVersion,
+        webEnrolledAt: new Date(),
+        syncVersion: nextVersion,
+        isDeleted: false,
+        deletedAt: null,
+      };
+
+      if (!keepMobile) {
+        updateData.descriptor1 = descriptor1;
+        updateData.descriptor2 = descriptor2;
+        updateData.descriptor3 = descriptor3;
+        updateData.modelVersion = modelVersion;
+        updateData.enrollmentSource = "WEB";
+        updateData.enrolledAt = new Date();
+      }
+
+      const enrollment = await prisma.faceEnrollment.upsert({
+        where: { employeeId },
+        create: {
+          employeeId,
+          descriptor1,
+          descriptor2,
+          descriptor3,
+          modelVersion,
+          syncVersion: nextVersion,
+          enrollmentSource: "WEB",
+          webDescriptor1: descriptor1,
+          webDescriptor2: descriptor2,
+          webDescriptor3: descriptor3,
+          webModelVersion: modelVersion,
+          webEnrolledAt: new Date(),
+          isDeleted: false,
+          deletedAt: null,
+        },
+        update: updateData,
+      });
+
+      res.json({
+        success: true,
+        enrolledAt: enrollment.webEnrolledAt || enrollment.enrolledAt,
+        syncVersion: enrollment.syncVersion,
+        enrollmentId: enrollment.id,
+        enrollmentSource: "WEB",
+      });
+      return;
+    }
+
+    // MOBILE enrollment
     const enrollment = await prisma.faceEnrollment.upsert({
       where: { employeeId },
       create: {
@@ -724,7 +1002,7 @@ router.post(
         descriptor3,
         modelVersion,
         syncVersion: nextVersion,
-        enrollmentSource,
+        enrollmentSource: "MOBILE",
         isDeleted: false,
         deletedAt: null,
       },
@@ -735,7 +1013,7 @@ router.post(
         enrolledAt: new Date(),
         modelVersion,
         syncVersion: nextVersion,
-        enrollmentSource,
+        enrollmentSource: "MOBILE",
         isDeleted: false,
         deletedAt: null,
       },
@@ -755,6 +1033,7 @@ router.post(
  * GET /face/enrollment
  * Returns the stored face descriptors for the requesting employee.
  * Admin/SuperAdmin can pass ?employeeId= to get another employee's descriptors.
+ * Supports ?platform=WEB | MOBILE to return model-compatible descriptors.
  */
 router.get(
   "/face/enrollment",
@@ -778,6 +1057,11 @@ router.get(
         descriptor1: true,
         descriptor2: true,
         descriptor3: true,
+        webDescriptor1: true,
+        webDescriptor2: true,
+        webDescriptor3: true,
+        webModelVersion: true,
+        webEnrolledAt: true,
         enrolledAt: true,
         modelVersion: true,
         syncVersion: true,
@@ -792,7 +1076,76 @@ router.get(
       return;
     }
 
-    res.json({ enrollment, enrolled: true });
+    const platform = String(req.query.platform || (req.headers["user-agent"]?.includes("okhttp") ? "MOBILE" : "WEB")).toUpperCase();
+
+    if (platform === "WEB") {
+      // Check for web descriptors first
+      if (enrollment.webDescriptor1 && enrollment.webDescriptor2 && enrollment.webDescriptor3) {
+        res.json({
+          enrolled: true,
+          enrollment: {
+            id: enrollment.id,
+            employeeId: enrollment.employeeId,
+            descriptor1: enrollment.webDescriptor1,
+            descriptor2: enrollment.webDescriptor2,
+            descriptor3: enrollment.webDescriptor3,
+            enrolledAt: enrollment.webEnrolledAt || enrollment.enrolledAt,
+            modelVersion: enrollment.webModelVersion || "face-api-ssd-mobilenetv1-v1",
+            syncVersion: enrollment.syncVersion,
+            enrollmentSource: "WEB",
+            updatedAt: enrollment.updatedAt,
+          },
+        });
+        return;
+      }
+
+      // Check if primary enrollment is web-compatible
+      if (enrollment.modelVersion === "face-api-ssd-mobilenetv1-v1") {
+        res.json({
+          enrolled: true,
+          enrollment: {
+            id: enrollment.id,
+            employeeId: enrollment.employeeId,
+            descriptor1: enrollment.descriptor1,
+            descriptor2: enrollment.descriptor2,
+            descriptor3: enrollment.descriptor3,
+            enrolledAt: enrollment.enrolledAt,
+            modelVersion: enrollment.modelVersion,
+            syncVersion: enrollment.syncVersion,
+            enrollmentSource: enrollment.enrollmentSource,
+            updatedAt: enrollment.updatedAt,
+          },
+        });
+        return;
+      }
+
+      // Only mobile enrollment exists — inform client to enroll on web
+      res.json({
+        enrolled: false,
+        enrollment: null,
+        mobileEnrolled: true,
+        modelVersion: enrollment.modelVersion,
+        message: "Face was enrolled using the mobile app model. Please enroll your face in Settings → Face ID to enable browser check-in.",
+      });
+      return;
+    }
+
+    // MOBILE or other client
+    res.json({
+      enrolled: true,
+      enrollment: {
+        id: enrollment.id,
+        employeeId: enrollment.employeeId,
+        descriptor1: enrollment.descriptor1,
+        descriptor2: enrollment.descriptor2,
+        descriptor3: enrollment.descriptor3,
+        enrolledAt: enrollment.enrolledAt,
+        modelVersion: enrollment.modelVersion,
+        syncVersion: enrollment.syncVersion,
+        enrollmentSource: enrollment.enrollmentSource,
+        updatedAt: enrollment.updatedAt,
+      },
+    });
   }),
 );
 
@@ -825,6 +1178,8 @@ router.get(
             enrollmentSource: true,
             isDeleted: true,
             updatedAt: true,
+            webDescriptor1: true,
+            webEnrolledAt: true,
           },
         },
       },
@@ -833,6 +1188,9 @@ router.get(
 
     const result = employees.map((e) => {
       const activeEnrollment = e.faceEnrollment && !e.faceEnrollment.isDeleted ? e.faceEnrollment : null;
+      const webEnrolled = activeEnrollment !== null && Boolean(
+        activeEnrollment.webDescriptor1 || activeEnrollment.modelVersion === "face-api-ssd-mobilenetv1-v1"
+      );
       return {
         id: e.id,
         fullName: e.fullName,
@@ -840,6 +1198,7 @@ router.get(
         employeeCode: e.employeeCode,
         department: e.department?.name ?? "—",
         enrolled: activeEnrollment !== null,
+        webEnrolled,
         enrolledAt: activeEnrollment?.enrolledAt ?? null,
         modelVersion: activeEnrollment?.modelVersion ?? null,
         syncVersion: activeEnrollment?.syncVersion ?? null,

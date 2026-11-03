@@ -107,6 +107,11 @@ const envSchema = z.object({
   R2_BUCKET_NAME: z.string().optional(),
   R2_ENDPOINT: z.string().optional(),
   R2_PUBLIC_URL: z.string().optional(),
+  WORKPLACE_LAT: z.coerce.number().optional().default(21.175401747696093),
+  WORKPLACE_LNG: z.coerce.number().optional().default(79.05111036149488),
+  WORKPLACE_NAME: z.string().optional().default("Swayog Energy Pvt. Ltd., Nagpur"),
+  OFFICE_LAT: z.coerce.number().optional(),
+  OFFICE_LNG: z.coerce.number().optional(),
 });
 
 let parsedEnv: any;

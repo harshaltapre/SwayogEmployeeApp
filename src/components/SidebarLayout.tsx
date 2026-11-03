@@ -42,6 +42,7 @@ import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Separator } from "./ui/separator";
 import { AdminNotificationBell } from "./AdminNotificationBell";
+import { AdminNotificationPrompt } from "./AdminNotificationPrompt";
 
 interface SidebarLayoutProps {
   children: ReactNode;
@@ -353,14 +354,19 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         </nav>
       </div>
       <div className="shrink-0 px-4 py-4 space-y-4 border-t border-sidebar-border">
-        <div className="flex items-center gap-3 px-3 py-2 mb-2">
-          <Avatar className="h-9 w-9 border border-sidebar-border">
-            <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">{user.avatarInitials}</AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col overflow-hidden">
-            <span className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</span>
-            <span className="text-xs text-sidebar-foreground/65 capitalize">{user.designation || (user.jobRole ? user.jobRole.replace(/_/g, " ") : user.role)}</span>
+        <div className="flex items-center justify-between gap-3 px-3 py-2 mb-2">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <Avatar className="h-9 w-9 border border-sidebar-border shrink-0">
+              <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">{user.avatarInitials}</AvatarFallback>
+            </Avatar>
+            <div className="flex flex-col overflow-hidden">
+              <span className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</span>
+              <span className="text-xs text-sidebar-foreground/65 capitalize">{user.designation || (user.jobRole ? user.jobRole.replace(/_/g, " ") : user.role)}</span>
+            </div>
           </div>
+          {(user.role === "admin" || user.role === "super_admin") && (
+            <AdminNotificationBell />
+          )}
         </div>
         <Button
           variant="ghost"
@@ -405,7 +411,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             <img src="/logo.png" alt="SWAYOG" className="h-8 w-auto" />
           </div>
           <div className="flex items-center gap-2">
-            {user.role === "admin" && <AdminNotificationBell />}
+            {(user.role === "admin" || user.role === "super_admin") && <AdminNotificationBell />}
             <div className="w-1" />
           </div>
         </div>
@@ -416,6 +422,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           </div>
         </main>
       </div>
+
+      {/* Admin Real-Time Browser Notification Opt-In Prompt */}
+      {(user.role === "admin" || user.role === "super_admin") && <AdminNotificationPrompt />}
 
       {/* Onboarding Tour Button — only for employee-level roles */}
       {canShowQuickTour && quickTourEnabled && (

@@ -96,13 +96,14 @@ export interface SAUser {
   portalPassword?: string | null;
   permissions?: string[];
   employeeProfile?: { jobRole: string; zone: string; monthlySalaryInr?: number | null; permissions?: string[] } | null;
-  partnerProfile?: { partnerCode?: string | null; businessName: string; serviceZone: string } | null;
+  partnerProfile?: { id?: string; partnerCode?: string | null; businessName: string; serviceZone: string } | null;
   customerProfile?: {
     id: number;
     customerCode: string;
     partnerId?: string | null;
     partner?: {
       id: string;
+      name?: string | null;
       partnerCode?: string | null;
       businessName?: string | null;
       user?: {

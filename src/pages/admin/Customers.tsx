@@ -126,6 +126,19 @@ function WarrantyBadge({ installDate }: { installDate: string }) {
   return <Badge variant="outline" className="text-[10px] border-green-200 text-green-700 bg-green-50">Valid · {Math.floor(monthsLeft / 12)}y {monthsLeft % 12}m</Badge>;
 }
 
+function AmcRemainingBadge({ amcExpiryDate }: { amcExpiryDate?: string | null }) {
+  if (!amcExpiryDate || isNaN(new Date(amcExpiryDate).getTime())) return null;
+  const expiry = new Date(amcExpiryDate);
+  const now = new Date();
+  if (expiry <= now) return null;
+  const monthsLeft = Math.floor((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30));
+  return (
+    <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-700 bg-blue-50 ml-1">
+      {monthsLeft}m left
+    </Badge>
+  );
+}
+
 export default function AdminCustomers() {
   const [location] = useLocation();
   const basePath = location.startsWith("/subadmin") ? "/subadmin" : "/admin";
@@ -282,7 +295,12 @@ export default function AdminCustomers() {
   const uniquePartners = Array.from(
     new Map(
       rawCustomers
-        .filter((c: any) => c.partner?.partnerCode || c.partner?.name)
+        .filter((c: any) => {
+          const name = (c.partner?.name || c.partner?.companyName || "").trim();
+          const code = (c.partner?.partnerCode || "").trim();
+          // Exclude entries with no real name (blanks, dashes only, etc.)
+          return (code || name) && !/^[-\s]+$/.test(name) && !/^[-\s]+$/.test(code);
+        })
         .map((c: any) => [c.partner?.partnerCode || c.partner?.name, {
           code: c.partner?.partnerCode,
           name: c.partner?.name || c.partner?.companyName,
@@ -1020,15 +1038,7 @@ export default function AdminCustomers() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="w-full sm:w-36">
-              <Input
-                type="month"
-                className="h-10 text-xs"
-                title="Registration Month"
-                value={monthFilter}
-                onChange={(e) => setMonthFilter(e.target.value)}
-              />
-            </div>
+
             <div className="w-full sm:w-40">
               <Select
                 value={amcStatus}
@@ -1045,15 +1055,12 @@ export default function AdminCustomers() {
                 </SelectContent>
               </Select>
             </div>
-            {(partnerFilter !== "all" || monthFilter) && (
+            {partnerFilter !== "all" && (
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-xs h-10 text-slate-500"
-                onClick={() => {
-                  setPartnerFilter("all");
-                  setMonthFilter("");
-                }}
+                onClick={() => setPartnerFilter("all")}
               >
                 Reset Filters
               </Button>
@@ -1185,7 +1192,6 @@ export default function AdminCustomers() {
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
                             <div className="flex items-center gap-1">
-                              <Shield className="w-3.5 h-3.5 text-slate-400" />
                               {c.installationDate && !isNaN(new Date(c.installationDate).getTime()) 
                                 ? <WarrantyBadge installDate={c.installationDate} />
                                 : <span className="text-xs text-slate-400">N/A</span>}
@@ -1199,7 +1205,12 @@ export default function AdminCustomers() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <StatusBadge status={c.amcStatus} />
+                            <div className="flex items-center flex-wrap gap-1">
+                              <StatusBadge status={c.amcStatus} />
+                              {amcStatus === "active" && c.amcStatus === "active" && (
+                                <AmcRemainingBadge amcExpiryDate={c.amcExpiryDate} />
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-xs font-semibold text-slate-700">
                             {c.cleaningsPerMonth ? `${c.cleaningsPerMonth} / Mo` : "—"}

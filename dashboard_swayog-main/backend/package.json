@@ -1,0 +1,53 @@
+{
+    "name": "dashboard-swayog-backend",
+    "version": "1.0.0",
+    "description": "Backend server for Dashboard Swayog (TypeScript + Prisma)",
+    "type": "module",
+    "main": "dist/server.js",
+    "scripts": {
+        "dev": "tsx watch src/server.ts",
+        "build": "tsc -p tsconfig.json",
+        "start": "node dist/server.js",
+        "typecheck": "tsc --noEmit",
+        "test:attendance": "tsx --test src/modules/employee/attendance.service.test.ts",
+        "prisma:generate": "dotenv -o -e .env -- prisma generate",
+        "prisma:migrate": "dotenv -o -e .env -- prisma migrate dev",
+        "prisma:migrate:deploy": "dotenv -o -e .env -- prisma migrate deploy",
+        "prisma:seed": "tsx src/seed.ts",
+        "prisma:studio": "dotenv -o -e .env -- prisma studio"
+    },
+    "prisma": {
+        "seed": "tsx src/seed.ts"
+    },
+    "keywords": [
+        "express",
+        "prisma",
+        "postgresql",
+        "typescript"
+    ],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@prisma/client": "^6.6.0",
+        "@types/multer": "^2.1.0",
+        "bcryptjs": "^2.4.3",
+        "cors": "^2.8.5",
+        "dotenv": "^16.3.1",
+        "express": "^4.21.2",
+        "jsonwebtoken": "^9.0.2",
+        "multer": "^2.1.1",
+        "redis": "^4.7.0",
+        "zod": "^3.24.2"
+    },
+    "devDependencies": {
+        "@types/bcryptjs": "^2.4.6",
+        "@types/cors": "^2.8.17",
+        "@types/express": "^4.17.21",
+        "@types/jsonwebtoken": "^9.0.9",
+        "@types/node": "^22.13.14",
+        "dotenv-cli": "^7.4.4",
+        "prisma": "^6.6.0",
+        "tsx": "^4.19.3",
+        "typescript": "^5.8.2"
+    }
+}

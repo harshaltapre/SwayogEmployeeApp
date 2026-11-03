@@ -199,10 +199,17 @@ function mapDbRecordToFrontend(dbRecord: any, checkIns: any[]): AttendanceRecord
     reviewerName: (dbRecord.displayAsSelfPunch || dbRecord.display_as_self_punch) ? null : dbRecord.reviewerName,
     workHours,
     breaks: [],
-    checkInSelfie: matchedCheckIn?.selfieUrl ?? null,
-    checkInLocation: matchedCheckIn?.latitude && matchedCheckIn?.longitude
-      ? `Lat ${matchedCheckIn.latitude.toFixed(5)}, Lng ${matchedCheckIn.longitude.toFixed(5)}`
-      : null,
+    checkInLocation: (() => {
+      const isWorkplaceFallback = dbRecord.location_source === "WORKPLACE_FALLBACK" || dbRecord.locationSource === "WORKPLACE_FALLBACK";
+      const effLat = isWorkplaceFallback ? dbRecord.latitude : (matchedCheckIn?.latitude ?? dbRecord.latitude);
+      const effLng = isWorkplaceFallback ? dbRecord.longitude : (matchedCheckIn?.longitude ?? dbRecord.longitude);
+      if (effLat != null && effLng != null) {
+        return isWorkplaceFallback
+          ? `${effLat}, ${effLng}`
+          : `Lat ${Number(effLat).toFixed(5)}, Lng ${Number(effLng).toFixed(5)}`;
+      }
+      return null;
+    })(),
   };
 }
 
@@ -662,11 +669,14 @@ export default function EmployeeAttendance() {
 
       let matchConfidence: number | null = null;
       let matchDistance: number | null = null;
+      let liveDescriptorArray: number[] | null = null;
 
       if (faceMatchEnforced && isEnrolled && storedDescriptors.length > 0) {
         // Extract descriptor from the captured (unmirrored) canvas
         const detResult = await detectSingleFace(canvas, { minConfidence: 0.7 });
         const liveDescriptor = detResult.descriptor;
+        // Serialize Float32Array to plain number[] for JSON transport & server-side verification
+        liveDescriptorArray = Array.from(liveDescriptor);
 
         const threshold = rules?.faceMatchThreshold ?? parseFloat(import.meta.env.VITE_FACE_MATCH_THRESHOLD ?? "0.55");
         const matchResult = matchDescriptors(liveDescriptor, storedDescriptors, threshold);
@@ -674,15 +684,25 @@ export default function EmployeeAttendance() {
         matchDistance = matchResult.minDistance;
         matchConfidence = matchResult.confidence;
 
+        // Client-side pre-check (server will also verify authoritatively)
         if (!matchResult.isMatch) {
           throw new Error(
             `Face verification failed (distance: ${matchResult.minDistance.toFixed(3)}, threshold: ${threshold}). ` +
             `Please look directly at the camera in good lighting. If issues persist, re-enroll in Settings → Face ID.`
           );
         }
-      } else if (!faceMatchEnforced) {
-        // Face not enforced — set confidence to null (no match performed)
-        matchConfidence = null;
+      } else if (isEnrolled && storedDescriptors.length > 0) {
+        // Face not enforced but enrolled — extract descriptor for optional server-side recording
+        try {
+          const detResult = await detectSingleFace(canvas, { minConfidence: 0.6, skipCenteringCheck: true });
+          liveDescriptorArray = Array.from(detResult.descriptor);
+          const threshold = rules?.faceMatchThreshold ?? 0.55;
+          const matchResult = matchDescriptors(detResult.descriptor, storedDescriptors, threshold);
+          matchDistance = matchResult.minDistance;
+          matchConfidence = matchResult.confidence;
+        } catch {
+          // Non-critical when face matching is not enforced
+        }
       }
 
       await new Promise((r) => setTimeout(r, 400));
@@ -713,6 +733,7 @@ export default function EmployeeAttendance() {
           selfie: selfieDataUrl,
           latitude: lat,
           longitude: lng,
+          liveDescriptor: liveDescriptorArray,
           matchConfidence,
           matchDistance,
           livenessVerified: livenessOk,
