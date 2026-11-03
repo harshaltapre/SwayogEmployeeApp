@@ -99,12 +99,45 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
       }
     }
 
-    const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-    const webDomain = (
-      process.env.WEB_DOMAIN ||
-      (productionDomain ? `https://${productionDomain}` : "https://swayog-dashboard.vercel.app")
-    ).replace(/\/$/, "");
-    manifest.apkUrl = `${webDomain}/downloads/SwayogEmployeeApp.apk`;
+    // Resolve public APK URL if relative or using internal R2 domain
+    const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
+    const hasPublicCdn = !!(
+      publicBaseUrl &&
+      !publicBaseUrl.includes(".r2.cloudflarestorage.com") &&
+      !publicBaseUrl.includes("your-public-domain.com")
+    );
+
+    const rawApk = (manifest.apkUrl || "").trim();
+    const isRelativeOrInternal = !rawApk.startsWith("http") || rawApk.includes(".r2.cloudflarestorage.com");
+
+    if (isRelativeOrInternal) {
+      const targetKey = (!rawApk || rawApk.includes("/download/latest"))
+        ? `releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`
+        : rawApk.replace(/^\//, "");
+
+      if (hasPublicCdn) {
+        manifest.apkUrl = `${publicBaseUrl!.replace(/\/$/, "")}/${targetKey}`;
+      } else if (isR2Configured()) {
+        try {
+          manifest.apkUrl = await generatePresignedDownloadUrl(targetKey, 604800); // 7 days
+        } catch (e: any) {
+          console.warn("[AppUpdate] Could not presign APK URL:", e.message);
+          const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+          const webDomain = (
+            process.env.WEB_DOMAIN ||
+            (productionDomain ? `https://${productionDomain}` : "https://swayog-dashboard.vercel.app")
+          ).replace(/\/$/, "");
+          manifest.apkUrl = `${webDomain}/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
+        }
+      } else {
+        const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+        const webDomain = (
+          process.env.WEB_DOMAIN ||
+          (productionDomain ? `https://${productionDomain}` : "https://swayog-dashboard.vercel.app")
+        ).replace(/\/$/, "");
+        manifest.apkUrl = `${webDomain}/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
+      }
+    }
 
     res.status(200).json(manifest);
   } catch (err: any) {

@@ -174,9 +174,22 @@ async function main() {
   const buildSpecificApkKey = `releases/android/${versionName}/build-${versionCode}/app-release.apk`;
   const latestApkKey = "releases/android/latest.apk";
 
-  const webDomain = (process.env.WEB_DOMAIN || "https://swayog-dashboard.vercel.app").replace(/\/$/, "");
-  const publicApkUrl = `${webDomain}/downloads/SwayogEmployeeApp.apk`;
-  console.log(`[Deploy] Using public APK download URL: ${publicApkUrl}`);
+  const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
+  const hasPublicCdn = !!(
+    publicBaseUrl &&
+    !publicBaseUrl.includes(".r2.cloudflarestorage.com") &&
+    !publicBaseUrl.includes("your-public-domain.com")
+  );
+
+  let publicApkUrl: string;
+  if (hasPublicCdn) {
+    publicApkUrl = `${publicBaseUrl!.replace(/\/$/, "")}/${buildSpecificApkKey}`;
+    console.log(`[Deploy] Using public CDN URL for APK: ${publicApkUrl}`);
+  } else {
+    const webDomain = (process.env.WEB_DOMAIN || "https://swayog-dashboard.vercel.app").replace(/\/$/, "");
+    publicApkUrl = `${webDomain}/releases/android/${versionName}/build-${versionCode}/app-release.apk`;
+    console.log(`[Deploy] Using web dashboard download URL for APK: ${publicApkUrl}`);
+  }
 
   // Step 3: Extract and verify signing certificate directly from the built APK
   let actualApkCertSha256: string | undefined = undefined;
