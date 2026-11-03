@@ -2,7 +2,7 @@ import axios from "axios";
 
 async function run() {
   try {
-    const loginRes = await axios.post("https://swayog-dashboard-two.vercel.app/api/v1/auth/login", {
+    const loginRes = await axios.post("https://swayog-dashboard.vercel.app/api/v1/auth/login", {
       identifier: "harshaltapre27@gmail.com",
       password: "Harshal.27",
       role: "SUPER_ADMIN"
@@ -10,7 +10,7 @@ async function run() {
     const token = loginRes.data.data.accessToken;
     console.log("Logged in successfully!");
 
-    const employeesRes = await axios.get("https://swayog-dashboard-two.vercel.app/api/v1/users/internal?role=EMPLOYEE", {
+    const employeesRes = await axios.get("https://swayog-dashboard.vercel.app/api/v1/users/internal?role=EMPLOYEE", {
       headers: {
         Authorization: `Bearer ${token}`
       }

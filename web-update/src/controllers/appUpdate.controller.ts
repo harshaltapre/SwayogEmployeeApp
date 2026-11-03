@@ -43,7 +43,7 @@ const DEFAULT_FALLBACK_MANIFEST: AppUpdateManifest = {
     'Improved app update system',
     'Bug fixes and performance improvements'
   ],
-  apkUrl: 'https://swayog-dashboard-two.vercel.app/api/v1/app/update/download/latest',
+  apkUrl: 'https://swayog-dashboard.vercel.app/api/v1/app/update/download/latest',
   sha256: 'dd5422cce433152653308bb0ba04ba6159a35ebf4c4b9f90eeb32670289ba3c4',
   fileSize: 76872575
 };
@@ -156,10 +156,10 @@ export async function getLatestAppUpdate(req: Request, res: Response, next: Next
           manifest.apkUrl = await generatePresignedUrl(targetKey, 604800); // 7 days
         } catch (e: any) {
           console.warn('[AppUpdate] Failed to presign APK URL:', e.message);
-          manifest.apkUrl = `https://swayog-dashboard-two.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
+          manifest.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
         }
       } else {
-        manifest.apkUrl = `https://swayog-dashboard-two.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
+        manifest.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
       }
     }
 

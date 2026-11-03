@@ -56,7 +56,7 @@ JWT_ACCESS_TTL=15m
 JWT_REFRESH_TTL=7d
 
 # CORS (Update with your actual domain)
-CORS_ORIGIN=https://swayog-dashboard-two.vercel.app
+CORS_ORIGIN=https://swayog-dashboard.vercel.app
 
 # Redis (Optional - set to cloud Redis URL if using)
 REDIS_URL=redis://localhost:6379

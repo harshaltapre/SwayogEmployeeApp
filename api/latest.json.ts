@@ -82,7 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 parsed.apkUrl.includes(".r2.cloudflarestorage.com") &&
                 !parsed.apkUrl.includes("X-Amz-Signature")
               ) {
-                parsed.apkUrl = `https://swayog-dashboard-two.vercel.app/releases/android/${parsed.versionName}/build-${parsed.versionCode}/app-release.apk`;
+                parsed.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${parsed.versionName}/build-${parsed.versionCode}/app-release.apk`;
               }
               return res.status(200).json(parsed);
             }

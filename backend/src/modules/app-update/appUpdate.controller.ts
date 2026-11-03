@@ -138,10 +138,10 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
           manifest.apkUrl = await generatePresignedUrl(targetKey, 604800); // 7 days
         } catch (e: any) {
           console.warn("[AppUpdate] Failed to presign APK URL:", e.message);
-          manifest.apkUrl = `https://swayog-dashboard-two.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
+          manifest.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
         }
       } else {
-        manifest.apkUrl = `https://swayog-dashboard-two.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
+        manifest.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${manifest.versionName}/build-${manifest.versionCode}/app-release.apk`;
       }
     }
 
