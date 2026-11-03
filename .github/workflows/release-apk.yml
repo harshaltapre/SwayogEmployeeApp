@@ -640,6 +640,11 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::Production Vercel deployment is allowed only from main; current ref is ${GITHUB_REF}."
+            exit 1
+          fi
+
           PRODUCTION_DOMAIN="${WEB_DOMAIN%/}"
           case "$PRODUCTION_DOMAIN" in
             https://*) ;;
@@ -661,12 +666,81 @@ jobs:
             exit 1
           fi
 
+          command -v jq >/dev/null || {
+            echo "::error::jq is required to verify the Vercel account, team, and project before deployment."
+            exit 1
+          }
+
+          API_BASE="https://api.vercel.com"
+          USER_RESPONSE="$(mktemp)"
+          TEAM_RESPONSE="$(mktemp)"
+          PROJECT_RESPONSE="$(mktemp)"
+          PROJECT_DOMAINS_RESPONSE="$(mktemp)"
+          trap 'rm -f "$USER_RESPONSE" "$TEAM_RESPONSE" "$PROJECT_RESPONSE" "$PROJECT_DOMAINS_RESPONSE"' EXIT
+
+          USER_STATUS="$(curl -sS --connect-timeout 15 --max-time 30 \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -o "$USER_RESPONSE" -w '%{http_code}' "$API_BASE/v2/user" || true)"
+          if [ "$USER_STATUS" != "200" ]; then
+            echo "::error::Vercel token authentication failed (HTTP $USER_STATUS). Update GitHub Actions secret VERCEL_TOKEN with a valid token for the account/team that owns the existing production project."
+            exit 1
+          fi
+
+          TEAM_STATUS="$(curl -sS --connect-timeout 15 --max-time 30 \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -o "$TEAM_RESPONSE" -w '%{http_code}' \
+            "$API_BASE/v2/teams/$VERCEL_ORG_ID" || true)"
+          if [ "$TEAM_STATUS" != "200" ]; then
+            echo "::error::Vercel team/org verification failed (HTTP $TEAM_STATUS). Update VERCEL_ORG_ID to the team ID that owns this project and ensure VERCEL_TOKEN is a member of that team."
+            exit 1
+          fi
+
+          PROJECT_STATUS="$(curl -sS --connect-timeout 15 --max-time 30 \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -o "$PROJECT_RESPONSE" -w '%{http_code}' \
+            "$API_BASE/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_ORG_ID" || true)"
+          if [ "$PROJECT_STATUS" != "200" ]; then
+            echo "::error::Vercel could not retrieve the configured project (HTTP $PROJECT_STATUS). The VERCEL_PROJECT_ID/VERCEL_ORG_ID pair is invalid for this token, or the project was transferred/deleted. Copy both IDs from the existing dashboard project's Vercel Settings → General; do not create a replacement project."
+            exit 1
+          fi
+
+          PROJECT_NAME="$(jq -r '.name // empty' "$PROJECT_RESPONSE")"
+          PROJECT_ACCOUNT_ID="$(jq -r '.accountId // empty' "$PROJECT_RESPONSE")"
+          PROJECT_ROOT="$(jq -r '.rootDirectory // empty' "$PROJECT_RESPONSE")"
+          PROJECT_FRAMEWORK="$(jq -r '.framework // "unknown"' "$PROJECT_RESPONSE")"
+          if [ -z "$PROJECT_NAME" ] || [ "$PROJECT_ACCOUNT_ID" != "$VERCEL_ORG_ID" ]; then
+            echo "::error::Vercel project response does not belong to the configured VERCEL_ORG_ID. Verify both project/team GitHub secrets against the existing dashboard project."
+            exit 1
+          fi
+          if [ -n "$PROJECT_ROOT" ] && [ "$PROJECT_ROOT" != "." ]; then
+            echo "::error::Vercel project '$PROJECT_NAME' has rootDirectory '$PROJECT_ROOT', but this workflow deploys the repository root containing vercel.json and package.json. Correct the existing project's Root Directory or configure this workflow to that directory."
+            exit 1
+          fi
+
+          DOMAIN_HOST="${PRODUCTION_DOMAIN#https://}"
+          DOMAIN_HOST="${DOMAIN_HOST%%/*}"
+          DOMAINS_STATUS="$(curl -sS --connect-timeout 15 --max-time 30 \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -o "$PROJECT_DOMAINS_RESPONSE" -w '%{http_code}' \
+            "$API_BASE/v9/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_ORG_ID" || true)"
+          if [ "$DOMAINS_STATUS" != "200" ]; then
+            echo "::error::Unable to verify that WEB_DOMAIN belongs to Vercel project '$PROJECT_NAME' (HTTP $DOMAINS_STATUS). Check project permissions and WEB_DOMAIN."
+            exit 1
+          fi
+          if ! jq -e --arg domain "$DOMAIN_HOST" \
+            '.domains | any(.[]; .name == $domain)' "$PROJECT_DOMAINS_RESPONSE" >/dev/null; then
+            echo "::error::WEB_DOMAIN '$DOMAIN_HOST' is not assigned to Vercel project '$PROJECT_NAME'. Update WEB_DOMAIN or link the existing production domain to the intended existing project."
+            exit 1
+          fi
+
+          echo "Verified existing Vercel project '$PROJECT_NAME' (framework: $PROJECT_FRAMEWORK, root: ${PROJECT_ROOT:-repository root}) and production domain '$DOMAIN_HOST'."
+
           mkdir -p .vercel
           printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
-          npx --yes vercel@latest pull --yes --environment=production \
+          npx --yes vercel@65.10.0 pull --yes --environment=production \
             --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
-          npx --yes vercel@latest build --prod --token "$VERCEL_TOKEN"
-          npx --yes vercel@latest deploy --prebuilt --prod --token "$VERCEL_TOKEN" \
+          npx --yes vercel@65.10.0 build --prod --token "$VERCEL_TOKEN"
+          npx --yes vercel@65.10.0 deploy --prebuilt --prod --token "$VERCEL_TOKEN" \
             --scope "$VERCEL_ORG_ID"
 
       - name: Display User-Facing Release Notes
