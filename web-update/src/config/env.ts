@@ -5,7 +5,7 @@ export const env = {
   R2_BUCKET_NAME: process.env.R2_BUCKET_NAME || 'swayog-dashboard',
   R2_ENDPOINT: process.env.R2_ENDPOINT || '',
   R2_PUBLIC_URL: process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL || '',
-  WEB_DOMAIN: process.env.WEB_DOMAIN || 'https://swayog-dashboard-two.vercel.app',
+  WEB_DOMAIN: process.env.WEB_DOMAIN || 'https://swayog-dashboard.vercel.app',
 };
 
 export const ENV_ERROR = (() => {

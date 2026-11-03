@@ -106,7 +106,7 @@ export async function getLatestAppUpdate(req: Request, res: Response, next: Next
     const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL;
     const webDomain = (
       process.env.WEB_DOMAIN ||
-      (productionDomain ? `https://${productionDomain}` : 'https://swayog-dashboard-two.vercel.app')
+      (productionDomain ? `https://${productionDomain}` : 'https://swayog-dashboard.vercel.app')
     ).replace(/\/$/, '');
     manifest.apkUrl = `${webDomain}/downloads/SwayogEmployeeApp.apk`;
 

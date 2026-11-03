@@ -56,8 +56,8 @@ JWT_ACCESS_TTL=15m
 JWT_REFRESH_TTL=7d
 
 # CORS (Update with your actual domain)
-CORS_ORIGIN=https://swayog-dashboard-two.vercel.app
-WEB_DOMAIN=https://swayog-dashboard-two.vercel.app
+CORS_ORIGIN=https://swayog-dashboard.vercel.app
+WEB_DOMAIN=https://swayog-dashboard.vercel.app
 
 # Redis (Optional - set to cloud Redis URL if using)
 REDIS_URL=redis://localhost:6379
@@ -134,14 +134,14 @@ The GitHub Actions release workflow deploys the repository root to the linked Ve
 Configure these Vercel production environment variables for the same project so its serverless manifest and download routes can access R2:
 
 - `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME`
-- `WEB_DOMAIN=https://swayog-dashboard-two.vercel.app` (or the project's actual production domain)
+- `WEB_DOMAIN=https://swayog-dashboard.vercel.app` (or the project's actual production domain)
 
 Configure these GitHub Actions secrets for the same Vercel project and production domain:
 
 - `VERCEL_TOKEN`
 - `VERCEL_ORG_ID`
 - `VERCEL_PROJECT_ID`
-- `WEB_DOMAIN=https://swayog-dashboard-two.vercel.app` (or the project's actual production domain)
+- `WEB_DOMAIN=https://swayog-dashboard.vercel.app` (or the project's actual production domain)
 - `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME`
 
 The workflow verifies the signed APK, deploys Vercel, uploads and checks the APK in R2, publishes `latest.json` last, and then downloads the public APK to compare its metadata and SHA-256 with the manifest.

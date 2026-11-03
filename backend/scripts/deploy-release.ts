@@ -174,7 +174,7 @@ async function main() {
   const buildSpecificApkKey = `releases/android/${versionName}/build-${versionCode}/app-release.apk`;
   const latestApkKey = "releases/android/latest.apk";
 
-  const webDomain = (process.env.WEB_DOMAIN || "https://swayog-dashboard-two.vercel.app").replace(/\/$/, "");
+  const webDomain = (process.env.WEB_DOMAIN || "https://swayog-dashboard.vercel.app").replace(/\/$/, "");
   const publicApkUrl = `${webDomain}/downloads/SwayogEmployeeApp.apk`;
   console.log(`[Deploy] Using public APK download URL: ${publicApkUrl}`);
 
