@@ -1,0 +1,60 @@
+
+> swayog-energy@0.0.0 dev
+> npm run dev:all
+
+
+> swayog-energy@0.0.0 dev:all
+> concurrently -n FRONTEND,BACKEND -c cyan,green "npm run dev:frontend" "npm run backend:dev"
+
+[FRONTEND] 
+[FRONTEND] > swayog-energy@0.0.0 dev:frontend
+[FRONTEND] > vite
+[FRONTEND] 
+[BACKEND] 
+[BACKEND] > swayog-energy@0.0.0 backend:dev
+[BACKEND] > npm --prefix backend run dev
+[BACKEND] 
+[BACKEND] 
+[BACKEND] > dashboard-swayog-backend@1.0.0 dev
+[BACKEND] > tsx watch src/server.ts
+[BACKEND] 
+[FRONTEND] 
+[FRONTEND]   [32m[1mVITE[22m v5.4.21[39m  [2mready in [0m[1m656[22m[2m[0m ms[22m
+[FRONTEND] 
+[FRONTEND]   [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m3000[22m/[39m
+[FRONTEND]   [32m➜[39m  [1mNetwork[22m: [36mhttp://10.148.78.42:[1m3000[22m/[39m
+[BACKEND] Solar OS backend listening on port 4000
+[BACKEND] [CheckInReminderScheduler] Starting check-in reminder scheduler...
+[BACKEND] [Growatt Scheduler] Initializing background polling schedulers...
+[BACKEND] [Waaree Scheduler] Initializing background polling schedulers...
+[BACKEND] [Telemetry Poller] Starting telemetry poller background service...
+[BACKEND] WebSocket telemetry server and poller successfully started.
+[BACKEND] [CheckInReminderService] Error sending check-in reminders: TypeError: Cannot read properties of undefined (reading 'findUnique')
+[BACKEND]     at sendCheckInReminders (C:\Users\ASUS\Downloads\SwayogEmployeeApp\SwayogEmployeeApp\backend\src\services\checkInReminderService.ts:21:52)
+[BACKEND]     at Timeout._onTimeout (C:\Users\ASUS\Downloads\SwayogEmployeeApp\SwayogEmployeeApp\backend\src\lib\checkin-reminder-scheduler.ts:12:5)
+[BACKEND]     at listOnTimeout (node:internal/timers:585:17)
+[BACKEND]     at process.processTimers (node:internal/timers:521:7)
+[BACKEND] [Growatt Scheduler] Triggering initial startup syncs...
+[BACKEND] [Growatt Scheduler] Starting 30-minute historical generation metrics sync...
+[BACKEND] [Waaree Scheduler] Triggering initial startup syncs...
+[BACKEND] [Waaree Scheduler] Starting 30-minute historical generation metrics sync...
+[BACKEND] [Growatt Scheduler] Found 0 active customer plants for generation sync.
+[BACKEND] [Growatt Scheduler] 30-minute generation metrics sync finished.
+[BACKEND] [Waaree Scheduler] Found 13 active Waaree customers for generation sync.
+[BACKEND] [Waaree/Scraper] Attempting to scrape Waaree DataView from https://digital.waaree.com/bus/dataView for user: ShubhamTyres
+[BACKEND] [Waaree/Scraper] Trying raw history JSON API: https://digital.waaree.com/generic/v0/plant/history/raw
+[BACKEND] [Waaree/Generic] Trying Waaree Generic API for Plant ID: 750a9b0c-881f-413c-8332-6c3b3875e8a5 (Original: 750a9b0ch881ff413ca8332j6c3b3875e8a5)
+[BACKEND] [Waaree/Generic] Token is expired (errno: 41808)
+[BACKEND] [Waaree/Solax] Trying Solax API with Token: 58427f4f... and SN: 750a9b0ch881ff413ca8332j6c3b3875e8a5
+[BACKEND] [Waaree/Solax] Solax API success false: exception=token invalid!
+[BACKEND] [Waaree/FoxESS] Trying FoxESS OpenAPI with key: 58427f4f...
+[BACKEND] [Waaree/FoxESS] API key not valid on FoxESS OpenAPI (401)
+[BACKEND] [Waaree] All live strategies failed for ShubhamTyres. Using simulation.
+[BACKEND] [Waaree Scheduler] Customer "Shubham Tyres" (ID: 116) updated: today=14 kWh, total=2800 kWh
+[BACKEND] [Waaree Scheduler] 30-minute generation metrics sync finished.
+[BACKEND] [2026-10-29T12:58:48.896Z] WARN: API Error 404 (Route not found) {"method":"GET","url":"/","ip":"::1"}
+[BACKEND] ^C^CTerminate batch job (Y/N)? 
+[FRONTEND] ^C^CTerminate batch job (Y/N)? 
+[BACKEND] npm run backend:dev exited with code 3221225786
+[FRONTEND] npm run dev:frontend exited with code 3221225786
+^C^C
