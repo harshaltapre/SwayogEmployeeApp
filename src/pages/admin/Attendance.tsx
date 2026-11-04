@@ -81,6 +81,13 @@ interface AttendanceRule {
   faceMatchThreshold?: number;
   weeklyOffDays?: number[];
   dailyWorkingHours?: number;
+  // Smart attendance policy fields
+  reportingTime?: string;         // e.g. "10:30"
+  monthlyLateAllowance?: number;  // default 3
+  timezone?: string;              // "Asia/Kolkata"
+  geofenceActive?: boolean;
+  minLocationAccuracy?: number;   // meters
+  policyStatus?: string;          // "ACTIVE" | "DRAFT"
 }
 
 const DEFAULT_RULES: AttendanceRule = {
@@ -93,6 +100,12 @@ const DEFAULT_RULES: AttendanceRule = {
   faceMatchThreshold: 0.55,
   weeklyOffDays: [0],
   dailyWorkingHours: 9.0,
+  reportingTime: "10:30",
+  monthlyLateAllowance: 3,
+  timezone: "Asia/Kolkata",
+  geofenceActive: false,
+  minLocationAccuracy: 50,
+  policyStatus: "ACTIVE",
 };
 
 const ConditionalWrapper = ({ condition, wrapper, children }: { condition: boolean; wrapper: (children: React.ReactNode) => React.ReactNode; children: React.ReactNode }) =>
@@ -474,10 +487,18 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
       case "SUNDAY_HOLIDAY":
       case "WEEKLY_OFF":
         return (
-          <Badge className="bg-amber-100 text-amber-800 border-amber-200 font-semibold gap-1">
-            <Sun className="h-3 w-3 inline text-amber-600" /> Weekly Off
+          <Badge className="bg-blue-100 text-blue-800 border-blue-200 font-semibold gap-1">
+            <Sun className="h-3 w-3 inline text-blue-500" /> Weekly Off
           </Badge>
         );
+      case "PRESENT_LATE_ALLOWANCE":
+        return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Late (Allowed)</Badge>;
+      case "MANUAL_REVIEW":
+        return <Badge className="bg-orange-100 text-orange-800 border-orange-200">Manual Review</Badge>;
+      case "PENDING_VERIFICATION":
+        return <Badge className="bg-violet-100 text-violet-800 border-violet-200">Pending</Badge>;
+      case "ON_LEAVE":
+        return <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200">On Leave</Badge>;
       default:
         return <Badge className="bg-slate-100 text-slate-800 border-slate-200">{status}</Badge>;
     }
@@ -1453,6 +1474,48 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* Smart Attendance Policy */}
+                <div className="border-t border-border pt-4 mt-2">
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">📋 Smart Attendance Policy</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-500">Reporting Time (IST)</label>
+                      <Input
+                        type="time"
+                        value={rules.reportingTime ?? "10:30"}
+                        onChange={(e) => setRules((r) => ({ ...r, reportingTime: e.target.value }))}
+                      />
+                      <p className="text-[10px] text-slate-400">Official check-in deadline. Employees cannot change this.</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-500">Monthly Late Allowance (days)</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={10}
+                        value={rules.monthlyLateAllowance ?? 3}
+                        onChange={(e) => setRules((r) => ({ ...r, monthlyLateAllowance: parseInt(e.target.value) || 3 }))}
+                      />
+                      <p className="text-[10px] text-slate-400">Late arrivals allowed before HALF_DAY is applied each month.</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-500">Min. GPS Accuracy (meters)</label>
+                      <Input
+                        type="number"
+                        min={5}
+                        max={500}
+                        value={rules.minLocationAccuracy ?? 50}
+                        onChange={(e) => setRules((r) => ({ ...r, minLocationAccuracy: parseInt(e.target.value) || 50 }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-500">Timezone</label>
+                      <Input value="Asia/Kolkata" disabled className="opacity-60" />
+                      <p className="text-[10px] text-slate-400">Fixed to IST for all attendance calculations.</p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex justify-end gap-2 border-t border-border pt-6">

@@ -1,6 +1,5 @@
 import { prisma } from "../lib/prisma.js";
-import { TaskStatus, UserRole } from "@prisma/client";
-import { createAdminNotification } from "./notificationService.js";
+import { TaskStatus } from "@prisma/client";
 
 function startOfDay(date: Date) {
   const value = new Date(date);
@@ -29,128 +28,12 @@ import fs from "fs";
 import path from "path";
 import { env } from "../config/env.js";
 import { sendAdminEmailIfConfigured } from "../lib/mailer.js";
-
-export const DEFAULT_SWAYOG_OFFICE_LAT = 21.175401747696093;
-export const DEFAULT_SWAYOG_OFFICE_LNG = 79.05111036149488;
-export const DEFAULT_SWAYOG_OFFICE_NAME = "Swayog Energy Pvt. Ltd., Nagpur";
-
-export function isValidCoordinate(lat: any, lng: any): boolean {
-  if (lat == null || lng == null) return false;
-  const nLat = typeof lat === "number" ? lat : parseFloat(String(lat));
-  const nLng = typeof lng === "number" ? lng : parseFloat(String(lng));
-  if (isNaN(nLat) || isNaN(nLng)) return false;
-  if (nLat < -90 || nLat > 90 || nLng < -180 || nLng > 180) return false;
-  if (nLat === 0 && nLng === 0) return false;
-  return true;
-}
-
-export function getAuthoritativeWorkplaceLocation(rules?: any): {
-  latitude: number;
-  longitude: number;
-  name: string;
-} {
-  // Priority 1: Explicit environment variable configuration
-  const envLat = process.env.WORKPLACE_LAT ? parseFloat(process.env.WORKPLACE_LAT) : (env?.WORKPLACE_LAT ?? null);
-  const envLng = process.env.WORKPLACE_LNG ? parseFloat(process.env.WORKPLACE_LNG) : (env?.WORKPLACE_LNG ?? null);
-  if (isValidCoordinate(envLat, envLng)) {
-    return {
-      latitude: Number(envLat),
-      longitude: Number(envLng),
-      name: process.env.WORKPLACE_NAME || env?.WORKPLACE_NAME || DEFAULT_SWAYOG_OFFICE_NAME,
-    };
-  }
-
-  // Priority 2: Configured rules from DB if valid and not an outdated template placeholder or previous rounded coords
-  if (rules && isValidCoordinate(rules.officeLat, rules.officeLng)) {
-    const rLat = Number(rules.officeLat);
-    const rLng = Number(rules.officeLng);
-    const isOldPunePlaceholder = Math.abs(rLat - 18.5204) < 0.001 && Math.abs(rLng - 73.8567) < 0.001;
-    const isOldNagpurPlaceholder = Math.abs(rLat - 21.1458) < 0.001 && Math.abs(rLng - 79.0882) < 0.001;
-
-    if (!isOldPunePlaceholder && !isOldNagpurPlaceholder) {
-      return {
-        latitude: rLat,
-        longitude: rLng,
-        name: process.env.WORKPLACE_NAME || env?.WORKPLACE_NAME || DEFAULT_SWAYOG_OFFICE_NAME,
-      };
-    }
-  }
-
-  // Priority 3: Exact authoritative default coordinates for Swayog Energy Pvt. Ltd. workplace
-  return {
-    latitude: DEFAULT_SWAYOG_OFFICE_LAT,
-    longitude: DEFAULT_SWAYOG_OFFICE_LNG,
-    name: process.env.WORKPLACE_NAME || env?.WORKPLACE_NAME || DEFAULT_SWAYOG_OFFICE_NAME,
-  };
-}
-
-export function resolveAttendanceLocationSync(params: {
-  actualLatitude?: number | null;
-  actualLongitude?: number | null;
-  isSelfPunchDisplay: boolean;
-  isAdminAppliedOrRegularized: boolean;
-  rules?: any;
-}): {
-  latitude: number | null;
-  longitude: number | null;
-  location_source: "ACTUAL_GPS" | "WORKPLACE_FALLBACK" | "UNAVAILABLE";
-  actual_gps_captured: boolean;
-  workplace_location_name?: string | null;
-} {
-  const { actualLatitude, actualLongitude, isSelfPunchDisplay, isAdminAppliedOrRegularized, rules } = params;
-
-  // Priority 1: Valid GPS coordinates captured from the employee's actual attendance punch
-  if (isValidCoordinate(actualLatitude, actualLongitude)) {
-    return {
-      latitude: Number(actualLatitude),
-      longitude: Number(actualLongitude),
-      location_source: "ACTUAL_GPS",
-      actual_gps_captured: true,
-      workplace_location_name: null,
-    };
-  }
-
-  // Priority 2: Configured workplace coordinates, ONLY for Super Admin self-punch display mode
-  if (isSelfPunchDisplay && isAdminAppliedOrRegularized) {
-    const wp = getAuthoritativeWorkplaceLocation(rules);
-
-    if (isValidCoordinate(wp.latitude, wp.longitude)) {
-      return {
-        latitude: wp.latitude,
-        longitude: wp.longitude,
-        location_source: "WORKPLACE_FALLBACK",
-        actual_gps_captured: false,
-        workplace_location_name: wp.name,
-      };
-    }
-  }
-
-  // Priority 3: Neither exists or workplace coordinates are missing/invalid -> unavailable state
-  return {
-    latitude: null,
-    longitude: null,
-    location_source: "UNAVAILABLE",
-    actual_gps_captured: false,
-    workplace_location_name: null,
-  };
-}
-
-export async function resolveAttendanceLocation(params: {
-  actualLatitude?: number | null;
-  actualLongitude?: number | null;
-  isSelfPunchDisplay: boolean;
-  isAdminAppliedOrRegularized: boolean;
-  rules?: any;
-}): Promise<{
-  latitude: number | null;
-  longitude: number | null;
-  location_source: "ACTUAL_GPS" | "WORKPLACE_FALLBACK" | "UNAVAILABLE";
-  actual_gps_captured: boolean;
-  workplace_location_name?: string | null;
-}> {
-  const activeRules = params.rules !== undefined ? params.rules : (await getRulesAsync());
-  return resolveAttendanceLocationSync({ ...params, rules: activeRules });
-}
+import {
+  evaluateAttendancePolicy,
+  getKolkataTimeInfo,
+  calculateHaversineDistance,
+  verifyFaceToken,
+} from "./attendancePolicyEngine.js";
 
 export async function getRulesAsync() {
   try {
@@ -162,34 +45,21 @@ export async function getRulesAsync() {
         data: {
           id: "default",
           shiftStart: "09:15",
+          reportingTime: "10:30",
+          monthlyLateAllowance: 3,
+          timezone: "Asia/Kolkata",
           faceRequired: true,
           geofenceEnabled: false,
-          officeLat: DEFAULT_SWAYOG_OFFICE_LAT,
-          officeLng: DEFAULT_SWAYOG_OFFICE_LNG,
+          geofenceActive: true,
+          officeLat: 18.5204,
+          officeLng: 73.8567,
           officeRadius: 150.0,
+          minLocationAccuracy: 100.0,
           faceMatchThreshold: parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55"),
           weeklyOffDays: [0],
           dailyWorkingHours: 9.0,
         },
       });
-    } else {
-      const isOldPune = Math.abs(Number(dbRule.officeLat) - 18.5204) < 0.001 && Math.abs(Number(dbRule.officeLng) - 73.8567) < 0.001;
-      const isOldNagpur = Math.abs(Number(dbRule.officeLat) - 21.1458) < 0.001 && Math.abs(Number(dbRule.officeLng) - 79.0882) < 0.001;
-      if (isOldPune || isOldNagpur) {
-        try {
-          dbRule = await prisma.attendanceRule.update({
-            where: { id: "default" },
-            data: {
-              officeLat: DEFAULT_SWAYOG_OFFICE_LAT,
-              officeLng: DEFAULT_SWAYOG_OFFICE_LNG,
-            },
-          });
-        } catch {
-          // If update fails, override in-memory values
-          dbRule.officeLat = DEFAULT_SWAYOG_OFFICE_LAT;
-          dbRule.officeLng = DEFAULT_SWAYOG_OFFICE_LNG;
-        }
-      }
     }
     return dbRule;
   } catch (err) {
@@ -197,14 +67,21 @@ export async function getRulesAsync() {
     return {
       id: "default",
       shiftStart: "09:15",
+      reportingTime: "10:30",
+      monthlyLateAllowance: 3,
+      timezone: "Asia/Kolkata",
       faceRequired: true,
       geofenceEnabled: false,
-      officeLat: DEFAULT_SWAYOG_OFFICE_LAT,
-      officeLng: DEFAULT_SWAYOG_OFFICE_LNG,
+      geofenceActive: true,
+      officeLat: 18.5204,
+      officeLng: 73.8567,
       officeRadius: 150.0,
+      minLocationAccuracy: 100.0,
       faceMatchThreshold: parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55"),
       weeklyOffDays: [0],
       dailyWorkingHours: 9.0,
+      policyStatus: "ACTIVE",
+      effectiveDate: new Date(),
     };
   }
 }
@@ -216,25 +93,37 @@ export async function saveRulesAsync(rules: any) {
       create: {
         id: "default",
         shiftStart: rules.shiftStart ?? "09:15",
+        reportingTime: rules.reportingTime ?? "10:30",
+        monthlyLateAllowance: rules.monthlyLateAllowance != null ? parseInt(rules.monthlyLateAllowance, 10) : 3,
+        timezone: rules.timezone ?? "Asia/Kolkata",
         faceRequired: rules.faceRequired !== false,
         geofenceEnabled: rules.geofenceEnabled === true,
-        officeLat: rules.officeLat != null ? parseFloat(rules.officeLat) : DEFAULT_SWAYOG_OFFICE_LAT,
-        officeLng: rules.officeLng != null ? parseFloat(rules.officeLng) : DEFAULT_SWAYOG_OFFICE_LNG,
+        geofenceActive: rules.geofenceActive !== false,
+        officeLat: rules.officeLat != null ? parseFloat(rules.officeLat) : 18.5204,
+        officeLng: rules.officeLng != null ? parseFloat(rules.officeLng) : 73.8567,
         officeRadius: rules.officeRadius != null ? parseFloat(rules.officeRadius) : 150.0,
+        minLocationAccuracy: rules.minLocationAccuracy != null ? parseFloat(rules.minLocationAccuracy) : 100.0,
         faceMatchThreshold: rules.faceMatchThreshold != null ? parseFloat(rules.faceMatchThreshold) : 0.55,
         weeklyOffDays: Array.isArray(rules.weeklyOffDays) ? rules.weeklyOffDays.map(Number) : [0],
         dailyWorkingHours: rules.dailyWorkingHours != null ? parseFloat(rules.dailyWorkingHours) : 9.0,
+        policyStatus: rules.policyStatus ?? "ACTIVE",
       },
       update: {
         shiftStart: rules.shiftStart ?? "09:15",
+        reportingTime: rules.reportingTime ?? "10:30",
+        monthlyLateAllowance: rules.monthlyLateAllowance != null ? parseInt(rules.monthlyLateAllowance, 10) : 3,
+        timezone: rules.timezone ?? "Asia/Kolkata",
         faceRequired: rules.faceRequired !== false,
         geofenceEnabled: rules.geofenceEnabled === true,
-        officeLat: rules.officeLat != null ? parseFloat(rules.officeLat) : DEFAULT_SWAYOG_OFFICE_LAT,
-        officeLng: rules.officeLng != null ? parseFloat(rules.officeLng) : DEFAULT_SWAYOG_OFFICE_LNG,
+        geofenceActive: rules.geofenceActive !== false,
+        officeLat: rules.officeLat != null ? parseFloat(rules.officeLat) : 18.5204,
+        officeLng: rules.officeLng != null ? parseFloat(rules.officeLng) : 73.8567,
         officeRadius: rules.officeRadius != null ? parseFloat(rules.officeRadius) : 150.0,
+        minLocationAccuracy: rules.minLocationAccuracy != null ? parseFloat(rules.minLocationAccuracy) : 100.0,
         faceMatchThreshold: rules.faceMatchThreshold != null ? parseFloat(rules.faceMatchThreshold) : 0.55,
         weeklyOffDays: Array.isArray(rules.weeklyOffDays) ? rules.weeklyOffDays.map(Number) : undefined,
         dailyWorkingHours: rules.dailyWorkingHours != null ? parseFloat(rules.dailyWorkingHours) : undefined,
+        policyStatus: rules.policyStatus ?? "ACTIVE",
       },
     });
     return true;
@@ -337,17 +226,7 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
   return R * c; // in meters
 }
 
-export async function checkIn(
-  employeeId: string,
-  opts?: {
-    selfieDataUrl?: string | null;
-    latitude?: number | null;
-    longitude?: number | null;
-    matchConfidence?: number | null;
-    matchDistance?: number | null;
-    livenessVerified?: boolean;
-  }
-) {
+export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: string | null; latitude?: number | null; longitude?: number | null; accuracy?: number | null; faceVerified?: boolean; verificationToken?: string | null; matchConfidence?: number | null }) {
   const today = startOfDay(new Date());
   const existing = await prisma.attendanceRecord.findUnique({
     where: { employeeId_date: { employeeId, date: today } },
@@ -380,29 +259,124 @@ export async function checkIn(
       throw new Error("Geofencing is enabled. Access to GPS location is required to check in.");
     }
     
-    const dist = getDistanceInMeters(
+    if (opts?.accuracy != null && opts.accuracy > rules.minLocationAccuracy) {
+      throw new Error(`Location accuracy is poor (${Math.round(opts.accuracy)}m). Minimum required accuracy is ${rules.minLocationAccuracy}m. Please move to an open area with clear GPS signal.`);
+    }
+
+    const dist = calculateHaversineDistance(
       Number(opts.latitude),
       Number(opts.longitude),
       rules.officeLat,
       rules.officeLng
     );
     if (dist > rules.officeRadius) {
-      throw new Error(`Location verification failed. You are ${Math.round(dist)}m away from the office (Allowed radius: ${rules.officeRadius}m).`);
+      throw new Error(`Location verification failed. You are ${Math.round(dist)}m away from the company premises (Allowed radius: ${rules.officeRadius}m).`);
     }
   }
 
   const now = new Date();
-  const [sh, sm] = rules.shiftStart.split(":").map(Number);
-  const graceTime = new Date(today);
-  graceTime.setHours(sh, sm, 0, 0);
-  const status = now > graceTime ? "LATE" : "PRESENT";
 
-  // Upsert attendance record with source set to EMPLOYEE_CHECK_IN
+  // Validate Face Verification Token if provided
+  let isFaceVerified = opts?.faceVerified === true;
+  if (opts?.verificationToken) {
+    const tokenCheck = verifyFaceToken(opts.verificationToken, employeeId);
+    if (!tokenCheck.valid) {
+      throw new Error(`Face verification failed: ${tokenCheck.error}`);
+    }
+    isFaceVerified = true;
+  }
+
+  // Evaluate attendance policy using centralized policy engine (Asia/Kolkata authority)
+  const kolkataInfo = getKolkataTimeInfo(now);
+  const yearMonth = kolkataInfo.yearMonth;
+
+  let counter = await prisma.monthlyLateCounter.findUnique({
+    where: { employeeId_yearMonth: { employeeId, yearMonth } },
+  });
+
+  if (!counter) {
+    counter = await prisma.monthlyLateCounter.create({
+      data: { employeeId, yearMonth, lateDaysUsed: 0, halfDayCount: 0 },
+    });
+  }
+
+  const policyResult = evaluateAttendancePolicy({
+    checkInTime: now,
+    reportingTimeStr: rules.reportingTime || "10:30",
+    monthlyLateAllowance: rules.monthlyLateAllowance ?? 3,
+    currentLateDaysUsed: counter.lateDaysUsed,
+    currentHalfDayCount: counter.halfDayCount,
+    weeklyOffDays: rules.weeklyOffDays || [0],
+  });
+
+  const status = policyResult.status;
+  const lateAllowanceConsumed = policyResult.lateAllowanceConsumed;
+  const lateSequenceNumber = policyResult.lateSequenceNumber;
+
+  // Update counter in database if attendance consumed an allowance or half-day was recorded
+  if (policyResult.newLateDaysUsed !== counter.lateDaysUsed || policyResult.newHalfDayCount !== counter.halfDayCount) {
+    await prisma.monthlyLateCounter.update({
+      where: { id: counter.id },
+      data: {
+        lateDaysUsed: policyResult.newLateDaysUsed,
+        halfDayCount: policyResult.newHalfDayCount,
+      },
+    });
+  }
+
+  // Upsert attendance record
   const attendance = await prisma.attendanceRecord.upsert({
     where: { employeeId_date: { employeeId, date: today } },
-    create: { employeeId, date: today, checkInTime: now, status, source: "EMPLOYEE_CHECK_IN" },
-    update: { checkInTime: now, status, source: "EMPLOYEE_CHECK_IN" },
+    create: {
+      employeeId,
+      date: today,
+      checkInTime: now,
+      status,
+      lateSequenceNumber,
+      lateAllowanceConsumed,
+      faceVerified: isFaceVerified,
+      gpsVerified: rules.geofenceEnabled
+        ? true
+        : (opts?.latitude != null && opts?.longitude != null),
+      locationAccuracy: opts?.accuracy ?? null,
+      policyVersionUsed: rules.policyStatus || "ACTIVE",
+      source: "EMPLOYEE_CHECK_IN",
+    },
+    update: {
+      checkInTime: now,
+      status,
+      lateSequenceNumber,
+      lateAllowanceConsumed,
+      faceVerified: isFaceVerified,
+      gpsVerified: rules.geofenceEnabled
+        ? true
+        : (opts?.latitude != null && opts?.longitude != null),
+      locationAccuracy: opts?.accuracy ?? null,
+      policyVersionUsed: rules.policyStatus || "ACTIVE",
+      source: "EMPLOYEE_CHECK_IN",
+    },
   });
+
+  // Create Audit Event
+  await prisma.attendanceAuditEvent.create({
+    data: {
+      employeeId,
+      date: today,
+      eventType: "CHECK_IN_ATTEMPT",
+      previousStatus: existing?.status ?? null,
+      newStatus: status,
+      actorId: employeeId,
+      reason: `Check-in recorded at ${now.toISOString()} with status ${status}`,
+      metadata: {
+        reportingTime: rules.reportingTime || "10:30",
+        lateSequenceNumber,
+        lateAllowanceConsumed,
+        faceVerified: isFaceVerified,
+        latitude: opts?.latitude ?? null,
+        longitude: opts?.longitude ?? null,
+      },
+    },
+  }).catch(() => {});
 
   // Handle selfie upload (data URL) if provided
   let selfieUrl: string | null = null;
@@ -419,17 +393,13 @@ export async function checkIn(
         const base64Data = matches[3];
         fs.writeFileSync(outPath, Buffer.from(base64Data, "base64"));
         selfieUrl = `/uploads/checkins/${filename}`;
-      } else {
-        // If not a data URL, ignore
       }
     } catch (err) {
-      // Log but don't fail main check-in
       console.error("Error saving selfie:", err);
     }
   }
 
-  // Create CheckIn record with face recognition metadata
-  const threshold = rules.faceMatchThreshold ?? parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55");
+  // Create CheckIn record
   const checkInRecord = await prisma.checkIn.create({
     data: {
       employeeId,
@@ -437,40 +407,22 @@ export async function checkIn(
       latitude: opts?.latitude ?? null,
       longitude: opts?.longitude ?? null,
       status: "CHECKED_IN",
-      matchConfidence: opts?.matchConfidence != null ? opts.matchConfidence : null,
-      matchDistance: opts?.matchDistance != null ? opts.matchDistance : null,
-      livenessVerified: opts?.livenessVerified === true,
-      flagged: opts?.matchConfidence != null
-        ? (opts.matchConfidence < (threshold + 0.1) && opts.matchConfidence >= threshold)
-        : false,
+      livenessVerified: true,
     },
   });
 
   // Create AdminNotification
   const employee = await prisma.user.findUnique({ where: { id: employeeId } });
-  const timeFormatted = now.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
-  const message = `${employee?.fullName ?? "Employee"} checked in at ${timeFormatted}`;
+  const message = `${employee?.fullName ?? "Employee"} checked in at ${now.toISOString()} (${status})`;
 
-  await createAdminNotification({
-    type: "CHECKIN_SELFIE",
-    message,
-    imageUrl: selfieUrl ?? null,
-    employeeId,
+  await prisma.adminNotification.create({
+    data: {
+      type: "CHECKIN_SELFIE",
+      message,
+      imageUrl: selfieUrl ?? null,
+      employeeId,
+    },
   });
-
-  // Send email to admins if configured
-  try {
-    const admins = await prisma.user.findMany({ where: { role: { in: ["ADMIN", "SUPER_ADMIN"] }, isActive: true } });
-    const toEmails = admins.map((a) => a.email).filter(Boolean);
-    if (toEmails.length > 0) {
-      const subject = `Check-in: ${employee?.fullName ?? "Employee"}`;
-      const text = message;
-      const imagePath = selfieUrl ? path.join(process.cwd(), selfieUrl.replace(/^\//, "")) : null;
-      await sendAdminEmailIfConfigured(toEmails, subject, text, imagePath);
-    }
-  } catch (err) {
-    console.error("Failed to notify admins:", err);
-  }
 
   await recalculateMonthlyPerformance(employeeId).catch((err) => {
     console.error("Failed to recalculate performance on check-in:", err);
@@ -479,16 +431,90 @@ export async function checkIn(
   return { attendance, checkInRecord };
 }
 
+export async function getAlarmSettingsAsync(employeeId: string) {
+  const rules = await getRulesAsync();
+  let setting = await prisma.employeeAlarmSetting.findUnique({
+    where: { employeeId },
+  });
+  if (!setting) {
+    setting = await prisma.employeeAlarmSetting.create({
+      data: {
+        employeeId,
+        personalAlarmTime: "09:30",
+        reminder1Time: "10:00",
+        reminder2Time: "10:15",
+        repeatDays: [1, 2, 3, 4, 5, 6],
+        enabled: true,
+      },
+    });
+  }
+  return {
+    setting,
+    companyReportingTime: rules.reportingTime || "10:30",
+  };
+}
+
+export async function saveAlarmSettingsAsync(employeeId: string, data: any) {
+  return await prisma.employeeAlarmSetting.upsert({
+    where: { employeeId },
+    create: {
+      employeeId,
+      personalAlarmTime: data.personalAlarmTime || "09:30",
+      reminder1Time: data.reminder1Time || "10:00",
+      reminder2Time: data.reminder2Time || "10:15",
+      repeatDays: Array.isArray(data.repeatDays) ? data.repeatDays.map(Number) : [1, 2, 3, 4, 5, 6],
+      soundUri: data.soundUri ?? null,
+      vibrationEnabled: data.vibrationEnabled !== false,
+      snoozeEnabled: data.snoozeEnabled !== false,
+      enabled: data.enabled !== false,
+    },
+    update: {
+      personalAlarmTime: data.personalAlarmTime || "09:30",
+      reminder1Time: data.reminder1Time || "10:00",
+      reminder2Time: data.reminder2Time || "10:15",
+      repeatDays: Array.isArray(data.repeatDays) ? data.repeatDays.map(Number) : undefined,
+      soundUri: data.soundUri ?? null,
+      vibrationEnabled: data.vibrationEnabled !== false,
+      snoozeEnabled: data.snoozeEnabled !== false,
+      enabled: data.enabled !== false,
+    },
+  });
+}
+
+export async function getLateAllowanceSummaryAsync(employeeId: string, month?: number, year?: number) {
+  const now = new Date();
+  const targetMonth = month ?? (now.getMonth() + 1);
+  const targetYear = year ?? now.getFullYear();
+  const yearMonth = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
+
+  const rules = await getRulesAsync();
+  const counter = await prisma.monthlyLateCounter.findUnique({
+    where: { employeeId_yearMonth: { employeeId, yearMonth } },
+  });
+
+  const lateDaysUsed = counter?.lateDaysUsed || 0;
+  const maxAllowance = rules.monthlyLateAllowance || 3;
+  const allowancesConsumed = Math.min(lateDaysUsed, maxAllowance);
+  const remainingAllowances = Math.max(0, maxAllowance - allowancesConsumed);
+  const halfDayCount = counter?.halfDayCount || 0;
+
+  return {
+    yearMonth,
+    reportingTime: rules.reportingTime || "10:30",
+    maxAllowance,
+    lateDaysUsed,
+    allowancesConsumed,
+    remainingAllowances,
+    halfDayCount,
+  };
+}
+
 export function determineAttendanceSource(record: {
   manualOverride?: boolean;
   reviewedBy?: string | null;
   checkInTime?: Date | null;
   status: string;
-  displayAsSelfPunch?: boolean;
 }): string {
-  if (record.displayAsSelfPunch) {
-    return "EMPLOYEE_CHECK_IN";
-  }
   if (record.manualOverride || record.reviewedBy) {
     return record.checkInTime ? "ADMIN_CORRECTION" : "ADMIN_MARKED";
   }
@@ -522,9 +548,7 @@ export async function checkOut(employeeId: string) {
     throw new Error("No attendance record found for today");
   }
   if (record.checkOutTime) {
-    // If the employee already checked out (e.g. from mobile or duplicate request),
-    // return the authoritative record cleanly rather than crashing with 400
-    return record;
+    throw new Error("Already checked out today");
   }
   if (record.manualOverride && !record.checkInTime) {
     throw new Error("Attendance was completed by administrator; check-out is not required.");
@@ -542,22 +566,11 @@ export async function checkOut(employeeId: string) {
     data: { checkOutTime: now, totalMinutes, status },
   });
 
-  // Notify Admins on checkout
-  const employee = await prisma.user.findUnique({ where: { id: employeeId } });
-  const timeFormatted = now.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
-  const hours = Math.floor(totalMinutes / 60);
-  const mins = totalMinutes % 60;
-  await createAdminNotification({
-    type: "CHECKOUT",
-    message: `${employee?.fullName ?? "Employee"} checked out at ${timeFormatted} (Duration: ${hours}h ${mins}m)`,
-    employeeId,
-  }).catch((err) => console.error("Failed to notify admins on checkout:", err));
-
   await recalculateMonthlyPerformance(employeeId);
   return updated;
 }
 
-export async function getTodayAttendance(employeeId: string, viewerRole?: UserRole) {
+export async function getTodayAttendance(employeeId: string) {
   const today = startOfDay(new Date());
   const record = await prisma.attendanceRecord.findUnique({
     where: { employeeId_date: { employeeId, date: today } },
@@ -573,8 +586,6 @@ export async function getTodayAttendance(employeeId: string, viewerRole?: UserRo
     reviewerName = reviewer?.fullName || "Administrator";
   }
 
-  const isSelfPunchDisplay = Boolean(record.displayAsSelfPunch);
-  const isSuperAdminViewer = viewerRole === UserRole.SUPER_ADMIN;
   const source = determineAttendanceSource(record);
   const isAttendanceCompleted = isRecordAttendanceCompleted(record);
 
@@ -601,108 +612,19 @@ export async function getTodayAttendance(employeeId: string, viewerRole?: UserRo
     }
   }
 
-  const actualSource = record.source || (record.manualOverride ? "ADMIN_ASSIGNED" : "EMPLOYEE_CHECK_IN");
-  const displaySource = isSelfPunchDisplay ? "SELF_PUNCH" : source;
-  const isAdminAppliedOrRegularized = Boolean(record.manualOverride || record.reviewedBy || record.source?.startsWith("ADMIN"));
-
-  const loc = await resolveAttendanceLocation({
-    actualLatitude: latitude,
-    actualLongitude: longitude,
-    isSelfPunchDisplay,
-    isAdminAppliedOrRegularized,
-  });
-
-  if (isSelfPunchDisplay) {
-    return {
-      ...record,
-      source: "EMPLOYEE_CHECK_IN",
-      display_source: "SELF_PUNCH",
-      displaySource: "SELF_PUNCH",
-      actual_source: actualSource,
-      actualSource,
-      display_as_self_punch: true,
-      displayAsSelfPunch: true,
-      manualOverride: false,
-      reviewerName: null,
-      overrideReason: null,
-      notes: null,
-      admin_remark: null,
-      applied_by: null,
-      isAttendanceCompleted,
-      requiresCheckIn: !isAttendanceCompleted && record.checkInTime == null,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      location_source: loc.location_source,
-      locationSource: loc.location_source,
-      actual_gps_captured: loc.actual_gps_captured,
-      actualGpsCaptured: loc.actual_gps_captured,
-      workplace_location_name: loc.workplace_location_name,
-      selfieUrl,
-      audit: isSuperAdminViewer ? {
-        appliedBy: reviewerName || record.reviewedBy,
-        appliedById: record.reviewedBy,
-        appliedAt: record.createdAt,
-        updatedAt: record.updatedAt,
-        remark: record.overrideReason || record.notes,
-        actualSource,
-        displayAsSelfPunch: true,
-        locationSource: loc.location_source,
-        actualGpsCaptured: loc.actual_gps_captured,
-        workplaceLocationName: loc.workplace_location_name,
-        workplaceLatitude: loc.location_source === "WORKPLACE_FALLBACK" ? loc.latitude : undefined,
-        workplaceLongitude: loc.location_source === "WORKPLACE_FALLBACK" ? loc.longitude : undefined,
-        verificationBypasses: [
-          "Face matching / biometric verification bypassed (manual admin entry)",
-          loc.location_source === "WORKPLACE_FALLBACK"
-            ? "GPS geofence location verification bypassed (configured workplace coordinates applied as fallback)"
-            : "GPS geofence location verification bypassed (manual admin entry)",
-          "Device signature verification bypassed (manual admin entry)",
-        ],
-      } : null,
-    };
-  }
-
   return {
     ...record,
-    source: source,
-    display_source: displaySource,
-    displaySource,
-    actual_source: actualSource,
-    actualSource,
-    display_as_self_punch: false,
-    displayAsSelfPunch: false,
-    applied_by: record.reviewedBy,
-    applied_at: record.createdAt,
-    admin_remark: record.overrideReason || record.notes,
+    source,
     reviewerName,
     isAttendanceCompleted,
     requiresCheckIn: !isAttendanceCompleted && record.checkInTime == null,
-    latitude: loc.latitude,
-    longitude: loc.longitude,
-    location_source: loc.location_source,
-    locationSource: loc.location_source,
-    actual_gps_captured: loc.actual_gps_captured,
-    actualGpsCaptured: loc.actual_gps_captured,
-    workplace_location_name: loc.workplace_location_name,
+    latitude,
+    longitude,
     selfieUrl,
-    audit: isSuperAdminViewer ? {
-      appliedBy: reviewerName || record.reviewedBy,
-      appliedById: record.reviewedBy,
-      appliedAt: record.createdAt,
-      updatedAt: record.updatedAt,
-      remark: record.overrideReason || record.notes,
-      actualSource,
-      displayAsSelfPunch: false,
-      locationSource: loc.location_source,
-      actualGpsCaptured: loc.actual_gps_captured,
-      verificationBypasses: [
-        "Manual administration override",
-      ],
-    } : null,
   };
 }
 
-export async function getMonthlyAttendance(employeeId: string, month: number, year: number, viewerRole?: UserRole) {
+export async function getMonthlyAttendance(employeeId: string, month: number, year: number) {
   const start = startOfMonth(new Date(year, month - 1));
   const end = endOfMonth(new Date(year, month - 1));
 
@@ -722,15 +644,6 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
     getRulesAsync(),
   ]);
 
-  // Index check-ins by YYYY-MM-DD date string so genuine GPS/selfie can be matched
-  const checkInByDate = new Map<string, any>();
-  checkIns.forEach((ci) => {
-    const dStr = ci.createdAt ? new Date(ci.createdAt).toISOString().slice(0, 10) : "";
-    if (dStr && !checkInByDate.has(dStr)) {
-      checkInByDate.set(dStr, ci);
-    }
-  });
-
   // Enrich records with reviewer name if manualOverride / reviewedBy is present
   const reviewerIds = [...new Set(records.map((r) => r.reviewedBy).filter(Boolean))] as string[];
   const reviewers = reviewerIds.length > 0
@@ -742,119 +655,14 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
   const reviewerMap = new Map(reviewers.map((u) => [u.id, u.fullName]));
 
   const enrichedRecords = records.map((r) => {
-    const isSelfPunchDisplay = Boolean(r.displayAsSelfPunch);
-    const isSuperAdminViewer = viewerRole === UserRole.SUPER_ADMIN;
     const source = determineAttendanceSource(r);
     const isAttendanceCompleted = isRecordAttendanceCompleted(r);
-
-    const actualSource = r.source || (r.manualOverride ? "ADMIN_ASSIGNED" : "EMPLOYEE_CHECK_IN");
-    const displaySource = isSelfPunchDisplay ? "SELF_PUNCH" : source;
-    const reviewerName = r.reviewedBy ? reviewerMap.get(r.reviewedBy) || "Administrator" : null;
-
-    const dateStr = r.date ? new Date(r.date).toISOString().slice(0, 10) : "";
-    const matchedCheckIn = checkInByDate.get(dateStr);
-    const latitude = matchedCheckIn?.latitude ?? null;
-    const longitude = matchedCheckIn?.longitude ?? null;
-    const selfieUrl = matchedCheckIn?.selfieUrl ?? null;
-
-    const isAdminAppliedOrRegularized = Boolean(r.manualOverride || r.reviewedBy || r.source?.startsWith("ADMIN"));
-
-    // Resolve location provenance following strict priority order
-    const loc = resolveAttendanceLocationSync({
-      actualLatitude: latitude,
-      actualLongitude: longitude,
-      isSelfPunchDisplay,
-      isAdminAppliedOrRegularized,
-      rules,
-    });
-
-    if (isSelfPunchDisplay) {
-      return {
-        ...r,
-        source: "EMPLOYEE_CHECK_IN",
-        display_source: "SELF_PUNCH",
-        displaySource: "SELF_PUNCH",
-        actual_source: actualSource,
-        actualSource,
-        display_as_self_punch: true,
-        displayAsSelfPunch: true,
-        manualOverride: false,
-        reviewerName: null,
-        overrideReason: null,
-        notes: null,
-        admin_remark: null,
-        applied_by: null,
-        isAttendanceCompleted,
-        requiresCheckIn: !isAttendanceCompleted && r.checkInTime == null,
-        latitude: loc.latitude,
-        longitude: loc.longitude,
-        location_source: loc.location_source,
-        locationSource: loc.location_source,
-        actual_gps_captured: loc.actual_gps_captured,
-        actualGpsCaptured: loc.actual_gps_captured,
-        workplace_location_name: loc.workplace_location_name,
-        selfieUrl,
-        audit: isSuperAdminViewer ? {
-          appliedBy: reviewerName || r.reviewedBy,
-          appliedById: r.reviewedBy,
-          appliedAt: r.createdAt,
-          updatedAt: r.updatedAt,
-          remark: r.overrideReason || r.notes,
-          actualSource,
-          displayAsSelfPunch: true,
-          locationSource: loc.location_source,
-          actualGpsCaptured: loc.actual_gps_captured,
-          workplaceLocationName: loc.workplace_location_name,
-          workplaceLatitude: loc.location_source === "WORKPLACE_FALLBACK" ? loc.latitude : undefined,
-          workplaceLongitude: loc.location_source === "WORKPLACE_FALLBACK" ? loc.longitude : undefined,
-          verificationBypasses: [
-            "Face matching / biometric verification bypassed (manual admin entry)",
-            loc.location_source === "WORKPLACE_FALLBACK"
-              ? "GPS geofence location verification bypassed (configured workplace coordinates applied as fallback)"
-              : "GPS geofence location verification bypassed (manual admin entry)",
-            "Device signature verification bypassed (manual admin entry)",
-          ],
-        } : null,
-      };
-    }
-
     return {
       ...r,
-      source: source,
-      display_source: displaySource,
-      displaySource,
-      actual_source: actualSource,
-      actualSource,
-      display_as_self_punch: false,
-      displayAsSelfPunch: false,
-      applied_by: r.reviewedBy,
-      applied_at: r.createdAt,
-      admin_remark: r.overrideReason || r.notes,
-      reviewerName,
+      source,
+      reviewerName: r.reviewedBy ? reviewerMap.get(r.reviewedBy) || "Administrator" : null,
       isAttendanceCompleted,
       requiresCheckIn: !isAttendanceCompleted && r.checkInTime == null,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      location_source: loc.location_source,
-      locationSource: loc.location_source,
-      actual_gps_captured: loc.actual_gps_captured,
-      actualGpsCaptured: loc.actual_gps_captured,
-      workplace_location_name: loc.workplace_location_name,
-      selfieUrl,
-      audit: isSuperAdminViewer ? {
-        appliedBy: reviewerName || r.reviewedBy,
-        appliedById: r.reviewedBy,
-        appliedAt: r.createdAt,
-        updatedAt: r.updatedAt,
-        remark: r.overrideReason || r.notes,
-        actualSource,
-        displayAsSelfPunch: false,
-        locationSource: loc.location_source,
-        actualGpsCaptured: loc.actual_gps_captured,
-        verificationBypasses: [
-          "Manual administration override",
-        ],
-      } : null,
     };
   });
 
@@ -920,37 +728,21 @@ export async function applyOrUpdateAttendanceRecord(params: {
   status: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" | "LEAVE";
   checkInTime?: string | null;
   checkOutTime?: string | null;
-  remark?: string;
+  remark: string;
   adminUserId: string;
   source?: string;
-  displayAsSelfPunch?: boolean;
 }) {
-  const { employeeId, date, status, checkInTime, checkOutTime, remark, adminUserId, source, displayAsSelfPunch } = params;
+  const { employeeId, date, status, checkInTime, checkOutTime, remark, adminUserId, source } = params;
 
-  const isSelfPunch = Boolean(displayAsSelfPunch);
-  if (!isSelfPunch && (!remark || remark.trim().length < 3)) {
+  if (!remark || remark.trim().length < 3) {
     throw new Error("A remark explaining why the employee forgot or why attendance is being updated is required (at least 3 characters).");
   }
-
-  const finalRemark = (remark && remark.trim().length > 0)
-    ? remark.trim()
-    : (isSelfPunch ? "Self Punch Regularization" : "");
-
-  const employee = await prisma.user.findUnique({
-    where: { id: employeeId },
-    select: { id: true, isActive: true, role: true },
-  });
-  if (!employee) throw new Error("Employee not found.");
-  if (!employee.isActive) throw new Error("Attendance can only be applied to an active employee.");
 
   // Parse date - handles YYYY-MM-DD cleanly in UTC for @db.Date
   let targetDay: Date;
   if (typeof date === "string") {
     const cleanDateStr = date.split("T")[0];
     const parts = cleanDateStr.split("-").map(Number);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDateStr) || parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
-      throw new Error("Attendance date must use YYYY-MM-DD format.");
-    }
     if (parts.length === 3) {
       targetDay = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0));
     } else {
@@ -958,15 +750,6 @@ export async function applyOrUpdateAttendanceRecord(params: {
     }
   } else {
     targetDay = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0));
-  }
-  if (Number.isNaN(targetDay.getTime())) throw new Error("Attendance date is invalid.");
-  if (
-    typeof date === "string"
-    && (targetDay.getUTCFullYear() !== Number(date.slice(0, 4))
-      || targetDay.getUTCMonth() !== Number(date.slice(5, 7)) - 1
-      || targetDay.getUTCDate() !== Number(date.slice(8, 10)))
-  ) {
-    throw new Error("Attendance date is invalid.");
   }
 
   let checkInDateTime: Date | null = null;
@@ -976,9 +759,7 @@ export async function applyOrUpdateAttendanceRecord(params: {
   const parseTimeToUtcDate = (timeInput: string, isCheckOut = false): Date => {
     const clean = timeInput.trim();
     if (clean.includes("T")) {
-      const parsed = new Date(clean);
-      if (Number.isNaN(parsed.getTime())) throw new Error("Attendance time is invalid.");
-      return parsed;
+      return new Date(clean);
     }
 
     let isPm = false;
@@ -992,33 +773,18 @@ export async function applyOrUpdateAttendanceRecord(params: {
       isAm = true;
       timeOnly = clean.replace(/am/i, "").trim();
     }
-    if (!/^\d{1,2}:\d{2}$/.test(timeOnly)) {
-      throw new Error("Attendance times must be valid HH:MM values.");
-    }
 
     const parts = timeOnly.split(":").map((p) => parseInt(p, 10));
     let hours = isNaN(parts[0]) ? 0 : parts[0];
     const minutes = isNaN(parts[1]) ? 0 : parts[1];
-    if (
-      parts.length !== 2
-      || !Number.isInteger(hours)
-      || !Number.isInteger(minutes)
-      || hours < 0
-      || hours > 23
-      || minutes < 0
-      || minutes > 59
-      || (isPm || isAm) && hours > 12
-    ) {
-      throw new Error("Attendance times must be valid HH:MM values.");
-    }
 
     if (isPm && hours < 12) {
       hours += 12;
     } else if (isAm && hours === 12) {
       hours = 0;
     } else if (!isPm && !isAm) {
-      // For check-out in work shift, if hour is 1-11 (e.g. 6:30, 7:30, 8:30), admin intended afternoon/evening PM
-      if (isCheckOut && hours >= 1 && hours <= 11) {
+      // For check-out in work shift, if hour is 1-7 (e.g. 6:30 or 06:30), admin intended afternoon/evening PM (18:30)
+      if (isCheckOut && hours >= 1 && hours <= 7) {
         hours += 12;
       }
     }
@@ -1055,9 +821,6 @@ export async function applyOrUpdateAttendanceRecord(params: {
   if (checkOutTime && typeof checkOutTime === "string" && checkOutTime.trim() !== "" && status !== "ABSENT" && status !== "LEAVE") {
     checkOutDateTime = parseTimeToUtcDate(checkOutTime, true);
   }
-  if (checkInDateTime && checkOutDateTime && checkOutDateTime < checkInDateTime) {
-    throw new Error("Check-out time cannot be before check-in time.");
-  }
 
   let totalMinutes: number | null = null;
   if (checkInDateTime && checkOutDateTime) {
@@ -1080,11 +843,10 @@ export async function applyOrUpdateAttendanceRecord(params: {
       checkOutTime: checkOutDateTime,
       totalMinutes,
       manualOverride: true,
-      overrideReason: finalRemark,
-      notes: finalRemark,
+      overrideReason: remark.trim(),
+      notes: remark.trim(),
       reviewedBy: adminUserId,
       flagged: false,
-      displayAsSelfPunch: Boolean(displayAsSelfPunch),
     },
     update: {
       status: status as any,
@@ -1093,11 +855,10 @@ export async function applyOrUpdateAttendanceRecord(params: {
       checkOutTime: checkOutDateTime,
       totalMinutes,
       manualOverride: true,
-      overrideReason: finalRemark,
-      notes: finalRemark,
+      overrideReason: remark.trim(),
+      notes: remark.trim(),
       reviewedBy: adminUserId,
       flagged: false,
-      ...(displayAsSelfPunch !== undefined ? { displayAsSelfPunch: Boolean(displayAsSelfPunch) } : {}),
     },
   });
 
@@ -1118,7 +879,7 @@ export async function applyOrUpdateAttendanceRecord(params: {
       where: { id: existingCheckIn.id },
       data: {
         manualOverride: true,
-        overrideReason: finalRemark,
+        overrideReason: remark.trim(),
         reviewedBy: adminUserId,
         flagged: false,
         status: status === "ABSENT" || status === "LEAVE" ? "CHECKED_OUT" : "CHECKED_IN",
@@ -1130,7 +891,7 @@ export async function applyOrUpdateAttendanceRecord(params: {
         employeeId,
         status: "CHECKED_IN",
         manualOverride: true,
-        overrideReason: finalRemark,
+        overrideReason: remark.trim(),
         reviewedBy: adminUserId,
         createdAt: checkInDateTime || targetDay,
       },
@@ -1142,35 +903,26 @@ export async function applyOrUpdateAttendanceRecord(params: {
   const targetYear = targetDay.getFullYear();
   const performance = await recalculateMonthlyPerformance(employeeId, targetMonth, targetYear);
 
-  // Notify admins of attendance assignment or correction
-  const employeeUser = await prisma.user.findUnique({ where: { id: employeeId }, select: { fullName: true } });
-  const dateFormatted = targetDay.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-  await createAdminNotification({
-    type: "ATTENDANCE_CORRECTION",
-    message: `Attendance for ${employeeUser?.fullName ?? "Employee"} on ${dateFormatted} was ${source === "CORRECTION_APPROVED" ? "approved" : "updated"} to ${status}`,
-    employeeId,
-  }).catch(() => {});
-
-  const loc = await resolveAttendanceLocation({
-    actualLatitude: existingCheckIn?.latitude ?? null,
-    actualLongitude: existingCheckIn?.longitude ?? null,
-    isSelfPunchDisplay: isSelfPunch,
-    isAdminAppliedOrRegularized: true,
-  });
-
-  return {
-    attendance: {
-      ...attendance,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      location_source: loc.location_source,
-      locationSource: loc.location_source,
-      actual_gps_captured: loc.actual_gps_captured,
-      actualGpsCaptured: loc.actual_gps_captured,
-      workplace_location_name: loc.workplace_location_name,
+  const yearMonth = `${targetDay.getFullYear()}-${String(targetMonth).padStart(2, "0")}`;
+  await prisma.attendanceAuditEvent.create({
+    data: {
+      employeeId,
+      date: targetDay,
+      eventType: "ADMIN_CORRECTION",
+      previousStatus: null,
+      newStatus: status,
+      actorId: adminUserId,
+      reason: remark.trim(),
+      metadata: {
+        checkInTime: checkInDateTime,
+        checkOutTime: checkOutDateTime,
+        source: source || "ADMIN_ASSIGNED",
+      },
     },
-    performance,
-  };
+  }).catch(() => {});
+  await reconcileMonthlyLateCounter(employeeId, yearMonth).catch(() => {});
+
+  return { attendance, performance };
 }
 
 
@@ -1366,10 +1118,12 @@ export async function createRegularizationRequest(params: {
 
   // Create an Admin Notification so admins get notified
   try {
-    await createAdminNotification({
-      type: "ATTENDANCE_REGULARIZATION",
-      message: `${employee?.fullName || "Employee"} submitted a regularization request for ${cleanDateStr} (${status}).`,
-      employeeId,
+    await prisma.adminNotification.create({
+      data: {
+        type: "ATTENDANCE_REGULARIZATION",
+        message: `${employee?.fullName || "Employee"} submitted a regularization request for ${cleanDateStr} (${status}).`,
+        employeeId,
+      },
     });
   } catch (notifErr) {
     console.error("Failed to create admin notification for regularization request:", notifErr);
@@ -1546,4 +1300,38 @@ export async function rejectRegularizationRequest(requestId: string, adminUserId
   });
 
   return updatedRequest;
+}
+
+export async function reconcileMonthlyLateCounter(employeeId: string, yearMonth: string) {
+  const [yearStr, monthStr] = yearMonth.split("-");
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const startDate = new Date(Date.UTC(year, month - 1, 1));
+  const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+
+  const records = await prisma.attendanceRecord.findMany({
+    where: {
+      employeeId,
+      date: { gte: startDate, lte: endDate },
+    },
+  });
+
+  const lateAllowanceRecords = records.filter((r: any) => r.status === "PRESENT_LATE_ALLOWANCE" || r.lateAllowanceConsumed);
+  const halfDayRecords = records.filter((r: any) => r.status === "HALF_DAY");
+  const totalLateCount = lateAllowanceRecords.length + halfDayRecords.length;
+  const halfDayCount = halfDayRecords.length;
+
+  return await prisma.monthlyLateCounter.upsert({
+    where: { employeeId_yearMonth: { employeeId, yearMonth } },
+    create: {
+      employeeId,
+      yearMonth,
+      lateDaysUsed: totalLateCount,
+      halfDayCount,
+    },
+    update: {
+      lateDaysUsed: totalLateCount,
+      halfDayCount,
+    },
+  });
 }

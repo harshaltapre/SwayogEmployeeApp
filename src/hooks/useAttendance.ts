@@ -481,3 +481,51 @@ export const useRejectRegularizationRequest = () => {
     },
   });
 };
+
+// ── SMART ATTENDANCE & POLICY HOOKS ──────────────────────────────────────────
+
+export interface LateAllowanceSummary {
+  yearMonth: string;
+  reportingTime: string;
+  maxAllowance: number;
+  lateDaysUsed: number;
+  allowancesConsumed: number;
+  remainingAllowances: number;
+  halfDayCount: number;
+}
+
+export const useLateAllowanceSummary = (month?: number, year?: number) => useQuery({
+  queryKey: ["attendance", "late-allowance-summary", month, year],
+  queryFn: () => {
+    let url = "/attendance/late-allowance-summary";
+    const params = [];
+    if (month) params.push(`month=${month}`);
+    if (year) params.push(`year=${year}`);
+    if (params.length > 0) url += `?${params.join("&")}`;
+    return apiClient.get(url).then((r) => r.data as LateAllowanceSummary);
+  },
+});
+
+export const useAttendancePolicy = () => useQuery({
+  queryKey: ["attendance", "policy"],
+  queryFn: () => apiClient.get("/attendance/policy").then((r) => r.data),
+});
+
+export const useAlarmSettings = () => useQuery({
+  queryKey: ["attendance", "alarm-settings"],
+  queryFn: () => apiClient.get("/attendance/alarm-settings").then((r) => r.data),
+});
+
+export const useSaveAlarmSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => apiClient.post("/attendance/alarm-settings", data).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", "alarm-settings"] }),
+  });
+};
+
+export const useAdminAuditLogs = () => useQuery({
+  queryKey: ["admin", "attendance", "audit-logs"],
+  queryFn: () => apiClient.get("/attendance/admin/audit-logs").then((r) => r.data.logs),
+  refetchInterval: 30_000,
+});

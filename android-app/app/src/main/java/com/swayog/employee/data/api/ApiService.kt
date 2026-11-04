@@ -81,6 +81,26 @@ interface ApiService {
         @Body request: WorkDescriptionRequest
     ): Response<ApiResponse<Unit>>
     
+    // Smart Attendance Policy, Alarms & Face Verification Endpoints
+    @GET("attendance/late-allowance-summary")
+    suspend fun getLateAllowanceSummary(
+        @Query("month") month: Int? = null,
+        @Query("year") year: Int? = null
+    ): Response<com.swayog.employee.data.model.LateAllowanceSummaryResponse>
+
+    @GET("attendance/alarm-settings")
+    suspend fun getAlarmSettings(): Response<com.swayog.employee.data.model.AlarmSettingsResponse>
+
+    @POST("attendance/alarm-settings")
+    suspend fun saveAlarmSettings(
+        @Body settings: com.swayog.employee.data.model.EmployeeAlarmSetting
+    ): Response<com.swayog.employee.data.model.SaveAlarmSettingsResponse>
+
+    @POST("attendance/face/verify")
+    suspend fun verifyFace(
+        @Body request: com.swayog.employee.data.model.FaceVerifyRequest
+    ): Response<com.swayog.employee.data.model.FaceVerifyResponse>
+
     // Attendance Rules Endpoints
     @GET("attendance/rules")
     suspend fun getAttendanceRules(): Response<AttendanceRule>

@@ -75,7 +75,7 @@ export function initVapidKeys(): { publicKey: string; privateKey: string } {
     console.log("[WebPush] VAPID details configured successfully.");
   }
 
-  return currentVapidKeys;
+  return currentVapidKeys!;
 }
 
 export function getVapidPublicKey(): string {

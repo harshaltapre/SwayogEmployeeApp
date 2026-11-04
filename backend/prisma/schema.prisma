@@ -70,6 +70,10 @@ model User {
   incentives          Incentive[]
   attendanceCorrections AttendanceCorrection[]
   employeeNotifications EmployeeNotification[]
+  monthlyLateCounters   MonthlyLateCounter[]
+  alarmSetting          EmployeeAlarmSetting?
+  attendanceAuditEvents AttendanceAuditEvent[]       @relation("audit_events_employee")
+  actedAuditEvents      AttendanceAuditEvent[]       @relation("audit_events_actor")
 
   @@index([lockoutUntil])
   @@index([departmentId])
@@ -484,6 +488,12 @@ model AttendanceRecord {
   totalMinutes   Int?
   overtimeMinutes Int?            @default(0)
   status         AttendanceStatus @default(PRESENT)
+  lateSequenceNumber    Int?
+  lateAllowanceConsumed Boolean          @default(false)
+  faceVerified          Boolean          @default(false)
+  gpsVerified           Boolean          @default(false)
+  locationAccuracy      Float?
+  policyVersionUsed     String?
   // Source tracks who created/last updated this attendance record
   // EMPLOYEE_CHECK_IN = employee self check-in
   // ADMIN_ASSIGNED    = admin manually applied/regularized
@@ -694,13 +704,17 @@ enum CommissionStatus {
 
 enum AttendanceStatus {
   PRESENT
+  PRESENT_LATE_ALLOWANCE
   ABSENT
   HALF_DAY
   LATE
   LEAVE
+  ON_LEAVE
   HOLIDAY
   WEEKLY_OFF
   COMP_OFF
+  PENDING_VERIFICATION
+  MANUAL_REVIEW
 }
 
 enum WorkStatus {
@@ -971,18 +985,71 @@ enum PaymentStatus {
 model AttendanceRule {
   id                 String   @id @default("default")
   shiftStart         String   @default("09:15")
+  reportingTime      String   @default("10:30")
+  monthlyLateAllowance Int    @default(3)
+  timezone           String   @default("Asia/Kolkata")
   faceRequired       Boolean  @default(true)
   geofenceEnabled    Boolean  @default(false)
+  geofenceActive     Boolean  @default(true)
   officeLat          Float    @default(21.175401747696093)
   officeLng          Float    @default(79.05111036149488)
   officeRadius       Float    @default(150.0)
+  minLocationAccuracy Float   @default(100.0)
   faceMatchThreshold Float    @default(0.55)
+  policyStatus       String   @default("ACTIVE")
+  effectiveDate      DateTime @default(now())
   // weeklyOffDays: array of day numbers (0=Sun, 1=Mon, ..., 6=Sat)
   // Default = [0] means Sunday is the weekly off
   weeklyOffDays      Int[]    @default([0])
   // Required daily working hours for expected hours calculation
   dailyWorkingHours  Float    @default(9.0)
   updatedAt          DateTime @updatedAt
+}
+
+model MonthlyLateCounter {
+  id           String   @id @default(uuid())
+  employeeId   String
+  yearMonth    String   // e.g. "2026-11"
+  lateDaysUsed Int      @default(0)
+  halfDayCount Int      @default(0)
+  updatedAt    DateTime @updatedAt
+  employee     User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, yearMonth])
+  @@index([employeeId])
+}
+
+model EmployeeAlarmSetting {
+  id               String   @id @default(uuid())
+  employeeId       String   @unique
+  personalAlarmTime String  @default("09:30")
+  reminder1Time     String? @default("10:00")
+  reminder2Time     String? @default("10:15")
+  repeatDays       Int[]    @default([1,2,3,4,5,6])
+  soundUri         String?
+  vibrationEnabled Boolean  @default(true)
+  snoozeEnabled    Boolean  @default(true)
+  enabled          Boolean  @default(true)
+  updatedAt        DateTime @updatedAt
+  employee         User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model AttendanceAuditEvent {
+  id             String   @id @default(uuid())
+  employeeId     String
+  date           DateTime @db.Date
+  eventType      String   // CHECK_IN_ATTEMPT, FACE_VERIFICATION_SUCCESS, FACE_VERIFICATION_FAILED, GPS_VERIFICATION, STATUS_ASSIGNMENT, ADMIN_CORRECTION, EXCEPTION_APPROVAL
+  previousStatus String?
+  newStatus      String?
+  actorId        String?
+  reason         String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  employee       User     @relation("audit_events_employee", fields: [employeeId], references: [id], onDelete: Cascade)
+  actor          User?    @relation("audit_events_actor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([date])
 }
 
 model Holiday {

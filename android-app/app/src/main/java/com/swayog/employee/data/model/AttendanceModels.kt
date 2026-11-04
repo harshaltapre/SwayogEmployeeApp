@@ -225,3 +225,52 @@ data class RegularizationApiResponse(
     val error: String? = null,
     val request: RegularizationItem? = null
 )
+
+
+// ── Smart Attendance & Alarm Models ──────────────────────────────────────────
+
+data class LateAllowanceSummaryResponse(
+    val yearMonth: String,
+    val reportingTime: String = "10:30",
+    val maxAllowance: Int = 3,
+    val lateDaysUsed: Int = 0,
+    val allowancesConsumed: Int = 0,
+    val remainingAllowances: Int = 3,
+    val halfDayCount: Int = 0
+)
+
+data class EmployeeAlarmSetting(
+    val id: String? = null,
+    val employeeId: String? = null,
+    val personalAlarmTime: String = "09:30",
+    val reminder1Time: String? = "10:00",
+    val reminder2Time: String? = "10:15",
+    val repeatDays: List<Int> = listOf(1, 2, 3, 4, 5, 6),
+    val soundUri: String? = null,
+    val vibrationEnabled: Boolean = true,
+    val snoozeEnabled: Boolean = true,
+    val enabled: Boolean = true
+)
+
+data class AlarmSettingsResponse(
+    val setting: EmployeeAlarmSetting,
+    val companyReportingTime: String = "10:30"
+)
+
+data class SaveAlarmSettingsResponse(
+    val success: Boolean,
+    val setting: EmployeeAlarmSetting? = null
+)
+
+data class FaceVerifyRequest(
+    val liveDescriptor: List<Float>,
+    val livenessVerified: Boolean
+)
+
+data class FaceVerifyResponse(
+    val success: Boolean,
+    val verificationToken: String? = null,
+    val matchScore: Float? = null,
+    val expiresAt: String? = null,
+    val error: String? = null
+)

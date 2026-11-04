@@ -600,5 +600,57 @@ class AttendanceRepository @Inject constructor(
             Result.failure(e)
         }
     }
-}
 
+    suspend fun getLateAllowanceSummary(month: Int? = null, year: Int? = null): Result<LateAllowanceSummaryResponse> {
+        return try {
+            val response = apiService.getLateAllowanceSummary(month, year)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.failure(Exception("Failed to fetch late allowance summary: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAlarmSettings(): Result<AlarmSettingsResponse> {
+        return try {
+            val response = apiService.getAlarmSettings()
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.failure(Exception("Failed to fetch alarm settings: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveAlarmSettings(settings: EmployeeAlarmSetting): Result<SaveAlarmSettingsResponse> {
+        return try {
+            val response = apiService.saveAlarmSettings(settings)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.failure(Exception("Failed to save alarm settings: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun verifyFace(request: FaceVerifyRequest): Result<FaceVerifyResponse> {
+        return try {
+            val response = apiService.verifyFace(request)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: "Face verification failed"
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+}

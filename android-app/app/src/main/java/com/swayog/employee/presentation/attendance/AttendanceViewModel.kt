@@ -37,6 +37,9 @@ import java.util.TimeZone
 import java.util.Locale
 import java.util.Calendar
 import com.swayog.employee.core.util.OfflinePendingException
+import com.swayog.employee.data.model.LateAllowanceSummaryResponse
+import com.swayog.employee.data.model.EmployeeAlarmSetting
+import com.swayog.employee.data.model.FaceVerifyRequest
 import com.swayog.employee.presentation.attendance.face.FaceIndexManager
 import javax.inject.Inject
 
@@ -68,6 +71,15 @@ class AttendanceViewModel @Inject constructor(
 
     private val _authoritativeCalendar = MutableStateFlow<AuthoritativeCalendarResponse?>(null)
     val authoritativeCalendar: StateFlow<AuthoritativeCalendarResponse?> = _authoritativeCalendar.asStateFlow()
+
+    private val _lateAllowanceSummary = MutableStateFlow<LateAllowanceSummaryResponse?>(null)
+    val lateAllowanceSummary: StateFlow<LateAllowanceSummaryResponse?> = _lateAllowanceSummary.asStateFlow()
+
+    private val _alarmSettings = MutableStateFlow<EmployeeAlarmSetting?>(null)
+    val alarmSettings: StateFlow<EmployeeAlarmSetting?> = _alarmSettings.asStateFlow()
+
+    private val _pendingVerificationToken = MutableStateFlow<String?>(null)
+    val pendingVerificationToken: StateFlow<String?> = _pendingVerificationToken.asStateFlow()
 
     val profilePhotoUrl: StateFlow<String?> = dataStoreManager.profilePhotoUrl.stateIn(
         scope = viewModelScope,
@@ -303,6 +315,8 @@ class AttendanceViewModel @Inject constructor(
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Success
             loadRegularizationRequests()
+            loadLateAllowanceSummary()
+            loadAlarmSettings()
             
             withContext(Dispatchers.IO) {
                 try {
@@ -359,11 +373,30 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
-    fun checkIn(selfie: String?, latitude: Double?, longitude: Double?, matchConfidence: Float? = null, onResult: (Result<Unit>) -> Unit) {
+    fun checkIn(
+        selfie: String?,
+        latitude: Double?,
+        longitude: Double?,
+        matchConfidence: Float? = null,
+        accuracy: Double? = null,
+        verificationToken: String? = null,
+        onResult: (Result<Unit>) -> Unit
+    ) {
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Loading
-            attendanceRepository.checkIn(selfie, latitude, longitude, matchConfidence)
+            val token = verificationToken ?: _pendingVerificationToken.value
+            attendanceRepository.checkIn(
+                selfie = selfie,
+                latitude = latitude,
+                longitude = longitude,
+                matchConfidence = matchConfidence,
+                accuracy = accuracy,
+                verificationToken = token,
+                faceVerified = token != null,
+                livenessVerified = token != null
+            )
                 .onSuccess { response ->
+                    _pendingVerificationToken.value = null
                     loadData()
                     onResult(Result.success(Unit))
                 }
@@ -371,6 +404,70 @@ class AttendanceViewModel @Inject constructor(
                     _attendanceState.value = AttendanceState.Success
                     onResult(Result.failure(error))
                 }
+        }
+    }
+
+    fun verifyFaceWithServer(
+        liveDescriptor: List<Float>,
+        livenessVerified: Boolean,
+        onResult: (Result<String>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                attendanceRepository.verifyFace(FaceVerifyRequest(liveDescriptor, livenessVerified))
+            }
+            result.onSuccess { response ->
+                if (response.success && response.verificationToken != null) {
+                    _pendingVerificationToken.value = response.verificationToken
+                    onResult(Result.success(response.verificationToken))
+                } else {
+                    onResult(Result.failure(Exception(response.error ?: "Face verification failed")))
+                }
+            }.onFailure { error ->
+                onResult(Result.failure(error))
+            }
+        }
+    }
+
+    fun loadLateAllowanceSummary() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                attendanceRepository.getLateAllowanceSummary()
+                    .onSuccess { _lateAllowanceSummary.value = it }
+                    .onFailure { e ->
+                        android.util.Log.w("AttendanceViewModel", "Late allowance load failed: ${e.message}")
+                    }
+            }
+        }
+    }
+
+    fun loadAlarmSettings() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                attendanceRepository.getAlarmSettings()
+                    .onSuccess { resp -> _alarmSettings.value = resp.setting }
+                    .onFailure { e ->
+                        android.util.Log.w("AttendanceViewModel", "Alarm settings load failed: ${e.message}")
+                    }
+            }
+        }
+    }
+
+    fun saveAlarmSettings(setting: EmployeeAlarmSetting, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                attendanceRepository.saveAlarmSettings(setting)
+            }
+            result.onSuccess { resp ->
+                if (resp.success) {
+                    _alarmSettings.value = resp.setting ?: setting
+                    onResult(true)
+                } else {
+                    onResult(false)
+                }
+            }.onFailure {
+                onResult(false)
+            }
         }
     }
 

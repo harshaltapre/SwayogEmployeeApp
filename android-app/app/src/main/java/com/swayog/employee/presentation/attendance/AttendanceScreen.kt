@@ -74,6 +74,7 @@ import com.swayog.employee.presentation.attendance.components.WorkforceOvertimeS
 @Composable
 fun AttendanceScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToAlarmSettings: (() -> Unit)? = null,
     viewModel: AttendanceViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -95,6 +96,7 @@ fun AttendanceScreen(
     val activeOtSession by viewModel.activeOvertimeSession.collectAsState()
     val liveOtDurationText by viewModel.liveSessionDurationText.collectAsState()
     val workforceSummary by viewModel.workforceSummary.collectAsState()
+    val lateAllowanceSummary by viewModel.lateAllowanceSummary.collectAsState()
 
     // UI State
     var showCamera by remember { mutableStateOf(false) }
@@ -104,6 +106,7 @@ fun AttendanceScreen(
     var isSatelliteView by remember { mutableStateOf(true) }
     var currentLatitude by remember { mutableStateOf<Double?>(null) }
     var currentLongitude by remember { mutableStateOf<Double?>(null) }
+    var currentLocationAccuracy by remember { mutableStateOf<Double?>(null) }
     var resolvedAddress by remember { mutableStateOf<String?>(null) }
 
     // Attendance Regularization State
@@ -152,6 +155,8 @@ fun AttendanceScreen(
                     if (loc != null) {
                         currentLatitude = loc.latitude
                         currentLongitude = loc.longitude
+                        currentLocationAccuracy = loc.accuracy.toDouble()
+                        currentLocationAccuracy = loc.accuracy.toDouble()
                     }
                 }
                 fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener { loc: Location? ->
@@ -306,7 +311,7 @@ fun AttendanceScreen(
         FaceVerificationScreen(
             faceDescriptors = faceDescriptors,
             faceIndexManager = viewModel.faceIndexManager,
-            onVerificationSuccess = { bitmap, matchConfidence ->
+            onVerificationSuccessWithDescriptor = { bitmap, matchConfidence, liveDescriptor ->
                 // Apply Watermark
                 val format = java.text.SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a", java.util.Locale.getDefault())
                 val timestamp = format.format(java.util.Date())
@@ -317,18 +322,27 @@ fun AttendanceScreen(
                 watermarkedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
                 val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 
-                // Dismiss camera AFTER dispatching checkIn so the ViewModel
-                // coroutine is not cancelled by an early recomposition.
-                viewModel.checkIn(base64String, currentLatitude, currentLongitude, matchConfidence) { result ->
-                    showCamera = false
-                    if (result.isSuccess) {
-                        Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        val exception = result.exceptionOrNull()
-                        if (exception is OfflinePendingException) {
-                            Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                // Perform server-side face token verification before recording attendance
+                viewModel.verifyFaceWithServer(liveDescriptor, livenessVerified = true) { tokenResult ->
+                    val verificationToken = tokenResult.getOrNull()
+                    viewModel.checkIn(
+                        selfie = base64String,
+                        latitude = currentLatitude,
+                        longitude = currentLongitude,
+                        matchConfidence = matchConfidence,
+                        accuracy = currentLocationAccuracy,
+                        verificationToken = verificationToken
+                    ) { result ->
+                        showCamera = false
+                        if (result.isSuccess) {
+                            Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "Check-in failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                            val exception = result.exceptionOrNull()
+                            if (exception is OfflinePendingException) {
+                                Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "Check-in failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                 }
@@ -481,6 +495,11 @@ fun AttendanceScreen(
                     IconButton(onClick = { viewModel.loadData() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
+                    if (onNavigateToAlarmSettings != null) {
+                        IconButton(onClick = onNavigateToAlarmSettings) {
+                            Icon(Icons.Default.Notifications, contentDescription = "Alarm Settings")
+                        }
+                    }
                 }
             )
         }
@@ -491,6 +510,8 @@ fun AttendanceScreen(
                 .padding(paddingValues),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            LateAllowanceCard(summary = lateAllowanceSummary)
+
             PendingSyncBanner(
                 pendingCount = pendingSyncCount,
                 onClick = {
@@ -3724,5 +3745,63 @@ fun calculateElapsedMinutes(isoString: String?): Int {
         if (diffMs > 0) (diffMs / (1000 * 60)).toInt() else 0
     } catch (e: Exception) {
         0
+    }
+}
+
+
+@Composable
+fun LateAllowanceCard(summary: com.swayog.employee.data.model.LateAllowanceSummaryResponse?) {
+    if (summary == null) return
+    val used = summary.lateDaysUsed
+    val max = summary.maxAllowance
+    val remaining = summary.remainingAllowances
+    val halfDays = summary.halfDayCount
+    val allowanceColor = when {
+        remaining == 0 -> Color(0xFFEF4444)
+        remaining == 1 -> Color(0xFFF97316)
+        else -> Color(0xFF10B981)
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Late Allowance — ${summary.yearMonth}",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = "${used}/${max} used",
+                    color = allowanceColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { if (max > 0) used.toFloat() / max else 0f },
+                modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
+                color = allowanceColor,
+                trackColor = Color(0xFF334155)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(text = "✅ $remaining remaining", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                if (halfDays > 0) {
+                    Text(text = "⚠ $halfDays half-day(s)", color = Color(0xFFF97316), fontSize = 11.sp)
+                }
+                Text(text = "Cutoff: ${summary.reportingTime} IST", color = Color(0xFF64748B), fontSize = 10.sp)
+            }
+        }
     }
 }

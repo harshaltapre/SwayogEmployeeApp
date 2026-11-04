@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.swayog.employee.presentation.auth.LoginScreen
 import com.swayog.employee.presentation.dashboard.DashboardScreen
+import com.swayog.employee.presentation.attendance.alarm.AlarmSettingsScreen
 import com.swayog.employee.presentation.attendance.AttendanceScreen
 import com.swayog.employee.presentation.attendance.WorkforceDashboardScreen
 import com.swayog.employee.presentation.tasks.TasksScreen
@@ -141,6 +142,17 @@ fun SwayogNavHost(
         
         composable(Screen.Attendance.route) {
             AttendanceScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToAlarmSettings = {
+                    navController.navigate(Screen.AlarmSettings.route)
+                }
+            )
+        }
+        
+        composable(Screen.AlarmSettings.route) {
+            AlarmSettingsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }
@@ -299,4 +311,5 @@ sealed class Screen(val route: String) {
     data object FaceEnrollment : Screen("face_enrollment")
     data object InverterData : Screen("inverter_data")
     data object InventoryCoordinator : Screen("inventory_coordinator")
+    data object AlarmSettings : Screen("alarm_settings")
 }

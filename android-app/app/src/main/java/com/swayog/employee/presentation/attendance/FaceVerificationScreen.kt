@@ -33,7 +33,8 @@ import kotlinx.coroutines.launch
 fun FaceVerificationScreen(
     faceDescriptors: List<List<Float>> = emptyList(),
     faceIndexManager: com.swayog.employee.presentation.attendance.face.FaceIndexManager? = null,
-    onVerificationSuccess: (Bitmap, Float) -> Unit,
+    onVerificationSuccess: (Bitmap, Float) -> Unit = { _, _ -> },
+    onVerificationSuccessWithDescriptor: ((Bitmap, Float, List<Float>) -> Unit)? = null,
     onVerificationFailed: (String) -> Unit,
     onCancel: () -> Unit
 ) {
@@ -180,7 +181,11 @@ fun FaceVerificationScreen(
                                         faceStatusText = "Match Success! Checking in..."
                                         val capturedBitmap = previewView.bitmap
                                         if (capturedBitmap != null) {
-                                            onVerificationSuccess(capturedBitmap, matchScore)
+                                            if (onVerificationSuccessWithDescriptor != null) {
+                                                onVerificationSuccessWithDescriptor(capturedBitmap, matchScore, embedding)
+                                            } else {
+                                                onVerificationSuccess(capturedBitmap, matchScore)
+                                            }
                                         } else {
                                             onVerificationFailed("Failed to capture image")
                                         }
