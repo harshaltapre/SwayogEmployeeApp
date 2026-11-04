@@ -115,7 +115,11 @@ class AttendanceRepository @Inject constructor(
         selfie: String?,
         latitude: Double?,
         longitude: Double?,
-        matchConfidence: Float? = null
+        matchConfidence: Float? = null,
+        accuracy: Double? = null,
+        verificationToken: String? = null,
+        faceVerified: Boolean = false,
+        livenessVerified: Boolean = false
     ): Result<CheckInResponse> {
         val userId = dataStoreManager.userId.first()
         if (userId.isNullOrBlank()) return Result.failure(Exception("User is not authenticated"))
@@ -124,7 +128,16 @@ class AttendanceRepository @Inject constructor(
         return if (isOnline) {
             try {
                 val response = apiService.checkIn(
-                    CheckInRequest(selfie, latitude, longitude, matchConfidence)
+                    CheckInRequest(
+                        selfie = selfie,
+                        latitude = latitude,
+                        longitude = longitude,
+                        matchConfidence = matchConfidence,
+                        accuracy = accuracy,
+                        verificationToken = verificationToken,
+                        faceVerified = faceVerified,
+                        livenessVerified = livenessVerified
+                    )
                 )
                 if (response.isSuccessful && response.body()?.result != null) {
                     val checkInResponse = response.body()!!.result!!

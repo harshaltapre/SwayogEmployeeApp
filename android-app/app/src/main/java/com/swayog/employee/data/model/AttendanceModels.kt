@@ -18,7 +18,13 @@ data class AttendanceRecord(
     val reviewedBy: String? = null,
     val reviewerName: String? = null,
     val isAttendanceCompleted: Boolean = false,
-    val requiresCheckIn: Boolean = false
+    val requiresCheckIn: Boolean = false,
+    val lateSequenceNumber: Int? = null,
+    val lateAllowanceConsumed: Boolean = false,
+    val faceVerified: Boolean = false,
+    val gpsVerified: Boolean = false,
+    val locationAccuracy: Double? = null,
+    val policyVersionUsed: String? = null
 ) {
     val isAdminMarked: Boolean
         get() = manualOverride || source?.startsWith("ADMIN") == true || (status == "PRESENT" && checkInTime == null)
@@ -31,7 +37,11 @@ data class CheckInRequest(
     val selfie: String?,
     val latitude: Double?,
     val longitude: Double?,
-    val matchConfidence: Float? = null
+    val matchConfidence: Float? = null,
+    val accuracy: Double? = null,
+    val verificationToken: String? = null,
+    val faceVerified: Boolean = false,
+    val livenessVerified: Boolean = false
 )
 
 data class FaceEnrollRequest(
