@@ -59,10 +59,10 @@ android {
         targetSdk = 35
         versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
             ?: (localProperties.getProperty("versionCode"))?.toIntOrNull()
-            ?: 35 // Must be greater than the currently published version code 34.
+            ?: 53 // Build 53 - Smart Attendance System
         versionName = (project.findProperty("versionName") as? String)
             ?: (localProperties.getProperty("versionName"))
-            ?: "1.0.1"
+            ?: "1.1.30"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         

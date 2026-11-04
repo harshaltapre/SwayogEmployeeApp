@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS "MonthlyLateCounter_employeeId_idx" ON "MonthlyLateCo
 CREATE TABLE IF NOT EXISTS "EmployeeAlarmSetting" (
     "id" TEXT NOT NULL,
     "employeeId" TEXT NOT NULL,
-    "personalAlarmTime" TEXT NOT NULL DEFAULT '09:30',
+    "personalAlarmTime" TEXT NOT NULL DEFAULT '10:20',
     "reminder1Time" TEXT DEFAULT '10:00',
     "reminder2Time" TEXT DEFAULT '10:15',
     "repeatDays" INTEGER[] DEFAULT ARRAY[1,2,3,4,5,6]::INTEGER[],

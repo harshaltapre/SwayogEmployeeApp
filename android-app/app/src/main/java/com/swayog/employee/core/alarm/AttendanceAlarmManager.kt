@@ -70,7 +70,7 @@ class AttendanceAlarmManager(private val context: Context) {
             return true
         }
 
-        val personalTime = prefs.getString(KEY_PERSONAL_TIME, "09:30") ?: "09:30"
+        val personalTime = prefs.getString(KEY_PERSONAL_TIME, "10:20") ?: "10:20"
         val reminder1 = prefs.getString(KEY_REMINDER_1_TIME, "10:00")
         val reminder2 = prefs.getString(KEY_REMINDER_2_TIME, "10:15")
         val repeatDaysStr = prefs.getString(KEY_REPEAT_DAYS, "1,2,3,4,5,6") ?: "1,2,3,4,5,6"
@@ -245,7 +245,7 @@ class AttendanceAlarmManager(private val context: Context) {
 
     fun getLocalSettings(): EmployeeAlarmSetting {
         val enabled = prefs.getBoolean(KEY_ENABLED, true)
-        val personalTime = prefs.getString(KEY_PERSONAL_TIME, "09:30") ?: "09:30"
+        val personalTime = prefs.getString(KEY_PERSONAL_TIME, "10:20") ?: "10:20"
         val reminder1 = prefs.getString(KEY_REMINDER_1_TIME, "10:00")
         val reminder2 = prefs.getString(KEY_REMINDER_2_TIME, "10:15")
         val repeatDaysStr = prefs.getString(KEY_REPEAT_DAYS, "1,2,3,4,5,6") ?: "1,2,3,4,5,6"
@@ -253,8 +253,11 @@ class AttendanceAlarmManager(private val context: Context) {
         val vibration = prefs.getBoolean(KEY_VIBRATION, true)
         val snooze = prefs.getBoolean(KEY_SNOOZE, true)
 
+        // Migrate old 09:30 default to 10:20
+        val finalPersonalTime = if (personalTime == "09:30") "10:20" else personalTime
+
         return EmployeeAlarmSetting(
-            personalAlarmTime = personalTime,
+            personalAlarmTime = finalPersonalTime,
             reminder1Time = reminder1,
             reminder2Time = reminder2,
             repeatDays = repeatDays,

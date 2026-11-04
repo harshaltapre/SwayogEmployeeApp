@@ -1022,7 +1022,7 @@ model MonthlyLateCounter {
 model EmployeeAlarmSetting {
   id               String   @id @default(uuid())
   employeeId       String   @unique
-  personalAlarmTime String  @default("09:30")
+  personalAlarmTime String  @default("10:20")
   reminder1Time     String? @default("10:00")
   reminder2Time     String? @default("10:15")
   repeatDays       Int[]    @default([1,2,3,4,5,6])
