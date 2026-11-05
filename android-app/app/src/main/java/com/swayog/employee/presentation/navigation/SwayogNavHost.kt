@@ -127,9 +127,6 @@ fun SwayogNavHost(
                 onNavigateToDailyCommit = {
                     navController.navigate(Screen.DailyCommit.route)
                 },
-                onNavigateToNotifications = {
-                    navController.navigate(Screen.Notifications.route)
-                },
                 onNavigateToAlarmSettings = {
                     navController.navigate(Screen.AlarmSettings.route)
                 },
@@ -222,14 +219,6 @@ fun SwayogNavHost(
 
         composable(Screen.DailyCommit.route) {
             DailyCommitScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
-            )
-        }
-
-        composable(Screen.Notifications.route) {
-            NotificationsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }

@@ -48,7 +48,6 @@ fun DashboardScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToDailyCommit: () -> Unit,
-    onNavigateToNotifications: () -> Unit = {},
     onNavigateToAlarmSettings: () -> Unit = {},
     onNavigateToSubAdminCustomers: () -> Unit,
     onNavigateToSubAdminCustomerDetails: (Int) -> Unit,
@@ -156,10 +155,7 @@ fun DashboardScreen(
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                         IconButton(onClick = onNavigateToAlarmSettings) {
-                            Icon(Icons.Default.Notifications, contentDescription = "Attendance Alarm")
-                        }
-                        IconButton(onClick = onNavigateToNotifications) {
-                            Icon(Icons.Default.MailOutline, contentDescription = "Notifications")
+                            Icon(Icons.Default.Alarm, contentDescription = "Attendance Alarm")
                         }
                         IconButton(onClick = onNavigateToProfile) {
                             Icon(Icons.Default.Person, contentDescription = "Profile")
