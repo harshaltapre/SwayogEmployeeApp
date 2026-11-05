@@ -358,12 +358,21 @@ router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   try {
     const { selfie, latitude, longitude, accuracy, faceVerified, matchConfidence, matchDistance, livenessVerified, verificationToken } = req.body;
+
+    // Security: Do not accept client-side boolean flags as proof of face verification
+    // Require a valid server-issued verification token when face verification is enabled
+    const rules = await AttendanceService.getRulesAsync();
+    if (rules.faceRequired && !verificationToken) {
+      res.status(400).json({ error: "Face verification is required. Please complete face verification before checking in." });
+      return;
+    }
+
     const result = await AttendanceService.checkIn(req.auth!.userId, {
       selfieDataUrl: selfie ?? null,
       latitude: latitude ? Number(latitude) : null,
       longitude: longitude ? Number(longitude) : null,
       accuracy: accuracy ? Number(accuracy) : null,
-      faceVerified: faceVerified === true || livenessVerified === true || (matchConfidence != null && matchConfidence >= 0.55),
+      faceVerified: false, // Will be set to true only after valid token verification in service
       verificationToken: verificationToken || null,
     });
 

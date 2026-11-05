@@ -276,14 +276,23 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
 
   const now = new Date();
 
-  // Validate Face Verification Token if provided
-  let isFaceVerified = opts?.faceVerified === true;
-  if (opts?.verificationToken) {
+  // Validate Face Verification Token - required when face verification is enabled
+  let isFaceVerified = false;
+  if (rules.faceRequired) {
+    if (!opts?.verificationToken) {
+      throw new Error("Face verification is required. Please complete face verification before checking in.");
+    }
     const tokenCheck = verifyFaceToken(opts.verificationToken, employeeId);
     if (!tokenCheck.valid) {
       throw new Error(`Face verification failed: ${tokenCheck.error}`);
     }
     isFaceVerified = true;
+  } else if (opts?.verificationToken) {
+    // Optional: accept token even if not required, for enhanced security
+    const tokenCheck = verifyFaceToken(opts.verificationToken, employeeId);
+    if (tokenCheck.valid) {
+      isFaceVerified = true;
+    }
   }
 
   // Evaluate attendance policy using centralized policy engine (Asia/Kolkata authority)
