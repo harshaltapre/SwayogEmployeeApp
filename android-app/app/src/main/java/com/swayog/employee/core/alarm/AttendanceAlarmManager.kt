@@ -257,12 +257,6 @@ class AttendanceAlarmManager(private val context: Context) {
         }
     }
 
-    fun areNotificationsEnabled(): Boolean {
-        val notificationManager =
-            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        return notificationManager.areNotificationsEnabled()
-    }
-
     /**
      * Caches the admin-controlled reporting time from the last successful settings sync so the
      * settings screen and reminder text show the official cutoff even while offline.
@@ -399,11 +393,6 @@ class AttendanceAlarmManager(private val context: Context) {
         } else {
             true
         }
-    }
-
-    fun getReportingTimeLabel(): String {
-        val reportingTime = prefs.getString(KEY_REPORTING_TIME, DEFAULT_REPORTING_TIME) ?: DEFAULT_REPORTING_TIME
-        return formatAmPm(reportingTime)
     }
 
     fun rescheduleSingleAlarm(requestCode: Int, setting: EmployeeAlarmSetting): Boolean {

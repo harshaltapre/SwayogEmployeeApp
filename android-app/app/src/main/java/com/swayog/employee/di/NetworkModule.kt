@@ -138,9 +138,6 @@ object NetworkModule {
                                             dataStoreManager.saveAuthToken(newAccessToken)
                                             dataStoreManager.saveRefreshToken(newRefreshToken)
                                             dataStoreManager.recordUserActive()
-                                            // Update cache immediately
-                                            cachedAuthToken = newAccessToken
-                                            cachedRefreshToken = newRefreshToken
                                             // If save failed, restore previous state
                                             if (dataStoreManager.getCachedAuthToken() != newAccessToken) {
                                                 dataStoreManager.saveAuthToken(tempToken ?: "")
@@ -183,8 +180,6 @@ object NetworkModule {
                     runBlocking {
                         dataStoreManager.saveAuthToken("")
                         dataStoreManager.saveRefreshToken("")
-                        cachedAuthToken = null
-                        cachedRefreshToken = null
                     }
                 }
             }

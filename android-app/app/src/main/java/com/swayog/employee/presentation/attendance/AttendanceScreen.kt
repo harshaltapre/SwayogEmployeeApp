@@ -283,23 +283,6 @@ fun AttendanceScreen(
             }
         }
     }
-                            }.addOnFailureListener {
-                                showLocationUnavailableDialog = true
-                            }
-                        } catch (_: SecurityException) {
-                            showLocationUnavailableDialog = true
-                        }
-                    }
-            } catch (_: SecurityException) {
-                Toast.makeText(context, "Location permission missing", Toast.LENGTH_SHORT).show()
-            }
-        } else if (!cameraGranted) {
-            Toast.makeText(context, "Camera permission is required to check-in", Toast.LENGTH_LONG).show()
-        } else {
-            // Location permission was denied — cannot get accurate location, block check-in
-            showLocationUnavailableDialog = true
-        }
-    }
 
     LaunchedEffect(state) {
         val currentState = state
