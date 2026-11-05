@@ -9,71 +9,75 @@ generator client_backend {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id                  String                @id @default(uuid())
-  loginId             String                @unique
-  employeeCode        String?               @unique
-  email               String                @unique
-  phoneNumber         String?               @unique
-  fullName            String
-  passwordHash        String
-  portalPassword      String?
-  role                UserRole              @default(CUSTOMER)
-  designationTitle    String?
-  departmentId        String?
-  reportingManagerId  String?
-  isActive            Boolean               @default(true)
-  failedLoginAttempts Int                   @default(0)
-  lockoutUntil        DateTime?
-  lastFailedLoginAt   DateTime?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  permissions         String[]              @default([])
-  profileImageUrl     String?
-  AttendanceRecord    AttendanceRecord[]
-  faceEnrollment      FaceEnrollment?
-  checkIns            CheckIn[]
-  auditLogs           AuditLog[]            @relation("audit_actor")
-  customerProfile     Customer?
-  employeeProfile     EmployeeProfile?
-  receivedMessages    Message[]             @relation("ReceivedMessages")
-  sentMessages        Message[]             @relation("SentMessages")
-  partnerProfile      PartnerProfile?
-  PerformanceSnapshot PerformanceSnapshot[]
-  refreshTokens       RefreshToken[]
-  createdTasks        Task[]           @relation("task_creator")
-  assignedTasks       Task[]           @relation("task_employee")
-  department          Department?      @relation(fields: [departmentId], references: [id])
-  reportingManager    User?            @relation("user_reporting", fields: [reportingManagerId], references: [id])
-  directReports       User[]           @relation("user_reporting")
-  taskAssignees       TaskAssignee[]
-  imageRecords        ImageRecord[]
-  assignedAmcVisits   AmcVisit[]            @relation("assigned_amc_employee")
-  workSubmissions     WorkSubmission[]
-  dailyCommits        DailyCommit[]
-  taskAssignments     TaskAssignment[]
-  taskImages          TaskImage[]
-  attendanceRequests          AttendanceRegularizationRequest[] @relation("employee_attendance_requests")
-  reviewedAttendanceRequests  AttendanceRegularizationRequest[] @relation("admin_reviewed_requests")
-  leaveRequests       LeaveRequest[]
-  leaveBalances       LeaveBalance[]
-  overtimeRequests    OvertimeRequest[]
-  overtimeSessions    OvertimeSession[]
-  salaryRecords       SalaryRecord[]
-  salaryRevisions     SalaryRevision[]
-  advances            Advance[]
-  incentives          Incentive[]
-  attendanceCorrections AttendanceCorrection[]
-  employeeNotifications EmployeeNotification[]
-  monthlyLateCounters   MonthlyLateCounter[]
-  alarmSetting          EmployeeAlarmSetting?
-  attendanceAuditEvents AttendanceAuditEvent[]       @relation("audit_events_employee")
-  actedAuditEvents      AttendanceAuditEvent[]       @relation("audit_events_actor")
+  id                         String                            @id @default(uuid())
+  loginId                    String                            @unique
+  employeeCode               String?                           @unique
+  email                      String                            @unique
+  phoneNumber                String?                           @unique
+  fullName                   String
+  passwordHash               String
+  role                       UserRole                          @default(CUSTOMER)
+  designationTitle           String?
+  departmentId               String?
+  reportingManagerId         String?
+  isActive                   Boolean                           @default(true)
+  failedLoginAttempts        Int                               @default(0)
+  lockoutUntil               DateTime?
+  lastFailedLoginAt          DateTime?
+  createdAt                  DateTime                          @default(now())
+  updatedAt                  DateTime                          @updatedAt
+  portalPassword             String?
+  profileImageUrl            String?
+  permissions                String[]                          @default([])
+  advances                   Advance[]
+  assignedAmcVisits          AmcVisit[]                        @relation("assigned_amc_employee")
+  attendanceCorrections      AttendanceCorrection[]
+  AttendanceRecord           AttendanceRecord[]
+  attendanceRequests         AttendanceRegularizationRequest[] @relation("employee_attendance_requests")
+  reviewedAttendanceRequests AttendanceRegularizationRequest[] @relation("admin_reviewed_requests")
+  auditLogs                  AuditLog[]                        @relation("audit_actor")
+  checkIns                   CheckIn[]
+  customerProfile            Customer?
+  dailyCommits               DailyCommit[]
+  employeeNotifications      EmployeeNotification[]
+  employeeProfile            EmployeeProfile?
+  faceEnrollment             FaceEnrollment?
+  imageRecords               ImageRecord[]
+  incentives                 Incentive[]
+  leaveBalances              LeaveBalance[]
+  leaveRequests              LeaveRequest[]
+  MarketingCampaign          MarketingCampaign[]
+  MarketingFollowUp          MarketingFollowUp[]
+  MarketingLead              MarketingLead[]
+  receivedMessages           Message[]                         @relation("ReceivedMessages")
+  sentMessages               Message[]                         @relation("SentMessages")
+  OnboardingAuditLog         OnboardingAuditLog[]
+  OnboardingRequest          OnboardingRequest[]
+  OnboardingSiteVisit        OnboardingSiteVisit[]
+  overtimeRequests           OvertimeRequest[]
+  overtimeSessions           OvertimeSession[]
+  partnerProfile             PartnerProfile?
+  PerformanceSnapshot        PerformanceSnapshot[]
+  refreshTokens              RefreshToken[]
+  salaryRecords              SalaryRecord[]
+  salaryRevisions            SalaryRevision[]
+  createdTasks               Task[]                            @relation("task_creator")
+  assignedTasks              Task[]                            @relation("task_employee")
+  taskAssignees              TaskAssignee[]
+  taskAssignments            TaskAssignment[]
+  taskImages                 TaskImage[]
+  department                 Department?                       @relation(fields: [departmentId], references: [id])
+  reportingManager           User?                             @relation("user_reporting", fields: [reportingManagerId], references: [id])
+  directReports              User[]                            @relation("user_reporting")
+  workSubmissions            WorkSubmission[]
+  liaisoning_applications    liaisoning_applications[]
+  liaisoning_audit_logs      liaisoning_audit_logs[]
 
   @@index([lockoutUntil])
   @@index([departmentId])
@@ -94,8 +98,6 @@ model Department {
 
 model Task {
   id                    Int              @id @default(autoincrement())
-  customerId            Int?
-  taskType              String           @default("REGULAR")
   jobType               String
   description           String
   customerName          String
@@ -109,31 +111,33 @@ model Task {
   assignedById          String
   completionMessage     String?
   completionDocumentUrl String?
-  taskRate              Float?
-  beforeImageUrl        String?
-  beforeLatitude        Float?
-  beforeLongitude       Float?
+  completedAt           DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  sitePhotos            String[]         @default([])
   afterImageUrl         String?
   afterLatitude         Float?
   afterLongitude        Float?
-  sitePhotos            String[]   @default([])
-  maintenanceVideos     String[]   @default([])
-  photoRemarks          Json?
-  customerRating        Int?
+  beforeImageUrl        String?
+  beforeLatitude        Float?
+  beforeLongitude       Float?
   customerFeedback      String?
+  customerId            Int?
+  customerRating        Int?
   fixCharges            Float?
-  completedAt           DateTime?
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
-  customer              Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  assignedBy            User       @relation("task_creator", fields: [assignedById], references: [id], onDelete: Cascade)
-  employee              User       @relation("task_employee", fields: [employeeUserId], references: [id], onDelete: Cascade)
-  taskAssignees         TaskAssignee[]
+  taskRate              Float?
+  taskType              String           @default("REGULAR")
+  maintenanceVideos     String[]         @default([])
+  photoRemarks          Json?
   imageRecords          ImageRecord[]
-  workSubmissions       WorkSubmission[]
+  payments              Payment[]
+  assignedBy            User             @relation("task_creator", fields: [assignedById], references: [id], onDelete: Cascade)
+  customer              Customer?        @relation(fields: [customerId], references: [id])
+  employee              User             @relation("task_employee", fields: [employeeUserId], references: [id], onDelete: Cascade)
+  taskAssignees         TaskAssignee[]
   taskAssignments       TaskAssignment[]
   taskImages            TaskImage[]
-  payments              Payment[]
+  workSubmissions       WorkSubmission[]
 
   @@index([customerId])
   @@index([taskType])
@@ -153,16 +157,15 @@ model TaskAssignee {
   status    String   @default("assigned")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([taskId])
   @@index([userId])
 }
 
 model ImageRecord {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   taskId         Int
   uploadedBy     String
   type           String
@@ -172,10 +175,9 @@ model ImageRecord {
   latitude       Float?
   longitude      Float?
   takenAt        DateTime?
-  createdAt      DateTime @default(now())
-
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  task           Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
 
   @@index([taskId])
   @@index([uploadedBy])
@@ -211,12 +213,12 @@ model AuditLog {
 model PartnerProfile {
   id             String            @id @default(uuid())
   userId         String            @unique
-  partnerCode    String?           @unique
   businessName   String?
   serviceZone    String?
   isActive       Boolean           @default(true)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+  partnerCode    String?           @unique
   customers      Customer[]
   employees      EmployeeProfile[]
   Invoice        Invoice[]
@@ -234,9 +236,9 @@ model EmployeeProfile {
   zone             String?
   monthlySalaryInr Int?
   isActive         Boolean         @default(true)
-  permissions      String[]        @default([])
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  permissions      String[]        @default([])
   partner          PartnerProfile? @relation(fields: [partnerId], references: [id])
   user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -245,87 +247,94 @@ model EmployeeProfile {
 }
 
 model Customer {
-  id                  Int               @id @default(autoincrement())
-  customerCode        String            @unique
-  fullName            String
-  email               String
-  phoneNumber         String
-  city                String
-  state               String?
-  address             String
-  systemSizeKw        Float
-  projectType         String?
-  installationDate    DateTime
-  warrantyExpiry      DateTime?
-  panelBrand          String?
-  inverterBrand       String?
-  inverterName        String?
-  inverterModel       String?
-  inverterUid         String?
-  monitoringProvider  String?
-  monitoringPortalUrl String?
-  monitoringPlantId   String?
-  monitoringStatus    String?
-  monitoringLastDataAt DateTime?
-  monitoringLastSyncAt DateTime?
-  monitoringLastError String?
-  amcStatus           CustomerAmcStatus @default(NONE)
-  amcExpiryDate       DateTime?
-  status              CustomerStatus    @default(ACTIVE)
-  partnerId           String?
-  userId              String?           @unique
-  projectStage        Int               @default(11)
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  cleaningWindow1     String?           @default("1-10")
-  cleaningWindow2     String?           @default("11-20")
-  cleaningWindow3     String?           @default("21-30")
-  cleaningsPerMonth   Int?              @default(1)
-  clientType          String?           @default("post_paid")
-  consumerNumber      String?
-  contractEndDate     DateTime?
-  contractStartDate   DateTime?
-  monthlyCleaningRate Float?
-  paymentTerms        String?
-  remarks             String?
-  cleaningWindow4     String?
-  cleaningWindow5     String?
-  cleaningWindow6     String?
-  cleaningWindow7     String?
-  cleaningWindow8     String?
-  assignedEmployeeId  String?
-  commissionAmount    Float?
-  commissionStatus    CommissionStatus  @default(PENDING)
-  commissionProofUrl  String?
-  commissionPaidAt    DateTime?
-  partnerLeadStatus       String?           @default("PENDING")
+  id                      Int                      @id @default(autoincrement())
+  customerCode            String                   @unique
+  fullName                String
+  email                   String
+  phoneNumber             String
+  city                    String
+  address                 String
+  systemSizeKw            Float
+  installationDate        DateTime
+  warrantyExpiry          DateTime?
+  panelBrand              String?
+  inverterBrand           String?
+  amcStatus               CustomerAmcStatus        @default(NONE)
+  amcExpiryDate           DateTime?
+  status                  CustomerStatus           @default(ACTIVE)
+  partnerId               String?
+  userId                  String?                  @unique
+  projectStage            Int                      @default(11)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  cleaningWindow1         String?                  @default("1-10")
+  cleaningWindow2         String?                  @default("11-20")
+  cleaningWindow3         String?                  @default("21-30")
+  cleaningsPerMonth       Int?                     @default(1)
+  clientType              String?                  @default("post_paid")
+  consumerNumber          String?
+  contractEndDate         DateTime?
+  contractStartDate       DateTime?
+  monthlyCleaningRate     Float?
+  paymentTerms            String?
+  remarks                 String?
+  cleaningWindow4         String?
+  cleaningWindow5         String?
+  cleaningWindow6         String?
+  cleaningWindow7         String?
+  cleaningWindow8         String?
+  assignedEmployeeId      String?
+  commissionAmount        Float?
+  commissionStatus        CommissionStatus         @default(PENDING)
+  commissionProofUrl      String?
+  commissionPaidAt        DateTime?
+  inverterLoginId         String?
+  inverterPassword        String?
+  portalPassword          String?
+  inverterApiKey          String?
+  inverterDeviceSn        String?
+  inverterModel           String?
+  latitude                Float?
+  longitude               Float?
+  apartmentId             Int?
+  projectType             String?
+  state                   String?
+  partnerLeadStatus       String?                  @default("PENDING")
   assignedEpc             String?
   epcAssignmentStatus     String?
-  inverterLoginId     String?
-  inverterPassword    String?
-  inverterApiKey       String?
-  inverterDeviceSn     String?
-  dataLoggerSrNo      String?
-  inverterSrNo        String?
-  portalPassword      String?
-  latitude            Float?
-  longitude           Float?
-  AmcContract         AmcContract[]
-  AmcVisit            AmcVisit[]
-  partner             PartnerProfile?   @relation(fields: [partnerId], references: [id])
-  user                User?             @relation(fields: [userId], references: [id])
-  Invoice             Invoice[]
-  serviceRequests     ServiceRequest[]
-  dispatchRecords     DispatchRecord[]
-  waareeGeneration    WaareeGeneration?
-  inverterCache       InverterCache?
-  apartmentId         Int?
-  apartment           Apartment?        @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
-  payments            Payment[]
-  notifications       CustomerNotification[]
-  tasks               Task[]
-  inverterInstallations InverterInstallation[]
-  generationLogs      GenerationLog[]
+  dataLoggerSrNo          String?
+  inverterName            String?
+  inverterSrNo            String?
+  inverterUid             String?
+  monitoringLastDataAt    DateTime?
+  monitoringLastError     String?
+  monitoringLastSyncAt    DateTime?
+  monitoringPlantId       String?
+  monitoringPortalUrl     String?
+  monitoringProvider      String?
+  monitoringStatus        String?
+  documentsCollected      Boolean                  @default(false)
+  isRejected              Boolean                  @default(false)
+  rejectionReason         String?
+  siteVisitCompleted      Boolean                  @default(false)
+  solarSystemInstalled    Boolean                  @default(false)
+  AmcContract             AmcContract[]
+  AmcVisit                AmcVisit[]
+  apartment               Apartment?               @relation(fields: [apartmentId], references: [id])
+  partner                 PartnerProfile?          @relation(fields: [partnerId], references: [id])
+  user                    User?                    @relation(fields: [userId], references: [id])
+  notifications           CustomerNotification[]
+  dispatchRecords         DispatchRecord[]
+  inverterCache           InverterCache?
+  Invoice                 Invoice[]
+  OnboardingRequest       OnboardingRequest[]
+  payments                Payment[]
+  serviceRequests         ServiceRequest[]
+  tasks                   Task[]
+  generationLogs          GenerationLog[]
+  inverterInstallations   InverterInstallation[]
+  liaisoning_applications liaisoning_applications?
+  waareeGeneration        WaareeGeneration?
 
   @@index([partnerId])
   @@index([status])
@@ -350,11 +359,11 @@ model ServiceRequest {
   address       String?
   latitude      Float?
   longitude     Float?
-  status        ServiceRequestStatus @default(PENDING)
   scheduledDate String?
   scheduledTime String?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
+  status        ServiceRequestStatus @default(PENDING)
   customer      Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
@@ -395,11 +404,8 @@ model Expense {
 
 model Invoice {
   id             String               @id @default(uuid())
-  invoiceNumber  String?
   customerId     Int
-  invoiceType    InvoiceType          @default(INSTALLATION)
   amount         Float
-  paymentStatus  InvoicePaymentStatus @default(PENDING)
   amountPaid     Float                @default(0)
   invoiceDate    DateTime             @default(now())
   paymentDate    DateTime?
@@ -411,6 +417,9 @@ model Invoice {
   description    String?
   paymentMethod  String?
   proofUrl       String?
+  invoiceNumber  String?
+  invoiceType    InvoiceType          @default(INSTALLATION)
+  paymentStatus  InvoicePaymentStatus @default(PENDING)
   Customer       Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
   PartnerProfile PartnerProfile?      @relation(fields: [partnerId], references: [id])
 
@@ -440,25 +449,23 @@ model AmcVisit {
   id                    String         @id @default(uuid())
   customerId            Int
   scheduledDate         DateTime
-  status                AmcVisitStatus @default(PENDING)
   completedAt           DateTime?
   notes                 String?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   assignedEmployeeId    String?
-  customer              Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  assignedEmployee      User?          @relation("assigned_amc_employee", fields: [assignedEmployeeId], references: [id])
-
-  // NEW AMC COMPLETION & SCHEDULING FIELDS
-  cleaningNumber        Int?       // which cleaning # this is (1, 2, 3 or 4) in the month
-  timeSlot              String?    // e.g. "09:00"
+  cleaningNumber        Int?
   completedByEmployeeId String?
-  completedByName       String?    // denormalized name for quick display
+  completedByName       String?
+  timeSlot              String?
   visitNotes            String?
-  beforeImageUrl        String?
   afterImageUrl         String?
-  maintenanceVideos     String[]   @default([]) // Array of video URLs stored in R2
+  beforeImageUrl        String?
+  status                AmcVisitStatus @default(PENDING)
+  maintenanceVideos     String[]       @default([])
   photoRemarks          Json?
+  assignedEmployee      User?          @relation("assigned_amc_employee", fields: [assignedEmployeeId], references: [id])
+  customer              Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
   @@index([scheduledDate])
@@ -480,35 +487,29 @@ model Message {
 }
 
 model AttendanceRecord {
-  id             String           @id @default(uuid())
-  employeeId     String
-  date           DateTime         @db.Date
-  checkInTime    DateTime?
-  checkOutTime   DateTime?
-  totalMinutes   Int?
-  overtimeMinutes Int?            @default(0)
-  status         AttendanceStatus @default(PRESENT)
-  lateSequenceNumber    Int?
-  lateAllowanceConsumed Boolean          @default(false)
-  faceVerified          Boolean          @default(false)
-  gpsVerified           Boolean          @default(false)
-  locationAccuracy      Float?
-  policyVersionUsed     String?
-  // Source tracks who created/last updated this attendance record
-  // EMPLOYEE_CHECK_IN = employee self check-in
-  // ADMIN_ASSIGNED    = admin manually applied/regularized
-  // SYSTEM_GENERATED  = system automated (future)
-  // CORRECTION_APPROVED = approved attendance correction (future)
-  source         String?          @default("EMPLOYEE_CHECK_IN")
-  notes          String?
-  reviewedBy     String?
-  manualOverride Boolean          @default(false)
-  overrideReason String?
-  flagged        Boolean          @default(false)
-  displayAsSelfPunch Boolean      @default(false)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @default(now()) @updatedAt
-  employee       User             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id                    String           @id @default(uuid())
+  employeeId            String
+  date                  DateTime         @db.Date
+  checkInTime           DateTime?
+  checkOutTime          DateTime?
+  totalMinutes          Int?
+  status                AttendanceStatus @default(PRESENT)
+  notes                 String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @default(now()) @updatedAt
+  flagged               Boolean          @default(false)
+  manualOverride        Boolean          @default(false)
+  overrideReason        String?
+  reviewedBy            String?
+  source                String?          @default("EMPLOYEE_CHECK_IN")
+  overtimeMinutes       Int?             @default(0)
+  displayAsSelfPunch    Boolean          @default(false)
+  actualCheckOutTime    DateTime?
+  effectiveCheckOutTime DateTime?
+  checkOutSource        String?
+  autoClosedAt          DateTime?
+  autoClosureReason     String?
+  employee              User             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, date])
   @@index([date])
@@ -516,24 +517,25 @@ model AttendanceRecord {
   @@index([flagged])
   @@index([source])
   @@index([displayAsSelfPunch])
+  @@index([checkOutSource])
 }
 
 model CheckIn {
   id               String        @id @default(cuid())
   employeeId       String
-  employee         User          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   selfieUrl        String?
   latitude         Float?
   longitude        Float?
   status           CheckInStatus @default(CHECKED_IN)
-  matchConfidence  Float?        // 1 - euclidean_distance; null if no face enrollment
-  matchDistance    Float?        // raw euclidean distance from face-api.js
+  createdAt        DateTime      @default(now())
+  flagged          Boolean       @default(false)
   livenessVerified Boolean       @default(false)
   manualOverride   Boolean       @default(false)
+  matchConfidence  Float?
+  matchDistance    Float?
   overrideReason   String?
-  reviewedBy       String?       // userId of admin who reviewed
-  flagged          Boolean       @default(false)
-  createdAt        DateTime      @default(now())
+  reviewedBy       String?
+  employee         User          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
   @@index([createdAt])
@@ -554,42 +556,33 @@ model AdminNotification {
   @@index([createdAt])
 }
 
-enum CheckInStatus {
-  CHECKED_IN
-  CHECKED_OUT
-}
-
-// ---------------------------------------------------------------------------
-// Face Enrollment (biometric descriptors for face recognition)
-// ---------------------------------------------------------------------------
-
 model FaceEnrollment {
-  id                String    @id @default(uuid())
-  employeeId        String    @unique
-  descriptor1       Json      // Float32Array serialized as number[] (128 dimensions)
-  descriptor2       Json
-  descriptor3       Json
-  enrolledAt        DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  modelVersion      String    @default("face-api-ssd-mobilenetv1-v1")
-  /// Monotonically incremented on every upsert. Mobile compares its local version
-  /// to the server version to detect when a re-download is needed.
-  syncVersion       Int       @default(1)
+  id               String    @id @default(uuid())
+  employeeId       String    @unique
+  descriptor1      Json
+  descriptor2      Json
+  descriptor3      Json
+  enrolledAt       DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  modelVersion     String    @default("face-api-ssd-mobilenetv1-v1")
+  deletedAt        DateTime?
   /// Which platform created/last-updated this enrollment. "WEB" | "MOBILE"
-  enrollmentSource  String    @default("WEB")
+  enrollmentSource String    @default("WEB")
   /// Soft-delete flag. Set to true instead of hard-deleting so mobile sync can
   /// detect the deletion via the /face/sync endpoint.
-  isDeleted         Boolean   @default(false)
-  deletedAt         DateTime?
-  webDescriptor1    Json?
-  webDescriptor2    Json?
-  webDescriptor3    Json?
-  webModelVersion   String?
-  webEnrolledAt     DateTime?
-  employee          User      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  isDeleted        Boolean   @default(false)
+  /// Monotonically incremented on every upsert. Mobile compares its local version
+  /// to the server version to detect when a re-download is needed.
+  syncVersion      Int       @default(1)
+  webDescriptor1   Json?
+  webDescriptor2   Json?
+  webDescriptor3   Json?
+  webModelVersion  String?
+  webEnrolledAt    DateTime?
+  employee         User      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
-  @@index([updatedAt])   // for efficient since-based queries on the sync endpoint
+  @@index([updatedAt])
 }
 
 model PerformanceSnapshot {
@@ -643,21 +636,918 @@ model WorkSubmission {
 model DailyCommit {
   id             String   @id @default(uuid())
   employeeId     String
-  commitDate     DateTime @db.Date
   taskWorkedOn   String
   workSummary    String
   hoursSpent     Float
   issuesBlockers String?
-  tomorrowPlan   String?
   attachmentUrl  String?
-  submittedAt    DateTime @default(now())
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  commitDate     DateTime @db.Date
+  submittedAt    DateTime @default(now())
+  tomorrowPlan   String?
   employee       User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, commitDate])
   @@index([employeeId])
   @@index([commitDate])
+}
+
+model Inventory {
+  id           Int                   @id @default(autoincrement())
+  sku          String                @unique
+  name         String
+  category     String
+  inStock      Int                   @default(0)
+  minThreshold Int                   @default(0)
+  supplier     String?
+  pricePerUnit Float                 @default(0)
+  entryDate    DateTime              @default(now())
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  company      String?
+  unit         String                @default("unit")
+  capacityKw   String?
+  dispatches   DispatchRecord[]
+  stockEntries InventoryStockEntry[]
+}
+
+model InventoryStockEntry {
+  id               Int                   @id @default(autoincrement())
+  itemId           Int
+  quantity         Int
+  entryDate        DateTime
+  pricePerUnit     Float
+  supplier         String?
+  createdAt        DateTime              @default(now())
+  movementType     InventoryMovementType @default(IN)
+  dispatchedTo     String?
+  notes            String?
+  previousQuantity Int                   @default(0)
+  newQuantity      Int                   @default(0)
+  transactionType  String                @default("ADD")
+  remarks          String?
+  createdBy        String?
+  item             Inventory             @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, entryDate])
+}
+
+model DispatchRecord {
+  id           String    @id @default(uuid())
+  customerId   Int
+  itemId       Int
+  quantity     Int
+  dispatchedAt DateTime  @default(now())
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  item         Inventory @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([itemId])
+}
+
+model GrowattCustomer {
+  id            Int                 @id @default(autoincrement())
+  customerName  String              @map("customer_name")
+  plantId       String              @unique @map("plant_id")
+  plantName     String              @map("plant_name")
+  plantCapacity Float               @map("plant_capacity")
+  plantLocation String              @map("plant_location")
+  isActive      Boolean             @default(true) @map("is_active")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  apiToken      String              @map("api_token")
+  inverterSn    String?             @map("inverter_sn")
+  generations   GrowattGeneration[]
+
+  @@map("growatt_customers")
+}
+
+model GrowattGeneration {
+  id                Int             @id @default(autoincrement())
+  growattCustomerId Int             @map("growatt_customer_id")
+  todayGeneration   Float           @default(0) @map("today_generation")
+  monthlyGeneration Float           @default(0) @map("monthly_generation")
+  yearlyGeneration  Float           @default(0) @map("yearly_generation")
+  totalGeneration   Float           @default(0) @map("total_generation")
+  currentPower      Float           @default(0) @map("current_power")
+  status            String          @default("offline")
+  lastUpdated       DateTime        @default(now()) @map("last_updated")
+  growattCustomer   GrowattCustomer @relation(fields: [growattCustomerId], references: [id], onDelete: Cascade)
+
+  @@index([growattCustomerId])
+  @@map("growatt_generations")
+}
+
+model WaareeGeneration {
+  id                Int      @id @default(autoincrement())
+  customerId        Int      @unique @map("customer_id")
+  todayGeneration   Float    @default(0) @map("today_generation")
+  monthlyGeneration Float    @default(0) @map("monthly_generation")
+  yearlyGeneration  Float    @default(0) @map("yearly_generation")
+  totalGeneration   Float    @default(0) @map("total_generation")
+  currentPower      Float    @default(0) @map("current_power")
+  status            String   @default("offline")
+  lastUpdated       DateTime @default(now()) @map("last_updated")
+  customer          Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("waaree_generations")
+}
+
+model InverterCache {
+  customerId  Int      @id
+  summaryData Json
+  updatedAt   DateTime @default(now()) @updatedAt
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+model TaskAssignment {
+  id             String               @id @default(uuid())
+  taskId         Int
+  employeeUserId String
+  assignedAt     DateTime             @default(now())
+  status         TaskAssignmentStatus @default(ASSIGNED)
+  employee       User                 @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  task           Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, employeeUserId])
+  @@index([taskId])
+  @@index([employeeUserId])
+  @@index([status])
+}
+
+model CustomerNotification {
+  id         String   @id @default(uuid())
+  customerId Int
+  type       String
+  message    String
+  taskId     Int?
+  imageUrl   String?
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([taskId])
+}
+
+model TaskImage {
+  id             String   @id @default(uuid())
+  taskId         Int
+  employeeUserId String
+  type           String
+  url            String
+  latitude       Float?
+  longitude      Float?
+  watermarkText  String?
+  uploadedAt     DateTime @default(now())
+  fileName       String?
+  fileSize       Int?
+  mimeType       String?
+  objectKey      String?
+  employee       User     @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([employeeUserId])
+  @@index([type])
+  @@index([objectKey])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  taskId        Int
+  customerId    Int
+  amount        Float
+  paymentMethod String?
+  transactionId String?       @unique
+  paidBy        String?
+  paidAt        DateTime?
+  processedBy   String?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  paymentStatus PaymentStatus @default(PENDING)
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  task          Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([customerId])
+  @@index([paymentStatus])
+  @@index([paidAt])
+  @@index([customerId, paymentStatus])
+}
+
+model AttendanceRule {
+  id                       String   @id @default("default")
+  shiftStart               String   @default("09:15")
+  faceRequired             Boolean  @default(true)
+  geofenceEnabled          Boolean  @default(false)
+  officeLat                Float    @default(21.175401747696093)
+  officeLng                Float    @default(79.05111036149488)
+  officeRadius             Float    @default(150.0)
+  faceMatchThreshold       Float    @default(0.55)
+  updatedAt                DateTime @updatedAt
+  dailyWorkingHours        Float    @default(9.0)
+  weeklyOffDays            Int[]    @default([0])
+  shiftEnd                 String   @default("18:30")
+  autoCheckoutGraceMinutes Int      @default(30)
+}
+
+model Holiday {
+  id          String   @id @default(uuid())
+  date        DateTime @unique @db.Date
+  name        String
+  description String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+}
+
+model IsphereGreenEntry {
+  id          String   @id @default(uuid())
+  category    String
+  subcategory String
+  name        String
+  place       String
+  phone       String?
+  email       String?
+  address     String?
+  details     Json?
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([subcategory])
+}
+
+model InverterInstallation {
+  id                  Int                  @id @default(autoincrement())
+  customerId          Int
+  brand               InverterProviderType
+  model               String?
+  serialNumber        String?
+  capacity            Float?
+  credentials         Json?
+  isActive            Boolean              @default(true)
+  lastFetchTime       DateTime?
+  lastFetchStatus     String?
+  errorMessage        String?
+  consecutiveFailures Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  generationLogs      GenerationLog[]
+  customer            Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, serialNumber])
+  @@index([customerId])
+  @@index([brand])
+  @@index([isActive])
+  @@index([lastFetchTime])
+  @@map("inverter_installations")
+}
+
+model GenerationLog {
+  id                   Int                  @id @default(autoincrement())
+  installationId       Int
+  customerId           Int
+  timestamp            DateTime
+  currentPowerW        Float?
+  dailyGenerationKwh   Float?
+  monthlyGenerationKwh Float?
+  yearlyGenerationKwh  Float?
+  totalGenerationKwh   Float?
+  dataSource           GenerationDataSource
+  isEstimated          Boolean              @default(false)
+  fetchedFromApi       Boolean              @default(false)
+  manualEntry          Boolean              @default(false)
+  status               String?
+  metadata             Json?
+  createdAt            DateTime             @default(now())
+  customer             Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  installation         InverterInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@index([installationId])
+  @@index([customerId])
+  @@index([timestamp])
+  @@index([dataSource])
+  @@index([customerId, timestamp])
+  @@index([installationId, timestamp])
+  @@map("generation_logs")
+}
+
+model LeaveType {
+  id          String         @id @default(uuid())
+  name        String
+  code        String         @unique
+  isPaid      Boolean        @default(true)
+  annualLimit Float          @default(0)
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  balances    LeaveBalance[]
+  requests    LeaveRequest[]
+}
+
+model LeaveBalance {
+  id            String    @id @default(uuid())
+  employeeId    String
+  leaveTypeId   String
+  year          Int
+  totalDays     Float     @default(0)
+  usedDays      Float     @default(0)
+  pendingDays   Float     @default(0)
+  remainingDays Float     @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  employee      User      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType     LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@index([employeeId])
+  @@index([leaveTypeId])
+}
+
+model LeaveRequest {
+  id          String             @id @default(uuid())
+  employeeId  String
+  leaveTypeId String
+  startDate   DateTime           @db.Date
+  endDate     DateTime           @db.Date
+  isHalfDay   Boolean            @default(false)
+  halfDayPart String?
+  totalDays   Float              @default(1)
+  reason      String
+  status      LeaveRequestStatus @default(PENDING)
+  adminNote   String?
+  approvedBy  String?
+  approvedAt  DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  employee    User               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType          @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([startDate])
+}
+
+model OvertimeRequest {
+  id              String            @id @default(uuid())
+  employeeId      String
+  date            DateTime          @db.Date
+  otType          OvertimeType      @default(AFTER_SHIFT)
+  startTime       DateTime
+  expectedEndTime DateTime?
+  actualEndTime   DateTime?
+  durationMinutes Int?
+  reason          String
+  status          OvertimeStatus    @default(PENDING)
+  adminNote       String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  approvedMinutes Int?
+  otRate          Float?
+  otMultiplier    Float?
+  otAmount        Float?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  employee        User              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  sessions        OvertimeSession[]
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([date])
+}
+
+model OvertimeSession {
+  id              String          @id @default(uuid())
+  employeeId      String
+  otRequestId     String
+  sessionStart    DateTime
+  sessionEnd      DateTime?
+  durationMinutes Int?
+  status          String          @default("ACTIVE")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  employee        User            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  otRequest       OvertimeRequest @relation(fields: [otRequestId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([otRequestId])
+}
+
+model SalaryRecord {
+  id               String       @id @default(uuid())
+  employeeId       String
+  month            Int
+  year             Int
+  baseSalary       Float        @default(0)
+  regularPay       Float        @default(0)
+  overtimePay      Float        @default(0)
+  incentivesTotal  Float        @default(0)
+  deductions       Float        @default(0)
+  advanceDeduction Float        @default(0)
+  netPayable       Float        @default(0)
+  status           SalaryStatus @default(ESTIMATED)
+  finalizedAt      DateTime?
+  notes            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  employee         User         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, month, year])
+  @@index([employeeId])
+  @@index([status])
+}
+
+model SalaryRevision {
+  id               String   @id @default(uuid())
+  employeeId       String
+  effectiveDate    DateTime @db.Date
+  previousSalary   Float    @default(0)
+  newSalary        Float
+  incrementAmount  Float    @default(0)
+  incrementPercent Float    @default(0)
+  reason           String?
+  approvedBy       String?
+  createdAt        DateTime @default(now())
+  employee         User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([effectiveDate])
+}
+
+model Advance {
+  id                    String               @id @default(uuid())
+  employeeId            String
+  amount                Float
+  reason                String
+  status                AdvanceStatus        @default(PENDING)
+  approvedBy            String?
+  approvedAt            DateTime?
+  adminNote             String?
+  totalRecovered        Float                @default(0)
+  remainingAmount       Float                @default(0)
+  currentMonthDeduction Float                @default(0)
+  requestedAt           DateTime             @default(now())
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  employee              User                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  installments          AdvanceInstallment[]
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+model AdvanceInstallment {
+  id        String   @id @default(uuid())
+  advanceId String
+  month     Int
+  year      Int
+  amount    Float
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  advance   Advance  @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+
+  @@index([advanceId])
+}
+
+model Incentive {
+  id         String   @id @default(uuid())
+  employeeId String
+  name       String
+  amount     Float
+  month      Int
+  year       Int
+  reason     String?
+  status     String   @default("CONFIRMED")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  employee   User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([month, year])
+}
+
+model AttendanceCorrection {
+  id                String           @id @default(uuid())
+  employeeId        String
+  date              DateTime         @db.Date
+  requestedCheckIn  DateTime?
+  requestedCheckOut DateTime?
+  reason            String
+  status            CorrectionStatus @default(PENDING)
+  adminNote         String?
+  approvedBy        String?
+  approvedAt        DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  employee          User             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([date])
+}
+
+model AttendanceRegularizationRequest {
+  id             String                  @id @default(uuid())
+  employeeId     String
+  date           DateTime                @db.Date
+  status         AttendanceStatus        @default(PRESENT)
+  checkInTime    String?
+  checkInPeriod  String?
+  checkOutTime   String?
+  checkOutPeriod String?
+  reason         String
+  requestStatus  AttendanceRequestStatus @default(PENDING)
+  adminNotes     String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  employee       User                    @relation("employee_attendance_requests", fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewer       User?                   @relation("admin_reviewed_requests", fields: [reviewedBy], references: [id])
+
+  @@index([employeeId])
+  @@index([date])
+  @@index([requestStatus])
+  @@index([createdAt])
+}
+
+model EmployeeNotification {
+  id         String   @id @default(uuid())
+  employeeId String
+  type       String
+  title      String
+  message    String
+  refId      String?
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  employee   User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([type])
+  @@index([read])
+  @@index([createdAt])
+}
+
+model WorkCalendarPolicy {
+  id               String   @id @default("default")
+  weeklyOffDays    Int[]    @default([0])
+  dailyWorkHours   Float    @default(8.0)
+  shiftStartTime   String   @default("09:00")
+  shiftEndTime     String   @default("18:00")
+  overtimeEligible Boolean  @default(true)
+  otRatePerHour    Float?
+  otMultiplier     Float    @default(1.5)
+  updatedAt        DateTime @updatedAt
+}
+
+model MarketingCampaign {
+  id          String   @id
+  name        String
+  channel     String
+  startDate   String?
+  budget      String
+  status      String   @default("Planned")
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  User        User?    @relation(fields: [createdById], references: [id])
+
+  @@index([createdAt])
+  @@index([createdById])
+  @@index([status])
+}
+
+model MarketingFollowUp {
+  id          String   @id
+  leadId      String
+  date        String
+  note        String
+  done        Boolean  @default(false)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  User        User?    @relation(fields: [createdById], references: [id])
+
+  @@index([createdById])
+  @@index([date])
+  @@index([leadId])
+}
+
+model MarketingLead {
+  id          String   @id
+  name        String
+  phone       String
+  email       String?
+  source      String
+  status      String   @default("New")
+  assignedTo  String?
+  followUpAt  String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  User        User?    @relation(fields: [createdById], references: [id])
+
+  @@index([createdAt])
+  @@index([createdById])
+  @@index([source])
+  @@index([status])
+}
+
+model OnboardingAuditLog {
+  id                  String            @id
+  onboardingRequestId String
+  actorId             String
+  action              String
+  previousStage       String?
+  newStage            String?
+  reason              String?
+  metadata            String?
+  createdAt           DateTime          @default(now())
+  User                User              @relation(fields: [actorId], references: [id])
+  OnboardingRequest   OnboardingRequest @relation(fields: [onboardingRequestId], references: [id], onDelete: Cascade)
+
+  @@index([action])
+  @@index([actorId])
+  @@index([createdAt])
+  @@index([onboardingRequestId])
+}
+
+model OnboardingQuotation {
+  id                        String                    @id
+  quotationNumber           String                    @unique
+  onboardingRequestId       String
+  itemDescription           String
+  quantity                  Float
+  unitPrice                 Float
+  discount                  Float                     @default(0)
+  tax                       Float                     @default(0)
+  subtotal                  Float
+  total                     Float
+  issueDate                 DateTime                  @default(now())
+  validityDate              DateTime?
+  scopeOfWork               String?
+  terms                     String?
+  preparedBy                String
+  approvedBy                String?
+  approvalDate              DateTime?
+  status                    OnboardingQuotationStatus @default(DRAFT)
+  version                   Int                       @default(1)
+  previousVersionId         String?
+  attachments               String?
+  notes                     String?
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime
+  OnboardingRequest         OnboardingRequest         @relation(fields: [onboardingRequestId], references: [id], onDelete: Cascade)
+  OnboardingQuotation       OnboardingQuotation?      @relation("OnboardingQuotationToOnboardingQuotation", fields: [previousVersionId], references: [id])
+  other_OnboardingQuotation OnboardingQuotation[]     @relation("OnboardingQuotationToOnboardingQuotation")
+
+  @@index([createdAt])
+  @@index([onboardingRequestId])
+  @@index([quotationNumber])
+  @@index([status])
+}
+
+model OnboardingRequest {
+  id                   String                @id
+  requestNumber        String                @unique
+  customerName         String
+  companyName          String?
+  phoneNumber          String
+  email                String
+  siteAddress          String
+  location             String?
+  requestedProduct     String
+  customerRequirements String
+  assignedEmployeeId   String?
+  enquiryDate          DateTime              @default(now())
+  notes                String?
+  attachments          String?
+  stage                OnboardingStage       @default(NEW_REQUEST)
+  convertedCustomerId  Int?
+  rejectionReason      String?
+  createdBy            String
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime
+  OnboardingAuditLog   OnboardingAuditLog[]
+  OnboardingQuotation  OnboardingQuotation[]
+  User                 User?                 @relation(fields: [assignedEmployeeId], references: [id])
+  Customer             Customer?             @relation(fields: [convertedCustomerId], references: [id])
+  OnboardingSiteVisit  OnboardingSiteVisit[]
+
+  @@index([assignedEmployeeId])
+  @@index([convertedCustomerId])
+  @@index([createdAt])
+  @@index([stage])
+}
+
+model OnboardingSiteVisit {
+  id                    String                  @id
+  onboardingRequestId   String
+  scheduledDate         DateTime
+  assignedEmployeeId    String
+  status                String                  @default("SCHEDULED")
+  siteRequirements      String?
+  observations          String?
+  proposedCapacity      Float?
+  followUpActions       String?
+  completionDate        DateTime?
+  attachments           String?
+  notes                 String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime
+  accessSafety          String?
+  additionalNotes       String?
+  availableArea         Float?
+  cableDistance         Float?
+  earthing              String?
+  electricalPanel       String?
+  inverterLocation      String?
+  meterLocation         String?
+  meterRating           String?
+  panelPlacement        String?
+  phaseType             String?
+  recommendedMaterials  String?
+  reviewComments        String?
+  reviewStatus          String?
+  reviewedAt            DateTime?
+  reviewedBy            String?
+  roofCondition         String?
+  roofOrientation       String?
+  roofType              String?
+  shading               String?
+  shadingDetails        String?
+  User                  User                    @relation(fields: [assignedEmployeeId], references: [id])
+  OnboardingRequest     OnboardingRequest       @relation(fields: [onboardingRequestId], references: [id], onDelete: Cascade)
+  OnboardingSurveyImage OnboardingSurveyImage[]
+
+  @@index([assignedEmployeeId])
+  @@index([onboardingRequestId])
+  @@index([scheduledDate])
+  @@index([status])
+}
+
+model OnboardingSurveyImage {
+  id                  String              @id
+  siteVisitId         String
+  category            String
+  fileName            String
+  fileUrl             String
+  fileSize            Int
+  mimeType            String
+  caption             String?
+  uploadedBy          String
+  uploadedAt          DateTime            @default(now())
+  OnboardingSiteVisit OnboardingSiteVisit @relation(fields: [siteVisitId], references: [id], onDelete: Cascade)
+
+  @@index([category])
+  @@index([siteVisitId])
+  @@index([uploadedAt])
+}
+
+model liaisoning_applications {
+  id                               String                             @id
+  customerId                       Int                                @unique
+  applicationNumber                String?
+  discomName                       String?
+  applicationSubmissionDate        DateTime?
+  assignedEmployeeId               String?
+  overallStatus                    LiaisoningProcessStatus            @default(NOT_STARTED)
+  currentStage                     String                             @default("CUSTOMER_REGISTRATION")
+  completionPercentage             Int                                @default(0)
+  nextFollowUpDate                 DateTime?
+  followUpRemarks                  String?
+  isRejected                       Boolean                            @default(false)
+  rejectionReason                  String?
+  rejectedAt                       DateTime?
+  rejectedBy                       String?
+  startedAt                        DateTime?
+  completedAt                      DateTime?
+  createdAt                        DateTime                           @default(now())
+  updatedAt                        DateTime
+  User                             User?                              @relation(fields: [assignedEmployeeId], references: [id])
+  Customer                         Customer                           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  liaisoning_audit_logs            liaisoning_audit_logs[]
+  liaisoning_documents             liaisoning_documents[]
+  liaisoning_follow_ups            liaisoning_follow_ups[]
+  liaisoning_process_stage_entries liaisoning_process_stage_entries[]
+
+  @@index([assignedEmployeeId])
+  @@index([currentStage])
+  @@index([customerId])
+  @@index([discomName])
+  @@index([nextFollowUpDate])
+  @@index([overallStatus])
+}
+
+model liaisoning_audit_logs {
+  id                      String                  @id
+  applicationId           String
+  action                  String
+  actorId                 String
+  previousValue           String?
+  newValue                String?
+  field                   String?
+  description             String?
+  metadata                Json?
+  createdAt               DateTime                @default(now())
+  User                    User                    @relation(fields: [actorId], references: [id])
+  liaisoning_applications liaisoning_applications @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([action])
+  @@index([actorId])
+  @@index([applicationId])
+  @@index([createdAt])
+}
+
+model liaisoning_documents {
+  id                      String                  @id
+  applicationId           String
+  documentType            String
+  title                   String
+  description             String?
+  fileUrl                 String
+  objectKey               String?
+  fileName                String
+  fileSize                Int
+  mimeType                String
+  status                  String                  @default("UPLOADED")
+  uploadedBy              String
+  uploadedAt              DateTime                @default(now())
+  verifiedBy              String?
+  verifiedAt              DateTime?
+  verificationRemarks     String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime
+  liaisoning_applications liaisoning_applications @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([documentType])
+  @@index([status])
+  @@index([uploadedBy])
+}
+
+model liaisoning_follow_ups {
+  id                      String                  @id
+  applicationId           String
+  followUpDate            DateTime
+  followUpType            String
+  remarks                 String?
+  status                  String                  @default("PENDING")
+  completedAt             DateTime?
+  completedBy             String?
+  completionNotes         String?
+  reminderSent            Boolean                 @default(false)
+  reminderSentAt          DateTime?
+  assignedTo              String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime
+  liaisoning_applications liaisoning_applications @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([assignedTo])
+  @@index([followUpDate])
+  @@index([status])
+}
+
+model liaisoning_process_stage_entries {
+  id                      String                  @id
+  applicationId           String
+  stage                   LiaisoningProcessStage
+  status                  LiaisoningProcessStatus @default(NOT_STARTED)
+  remarks                 String?
+  rejectionReason         String?
+  startedAt               DateTime?
+  completedAt             DateTime?
+  approvedBy              String?
+  approvedAt              DateTime?
+  rejectedBy              String?
+  rejectedAt              DateTime?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime
+  liaisoning_applications liaisoning_applications @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, stage])
+  @@index([applicationId])
+  @@index([status])
+}
+
+enum CheckInStatus {
+  CHECKED_IN
+  CHECKED_OUT
 }
 
 enum UserRole {
@@ -704,17 +1594,13 @@ enum CommissionStatus {
 
 enum AttendanceStatus {
   PRESENT
-  PRESENT_LATE_ALLOWANCE
   ABSENT
   HALF_DAY
   LATE
   LEAVE
-  ON_LEAVE
   HOLIDAY
   WEEKLY_OFF
   COMP_OFF
-  PENDING_VERIFICATION
-  MANUAL_REVIEW
 }
 
 enum WorkStatus {
@@ -724,222 +1610,11 @@ enum WorkStatus {
   REVISION
 }
 
-model Inventory {
-  id           Int              @id @default(autoincrement())
-  sku          String           @unique
-  name         String
-  category     String
-  inStock      Int              @default(0)
-  minThreshold Int              @default(0)
-  supplier     String?
-  company      String?
-  capacityKw   String?
-  unit         String           @default("unit")
-  pricePerUnit Float            @default(0)
-  entryDate    DateTime         @default(now())
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  dispatches   DispatchRecord[]
-  stockEntries InventoryStockEntry[]
-}
-
-model InventoryStockEntry {
-  id               Int                    @id @default(autoincrement())
-  itemId           Int
-  quantity         Int
-  previousQuantity Int                    @default(0)
-  newQuantity      Int                    @default(0)
-  transactionType  String                 @default("ADD")
-  movementType     InventoryMovementType  @default(IN)
-  entryDate        DateTime
-  pricePerUnit     Float
-  supplier         String?
-  dispatchedTo     String?
-  notes            String?
-  remarks          String?
-  createdBy        String?
-  createdAt        DateTime               @default(now())
-  item             Inventory              @relation(fields: [itemId], references: [id], onDelete: Cascade)
-
-  @@index([itemId, entryDate])
-}
-
 enum InventoryMovementType {
   IN
   OUT
   RETURN
 }
-
-model DispatchRecord {
-  id           String    @id @default(uuid())
-  customerId   Int
-  itemId       Int
-  quantity     Int
-  dispatchedAt DateTime  @default(now())
-  notes        String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  item         Inventory @relation(fields: [itemId], references: [id], onDelete: Cascade)
-
-  @@index([customerId])
-  @@index([itemId])
-}
-
-model GrowattCustomer {
-  id             Int                 @id @default(autoincrement())
-  customerName   String              @map("customer_name")
-  apiToken       String              @map("api_token") // AES-256-GCM encrypted
-  plantId        String              @unique @map("plant_id")
-  plantName      String              @map("plant_name")
-  plantCapacity  Float               @map("plant_capacity")
-  plantLocation  String              @map("plant_location")
-  inverterSn     String?             @map("inverter_sn")
-  isActive       Boolean             @default(true) @map("is_active")
-  createdAt      DateTime            @default(now()) @map("created_at")
-  updatedAt      DateTime            @updatedAt @map("updated_at")
-  generations    GrowattGeneration[]
-
-  @@map("growatt_customers")
-}
-
-model GrowattGeneration {
-  id                Int             @id @default(autoincrement())
-  growattCustomerId Int             @map("growatt_customer_id")
-  todayGeneration   Float           @default(0) @map("today_generation")
-  monthlyGeneration Float           @default(0) @map("monthly_generation")
-  yearlyGeneration  Float           @default(0) @map("yearly_generation")
-  totalGeneration   Float           @default(0) @map("total_generation")
-  currentPower      Float           @default(0) @map("current_power")
-  status            String          @default("offline") // online or offline
-  lastUpdated       DateTime        @default(now()) @map("last_updated")
-  growattCustomer   GrowattCustomer @relation(fields: [growattCustomerId], references: [id], onDelete: Cascade)
-
-  @@index([growattCustomerId])
-  @@map("growatt_generations")
-}
-
-model WaareeGeneration {
-  id                Int             @id @default(autoincrement())
-  customerId        Int             @unique @map("customer_id")
-  todayGeneration   Float           @default(0) @map("today_generation")
-  monthlyGeneration Float           @default(0) @map("monthly_generation")
-  yearlyGeneration  Float           @default(0) @map("yearly_generation")
-  totalGeneration   Float           @default(0) @map("total_generation")
-  currentPower      Float           @default(0) @map("current_power")
-  status            String          @default("offline") // online or offline
-  lastUpdated       DateTime        @default(now()) @map("last_updated")
-  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@index([customerId])
-  @@map("waaree_generations")
-}
-
-model InverterCache {
-  customerId  Int      @id
-  summaryData Json
-  updatedAt   DateTime @default(now()) @updatedAt
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-}
-
-// ---------------------------------------------------------------------------
-// Multi-Employee Task Assignment
-// ---------------------------------------------------------------------------
-
-model TaskAssignment {
-  id            String               @id @default(uuid())
-  taskId        Int
-  employeeUserId String
-  assignedAt    DateTime             @default(now())
-  status        TaskAssignmentStatus @default(ASSIGNED)
-  task          Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  employee      User                 @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
-
-  @@unique([taskId, employeeUserId])
-  @@index([taskId])
-  @@index([employeeUserId])
-  @@index([status])
-}
-
-// ---------------------------------------------------------------------------
-// Customer Notifications
-// ---------------------------------------------------------------------------
-
-model CustomerNotification {
-  id         String   @id @default(uuid())
-  customerId Int
-  type       String
-  message    String
-  taskId     Int?
-  imageUrl   String?
-  isRead     Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@index([customerId])
-  @@index([type])
-  @@index([createdAt])
-  @@index([taskId])
-}
-
-// ---------------------------------------------------------------------------
-// Task Images with Geo-Tagging
-// ---------------------------------------------------------------------------
-
-model TaskImage {
-  id           String   @id @default(uuid())
-  taskId       Int
-  employeeUserId String
-  type         String   // before, after, site-visit
-  url          String   // R2 public URL or local path (for backward compatibility)
-  objectKey    String?  // R2 object key: tasks/{taskId}/{type}/{uuid}.jpg
-  fileName     String?  // Original filename
-  mimeType     String?  // image/jpeg, image/png, etc.
-  fileSize     Int?     // File size in bytes
-  latitude     Float?
-  longitude    Float?
-  watermarkText String?
-  uploadedAt   DateTime @default(now())
-  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  employee     User     @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
-
-  @@index([taskId])
-  @@index([employeeUserId])
-  @@index([type])
-  @@index([objectKey])
-}
-
-// ---------------------------------------------------------------------------
-// Payment Processing
-// ---------------------------------------------------------------------------
-
-model Payment {
-  id              String        @id @default(uuid())
-  taskId          Int
-  customerId      Int
-  amount          Float
-  paymentMethod   String?       // upi, bank_transfer, cash, etc.
-  paymentStatus   PaymentStatus @default(PENDING)
-  transactionId   String?       @unique
-  paidBy          String?       // customer name or reference
-  paidAt          DateTime?
-  processedBy     String?       // admin user id who processed payment
-  notes           String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  task            Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@index([taskId])
-  @@index([customerId])
-  @@index([paymentStatus])
-  @@index([paidAt])
-  @@index([customerId, paymentStatus])
-}
-
-// ---------------------------------------------------------------------------
-// Hardening Status Enums (T2.6)
-// ---------------------------------------------------------------------------
 
 enum ServiceRequestStatus {
   PENDING
@@ -982,110 +1657,6 @@ enum PaymentStatus {
   REFUNDED
 }
 
-model AttendanceRule {
-  id                 String   @id @default("default")
-  shiftStart         String   @default("09:15")
-  reportingTime      String   @default("10:30")
-  monthlyLateAllowance Int    @default(3)
-  timezone           String   @default("Asia/Kolkata")
-  faceRequired       Boolean  @default(true)
-  geofenceEnabled    Boolean  @default(false)
-  geofenceActive     Boolean  @default(true)
-  officeLat          Float    @default(21.175401747696093)
-  officeLng          Float    @default(79.05111036149488)
-  officeRadius       Float    @default(150.0)
-  minLocationAccuracy Float   @default(100.0)
-  faceMatchThreshold Float    @default(0.55)
-  policyStatus       String   @default("ACTIVE")
-  effectiveDate      DateTime @default(now())
-  // weeklyOffDays: array of day numbers (0=Sun, 1=Mon, ..., 6=Sat)
-  // Default = [0] means Sunday is the weekly off
-  weeklyOffDays      Int[]    @default([0])
-  // Required daily working hours for expected hours calculation
-  dailyWorkingHours  Float    @default(9.0)
-  updatedAt          DateTime @updatedAt
-}
-
-model MonthlyLateCounter {
-  id           String   @id @default(uuid())
-  employeeId   String
-  yearMonth    String   // e.g. "2026-11"
-  lateDaysUsed Int      @default(0)
-  halfDayCount Int      @default(0)
-  updatedAt    DateTime @updatedAt
-  employee     User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@unique([employeeId, yearMonth])
-  @@index([employeeId])
-}
-
-model EmployeeAlarmSetting {
-  id               String   @id @default(uuid())
-  employeeId       String   @unique
-  personalAlarmTime String  @default("10:20")
-  reminder1Time     String? @default("10:00")
-  reminder2Time     String? @default("10:15")
-  repeatDays       Int[]    @default([1,2,3,4,5,6])
-  soundUri         String?
-  vibrationEnabled Boolean  @default(true)
-  snoozeEnabled    Boolean  @default(true)
-  enabled          Boolean  @default(true)
-  updatedAt        DateTime @updatedAt
-  employee         User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-}
-
-model AttendanceAuditEvent {
-  id             String   @id @default(uuid())
-  employeeId     String
-  date           DateTime @db.Date
-  eventType      String   // CHECK_IN_ATTEMPT, FACE_VERIFICATION_SUCCESS, FACE_VERIFICATION_FAILED, GPS_VERIFICATION, STATUS_ASSIGNMENT, ADMIN_CORRECTION, EXCEPTION_APPROVAL
-  previousStatus String?
-  newStatus      String?
-  actorId        String?
-  reason         String?
-  metadata       Json?
-  createdAt      DateTime @default(now())
-  employee       User     @relation("audit_events_employee", fields: [employeeId], references: [id], onDelete: Cascade)
-  actor          User?    @relation("audit_events_actor", fields: [actorId], references: [id], onDelete: SetNull)
-
-  @@index([employeeId])
-  @@index([date])
-}
-
-model Holiday {
-  id          String   @id @default(uuid())
-  date        DateTime @unique @db.Date
-  name        String
-  description String?
-  createdBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([date])
-}
-
-model IsphereGreenEntry {
-  id          String   @id @default(uuid())
-  category    String
-  subcategory String
-  name        String
-  place       String
-  phone       String?
-  email       String?
-  address     String?
-  details     Json?
-  status      String   @default("ACTIVE")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([category])
-  @@index([subcategory])
-}
-
-// ---------------------------------------------------------------------------
-// Multi-Inverter System (New Architecture)
-// ---------------------------------------------------------------------------
-
 enum InverterProviderType {
   K_SOLAR
   GROWATT
@@ -1110,72 +1681,13 @@ enum InverterProviderType {
 }
 
 enum GenerationDataSource {
-  LIVE_API           // Real-time from inverter manufacturer API
-  CACHE              // Cached from previous API call
-  DB_SCHEDULER       // From periodic background scheduler
-  MANUAL             // Manually entered by user
-  ESTIMATED          // System-generated estimate
-  SIMULATED          // Demo/test data
+  LIVE_API
+  CACHE
+  DB_SCHEDULER
+  MANUAL
+  ESTIMATED
+  SIMULATED
 }
-
-model InverterInstallation {
-  id                  Int       @id @default(autoincrement())
-  customerId          Int
-  brand               InverterProviderType
-  model               String?
-  serialNumber        String?
-  capacity            Float?    // in kW
-  credentials         Json?     // Encrypted provider-specific credentials
-  isActive            Boolean   @default(true)
-  lastFetchTime       DateTime?
-  lastFetchStatus     String?   // "success", "failed", "unauthorized", etc.
-  errorMessage        String?
-  consecutiveFailures Int       @default(0)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  customer            Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  generationLogs      GenerationLog[]
-
-  @@unique([customerId, serialNumber])
-  @@index([customerId])
-  @@index([brand])
-  @@index([isActive])
-  @@index([lastFetchTime])
-  @@map("inverter_installations")
-}
-
-model GenerationLog {
-  id                  Int       @id @default(autoincrement())
-  installationId      Int
-  customerId          Int
-  timestamp           DateTime
-  currentPowerW       Float?    // Instantaneous power in Watts
-  dailyGenerationKwh  Float?    // Energy generated today in kWh
-  monthlyGenerationKwh Float?   // Energy generated this month in kWh
-  yearlyGenerationKwh Float?    // Energy generated this year in kWh
-  totalGenerationKwh  Float?    // Lifetime generation in kWh
-  dataSource          GenerationDataSource
-  isEstimated         Boolean   @default(false)
-  fetchedFromApi      Boolean   @default(false)
-  manualEntry         Boolean   @default(false)
-  status              String?   // "online", "offline", "error", etc.
-  metadata            Json?     // Provider-specific extra fields
-  createdAt           DateTime  @default(now())
-  installation        InverterInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
-  customer            Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@index([installationId])
-  @@index([customerId])
-  @@index([timestamp])
-  @@index([dataSource])
-  @@index([customerId, timestamp])
-  @@index([installationId, timestamp])
-  @@map("generation_logs")
-}
-
-// ---------------------------------------------------------------------------
-// Employee Attendance Regularization Requests
-// ---------------------------------------------------------------------------
 
 enum AttendanceRequestStatus {
   PENDING
@@ -1183,120 +1695,11 @@ enum AttendanceRequestStatus {
   REJECTED
 }
 
-// ---------------------------------------------------------------------------
-// Workforce Module — Leave Management
-// ---------------------------------------------------------------------------
-
-model LeaveType {
-  id           String         @id @default(uuid())
-  name         String         // e.g. "Paid Leave", "Sick Leave", "Casual Leave"
-  code         String         @unique // e.g. "PL", "SL", "CL", "EL", "UL"
-  isPaid       Boolean        @default(true)
-  annualLimit  Float          @default(0) // 0 = unlimited / as per policy
-  isActive     Boolean        @default(true)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  balances     LeaveBalance[]
-  requests     LeaveRequest[]
-}
-
-model LeaveBalance {
-  id           String    @id @default(uuid())
-  employeeId   String
-  leaveTypeId  String
-  year         Int
-  totalDays    Float     @default(0)
-  usedDays     Float     @default(0)
-  pendingDays  Float     @default(0)
-  remainingDays Float    @default(0)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  employee     User      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType    LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
-
-  @@unique([employeeId, leaveTypeId, year])
-  @@index([employeeId])
-  @@index([leaveTypeId])
-}
-
-model LeaveRequest {
-  id          String            @id @default(uuid())
-  employeeId  String
-  leaveTypeId String
-  startDate   DateTime          @db.Date
-  endDate     DateTime          @db.Date
-  isHalfDay   Boolean           @default(false)
-  halfDayPart String?           // MORNING | AFTERNOON
-  totalDays   Float             @default(1)
-  reason      String
-  status      LeaveRequestStatus @default(PENDING)
-  adminNote   String?
-  approvedBy  String?
-  approvedAt  DateTime?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  employee    User              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType   LeaveType         @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
-
-  @@index([employeeId])
-  @@index([status])
-  @@index([startDate])
-}
-
 enum LeaveRequestStatus {
   PENDING
   APPROVED
   REJECTED
   CANCELLED
-}
-
-// ---------------------------------------------------------------------------
-// Workforce Module — Overtime Management
-// ---------------------------------------------------------------------------
-
-model OvertimeRequest {
-  id              String              @id @default(uuid())
-  employeeId      String
-  date            DateTime            @db.Date
-  otType          OvertimeType        @default(AFTER_SHIFT)
-  startTime       DateTime            // Full ISO8601 timestamp
-  expectedEndTime DateTime?           // Full ISO8601 timestamp
-  actualEndTime   DateTime?           // Full ISO8601 timestamp (set when session ends)
-  durationMinutes Int?                // Computed from actual times
-  reason          String
-  status          OvertimeStatus      @default(PENDING)
-  adminNote       String?
-  approvedBy      String?
-  approvedAt      DateTime?
-  approvedMinutes Int?                // Admin may approve partial duration
-  otRate          Float?              // Rate per hour (provided by backend)
-  otMultiplier    Float?              // e.g. 1.5, 2.0
-  otAmount        Float?              // Calculated OT amount
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  employee        User                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  sessions        OvertimeSession[]
-
-  @@index([employeeId])
-  @@index([status])
-  @@index([date])
-}
-
-model OvertimeSession {
-  id              String          @id @default(uuid())
-  employeeId      String
-  otRequestId     String
-  sessionStart    DateTime        // Full ISO8601 — handles midnight crossing
-  sessionEnd      DateTime?       // Full ISO8601
-  durationMinutes Int?            // Computed on stop
-  status          String          @default("ACTIVE") // ACTIVE | COMPLETED
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  employee        User            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  otRequest       OvertimeRequest @relation(fields: [otRequestId], references: [id], onDelete: Cascade)
-
-  @@index([employeeId])
-  @@index([otRequestId])
 }
 
 enum OvertimeType {
@@ -1314,96 +1717,11 @@ enum OvertimeStatus {
   CANCELLED
 }
 
-// ---------------------------------------------------------------------------
-// Workforce Module — Salary / Payroll
-// ---------------------------------------------------------------------------
-
-model SalaryRecord {
-  id               String        @id @default(uuid())
-  employeeId       String
-  month            Int
-  year             Int
-  baseSalary       Float         @default(0)
-  regularPay       Float         @default(0)
-  overtimePay      Float         @default(0)
-  incentivesTotal  Float         @default(0)
-  deductions       Float         @default(0)
-  advanceDeduction Float         @default(0)
-  netPayable       Float         @default(0)
-  status           SalaryStatus  @default(ESTIMATED)
-  finalizedAt      DateTime?
-  notes            String?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  employee         User          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@unique([employeeId, month, year])
-  @@index([employeeId])
-  @@index([status])
-}
-
-model SalaryRevision {
-  id              String   @id @default(uuid())
-  employeeId      String
-  effectiveDate   DateTime @db.Date
-  previousSalary  Float    @default(0)
-  newSalary       Float
-  incrementAmount Float    @default(0)
-  incrementPercent Float   @default(0)
-  reason          String?
-  approvedBy      String?
-  createdAt       DateTime @default(now())
-  employee        User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@index([employeeId])
-  @@index([effectiveDate])
-}
-
 enum SalaryStatus {
   ESTIMATED
   PROCESSING
   CONFIRMED
   PAID
-}
-
-// ---------------------------------------------------------------------------
-// Workforce Module — Advances
-// ---------------------------------------------------------------------------
-
-model Advance {
-  id                   String              @id @default(uuid())
-  employeeId           String
-  amount               Float
-  reason               String
-  status               AdvanceStatus       @default(PENDING)
-  approvedBy           String?
-  approvedAt           DateTime?
-  adminNote            String?
-  totalRecovered       Float               @default(0)
-  remainingAmount      Float               @default(0)
-  currentMonthDeduction Float              @default(0)
-  requestedAt          DateTime            @default(now())
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  employee             User                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  installments         AdvanceInstallment[]
-
-  @@index([employeeId])
-  @@index([status])
-}
-
-model AdvanceInstallment {
-  id         String   @id @default(uuid())
-  advanceId  String
-  month      Int
-  year       Int
-  amount     Float
-  status     String   @default("PENDING") // PENDING | DEDUCTED
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  advance    Advance  @relation(fields: [advanceId], references: [id], onDelete: Cascade)
-
-  @@index([advanceId])
 }
 
 enum AdvanceStatus {
@@ -1415,116 +1733,57 @@ enum AdvanceStatus {
   FULLY_RECOVERED
 }
 
-// ---------------------------------------------------------------------------
-// Workforce Module — Incentives
-// ---------------------------------------------------------------------------
-
-model Incentive {
-  id         String   @id @default(uuid())
-  employeeId String
-  name       String   // e.g. "Attendance Incentive", "Project Incentive"
-  amount     Float
-  month      Int
-  year       Int
-  reason     String?
-  status     String   @default("CONFIRMED") // ESTIMATED | CONFIRMED | PAID
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  employee   User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@index([employeeId])
-  @@index([month, year])
-}
-
-// ---------------------------------------------------------------------------
-// Workforce Module — Attendance Corrections
-// ---------------------------------------------------------------------------
-
-model AttendanceCorrection {
-  id                 String             @id @default(uuid())
-  employeeId         String
-  date               DateTime           @db.Date
-  requestedCheckIn   DateTime?
-  requestedCheckOut  DateTime?
-  reason             String
-  status             CorrectionStatus   @default(PENDING)
-  adminNote          String?
-  approvedBy         String?
-  approvedAt         DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  employee           User               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@index([employeeId])
-  @@index([status])
-  @@index([date])
-}
-
 enum CorrectionStatus {
   PENDING
   APPROVED
   REJECTED
 }
 
-model AttendanceRegularizationRequest {
-  id             String                  @id @default(uuid())
-  employeeId     String
-  date           DateTime                @db.Date
-  status         AttendanceStatus        @default(PRESENT)
-  checkInTime    String?                 // e.g. "10:30"
-  checkInPeriod  String?                 // "AM" | "PM"
-  checkOutTime   String?                 // e.g. "06:30"
-  checkOutPeriod String?                 // "AM" | "PM"
-  reason         String                  // Mandatory explanation why employee forgot
-  requestStatus  AttendanceRequestStatus @default(PENDING) // PENDING, APPROVED, REJECTED
-  adminNotes     String?                 // Optional reviewer notes
-  reviewedBy     String?                 // Admin user ID
-  reviewedAt     DateTime?
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
-
-  employee       User                    @relation("employee_attendance_requests", fields: [employeeId], references: [id], onDelete: Cascade)
-  reviewer       User?                   @relation("admin_reviewed_requests", fields: [reviewedBy], references: [id])
-
-  @@index([employeeId])
-  @@index([date])
-  @@index([requestStatus])
-  @@index([createdAt])
+enum LiaisoningProcessStage {
+  CUSTOMER_REGISTRATION
+  DOCUMENT_COLLECTION
+  PORTAL_APPLICATION_SUBMISSION
+  TECHNICAL_FEASIBILITY_APPROVAL
+  SOLAR_INSTALLATION
+  NET_METERING_APPLICATION
+  DISCOM_INSPECTION
+  NET_METER_INSTALLATION
+  COMMISSIONING_CERTIFICATE
+  SUBSIDY_APPLICATION
+  SUBSIDY_CREDITED
 }
 
-// ---------------------------------------------------------------------------
-// Workforce Module — Employee Notifications
-// ---------------------------------------------------------------------------
-
-model EmployeeNotification {
-  id         String   @id @default(uuid())
-  employeeId String
-  type       String   // LEAVE_APPROVED | LEAVE_REJECTED | OT_APPROVED | OT_REJECTED | SALARY_FINALIZED | ADVANCE_APPROVED | CORRECTION_APPROVED | HOLIDAY_ADDED
-  title      String
-  message    String
-  refId      String?  // ID of the related entity
-  read       Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  employee   User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@index([employeeId])
-  @@index([type])
-  @@index([read])
-  @@index([createdAt])
+enum LiaisoningProcessStatus {
+  NOT_STARTED
+  PENDING
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+  COMPLETED
+  ON_HOLD
 }
 
-// ---------------------------------------------------------------------------
-// Workforce Module — Work Calendar Policy (company-level)
-// ---------------------------------------------------------------------------
+enum OnboardingQuotationStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  SENT
+  ACCEPTED
+  REJECTED
+  REVISED
+}
 
-model WorkCalendarPolicy {
-  id                 String   @id @default("default")
-  weeklyOffDays      Int[]    @default([0]) // 0=Sunday, 6=Saturday etc.
-  dailyWorkHours     Float    @default(8.0)
-  shiftStartTime     String   @default("09:00")
-  shiftEndTime       String   @default("18:00")
-  overtimeEligible   Boolean  @default(true)
-  otRatePerHour      Float?   // if null, calculated from monthly salary
-  otMultiplier       Float    @default(1.5)
-  updatedAt          DateTime @updatedAt
+enum OnboardingStage {
+  NEW_REQUEST
+  INITIAL_REVIEW
+  SITE_VISIT_PENDING
+  SITE_VISIT_SCHEDULED
+  SITE_VISIT_COMPLETED
+  QUOTATION_DRAFT
+  QUOTATION_REVIEW
+  QUOTATION_SENT
+  CUSTOMER_DECISION_PENDING
+  ONBOARDING_APPROVAL
+  APPROVED_CONVERTED
+  REJECTED_CANCELLED
 }

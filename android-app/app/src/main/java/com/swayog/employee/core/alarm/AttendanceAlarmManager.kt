@@ -257,6 +257,12 @@ class AttendanceAlarmManager(private val context: Context) {
         }
     }
 
+    fun areNotificationsEnabled(): Boolean {
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return notificationManager.areNotificationsEnabled()
+    }
+
     /**
      * Caches the admin-controlled reporting time from the last successful settings sync so the
      * settings screen and reminder text show the official cutoff even while offline.
@@ -383,15 +389,6 @@ class AttendanceAlarmManager(private val context: Context) {
         } catch (e: SecurityException) {
             android.util.Log.e("AttendanceAlarm", "SecurityException scheduling snooze: ${e.message}")
             return false
-        }
-    }
-
-    fun areNotificationsEnabled(): Boolean {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            notificationManager.areNotificationsEnabled()
-        } else {
-            true
         }
     }
 
