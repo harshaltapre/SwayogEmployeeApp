@@ -130,9 +130,6 @@ fun SwayogNavHost(
                 onNavigateToAlarmSettings = {
                     navController.navigate(Screen.AlarmSettings.route)
                 },
-                onNavigateToAlarmSettings = {
-                    navController.navigate(Screen.AlarmSettings.route)
-                },
                 onNavigateToSubAdminCustomers = {
                     navController.navigate(Screen.SubAdminCustomers.route)
                 },
