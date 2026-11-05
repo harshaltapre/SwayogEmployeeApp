@@ -90,6 +90,7 @@ object NetworkModule {
             if (response.code == 401 && !isAuthRequest) {
                 val tokenUsed = authToken ?: ""
                 var newAccessTokenToRetry: String? = null
+                var refreshFailed = false
 
                 synchronized(tokenRefreshLock) {
                     // Check if another concurrent request already refreshed the token
@@ -130,26 +131,42 @@ object NetworkModule {
                                     val newRefreshToken = dataObj?.optString("refreshToken")
                                     
                                     if (!newAccessToken.isNullOrBlank() && !newRefreshToken.isNullOrBlank()) {
+                                        // Atomic token persistence: save both or none
                                         runBlocking {
+                                            val tempToken = dataStoreManager.getCachedAuthToken()
+                                            val tempRefresh = dataStoreManager.getCachedRefreshToken()
                                             dataStoreManager.saveAuthToken(newAccessToken)
                                             dataStoreManager.saveRefreshToken(newRefreshToken)
                                             dataStoreManager.recordUserActive()
+                                            // Update cache immediately
+                                            cachedAuthToken = newAccessToken
+                                            cachedRefreshToken = newRefreshToken
+                                            // If save failed, restore previous state
+                                            if (dataStoreManager.getCachedAuthToken() != newAccessToken) {
+                                                dataStoreManager.saveAuthToken(tempToken ?: "")
+                                                dataStoreManager.saveRefreshToken(tempRefresh ?: "")
+                                                throw Exception("Failed to persist tokens atomically")
+                                            }
                                         }
                                         newAccessTokenToRetry = newAccessToken
                                         Log.d("NetworkModule", "Token refresh successful")
                                     } else {
                                         Log.w("NetworkModule", "Token refresh response missing tokens")
+                                        refreshFailed = true
                                     }
                                 } else {
                                     val code = refreshResponse.code
                                     val errorBody = refreshResponse.body?.string()
                                     Log.w("NetworkModule", "Token refresh attempt returned HTTP $code: $errorBody")
+                                    refreshFailed = true
                                 }
                             } catch (e: Exception) {
                                 Log.e("NetworkModule", "Token refresh network error: ${e.message}", e)
+                                refreshFailed = true
                             }
                         } else {
                             Log.w("NetworkModule", "No refresh token available for token refresh")
+                            refreshFailed = true
                         }
                     }
                 }
@@ -166,6 +183,8 @@ object NetworkModule {
                     runBlocking {
                         dataStoreManager.saveAuthToken("")
                         dataStoreManager.saveRefreshToken("")
+                        cachedAuthToken = null
+                        cachedRefreshToken = null
                     }
                 }
             }

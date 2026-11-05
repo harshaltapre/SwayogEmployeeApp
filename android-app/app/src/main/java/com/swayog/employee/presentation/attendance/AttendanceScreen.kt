@@ -103,6 +103,9 @@ fun AttendanceScreen(
     var showEnrollmentBlocker by remember { mutableStateOf(false) }
     var showFullScreenMap by remember { mutableStateOf(false) }
     var showLocationUnavailableDialog by remember { mutableStateOf(false) }
+    var showLocationPermissionDeniedDialog by remember { mutableStateOf(false) }
+    var showLocationInaccurateDialog by remember { mutableStateOf(false) }
+    var showCameraPermissionDeniedDialog by remember { mutableStateOf(false) }
     var isSatelliteView by remember { mutableStateOf(true) }
     var currentLatitude by remember { mutableStateOf<Double?>(null) }
     var currentLongitude by remember { mutableStateOf<Double?>(null) }
@@ -250,38 +253,36 @@ fun AttendanceScreen(
                 fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
                     .addOnSuccessListener { freshLoc: Location? ->
                         if (freshLoc != null) {
-                            // Fresh GPS fix obtained — proceed with accurate location
-                            currentLatitude = freshLoc.latitude
-                            currentLongitude = freshLoc.longitude
-                            showCamera = true
-                        } else {
-                            // Fresh fix failed; try the last known location as a quick fallback
-                            fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
-                                if (lastLoc != null) {
-                                    currentLatitude = lastLoc.latitude
-                                    currentLongitude = lastLoc.longitude
-                                    showCamera = true
-                                } else {
-                                    // No location available at all — block check-in
-                                    showLocationUnavailableDialog = true
-                                }
-                            }.addOnFailureListener {
-                                // Last location also failed — block check-in
-                                showLocationUnavailableDialog = true
+                            // Validate location accuracy before proceeding
+                            if (freshLoc.accuracy <= 200) { // 200m accuracy threshold
+                                currentLatitude = freshLoc.latitude
+                                currentLongitude = freshLoc.longitude
+                                showCamera = true
+                            } else {
+                                showLocationInaccurateDialog = true
                             }
+                        } else {
+                            // Fresh fix failed; do NOT fall back to stale last location
+                            showLocationUnavailableDialog = true
                         }
                     }
                     .addOnFailureListener {
-                        // getCurrentLocation failed; try last known location
-                        try {
-                            fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
-                                if (lastLoc != null) {
-                                    currentLatitude = lastLoc.latitude
-                                    currentLongitude = lastLoc.longitude
-                                    showCamera = true
-                                } else {
-                                    showLocationUnavailableDialog = true
-                                }
+                        // getCurrentLocation failed - block check-in
+                        showLocationUnavailableDialog = true
+                    }
+            } catch (e: SecurityException) {
+                // GPS disabled or permission permanently denied
+                showLocationPermissionDeniedDialog = true
+            }
+        } else {
+            // Location permission denied - show explanation
+            if (!fineGranted && !coarseGranted) {
+                showLocationPermissionDeniedDialog = true
+            } else if (!cameraGranted) {
+                showCameraPermissionDeniedDialog = true
+            }
+        }
+    }
                             }.addOnFailureListener {
                                 showLocationUnavailableDialog = true
                             }

@@ -338,6 +338,74 @@ class AttendanceAlarmManager(private val context: Context) {
         }
     }
 
+    fun snoozeAlarm(alarmType: String, label: String): Boolean {
+        val requestCode = when (alarmType) {
+            "PERSONAL" -> REQ_SNOOZE
+            "REMINDER_1" -> REQ_SNOOZE + 1
+            "REMINDER_2" -> REQ_SNOOZE + 2
+            else -> return false
+        }
+
+        val snoozeMs = SNOOZE_MINUTES * 60 * 1000L
+        val triggerTimeMs = System.currentTimeMillis() + snoozeMs
+
+        val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
+            action = ACTION_ATTENDANCE_ALARM
+            putExtra(EXTRA_ALARM_TYPE, alarmType)
+            putExtra(EXTRA_ALARM_LABEL, "$label (Snoozed)")
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerTimeMs,
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerTimeMs,
+                        pendingIntent
+                    )
+                }
+            } else {
+                alarmManager.set(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerTimeMs,
+                    pendingIntent
+                )
+            }
+            android.util.Log.d("AttendanceAlarm", "Snoozed $alarmType for ${SNOOZE_MINUTES} minutes")
+            return true
+        } catch (e: SecurityException) {
+            android.util.Log.e("AttendanceAlarm", "SecurityException scheduling snooze: ${e.message}")
+            return false
+        }
+    }
+
+    fun areNotificationsEnabled(): Boolean {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            notificationManager.areNotificationsEnabled()
+        } else {
+            true
+        }
+    }
+
+    fun getReportingTimeLabel(): String {
+        val reportingTime = prefs.getString(KEY_REPORTING_TIME, DEFAULT_REPORTING_TIME) ?: DEFAULT_REPORTING_TIME
+        return formatAmPm(reportingTime)
+    }
+
     fun rescheduleSingleAlarm(requestCode: Int, setting: EmployeeAlarmSetting): Boolean {
         val (timeStr, alarmType, label) = when (requestCode) {
             REQ_PERSONAL -> Triple(setting.personalAlarmTime, "PERSONAL", "Morning Attendance Alarm")
