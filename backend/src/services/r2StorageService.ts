@@ -49,6 +49,16 @@ const ALLOWED_MIME_TYPES = [
   "application/vnd.android.package-archive",
   "application/octet-stream",
   "application/json",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/ogg",
+  "audio/mp4",
+  "audio/m4a",
+  "audio/aac",
+  "audio/x-m4a",
 ];
 
 // Maximum file size (10MB for images, 200MB for videos, 250MB for release APKs/manifests)

@@ -1787,3 +1787,45 @@ enum OnboardingStage {
   APPROVED_CONVERTED
   REJECTED_CANCELLED
 }
+
+// ── Smart Attendance Alarm models ────────────────────────────────────────────
+
+model EmployeeAlarmSetting {
+  id                String   @id @default(uuid())
+  employeeId        String   @unique
+  personalAlarmTime String   @default("09:30")
+  reminder1Time     String?
+  reminder2Time     String?
+  repeatDays        Int[]    @default([1, 2, 3, 4, 5, 6])
+  soundUri          String?
+  vibrationEnabled  Boolean  @default(true)
+  snoozeEnabled     Boolean  @default(true)
+  enabled           Boolean  @default(true)
+  alarms            Json?
+  updatedAt         DateTime @updatedAt
+}
+
+model CompanyAlarmPolicy {
+  id                    String   @id @default("default")
+  prepReminderTime      String   @default("10:00")
+  prepReminderEnabled   Boolean  @default(true)
+  finalReminderTime     String   @default("10:15")
+  finalReminderEnabled  Boolean  @default(true)
+  personalDefaultTime   String   @default("09:30")
+  defaultSoundName      String?
+  defaultSoundKey       String?
+  policyNote            String?
+  updatedAt             DateTime @updatedAt
+}
+
+model CompanyRingtone {
+  id         String   @id @default(uuid())
+  name       String
+  objectKey  String
+  mimeType   String?
+  fileSize   Int?
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}

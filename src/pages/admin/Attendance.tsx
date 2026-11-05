@@ -66,6 +66,7 @@ import {
   X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AttendanceAlarmPolicyCard } from "@/components/admin/AttendanceAlarmPolicyCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -1524,6 +1525,9 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                 </div>
               </CardContent>
             </Card>
+
+            {/* Company attendance alarm policy + ringtone management */}
+            <AttendanceAlarmPolicyCard />
           </div>
         )}
 

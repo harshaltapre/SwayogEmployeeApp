@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import { UserRole } from "@prisma/client";
 import { authenticateAccessToken, authorizeRoles } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/async-handler.js";
@@ -10,8 +11,10 @@ import {
   calculateCosineSimilarity,
   getKolkataTimeInfo,
 } from "../services/attendancePolicyEngine.js";
+import { uploadToR2, isR2Configured } from "../services/r2StorageService.js";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 
 
 
@@ -30,6 +33,18 @@ const employeeAuth = [
 ];
 const adminAuth = [authenticateAccessToken, authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.DEPARTMENT_HEAD, UserRole.TEAM_LEAD, UserRole.SUB_ADMIN)];
 const superAdminAuth = [authenticateAccessToken, authorizeRoles(UserRole.SUPER_ADMIN)];
+
+// In-memory upload for company alarm ringtones (audio only, max 20MB)
+const ringtoneUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = file.mimetype.startsWith("audio/") ||
+      file.mimetype === "application/octet-stream" ||
+      /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.originalname || "");
+    cb(null, ok);
+  },
+});
 
 const PHOTOS_FILE_PATH = path.join(process.cwd(), "data", "profile-photos.json");
 
@@ -169,6 +184,79 @@ router.get("/alarm-settings", authenticateAccessToken, asyncHandler(async (req, 
 router.post("/alarm-settings", authenticateAccessToken, asyncHandler(async (req, res) => {
   const updated = await AttendanceService.saveAlarmSettingsAsync(req.auth!.userId, req.body);
   res.json({ success: true, setting: updated });
+}));
+
+// ── Company Alarm Policy & Ringtones ─────────────────────────────────────────
+
+// Employee-facing: merged company alarm policy + published ringtones
+router.get("/alarm-policy", authenticateAccessToken, asyncHandler(async (req, res) => {
+  const [policy, ringtones] = await Promise.all([
+    AttendanceService.getCompanyAlarmPolicyAsync(),
+    AttendanceService.listCompanyRingtonesAsync(),
+  ]);
+  res.json({ policy, ringtones });
+}));
+
+// Admin: update company alarm policy (reminder times/toggles, default sound, note)
+router.post("/admin/alarm-policy", adminAuth, asyncHandler(async (req, res) => {
+  const ok = await AttendanceService.saveCompanyAlarmPolicyAsync(req.body || {});
+  if (!ok) {
+    res.status(500).json({ error: "Failed to save alarm policy" });
+    return;
+  }
+  const policy = await AttendanceService.getCompanyAlarmPolicyAsync();
+  res.json({ success: true, policy });
+}));
+
+// Admin: list ringtones (with fresh URLs)
+router.get("/admin/ringtones", adminAuth, asyncHandler(async (req, res) => {
+  const ringtones = await AttendanceService.listCompanyRingtonesAsync();
+  res.json({ ringtones });
+}));
+
+// Admin: upload a company ringtone to R2
+router.post("/admin/ringtones", adminAuth, ringtoneUpload.single("file"), asyncHandler(async (req, res) => {
+  if (!isR2Configured()) {
+    res.status(503).json({ error: "File storage is not configured on the server" });
+    return;
+  }
+  const file = req.file;
+  if (!file) {
+    res.status(400).json({ error: "No audio file uploaded" });
+    return;
+  }
+  const ext = (file.originalname.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+  const objectKey = `ringtones/${crypto.randomUUID()}.${ext}`;
+  const name = (req.body?.name || file.originalname || "Company Ringtone").toString().slice(0, 80);
+
+  const result = await uploadToR2(file.buffer, objectKey, file.mimetype, file.originalname);
+  const row = await AttendanceService.createCompanyRingtoneAsync({
+    name,
+    objectKey: result.objectKey,
+    mimeType: result.mimeType,
+    fileSize: result.fileSize,
+    uploadedBy: req.auth!.userId,
+  });
+  res.json({
+    success: true,
+    ringtone: {
+      id: row.id,
+      name: row.name,
+      objectKey: row.objectKey,
+      mimeType: row.mimeType,
+      url: result.url,
+    },
+  });
+}));
+
+// Admin: delete a company ringtone (removes DB row + R2 object)
+router.delete("/admin/ringtones/:id", adminAuth, asyncHandler(async (req, res) => {
+  const ok = await AttendanceService.deleteCompanyRingtoneAsync(req.params.id);
+  if (!ok) {
+    res.status(404).json({ error: "Ringtone not found" });
+    return;
+  }
+  res.json({ success: true });
 }));
 
 // ── Late Allowance Summary ─────────────────────────────────────────────────

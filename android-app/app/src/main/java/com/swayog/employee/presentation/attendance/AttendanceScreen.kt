@@ -481,7 +481,7 @@ fun AttendanceScreen(
                     }
                     if (onNavigateToAlarmSettings != null) {
                         IconButton(onClick = onNavigateToAlarmSettings) {
-                            Icon(Icons.Default.Notifications, contentDescription = "Alarm Settings")
+                            Icon(Icons.Default.Alarm, contentDescription = "Attendance Alarm")
                         }
                     }
                 }

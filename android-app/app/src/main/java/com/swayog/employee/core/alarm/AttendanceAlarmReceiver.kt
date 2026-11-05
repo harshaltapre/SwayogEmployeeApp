@@ -6,165 +6,199 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.google.gson.Gson
+import com.swayog.employee.data.model.EmployeeAlarm
 import com.swayog.employee.presentation.MainActivity
 
 class AttendanceAlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
-        android.util.Log.d("AttendanceAlarm", "Broadcast received with action: $action")
+        android.util.Log.d("AttendanceAlarm", "Broadcast received: $action")
 
         val alarmManager = AttendanceAlarmManager(context)
 
         when (action) {
             AttendanceAlarmManager.ACTION_ATTENDANCE_ALARM -> {
-                val settings = alarmManager.getLocalSettings()
-                if (!settings.enabled) {
-                    alarmManager.cancelAllAlarms()
-                    return
-                }
-                val alarmType = intent.getStringExtra(AttendanceAlarmManager.EXTRA_ALARM_TYPE) ?: "PERSONAL"
-                val label = intent.getStringExtra(AttendanceAlarmManager.EXTRA_ALARM_LABEL) ?: "Attendance Reminder"
-                showAlarmNotification(context, alarmManager, settings, alarmType, label)
-
-                // Reschedule only the alarm that fired, not all alarms
-                val requestCode = when (alarmType) {
-                    "PERSONAL" -> AttendanceAlarmManager.REQ_PERSONAL
-                    "REMINDER_1" -> AttendanceAlarmManager.REQ_REMINDER_1
-                    "REMINDER_2" -> AttendanceAlarmManager.REQ_REMINDER_2
-                    else -> AttendanceAlarmManager.REQ_PERSONAL
-                }
-                alarmManager.rescheduleSingleAlarm(requestCode, settings)
-            }
-            AttendanceAlarmManager.ACTION_SNOOZE_ALARM -> {
-                val alarmType = intent.getStringExtra(AttendanceAlarmManager.EXTRA_ALARM_TYPE) ?: "PERSONAL"
-                val label = intent.getStringExtra(AttendanceAlarmManager.EXTRA_ALARM_LABEL) ?: "Attendance Reminder"
-                val notificationId = intent.getIntExtra(
-                    AttendanceAlarmManager.EXTRA_NOTIFICATION_ID,
-                    notificationIdFor(alarmType)
+                val alarmJson = intent.getStringExtra(AttendanceAlarmManager.EXTRA_ALARM_JSON)
+                val companyType = intent.getStringExtra(AttendanceAlarmManager.EXTRA_COMPANY_TYPE)
+                val isSnooze = intent.hasExtra(AttendanceAlarmManager.EXTRA_SNOOZE_REMAINING)
+                val snoozeRemainingExtra = intent.getIntExtra(
+                    AttendanceAlarmManager.EXTRA_SNOOZE_REMAINING,
+                    AttendanceAlarmManager.DEFAULT_SNOOZE_COUNT
                 )
-                (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                    .cancel(notificationId)
-                if (!alarmManager.snoozeAlarm(alarmType, label)) {
-                    android.util.Log.w("AttendanceAlarm", "Snooze could not be scheduled (exact alarm permission denied?)")
+
+                if (alarmJson != null) {
+                    handlePersonalAlarm(context, alarmManager, alarmJson, isSnooze, snoozeRemainingExtra)
+                } else if (companyType != null) {
+                    handleCompanyReminder(context, alarmManager, companyType, isSnooze, snoozeRemainingExtra)
                 }
+            }
+            AttendanceAlarmManager.ACTION_SNOOZE_ALARM,
+            AttendanceAlarmManager.ACTION_DISMISS_ALARM -> {
+                // Legacy actions kept for compatibility; ringing is owned by the service.
             }
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                android.util.Log.i("AttendanceAlarm", "Device reboot / time change event: Rescheduling attendance alarms")
+                android.util.Log.i("AttendanceAlarm", "Device event: rescheduling attendance alarms")
                 alarmManager.rescheduleFromPreferences()
             }
         }
     }
 
-    private fun showAlarmNotification(
+    private fun handlePersonalAlarm(
         context: Context,
         alarmManager: AttendanceAlarmManager,
-        settings: com.swayog.employee.data.model.EmployeeAlarmSetting,
-        alarmType: String,
-        label: String
+        alarmJson: String,
+        isSnooze: Boolean,
+        snoozeRemainingExtra: Int
     ) {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = AttendanceAlarmManager.CHANNEL_ID
-        val reportingTime = alarmManager.getReportingTimeLabel()
+        val alarm = try {
+            Gson().fromJson(alarmJson, EmployeeAlarm::class.java)
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceAlarm", "Bad alarm payload", e)
+            return
+        }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "Attendance & Shift Reminders",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Daily shift reporting reminders and smart attendance alarms"
-                enableVibration(settings.vibrationEnabled)
-                if (settings.vibrationEnabled) {
-                    vibrationPattern = VIBRATION_PATTERN
-                }
+        // Re-arm the repeating alarm for its next occurrence (skip for snoozes —
+        // the repeat was already scheduled when the original fired).
+        if (!isSnooze) {
+            val stored = alarmManager.getAlarms().firstOrNull { it.id == alarm.id }
+            if (stored != null && stored.enabled) {
+                alarmManager.rescheduleNext(stored)
+            } else {
+                // Alarm was edited/deleted while pending; drop this firing.
+                android.util.Log.w("AttendanceAlarm", "Alarm ${alarm.id} no longer active; ignoring fire")
+                return
             }
-            notificationManager.createNotificationChannel(channel)
         }
 
-        val launchIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("NAVIGATE_TO", "attendance")
+        ringAlarm(
+            context = context,
+            alarmManager = alarmManager,
+            alarmJson = alarmJson,
+            companyType = null,
+            label = alarm.label.ifBlank { "Attendance Alarm" },
+            time = AttendanceAlarmManager.formatAmPm(alarm.time),
+            vibration = alarm.vibrationEnabled,
+            snoozeMinutes = alarm.snoozeMinutes,
+            snoozeRemaining = if (isSnooze) snoozeRemainingExtra else alarm.snoozeCount,
+            notificationId = alarm.requestCode
+        )
+    }
+
+    private fun handleCompanyReminder(
+        context: Context,
+        alarmManager: AttendanceAlarmManager,
+        companyType: String,
+        isSnooze: Boolean,
+        snoozeRemainingExtra: Int
+    ) {
+        if (!isSnooze) {
+            alarmManager.rescheduleCompanyReminder(companyType)
         }
 
-        val contentIntent = PendingIntent.getActivity(
-            context,
-            1001,
-            launchIntent,
+        val policy = alarmManager.getPolicy()
+        val (label, time) = when (companyType) {
+            "PREP" -> "Attendance Preparation" to AttendanceAlarmManager.formatAmPm(policy.prepReminderTime)
+            "FINAL" -> "Final Reporting Reminder" to AttendanceAlarmManager.formatAmPm(policy.finalReminderTime)
+            else -> "Attendance Reminder" to ""
+        }
+
+        ringAlarm(
+            context = context,
+            alarmManager = alarmManager,
+            alarmJson = null,
+            companyType = companyType,
+            label = label,
+            time = time,
+            vibration = true,
+            snoozeMinutes = AttendanceAlarmManager.DEFAULT_SNOOZE_MINUTES,
+            snoozeRemaining = if (isSnooze) snoozeRemainingExtra else 0, // company reminders: no snooze
+            notificationId = when (companyType) {
+                "PREP" -> AttendanceAlarmManager.REQ_COMPANY_PREP
+                "FINAL" -> AttendanceAlarmManager.REQ_COMPANY_FINAL
+                else -> 0
+            }
+        )
+    }
+
+    private fun ringAlarm(
+        context: Context,
+        alarmManager: AttendanceAlarmManager,
+        alarmJson: String?,
+        companyType: String?,
+        label: String,
+        time: String,
+        vibration: Boolean,
+        snoozeMinutes: Int,
+        snoozeRemaining: Int,
+        notificationId: Int
+    ) {
+        // Fallback heads-up notification in case the full-screen intent is blocked.
+        postFallbackNotification(context, label, time, notificationId)
+
+        val serviceIntent = Intent(context, AlarmRingingService::class.java).apply {
+            putExtra(AttendanceAlarmManager.EXTRA_ALARM_JSON, alarmJson)
+            putExtra(AttendanceAlarmManager.EXTRA_COMPANY_TYPE, companyType)
+            putExtra(AlarmRingingService.EXTRA_LABEL, label)
+            putExtra(AlarmRingingService.EXTRA_TIME, time)
+            putExtra(AlarmRingingService.EXTRA_VIBRATION, vibration)
+            putExtra(AlarmRingingService.EXTRA_SNOOZE_MINUTES, snoozeMinutes)
+            putExtra(AttendanceAlarmManager.EXTRA_SNOOZE_REMAINING, snoozeRemaining)
+            putExtra(AttendanceAlarmManager.EXTRA_NOTIFICATION_ID, notificationId)
+        }
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AttendanceAlarm", "Failed to start ringing service", e)
+        }
+
+        if (!alarmManager.areNotificationsEnabled()) {
+            android.util.Log.w("AttendanceAlarm", "Notifications are blocked; alarm still rings via foreground service")
+        }
+    }
+
+    /** Minimal ongoing notification used when the full-screen intent cannot display. */
+    private fun postFallbackNotification(context: Context, label: String, time: String, id: Int) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    AttendanceAlarmManager.CHANNEL_ID,
+                    "Attendance Alarms",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Attendance alarm reminders"
+                }
+            )
+        }
+        val launch = PendingIntent.getActivity(
+            context, id,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("NAVIGATE_TO", "alarm_settings")
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
-        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-
-        val contentText = when (alarmType) {
-            "PERSONAL" -> "Time to get ready! Official reporting time is $reportingTime."
-            "REMINDER_1" -> "Prepare to reach the office before the $reportingTime reporting cutoff."
-            "REMINDER_2" -> "Final reminder! Check in before $reportingTime to stay on time."
-            else -> "Company reporting time is $reportingTime IST. Please check in now."
-        }
-
-        val notificationId = notificationIdFor(alarmType)
-
-        val builder = NotificationCompat.Builder(context, channelId)
+        val notification = NotificationCompat.Builder(context, AttendanceAlarmManager.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle("⏰ $label")
-            .setContentText(contentText)
+            .setContentText(if (time.isNotBlank()) "Alarm for $time" else "Time to get ready")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
-            .setSound(soundUri)
-            .setContentIntent(contentIntent)
-            .addAction(android.R.drawable.ic_menu_agenda, "Mark Attendance", contentIntent)
-
-        if (settings.vibrationEnabled) {
-            builder.setVibrate(VIBRATION_PATTERN)
-        }
-
-        if (settings.snoozeEnabled) {
-            val snoozeIntent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
-                action = AttendanceAlarmManager.ACTION_SNOOZE_ALARM
-                setPackage(context.packageName)
-                putExtra(AttendanceAlarmManager.EXTRA_ALARM_TYPE, alarmType)
-                putExtra(AttendanceAlarmManager.EXTRA_ALARM_LABEL, label)
-                putExtra(AttendanceAlarmManager.EXTRA_NOTIFICATION_ID, notificationId)
-            }
-            val snoozePendingIntent = PendingIntent.getBroadcast(
-                context,
-                AttendanceAlarmManager.REQ_SNOOZE,
-                snoozeIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            builder.addAction(
-                android.R.drawable.ic_lock_idle_alarm,
-                "Snooze ${AttendanceAlarmManager.SNOOZE_MINUTES} min",
-                snoozePendingIntent
-            )
-        }
-
-        notificationManager.notify(notificationId, builder.build())
-
-        if (!alarmManager.areNotificationsEnabled()) {
-            android.util.Log.w(
-                "AttendanceAlarm",
-                "Alarm fired while notifications are blocked; the reminder was not visible."
-            )
-        }
-    }
-
-    private fun notificationIdFor(alarmType: String): Int = when (alarmType) {
-        "PERSONAL" -> 2001
-        "REMINDER_1" -> 2002
-        "REMINDER_2" -> 2003
-        else -> 2000
-    }
-
-    companion object {
-        private val VIBRATION_PATTERN = longArrayOf(0, 500, 250, 500)
+            .setContentIntent(launch)
+            .build()
+        nm.notify(id, notification)
     }
 }

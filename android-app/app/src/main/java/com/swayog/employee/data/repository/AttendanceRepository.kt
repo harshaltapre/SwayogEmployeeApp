@@ -646,13 +646,26 @@ class AttendanceRepository @Inject constructor(
         }
     }
 
-    suspend fun saveAlarmSettings(settings: EmployeeAlarmSetting): Result<SaveAlarmSettingsResponse> {
+    suspend fun saveAlarmSettings(settings: com.swayog.employee.data.model.SaveAlarmSettingsRequest): Result<SaveAlarmSettingsResponse> {
         return try {
             val response = apiService.saveAlarmSettings(settings)
             if (response.isSuccessful && response.body() != null) {
                 Result.success(response.body()!!)
             } else {
                 Result.failure(Exception("Failed to save alarm settings: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAlarmPolicy(): Result<com.swayog.employee.data.model.CompanyAlarmPolicyResponse> {
+        return try {
+            val response = apiService.getAlarmPolicy()
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.failure(Exception("Failed to fetch alarm policy: ${response.code()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

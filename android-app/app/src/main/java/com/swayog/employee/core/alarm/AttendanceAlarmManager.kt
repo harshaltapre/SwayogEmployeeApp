@@ -7,45 +7,62 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
-import com.swayog.employee.data.model.EmployeeAlarmSetting
+import android.util.Log
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import com.swayog.employee.data.model.CompanyAlarmPolicy
+import com.swayog.employee.data.model.EmployeeAlarm
 import java.util.Calendar
+import java.util.UUID
 
+/**
+ * Multi-alarm engine. Personal alarms are stored as a JSON list; each entry owns a
+ * stable PendingIntent request code so scheduling one alarm never touches another.
+ * Company reminders (prep/final) are scheduled from the cached company policy and
+ * are not employee-editable.
+ */
 class AttendanceAlarmManager(private val context: Context) {
 
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val gson = Gson()
 
     companion object {
         const val PREFS_NAME = "swayog_attendance_alarms"
         const val CHANNEL_ID = "attendance_alarms_channel"
+        const val RINGING_CHANNEL_ID = "attendance_alarm_ringing_channel"
         const val ACTION_ATTENDANCE_ALARM = "com.swayog.employee.ACTION_ATTENDANCE_ALARM"
         const val ACTION_SNOOZE_ALARM = "com.swayog.employee.ACTION_SNOOZE_ALARM"
-        const val EXTRA_ALARM_TYPE = "EXTRA_ALARM_TYPE"
-        const val EXTRA_ALARM_LABEL = "EXTRA_ALARM_LABEL"
+        const val ACTION_DISMISS_ALARM = "com.swayog.employee.ACTION_DISMISS_ALARM"
+        const val EXTRA_ALARM_JSON = "EXTRA_ALARM_JSON"
+        const val EXTRA_ALARM_ID = "EXTRA_ALARM_ID"
+        const val EXTRA_COMPANY_TYPE = "EXTRA_COMPANY_TYPE" // "PREP" | "FINAL"
+        const val EXTRA_SNOOZE_REMAINING = "EXTRA_SNOOZE_REMAINING"
         const val EXTRA_NOTIFICATION_ID = "EXTRA_NOTIFICATION_ID"
 
-        const val REQ_PERSONAL = 3001
-        const val REQ_REMINDER_1 = 3002
-        const val REQ_REMINDER_2 = 3003
-        const val REQ_SNOOZE = 3004
+        const val REQ_COMPANY_PREP = 4001
+        const val REQ_COMPANY_FINAL = 4002
+        const val SNOOZE_REQ_BASE = 50000
+        const val MAX_ALARMS = 20
 
-        const val KEY_ENABLED = "alarm_enabled"
-        const val KEY_PERSONAL_TIME = "personal_alarm_time"
-        const val KEY_REMINDER_1_TIME = "reminder_1_time"
-        const val KEY_REMINDER_2_TIME = "reminder_2_time"
-        const val KEY_REPEAT_DAYS = "repeat_days"
-        const val KEY_VIBRATION = "vibration_enabled"
-        const val KEY_SNOOZE = "snooze_enabled"
-        const val KEY_REPORTING_TIME = "company_reporting_time"
+        private const val KEY_ALARMS_JSON = "alarm_entries_v2"
+        private const val KEY_POLICY_JSON = "company_alarm_policy"
+        private const val KEY_REQ_COUNTER = "alarm_req_counter"
+        private const val KEY_MIGRATED = "alarms_migrated_v2"
 
-        // A blank stored reminder means the employee switched that reminder off.
-        const val REMINDER_OFF = ""
-        const val DEFAULT_PERSONAL_TIME = "09:30"
-        const val DEFAULT_REMINDER_1_TIME = "10:00"
-        const val DEFAULT_REMINDER_2_TIME = "10:15"
+        // Legacy keys (pre multi-alarm model) — read once for migration.
+        private const val LEGACY_KEY_ENABLED = "alarm_enabled"
+        private const val LEGACY_KEY_PERSONAL_TIME = "personal_alarm_time"
+        private const val LEGACY_KEY_REPEAT_DAYS = "repeat_days"
+        private const val LEGACY_KEY_VIBRATION = "vibration_enabled"
+        private const val LEGACY_KEY_SNOOZE = "snooze_enabled"
+
         const val DEFAULT_REPORTING_TIME = "10:30"
+        const val DEFAULT_TIMEZONE = "Asia/Kolkata"
         val DEFAULT_REPEAT_DAYS = listOf(1, 2, 3, 4, 5, 6)
-        const val SNOOZE_MINUTES = 5
+        const val DEFAULT_SNOOZE_MINUTES = 5
+        const val DEFAULT_SNOOZE_COUNT = 3
+        const val MAX_SNOOZE_MINUTES = 30
 
         /** Returns a zero-padded 24-hour HH:MM string, or null when the value is not a valid time. */
         fun normalizeTime(raw: String?): String? {
@@ -66,7 +83,129 @@ class AttendanceAlarmManager(private val context: Context) {
             val suffix = if (parts[0] < 12) "AM" else "PM"
             return String.format("%d:%02d %s", hour12, parts[1], suffix)
         }
+
+        fun defaultPolicy(): CompanyAlarmPolicy = CompanyAlarmPolicy()
     }
+
+    // ── Alarm storage ──────────────────────────────────────────────────────────
+
+    fun getAlarms(): List<EmployeeAlarm> {
+        migrateLegacyIfNeeded()
+        val json = prefs.getString(KEY_ALARMS_JSON, null) ?: return emptyList()
+        return try {
+            val type = object : TypeToken<List<EmployeeAlarm>>() {}.type
+            (gson.fromJson<List<EmployeeAlarm>>(json, type) ?: emptyList())
+                .sortedBy { it.time }
+        } catch (e: Exception) {
+            Log.e("AttendanceAlarm", "Failed to parse alarms JSON", e)
+            emptyList()
+        }
+    }
+
+    private fun persistAlarms(alarms: List<EmployeeAlarm>) {
+        prefs.edit().putString(KEY_ALARMS_JSON, gson.toJson(alarms)).apply()
+    }
+
+    /** Converts the legacy single-setting model into the new list on first run. */
+    private fun migrateLegacyIfNeeded() {
+        if (prefs.getBoolean(KEY_MIGRATED, false)) return
+        prefs.edit().putBoolean(KEY_MIGRATED, true).apply()
+        if (prefs.contains(KEY_ALARMS_JSON)) return
+
+        val legacyEnabled = prefs.getBoolean(LEGACY_KEY_ENABLED, true)
+        val legacyTime = normalizeTime(prefs.getString(LEGACY_KEY_PERSONAL_TIME, "09:30")) ?: "09:30"
+        val legacyDays = prefs.getString(LEGACY_KEY_REPEAT_DAYS, null)
+            ?.split(",")
+            ?.mapNotNull { it.trim().toIntOrNull() }
+            ?.filter { it in 0..6 }
+            ?.ifEmpty { DEFAULT_REPEAT_DAYS }
+            ?: DEFAULT_REPEAT_DAYS
+
+        val migrated = mutableListOf(
+            EmployeeAlarm(
+                id = UUID.randomUUID().toString(),
+                time = legacyTime,
+                label = "Personal Morning Alarm",
+                repeatDays = legacyDays,
+                enabled = legacyEnabled,
+                vibrationEnabled = prefs.getBoolean(LEGACY_KEY_VIBRATION, true),
+                snoozeEnabled = prefs.getBoolean(LEGACY_KEY_SNOOZE, true),
+                requestCode = nextRequestCode()
+            )
+        )
+        if (!prefs.contains(LEGACY_KEY_PERSONAL_TIME)) {
+            migrated.add(
+                EmployeeAlarm(
+                    id = UUID.randomUUID().toString(),
+                    time = "10:00",
+                    label = "Attendance Preparation",
+                    repeatDays = DEFAULT_REPEAT_DAYS,
+                    requestCode = nextRequestCode()
+                )
+            )
+        }
+        persistAlarms(migrated)
+    }
+
+    private fun nextRequestCode(): Int {
+        val next = prefs.getInt(KEY_REQ_COUNTER, 1000) + 1
+        prefs.edit().putInt(KEY_REQ_COUNTER, next).apply()
+        return next
+    }
+
+    fun upsertAlarm(alarm: EmployeeAlarm): Boolean {
+        val alarms = getAlarms().toMutableList()
+        val normalized = alarm.copy(
+            time = normalizeTime(alarm.time) ?: return false,
+            repeatDays = alarm.repeatDays.filter { it in 0..6 }.distinct(),
+            snoozeMinutes = alarm.snoozeMinutes.coerceIn(1, MAX_SNOOZE_MINUTES),
+            snoozeCount = alarm.snoozeCount.coerceIn(0, 10),
+            requestCode = if (alarm.requestCode > 0) alarm.requestCode else nextRequestCode()
+        )
+        val idx = alarms.indexOfFirst { it.id == normalized.id }
+        if (idx >= 0) alarms[idx] = normalized else alarms.add(normalized)
+        if (alarms.size > MAX_ALARMS) return false
+        persistAlarms(alarms)
+        return if (normalized.enabled) scheduleAlarm(normalized) else cancelAlarm(normalized)
+    }
+
+    fun deleteAlarm(id: String): Boolean {
+        val alarms = getAlarms().toMutableList()
+        val idx = alarms.indexOfFirst { it.id == id }
+        if (idx < 0) return false
+        val removed = alarms.removeAt(idx)
+        persistAlarms(alarms)
+        cancelAlarm(removed)
+        return true
+    }
+
+    fun setAlarmEnabled(id: String, enabled: Boolean): Boolean {
+        val alarms = getAlarms().toMutableList()
+        val idx = alarms.indexOfFirst { it.id == id }
+        if (idx < 0) return false
+        val updated = alarms[idx].copy(enabled = enabled)
+        alarms[idx] = updated
+        persistAlarms(alarms)
+        return if (enabled) scheduleAlarm(updated) else cancelAlarm(updated)
+    }
+
+    // ── Company Policy ────────────────────────────────────────────────────────
+
+    fun getPolicy(): CompanyAlarmPolicy {
+        val json = prefs.getString(KEY_POLICY_JSON, null) ?: return CompanyAlarmPolicy()
+        return try {
+            gson.fromJson(json, CompanyAlarmPolicy::class.java) ?: CompanyAlarmPolicy()
+        } catch (e: Exception) {
+            Log.e("AttendanceAlarm", "Failed to parse policy JSON", e)
+            CompanyAlarmPolicy()
+        }
+    }
+
+    fun savePolicy(policy: CompanyAlarmPolicy) {
+        prefs.edit().putString(KEY_POLICY_JSON, gson.toJson(policy)).apply()
+    }
+
+    // ── Scheduling & AlarmManager Interop ──────────────────────────────────────
 
     fun canScheduleExactAlarms(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -76,156 +215,60 @@ class AttendanceAlarmManager(private val context: Context) {
         }
     }
 
-    fun saveAndScheduleAlarms(setting: EmployeeAlarmSetting): Boolean {
-        // Save to local shared preferences
-        prefs.edit().apply {
-            putBoolean(KEY_ENABLED, setting.enabled)
-            putString(KEY_PERSONAL_TIME, setting.personalAlarmTime)
-            putString(KEY_REMINDER_1_TIME, setting.reminder1Time ?: REMINDER_OFF)
-            putString(KEY_REMINDER_2_TIME, setting.reminder2Time ?: REMINDER_OFF)
-            putString(KEY_REPEAT_DAYS, setting.repeatDays.joinToString(","))
-            putBoolean(KEY_VIBRATION, setting.vibrationEnabled)
-            putBoolean(KEY_SNOOZE, setting.snoozeEnabled)
-            apply()
-        }
-
-        if (!setting.enabled) {
-            cancelAllAlarms()
-            return true
-        }
-
-        return scheduleAllAlarms(setting)
+    fun areNotificationsEnabled(): Boolean {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return nm.areNotificationsEnabled()
     }
 
-    fun rescheduleFromPreferences(): Boolean {
-        val setting = getLocalSettings()
-        if (!setting.enabled) {
-            cancelAllAlarms()
-            return true
-        }
-        return scheduleAllAlarms(setting)
-    }
-
-    fun scheduleAllAlarms(setting: EmployeeAlarmSetting): Boolean {
-        cancelAllAlarms()
-
-        if (setting.repeatDays.isEmpty()) return false
-
-        val personalScheduled = scheduleSingleAlarm(
-            timeStr = setting.personalAlarmTime,
-            repeatDays = setting.repeatDays,
-            alarmType = "PERSONAL",
-            label = "Morning Attendance Alarm",
-            requestCode = REQ_PERSONAL
-        )
-
-        val reminder1Scheduled = if (!setting.reminder1Time.isNullOrBlank()) {
-            scheduleSingleAlarm(
-                timeStr = setting.reminder1Time,
-                repeatDays = setting.repeatDays,
-                alarmType = "REMINDER_1",
-                label = "Reporting Prep Reminder",
-                requestCode = REQ_REMINDER_1
-            )
-        } else {
-            true
-        }
-
-        val reminder2Scheduled = if (!setting.reminder2Time.isNullOrBlank()) {
-            scheduleSingleAlarm(
-                timeStr = setting.reminder2Time,
-                repeatDays = setting.repeatDays,
-                alarmType = "REMINDER_2",
-                label = "Final Reporting Call (${getReportingTimeLabel()} Cutoff)",
-                requestCode = REQ_REMINDER_2
-            )
-        } else {
-            true
-        }
-
-        return personalScheduled && reminder1Scheduled && reminder2Scheduled
-    }
-
-    private fun scheduleSingleAlarm(
-        timeStr: String,
-        repeatDays: List<Int>,
-        alarmType: String,
-        label: String,
-        requestCode: Int
-    ): Boolean {
-        val parts = timeStr.split(":").mapNotNull { it.toIntOrNull() }
-        if (parts.size != 2) {
-            android.util.Log.w("AttendanceAlarm", "Ignoring invalid alarm time '$timeStr'")
-            return false
-        }
-        val hour = parts[0]
-        val minute = parts[1]
-        if (hour !in 0..23 || minute !in 0..59) {
-            android.util.Log.w("AttendanceAlarm", "Ignoring out-of-range alarm time '$timeStr'")
-            return false
-        }
-
-        val triggerTimeMs = computeNextOccurrence(hour, minute, repeatDays)
-
+    fun scheduleAlarm(alarm: EmployeeAlarm): Boolean {
+        val parts = alarm.time.split(":").mapNotNull { it.toIntOrNull() }
+        if (parts.size != 2) return false
+        val triggerTime = computeNextOccurrence(parts[0], parts[1], alarm.repeatDays)
         val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
             action = ACTION_ATTENDANCE_ALARM
-            putExtra(EXTRA_ALARM_TYPE, alarmType)
-            putExtra(EXTRA_ALARM_LABEL, label)
+            putExtra(EXTRA_ALARM_JSON, gson.toJson(alarm))
         }
-
-        val pendingIntent = PendingIntent.getBroadcast(
+        val pi = PendingIntent.getBroadcast(
             context,
-            requestCode,
+            alarm.requestCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
-        return try {
+        try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 if (canScheduleExactAlarms()) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerTimeMs,
-                        pendingIntent
-                    )
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pi)
                 } else {
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerTimeMs,
-                        pendingIntent
-                    )
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pi)
                 }
             } else {
-                alarmManager.set(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTimeMs,
-                    pendingIntent
-                )
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pi)
             }
-            android.util.Log.d("AttendanceAlarm", "Scheduled $alarmType for timestamp $triggerTimeMs")
-            true
+            return true
         } catch (e: SecurityException) {
-            android.util.Log.e("AttendanceAlarm", "SecurityException scheduling exact alarm: ${e.message}")
-            false
+            Log.e("AttendanceAlarm", "SecurityException scheduling alarm", e)
+            return false
         }
     }
 
-    /**
-     * One-shot follow-up for the snooze action. Deliberately ignores repeat days so the
-     * regular daily cycle scheduled by [rescheduleFromPreferences] is left untouched.
-     */
-    fun snoozeAlarm(alarmType: String, label: String, minutes: Int = SNOOZE_MINUTES): Boolean {
-        val triggerTimeMs = System.currentTimeMillis() + minutes * 60_000L
-        val requestCode = when (alarmType) {
-            "REMINDER_1" -> REQ_REMINDER_1
-            "REMINDER_2" -> REQ_REMINDER_2
-            else -> REQ_PERSONAL
+    fun snooze(alarmJson: String?, companyType: String?, minutes: Int, remaining: Int): Boolean {
+        val baseRequest = when {
+            alarmJson != null -> try {
+                gson.fromJson(alarmJson, EmployeeAlarm::class.java).requestCode
+            } catch (e: Exception) { -1 }
+            companyType == "PREP" -> REQ_COMPANY_PREP
+            companyType == "FINAL" -> REQ_COMPANY_FINAL
+            else -> -1
         }
+        if (baseRequest < 0) return false
+        val requestCode = SNOOZE_REQ_BASE + baseRequest
+        val triggerTimeMs = System.currentTimeMillis() + minutes * 60_000L
 
         val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
             action = ACTION_ATTENDANCE_ALARM
-            putExtra(EXTRA_ALARM_TYPE, alarmType)
-            putExtra(EXTRA_ALARM_LABEL, label)
+            putExtra(EXTRA_ALARM_JSON, alarmJson)
+            putExtra(EXTRA_COMPANY_TYPE, companyType)
+            putExtra(EXTRA_SNOOZE_REMAINING, remaining)
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
@@ -249,53 +292,139 @@ class AttendanceAlarmManager(private val context: Context) {
                     pendingIntent
                 )
             }
-            android.util.Log.d("AttendanceAlarm", "Snoozed $alarmType for $minutes minutes")
             true
         } catch (e: SecurityException) {
-            android.util.Log.e("AttendanceAlarm", "SecurityException snoozing alarm: ${e.message}")
+            Log.e("AttendanceAlarm", "SecurityException snoozing: ${e.message}")
             false
         }
     }
 
-    fun areNotificationsEnabled(): Boolean {
-        val notificationManager =
-            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        return notificationManager.areNotificationsEnabled()
+    fun cancelAlarm(alarm: EmployeeAlarm): Boolean {
+        val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
+            action = ACTION_ATTENDANCE_ALARM
+        }
+        val pi = PendingIntent.getBroadcast(
+            context,
+            alarm.requestCode,
+            intent,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (pi != null) {
+            alarmManager.cancel(pi)
+            pi.cancel()
+        }
+        val snoozePi = PendingIntent.getBroadcast(
+            context,
+            SNOOZE_REQ_BASE + alarm.requestCode,
+            intent,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (snoozePi != null) {
+            alarmManager.cancel(snoozePi)
+            snoozePi.cancel()
+        }
+        return true
     }
 
-    /**
-     * Caches the admin-controlled reporting time from the last successful settings sync so the
-     * settings screen and reminder text show the official cutoff even while offline.
-     */
-    fun saveReportingTime(time: String?) {
-        val normalized = normalizeTime(time) ?: return
-        prefs.edit().putString(KEY_REPORTING_TIME, normalized).apply()
+    fun rescheduleNext(alarm: EmployeeAlarm) {
+        if (alarm.enabled) {
+            scheduleAlarm(alarm)
+        }
     }
 
-    fun getReportingTime(): String =
-        normalizeTime(prefs.getString(KEY_REPORTING_TIME, DEFAULT_REPORTING_TIME))
-            ?: DEFAULT_REPORTING_TIME
+    fun rescheduleCompanyReminder(type: String) {
+        val policy = getPolicy()
+        val (time, enabled, reqCode, label) = when (type) {
+            "PREP" -> listOf(policy.prepReminderTime, policy.prepReminderEnabled, REQ_COMPANY_PREP, "Attendance Preparation")
+            "FINAL" -> listOf(policy.finalReminderTime, policy.finalReminderEnabled, REQ_COMPANY_FINAL, "Final Reporting Reminder")
+            else -> return
+        }
+        if (enabled != true) {
+            val cancelIntent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
+                action = ACTION_ATTENDANCE_ALARM
+            }
+            val cancelPi = PendingIntent.getBroadcast(
+                context,
+                reqCode as Int,
+                cancelIntent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (cancelPi != null) {
+                alarmManager.cancel(cancelPi)
+                cancelPi.cancel()
+            }
+            return
+        }
 
-    fun getReportingTimeLabel(): String = formatAmPm(getReportingTime())
+        val parts = (time as String).split(":").mapNotNull { it.toIntOrNull() }
+        if (parts.size != 2) return
+        val triggerTime = computeNextOccurrence(parts[0], parts[1], policy.workingDays)
+
+        val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
+            action = ACTION_ATTENDANCE_ALARM
+            putExtra(EXTRA_COMPANY_TYPE, type)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context,
+            reqCode as Int,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && canScheduleExactAlarms()) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pi)
+            } else {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pi)
+            }
+        } catch (e: SecurityException) {
+            Log.e("AttendanceAlarm", "SecurityException scheduling company reminder", e)
+        }
+    }
+
+    fun rescheduleFromPreferences(): Boolean {
+        val alarms = getAlarms()
+        for (a in alarms) {
+            if (a.enabled) scheduleAlarm(a) else cancelAlarm(a)
+        }
+        rescheduleCompanyReminder("PREP")
+        rescheduleCompanyReminder("FINAL")
+        return true
+    }
+
+    fun cancelAllAlarms() {
+        for (a in getAlarms()) {
+            cancelAlarm(a)
+        }
+        listOf(REQ_COMPANY_PREP, REQ_COMPANY_FINAL).forEach { reqCode ->
+            val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
+                action = ACTION_ATTENDANCE_ALARM
+            }
+            val pi = PendingIntent.getBroadcast(
+                context,
+                reqCode,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (pi != null) {
+                alarmManager.cancel(pi)
+                pi.cancel()
+            }
+        }
+    }
 
     private fun computeNextOccurrence(hour: Int, minute: Int, repeatDays: List<Int>): Long {
         val now = Calendar.getInstance()
-        var candidate = Calendar.getInstance().apply {
+        val candidate = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, hour)
             set(Calendar.MINUTE, minute)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
-
-        // If candidate time has already passed today, advance by at least 1 day
         if (candidate.timeInMillis <= now.timeInMillis) {
             candidate.add(Calendar.DAY_OF_YEAR, 1)
         }
-
-        // Calendar.DAY_OF_WEEK: Sunday=1, Monday=2, Tuesday=3, ..., Saturday=7
-        // Convert our repeatDays (0=Sun, 1=Mon, ..., 6=Sat) to Calendar.DAY_OF_WEEK
-        val validCalendarDays = repeatDays.map { dayNum ->
-            when (dayNum) {
+        val validDays = repeatDays.map {
+            when (it) {
                 0 -> Calendar.SUNDAY
                 1 -> Calendar.MONDAY
                 2 -> Calendar.TUESDAY
@@ -307,183 +436,14 @@ class AttendanceAlarmManager(private val context: Context) {
             }
         }.filter { it != -1 }
 
-        if (validCalendarDays.isNotEmpty()) {
+        if (validDays.isNotEmpty()) {
             for (i in 0..7) {
-                if (validCalendarDays.contains(candidate.get(Calendar.DAY_OF_WEEK))) {
+                if (validDays.contains(candidate.get(Calendar.DAY_OF_WEEK))) {
                     break
                 }
                 candidate.add(Calendar.DAY_OF_YEAR, 1)
             }
         }
-
         return candidate.timeInMillis
     }
-
-    fun cancelAllAlarms() {
-        val requests = listOf(REQ_PERSONAL, REQ_REMINDER_1, REQ_REMINDER_2)
-        for (req in requests) {
-            val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
-                action = ACTION_ATTENDANCE_ALARM
-            }
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                req,
-                intent,
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            )
-            if (pendingIntent != null) {
-                alarmManager.cancel(pendingIntent)
-                pendingIntent.cancel()
-            }
-        }
-    }
-
-    fun snoozeAlarm(alarmType: String, label: String): Boolean {
-        val requestCode = when (alarmType) {
-            "PERSONAL" -> REQ_SNOOZE
-            "REMINDER_1" -> REQ_SNOOZE + 1
-            "REMINDER_2" -> REQ_SNOOZE + 2
-            else -> return false
-        }
-
-        val snoozeMs = SNOOZE_MINUTES * 60 * 1000L
-        val triggerTimeMs = System.currentTimeMillis() + snoozeMs
-
-        val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
-            action = ACTION_ATTENDANCE_ALARM
-            putExtra(EXTRA_ALARM_TYPE, alarmType)
-            putExtra(EXTRA_ALARM_LABEL, "$label (Snoozed)")
-        }
-
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            requestCode,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (canScheduleExactAlarms()) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerTimeMs,
-                        pendingIntent
-                    )
-                } else {
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerTimeMs,
-                        pendingIntent
-                    )
-                }
-            } else {
-                alarmManager.set(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTimeMs,
-                    pendingIntent
-                )
-            }
-            android.util.Log.d("AttendanceAlarm", "Snoozed $alarmType for ${SNOOZE_MINUTES} minutes")
-            return true
-        } catch (e: SecurityException) {
-            android.util.Log.e("AttendanceAlarm", "SecurityException scheduling snooze: ${e.message}")
-            return false
-        }
-    }
-
-    fun rescheduleSingleAlarm(requestCode: Int, setting: EmployeeAlarmSetting): Boolean {
-        val (timeStr, alarmType, label) = when (requestCode) {
-            REQ_PERSONAL -> Triple(setting.personalAlarmTime, "PERSONAL", "Morning Attendance Alarm")
-            REQ_REMINDER_1 -> Triple(setting.reminder1Time ?: "10:00", "REMINDER_1", "Reporting Prep Reminder")
-            REQ_REMINDER_2 -> Triple(setting.reminder2Time ?: "10:15", "REMINDER_2", "Final Reporting Call (10:30 AM Cutoff)")
-            else -> return false
-        }
-
-        if (timeStr.isBlank()) return false
-
-        val parts = timeStr.split(":").mapNotNull { it.toIntOrNull() }
-        if (parts.size != 2) return false
-        val hour = parts[0]
-        val minute = parts[1]
-
-        val triggerTimeMs = computeNextOccurrence(hour, minute, setting.repeatDays)
-
-        val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
-            action = ACTION_ATTENDANCE_ALARM
-            putExtra(EXTRA_ALARM_TYPE, alarmType)
-            putExtra(EXTRA_ALARM_LABEL, label)
-        }
-
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            requestCode,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (canScheduleExactAlarms()) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerTimeMs,
-                        pendingIntent
-                    )
-                } else {
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerTimeMs,
-                        pendingIntent
-                    )
-                }
-            } else {
-                alarmManager.set(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTimeMs,
-                    pendingIntent
-                )
-            }
-            android.util.Log.d("AttendanceAlarm", "Rescheduled $alarmType for timestamp $triggerTimeMs")
-            return true
-        } catch (e: SecurityException) {
-            android.util.Log.e("AttendanceAlarm", "SecurityException scheduling exact alarm: ${e.message}")
-            return false
-        }
-    }
-
-    fun getLocalSettings(): EmployeeAlarmSetting {
-        // Defaults only apply on first launch: once the employee saves, their stored
-        // choices (including a deliberately closed reminder or a 09:30 alarm) are kept.
-        val enabled = prefs.getBoolean(KEY_ENABLED, true)
-        val personalTime = prefs.getString(KEY_PERSONAL_TIME, DEFAULT_PERSONAL_TIME)
-            ?: DEFAULT_PERSONAL_TIME
-        val reminder1 = readReminder(KEY_REMINDER_1_TIME, DEFAULT_REMINDER_1_TIME)
-        val reminder2 = readReminder(KEY_REMINDER_2_TIME, DEFAULT_REMINDER_2_TIME)
-        val repeatDaysStr = prefs.getString(KEY_REPEAT_DAYS, null)
-            ?.takeIf { it.isNotBlank() }
-            ?: DEFAULT_REPEAT_DAYS.joinToString(",")
-        val repeatDays = repeatDaysStr
-            .split(",")
-            .mapNotNull { it.trim().toIntOrNull() }
-            .filter { it in 0..6 }
-            .distinct()
-            .ifEmpty { DEFAULT_REPEAT_DAYS }
-
-        return EmployeeAlarmSetting(
-            personalAlarmTime = personalTime,
-            reminder1Time = reminder1,
-            reminder2Time = reminder2,
-            repeatDays = repeatDays,
-            vibrationEnabled = prefs.getBoolean(KEY_VIBRATION, true),
-            snoozeEnabled = prefs.getBoolean(KEY_SNOOZE, true),
-            enabled = enabled
-        )
-    }
-
-    private fun readReminder(key: String, defaultTime: String): String? {
-        if (!prefs.contains(key)) return defaultTime
-        return prefs.getString(key, REMINDER_OFF)?.takeIf { it.isNotBlank() }
-    }
 }
-

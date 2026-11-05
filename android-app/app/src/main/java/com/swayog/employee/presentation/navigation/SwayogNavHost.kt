@@ -11,6 +11,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.swayog.employee.presentation.auth.LoginScreen
 import com.swayog.employee.presentation.dashboard.DashboardScreen
 import com.swayog.employee.presentation.attendance.alarm.AlarmSettingsScreen
+import com.swayog.employee.presentation.attendance.alarm.AlarmEditScreen
 import com.swayog.employee.presentation.attendance.AttendanceScreen
 import com.swayog.employee.presentation.attendance.WorkforceDashboardScreen
 import com.swayog.employee.presentation.tasks.TasksScreen
@@ -21,7 +22,6 @@ import com.swayog.employee.presentation.subadmin.*
 import com.swayog.employee.presentation.attendance.face.FaceEnrollmentScreen
 import com.swayog.employee.presentation.inverter.InverterDataScreen
 
-import com.swayog.employee.presentation.notifications.NotificationsScreen
 import com.swayog.employee.presentation.inventory.InventoryCoordinatorScreen
 
 @Composable
@@ -172,7 +172,30 @@ fun SwayogNavHost(
             AlarmSettingsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                },
+                onAddAlarm = {
+                    navController.navigate(Screen.AlarmEdit.createRoute(null))
+                },
+                onEditAlarm = { alarmId ->
+                    navController.navigate(Screen.AlarmEdit.createRoute(alarmId))
                 }
+            )
+        }
+
+        composable(
+            route = Screen.AlarmEdit.route,
+            arguments = listOf(
+                androidx.navigation.navArgument("alarmId") {
+                    type = androidx.navigation.NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            AlarmEditScreen(
+                alarmId = backStackEntry.arguments?.getString("alarmId"),
+                onNavigateBack = { navController.popBackStack() },
+                onDeleted = { navController.popBackStack() }
             )
         }
         
@@ -290,7 +313,6 @@ fun SwayogNavHost(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-                onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
                 onNavigateToAttendance = { navController.navigate(Screen.Attendance.route) }
             )
         }
@@ -306,7 +328,6 @@ sealed class Screen(val route: String) {
     data object Profile : Screen("profile")
     data object Settings : Screen("settings")
     data object DailyCommit : Screen("daily_commit")
-    data object Notifications : Screen("notifications")
     data object SubAdminCustomers : Screen("subadmin_customers")
     data object SubAdminCustomerDetails : Screen("subadmin_customer_details/{customerId}") {
         fun createRoute(customerId: Int) = "subadmin_customer_details/$customerId"
@@ -321,4 +342,7 @@ sealed class Screen(val route: String) {
     data object InverterData : Screen("inverter_data")
     data object InventoryCoordinator : Screen("inventory_coordinator")
     data object AlarmSettings : Screen("alarm_settings")
+    data object AlarmEdit : Screen("alarm_edit/{alarmId}") {
+        fun createRoute(alarmId: String?) = "alarm_edit/${alarmId ?: "new"}"
+    }
 }

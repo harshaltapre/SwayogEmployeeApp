@@ -1,9 +1,11 @@
 package com.swayog.employee.data.api
 
 import com.swayog.employee.data.model.*
+import okhttp3.MultipartBody
 import retrofit2.Response
 import retrofit2.http.*
 
+@Suppress("unused")
 interface ApiService {
     
     // Auth endpoints
@@ -38,7 +40,7 @@ interface ApiService {
     @Multipart
     @POST("attendance/profile-photo")
     suspend fun uploadProfilePhotoMultipart(
-        @Part file: okhttp3.MultipartBody.Part
+        @Part file: MultipartBody.Part
     ): Response<ApiResponse<User>>
 
     @POST("users/me/profile-image")
@@ -49,7 +51,7 @@ interface ApiService {
     @Multipart
     @POST("users/me/profile-image")
     suspend fun uploadProfileImageMultipart(
-        @Part file: okhttp3.MultipartBody.Part
+        @Part file: MultipartBody.Part
     ): Response<ApiResponse<User>>
 
     @GET("health")
@@ -86,20 +88,23 @@ interface ApiService {
     suspend fun getLateAllowanceSummary(
         @Query("month") month: Int? = null,
         @Query("year") year: Int? = null
-    ): Response<com.swayog.employee.data.model.LateAllowanceSummaryResponse>
+    ): Response<LateAllowanceSummaryResponse>
 
     @GET("attendance/alarm-settings")
-    suspend fun getAlarmSettings(): Response<com.swayog.employee.data.model.AlarmSettingsResponse>
+    suspend fun getAlarmSettings(): Response<AlarmSettingsResponse>
+
+    @GET("attendance/alarm-policy")
+    suspend fun getAlarmPolicy(): Response<CompanyAlarmPolicyResponse>
 
     @POST("attendance/alarm-settings")
     suspend fun saveAlarmSettings(
-        @Body settings: com.swayog.employee.data.model.EmployeeAlarmSetting
-    ): Response<com.swayog.employee.data.model.SaveAlarmSettingsResponse>
+        @Body settings: SaveAlarmSettingsRequest
+    ): Response<SaveAlarmSettingsResponse>
 
     @POST("attendance/face/verify")
     suspend fun verifyFace(
-        @Body request: com.swayog.employee.data.model.FaceVerifyRequest
-    ): Response<com.swayog.employee.data.model.FaceVerifyResponse>
+        @Body request: FaceVerifyRequest
+    ): Response<FaceVerifyResponse>
 
     // Attendance Rules Endpoints
     @GET("attendance/rules")
@@ -274,7 +279,7 @@ interface ApiService {
     suspend fun getInternalUsers(
         @Query("role") role: String? = null,
         @Query("limit") limit: Int? = 300
-    ): Response<ApiResponse<List<com.swayog.employee.data.model.Employee>>>
+    ): Response<ApiResponse<List<Employee>>>
     
     @GET("subadmin/amc-visits")
     suspend fun getSubAdminAmcVisits(
@@ -290,7 +295,7 @@ interface ApiService {
         @Query("employeeUserId") employeeUserId: String? = null,
         @Query("status") status: String? = null,
         @Query("limit") limit: Int? = 300
-    ): Response<ApiResponse<List<com.swayog.employee.data.model.Task>>>
+    ): Response<ApiResponse<List<Task>>>
 
     @POST("tasks")
     suspend fun createTask(

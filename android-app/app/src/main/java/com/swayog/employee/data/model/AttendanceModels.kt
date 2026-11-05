@@ -259,12 +259,16 @@ data class EmployeeAlarmSetting(
     val soundUri: String? = null,
     val vibrationEnabled: Boolean = true,
     val snoozeEnabled: Boolean = true,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val reportingTime: String = "10:30"
 )
 
 data class AlarmSettingsResponse(
-    val setting: EmployeeAlarmSetting,
-    val companyReportingTime: String = "10:30"
+    val setting: EmployeeAlarmSetting? = null,
+    val companyReportingTime: String = "10:30",
+    val alarms: List<EmployeeAlarm> = emptyList(),
+    val policy: CompanyAlarmPolicy? = null,
+    val ringtones: List<CompanyRingtone> = emptyList()
 )
 
 data class SaveAlarmSettingsResponse(

@@ -38,7 +38,10 @@ import java.util.Locale
 import java.util.Calendar
 import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.data.model.LateAllowanceSummaryResponse
-import com.swayog.employee.data.model.EmployeeAlarmSetting
+import com.swayog.employee.data.model.EmployeeAlarm
+import com.swayog.employee.data.model.CompanyRingtone
+import com.swayog.employee.data.model.AlarmSettingsResponse
+import com.swayog.employee.data.model.SaveAlarmSettingsRequest
 import com.swayog.employee.data.model.FaceVerifyRequest
 import com.swayog.employee.presentation.attendance.face.FaceIndexManager
 import javax.inject.Inject
@@ -75,8 +78,11 @@ class AttendanceViewModel @Inject constructor(
     private val _lateAllowanceSummary = MutableStateFlow<LateAllowanceSummaryResponse?>(null)
     val lateAllowanceSummary: StateFlow<LateAllowanceSummaryResponse?> = _lateAllowanceSummary.asStateFlow()
 
-    private val _alarmSettings = MutableStateFlow<EmployeeAlarmSetting?>(null)
-    val alarmSettings: StateFlow<EmployeeAlarmSetting?> = _alarmSettings.asStateFlow()
+    private val _alarmSettings = MutableStateFlow<AlarmSettingsResponse?>(null)
+    val alarmSettings: StateFlow<AlarmSettingsResponse?> = _alarmSettings.asStateFlow()
+
+    private val _companyRingtones = MutableStateFlow<List<CompanyRingtone>>(emptyList())
+    val companyRingtones: StateFlow<List<CompanyRingtone>> = _companyRingtones.asStateFlow()
 
     private val _companyReportingTime = MutableStateFlow<String?>(null)
     val companyReportingTime: StateFlow<String?> = _companyReportingTime.asStateFlow()
@@ -448,7 +454,11 @@ class AttendanceViewModel @Inject constructor(
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 attendanceRepository.getAlarmSettings()
-                    .onSuccess { resp -> _alarmSettings.value = resp.setting }
+                    .onSuccess { resp ->
+                        _alarmSettings.value = resp
+                        _companyRingtones.value = resp.ringtones
+                        _companyReportingTime.value = resp.companyReportingTime
+                    }
                     .onFailure { e ->
                         android.util.Log.w("AttendanceViewModel", "Alarm settings load failed: ${e.message}")
                     }
@@ -456,20 +466,32 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
-    fun saveAlarmSettings(setting: EmployeeAlarmSetting, onResult: (Boolean) -> Unit) {
+    fun loadAlarmData() = loadAlarmSettings()
+
+    /**
+     * Pushes the local alarm list to the backend. Local scheduling already happened
+     * in AttendanceAlarmManager; this is best-effort cloud sync.
+     */
+    fun syncAlarms(alarms: List<EmployeeAlarm>) {
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                attendanceRepository.saveAlarmSettings(setting)
-            }
-            result.onSuccess { resp ->
-                if (resp.success) {
-                    _alarmSettings.value = resp.setting ?: setting
-                    onResult(true)
-                } else {
-                    onResult(false)
-                }
-            }.onFailure {
-                onResult(false)
+            val current = _alarmSettings.value?.setting
+            val request = SaveAlarmSettingsRequest(
+                personalAlarmTime = alarms.firstOrNull { it.label.contains("Morning", true) }?.time
+                    ?: alarms.firstOrNull()?.time ?: "09:30",
+                repeatDays = alarms.firstOrNull()?.repeatDays ?: listOf(1, 2, 3, 4, 5, 6),
+                vibrationEnabled = alarms.firstOrNull()?.vibrationEnabled ?: true,
+                snoozeEnabled = alarms.firstOrNull()?.snoozeEnabled ?: true,
+                enabled = alarms.any { it.enabled },
+                alarms = alarms
+            )
+            withContext(Dispatchers.IO) {
+                attendanceRepository.saveAlarmSettings(request)
+                    .onSuccess { resp ->
+                        resp.setting?.let { _alarmSettings.value = _alarmSettings.value?.copy(setting = it) }
+                    }
+                    .onFailure { e ->
+                        android.util.Log.w("AttendanceViewModel", "Alarm sync failed: ${e.message}")
+                    }
             }
         }
     }

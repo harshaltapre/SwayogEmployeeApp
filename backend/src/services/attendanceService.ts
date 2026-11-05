@@ -457,13 +457,21 @@ export async function getAlarmSettingsAsync(employeeId: string) {
       },
     });
   }
+  const [policy, ringtones] = await Promise.all([
+    getCompanyAlarmPolicyAsync(),
+    listCompanyRingtonesAsync(),
+  ]);
   return {
     setting,
     companyReportingTime: rules.reportingTime || "10:30",
+    alarms: Array.isArray(setting.alarms) ? setting.alarms : [],
+    policy,
+    ringtones,
   };
 }
 
 export async function saveAlarmSettingsAsync(employeeId: string, data: any) {
+  const alarmsJson = Array.isArray(data.alarms) ? data.alarms : undefined;
   return await prisma.employeeAlarmSetting.upsert({
     where: { employeeId },
     create: {
@@ -476,6 +484,7 @@ export async function saveAlarmSettingsAsync(employeeId: string, data: any) {
       vibrationEnabled: data.vibrationEnabled !== false,
       snoozeEnabled: data.snoozeEnabled !== false,
       enabled: data.enabled !== false,
+      ...(alarmsJson ? { alarms: alarmsJson } : {}),
     },
     update: {
       personalAlarmTime: data.personalAlarmTime || "09:30",
@@ -486,8 +495,129 @@ export async function saveAlarmSettingsAsync(employeeId: string, data: any) {
       vibrationEnabled: data.vibrationEnabled !== false,
       snoozeEnabled: data.snoozeEnabled !== false,
       enabled: data.enabled !== false,
+      ...(alarmsJson ? { alarms: alarmsJson } : {}),
     },
   });
+}
+
+// ── Company Alarm Policy & Ringtones ─────────────────────────────────────────
+
+const ALARM_POLICY_DEFAULTS = {
+  prepReminderTime: "10:00",
+  prepReminderEnabled: true,
+  finalReminderTime: "10:15",
+  finalReminderEnabled: true,
+  personalDefaultTime: "09:30",
+  defaultSoundName: null as string | null,
+  defaultSoundKey: null as string | null,
+  policyNote: null as string | null,
+};
+
+export async function getCompanyAlarmPolicyRowAsync() {
+  try {
+    let row = await prisma.companyAlarmPolicy.findUnique({ where: { id: "default" } });
+    if (!row) {
+      row = await prisma.companyAlarmPolicy.create({ data: { id: "default" } });
+    }
+    return row;
+  } catch (err) {
+    console.error("Failed to read company alarm policy, using defaults:", err);
+    return { id: "default", ...ALARM_POLICY_DEFAULTS };
+  }
+}
+
+/** Policy merged with attendance rules (reporting time, timezone, working days). */
+export async function getCompanyAlarmPolicyAsync() {
+  const [row, rules] = await Promise.all([getCompanyAlarmPolicyRowAsync(), getRulesAsync()]);
+  const offDays: number[] = Array.isArray(rules.weeklyOffDays) ? rules.weeklyOffDays.map(Number) : [0];
+  // weeklyOffDays uses 0=Sunday..6=Saturday; working days are the complement.
+  const workingDays = [0, 1, 2, 3, 4, 5, 6].filter((d) => !offDays.includes(d));
+
+  // Resolve the published company sound to a playable URL.
+  let companySoundUrl: string | null = null;
+  if (row.defaultSoundKey) {
+    const { generatePresignedUrl } = await import("./r2StorageService.js");
+    companySoundUrl = await generatePresignedUrl(row.defaultSoundKey, 86400).catch(() => null);
+  }
+
+  return {
+    reportingTime: rules.reportingTime || "10:30",
+    timezone: rules.timezone || "Asia/Kolkata",
+    workingDays: workingDays.length > 0 ? workingDays : [1, 2, 3, 4, 5, 6],
+    personalDefaultTime: row.personalDefaultTime || "09:30",
+    prepReminderTime: row.prepReminderTime || "10:00",
+    prepReminderEnabled: row.prepReminderEnabled !== false,
+    finalReminderTime: row.finalReminderTime || "10:15",
+    finalReminderEnabled: row.finalReminderEnabled !== false,
+    policyNote: row.policyNote ?? null,
+    companySoundName: row.defaultSoundName ?? null,
+    companySoundUrl,
+  };
+}
+
+export async function saveCompanyAlarmPolicyAsync(data: any) {
+  const update: any = {};
+  if (data.prepReminderTime !== undefined) update.prepReminderTime = data.prepReminderTime;
+  if (data.prepReminderEnabled !== undefined) update.prepReminderEnabled = data.prepReminderEnabled !== false;
+  if (data.finalReminderTime !== undefined) update.finalReminderTime = data.finalReminderTime;
+  if (data.finalReminderEnabled !== undefined) update.finalReminderEnabled = data.finalReminderEnabled !== false;
+  if (data.personalDefaultTime !== undefined) update.personalDefaultTime = data.personalDefaultTime;
+  if (data.policyNote !== undefined) update.policyNote = data.policyNote;
+  if (data.defaultSoundName !== undefined) update.defaultSoundName = data.defaultSoundName;
+  if (data.defaultSoundKey !== undefined) update.defaultSoundKey = data.defaultSoundKey;
+  await prisma.companyAlarmPolicy.upsert({
+    where: { id: "default" },
+    create: { id: "default", ...update },
+    update,
+  });
+  return true;
+}
+
+export async function listCompanyRingtonesAsync() {
+  const { generatePresignedUrl } = await import("./r2StorageService.js");
+  const rows = await prisma.companyRingtone.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+  return await Promise.all(
+    rows.map(async (r: any) => ({
+      id: r.id,
+      name: r.name,
+      objectKey: r.objectKey,
+      mimeType: r.mimeType,
+      url: await generatePresignedUrl(r.objectKey, 86400).catch(() => null),
+    }))
+  );
+}
+
+export async function createCompanyRingtoneAsync(data: {
+  name: string;
+  objectKey: string;
+  mimeType?: string;
+  fileSize?: number;
+  uploadedBy?: string;
+}) {
+  return await prisma.companyRingtone.create({
+    data: {
+      name: data.name,
+      objectKey: data.objectKey,
+      mimeType: data.mimeType ?? null,
+      fileSize: data.fileSize ?? null,
+      uploadedBy: data.uploadedBy ?? null,
+    },
+  });
+}
+
+export async function deleteCompanyRingtoneAsync(id: string) {
+  const row = await prisma.companyRingtone.findUnique({ where: { id } });
+  if (!row) return false;
+  const { deleteFromR2, extractObjectKeyFromUrl } = await import("./r2StorageService.js");
+  const key = row.objectKey || extractObjectKeyFromUrl(row.objectKey);
+  if (key) {
+    await deleteFromR2(key).catch((e) => console.error("[Ringtones] R2 delete failed:", e));
+  }
+  await prisma.companyRingtone.delete({ where: { id } });
+  return true;
 }
 
 export async function getLateAllowanceSummaryAsync(employeeId: string, month?: number, year?: number) {

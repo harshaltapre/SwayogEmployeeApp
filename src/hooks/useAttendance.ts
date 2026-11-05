@@ -524,6 +524,81 @@ export const useSaveAlarmSettings = () => {
   });
 };
 
+// ── Company alarm policy & ringtones (admin-managed) ─────────────────────────
+
+export interface CompanyAlarmPolicy {
+  reportingTime: string;
+  timezone: string;
+  workingDays: number[];
+  personalDefaultTime: string;
+  prepReminderTime: string;
+  prepReminderEnabled: boolean;
+  finalReminderTime: string;
+  finalReminderEnabled: boolean;
+  policyNote?: string | null;
+  companySoundName?: string | null;
+  companySoundUrl?: string | null;
+}
+
+export interface CompanyRingtone {
+  id: string;
+  name: string;
+  objectKey?: string;
+  mimeType?: string;
+  url?: string | null;
+}
+
+export const useCompanyAlarmPolicy = () => useQuery({
+  queryKey: ["attendance", "alarm-policy"],
+  queryFn: () => apiClient.get("/attendance/alarm-policy").then((r) => r.data as { policy: CompanyAlarmPolicy; ringtones: CompanyRingtone[] }),
+});
+
+export const useUpdateAlarmPolicy = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<CompanyAlarmPolicy> & { defaultSoundName?: string | null; defaultSoundKey?: string | null }) =>
+      apiClient.post("/attendance/admin/alarm-policy", data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance", "alarm-policy"] });
+      qc.invalidateQueries({ queryKey: ["attendance", "alarm-settings"] });
+    },
+  });
+};
+
+export const useCompanyRingtones = () => useQuery({
+  queryKey: ["attendance", "admin-ringtones"],
+  queryFn: () => apiClient.get("/attendance/admin/ringtones").then((r) => r.data.ringtones as CompanyRingtone[]),
+});
+
+export const useUploadRingtone = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, name }: { file: File; name?: string }) => {
+      const form = new FormData();
+      form.append("file", file);
+      if (name) form.append("name", name);
+      return apiClient.post("/attendance/admin/ringtones", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }).then((r) => r.data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance", "admin-ringtones"] });
+      qc.invalidateQueries({ queryKey: ["attendance", "alarm-policy"] });
+    },
+  });
+};
+
+export const useDeleteRingtone = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/attendance/admin/ringtones/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance", "admin-ringtones"] });
+      qc.invalidateQueries({ queryKey: ["attendance", "alarm-policy"] });
+    },
+  });
+};
+
 export const useAdminAuditLogs = () => useQuery({
   queryKey: ["admin", "attendance", "audit-logs"],
   queryFn: () => apiClient.get("/attendance/admin/audit-logs").then((r) => r.data.logs),

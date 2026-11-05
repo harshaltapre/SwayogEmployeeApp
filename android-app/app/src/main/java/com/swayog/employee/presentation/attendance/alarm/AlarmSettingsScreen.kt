@@ -1,17 +1,12 @@
 package com.swayog.employee.presentation.attendance.alarm
 
-import android.app.TimePickerDialog
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -24,71 +19,106 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.swayog.employee.core.alarm.AttendanceAlarmManager
-import com.swayog.employee.data.model.EmployeeAlarmSetting
+import com.swayog.employee.data.model.CompanyAlarmPolicy
+import com.swayog.employee.data.model.EmployeeAlarm
 import com.swayog.employee.presentation.attendance.AttendanceViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
+
+private val DayLabels = listOf(
+    1 to "Mon", 2 to "Tue", 3 to "Wed", 4 to "Thu",
+    5 to "Fri", 6 to "Sat", 0 to "Sun"
+)
+
+private fun daySummary(days: List<Int>): String {
+    val sorted = days.sorted()
+    if (sorted.size == 7) return "Every day"
+    if (sorted == listOf(1, 2, 3, 4, 5, 6)) return "Mon–Sat"
+    if (sorted == listOf(1, 2, 3, 4, 5)) return "Weekdays"
+    if (sorted == listOf(0, 6)) return "Weekends"
+    return sorted.joinToString(" ") { d -> DayLabels.firstOrNull { it.first == d }?.second ?: "" }
+        .replace("  ", " ").trim()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlarmSettingsScreen(
     onNavigateBack: () -> Unit,
+    onAddAlarm: () -> Unit,
+    onEditAlarm: (String) -> Unit,
     viewModel: AttendanceViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val alarmManager = remember { AttendanceAlarmManager(context) }
-    val initialLocal = remember { alarmManager.getLocalSettings() }
 
-    var enabled by remember { mutableStateOf(initialLocal.enabled) }
+    var alarms by remember { mutableStateOf(alarmManager.getAlarms()) }
+    var policy by remember { mutableStateOf(alarmManager.getPolicy()) }
     var canScheduleExactAlarms by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 alarmManager.canScheduleExactAlarms()
-            } else {
-                true
-            }
+            } else true
         )
     }
-    var showExactAlarmDialog by remember { mutableStateOf(false) }
-    var personalTime by remember { mutableStateOf(initialLocal.personalAlarmTime) }
-    var reminder1Time by remember { mutableStateOf(initialLocal.reminder1Time ?: "10:00") }
-    var reminder2Time by remember { mutableStateOf(initialLocal.reminder2Time ?: "10:15") }
-    var reminder1Enabled by remember { mutableStateOf(!initialLocal.reminder1Time.isNullOrBlank()) }
-    var reminder2Enabled by remember { mutableStateOf(!initialLocal.reminder2Time.isNullOrBlank()) }
-    var selectedDays by remember { mutableStateOf(initialLocal.repeatDays.toSet()) }
-    var vibrationEnabled by remember { mutableStateOf(initialLocal.vibrationEnabled) }
-    var snoozeEnabled by remember { mutableStateOf(initialLocal.snoozeEnabled) }
-    var isSaving by remember { mutableStateOf(false) }
+    var notificationsEnabled by remember { mutableStateOf(alarmManager.areNotificationsEnabled()) }
 
-    val daysOfWeek = listOf(
-        1 to "Mon",
-        2 to "Tue",
-        3 to "Wed",
-        4 to "Thu",
-        5 to "Fri",
-        6 to "Sat"
-    )
+    fun reload() {
+        alarms = alarmManager.getAlarms()
+        policy = alarmManager.getPolicy()
+        canScheduleExactAlarms =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+        notificationsEnabled = alarmManager.areNotificationsEnabled()
+    }
 
-    fun showTimePicker(currentTime: String, onTimeSelected: (String) -> Unit) {
-        val parts = currentTime.split(":").mapNotNull { it.toIntOrNull() }
-        val hour = if (parts.size == 2) parts[0] else 9
-        val minute = if (parts.size == 2) parts[1] else 30
+    // Reload whenever the screen resumes (e.g. returning from the edit screen).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) reload()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
-        TimePickerDialog(context, { _, h, m ->
-            val formatted = String.format("%02d:%02d", h, m)
-            onTimeSelected(formatted)
-        }, hour, minute, false).show()
+    val alarmResponse by viewModel.alarmSettings.collectAsState()
+    LaunchedEffect(Unit) {
+        viewModel.loadAlarmData()
+    }
+    LaunchedEffect(alarmResponse) {
+        val resp = alarmResponse ?: return@LaunchedEffect
+        if (resp.policy != null) {
+            policy = resp.policy!!
+            alarmManager.savePolicy(resp.policy!!)
+            // Re-arm company reminders immediately when the admin policy changes.
+            alarmManager.rescheduleFromPreferences()
+        }
+        if (resp.alarms.isNotEmpty()) {
+            // Backend is authoritative for the alarm list when present.
+            alarms = resp.alarms
+        }
+        reload()
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Smart Attendance Alarms", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text("Attendance Alarms", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onAddAlarm) {
+                        Icon(Icons.Default.Add, contentDescription = "Add alarm")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -102,413 +132,251 @@ fun AlarmSettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // ── Official Company Reporting Time (Read Only) ─────────────────
+            // ── Company attendance info (compact, read-only) ────────────────
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp))
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Business,
+                        contentDescription = null,
+                        tint = Color(0xFF93C5FD),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            "OFFICIAL COMPANY REPORTING TIME",
+                            "Office reporting ${AttendanceAlarmManager.formatAmPm(policy.reportingTime)} IST",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "${policy.timezone} • Working days ${daySummary(policy.workingDays)}" +
+                                (policy.policyNote?.let { " • $it" } ?: ""),
                             color = Color(0xFF94A3B8),
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "10:30 AM IST",
-                        color = Color.White,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    Text(
-                        "Timezone: Asia/Kolkata • Managed by Company Administrator",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 12.sp
-                    )
-                }
-            }
-
-            // ── Monthly Late Policy Banner ───────────────────────────────────
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(20.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            "Company Late Arrival Allowance Policy",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = Color(0xFF1E3A8A)
-                        )
-                        Text(
-                            "• First 3 late arrivals per month are classified as Present.\n• 4th and subsequent late arrivals are classified as Half-Day.\n• Sundays are Weekly Off and do not consume allowances.",
-                            fontSize = 12.sp,
-                            color = Color(0xFF1E40AF),
-                            lineHeight = 16.sp
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
 
-            // ── Exact Alarm Permission Status ───────────────────────────────
+            // ── Permission banners ──────────────────────────────────────────
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !canScheduleExactAlarms) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEA580C), modifier = Modifier.size(20.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                "Exact Alarm Permission Required",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Color(0xFF9A3412)
-                            )
-                            Text(
-                                "Android requires this permission for precise alarm scheduling. Without it, alarms may be delayed.",
-                                fontSize = 12.sp,
-                                color = Color(0xFFC2410C),
-                                lineHeight = 16.sp
-                            )
-                            Button(
-                                onClick = {
-                                    val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                                        data = android.net.Uri.parse("package:" + context.packageName)
-                                    }
-                                    context.startActivity(intent)
-                                },
-                                modifier = Modifier.padding(top = 4.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C))
-                            ) {
-                                Text("Grant Permission", fontSize = 12.sp)
+                PermissionBanner(
+                    title = "Exact alarm permission needed",
+                    message = "Android requires this for precise alarm delivery. Without it, alarms may be delayed.",
+                    actionLabel = "Open Settings",
+                    onAction = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                data = android.net.Uri.parse("package:" + context.packageName)
                             }
-                        }
-                    }
-                }
-            }
-
-            // ── Master Switch ───────────────────────────────────────────────
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("Enable Alarms & Reminders", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                        Text("Receive smart alerts before 10:30 AM reporting cutoff", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = enabled,
-                        onCheckedChange = { enabled = it }
-                    )
-                }
-            }
-
-            if (enabled) {
-                // ── 1. Personal Alarm ───────────────────────────────────────
-                Card(shape = RoundedCornerShape(12.dp)) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.Alarm, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Text("1. Personal Morning Alarm", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        }
-                        Text("Wake up and prepare for the workday", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                        OutlinedCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showTimePicker(personalTime) { personalTime = it } },
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(personalTime, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                Text("Change Time", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
-                            }
-                        }
-                    }
-                }
-
-                // ── 2. Preparation Reminder ──────────────────────────────────
-                Card(shape = RoundedCornerShape(12.dp)) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = Color(0xFF0284C7))
-                                Text("2. Attendance Preparation", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            }
-                            Switch(checked = reminder1Enabled, onCheckedChange = { reminder1Enabled = it })
-                        }
-                        Text("30-minute advance notice to start commute or reach office", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                        if (reminder1Enabled) {
-                            OutlinedCard(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { showTimePicker(reminder1Time) { reminder1Time = it } },
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(reminder1Time, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                    Text("Change Time", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── 3. Final Reminder ────────────────────────────────────────
-                Card(shape = RoundedCornerShape(12.dp)) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFDC2626))
-                                Text("3. Final Call Reminder", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            }
-                            Switch(checked = reminder2Enabled, onCheckedChange = { reminder2Enabled = it })
-                        }
-                        Text("15-minute final notice before the 10:30 AM cutoff", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                        if (reminder2Enabled) {
-                            OutlinedCard(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { showTimePicker(reminder2Time) { reminder2Time = it } },
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(reminder2Time, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                    Text("Change Time", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── Repeat Days ──────────────────────────────────────────────
-                Card(shape = RoundedCornerShape(12.dp)) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Repeat Working Days", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Text("Sunday is weekly off and excluded automatically", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            daysOfWeek.forEach { (dayNum, label) ->
-                                val isSelected = selectedDays.contains(dayNum)
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable {
-                                            selectedDays = if (isSelected) {
-                                                if (selectedDays.size > 1) selectedDays - dayNum else selectedDays
-                                            } else {
-                                                selectedDays + dayNum
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        label,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── Sound & Vibration ────────────────────────────────────────
-                Card(shape = RoundedCornerShape(12.dp)) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Default.Vibration, contentDescription = null)
-                                Text("Vibrate with Reminders", fontSize = 14.sp)
-                            }
-                            Switch(checked = vibrationEnabled, onCheckedChange = { vibrationEnabled = it })
-                        }
-                        Divider()
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Default.Snooze, contentDescription = null)
-                                Text("Allow Snooze (5 Minutes)", fontSize = 14.sp)
-                            }
-                            Switch(checked = snoozeEnabled, onCheckedChange = { snoozeEnabled = it })
-                        }
-                    }
-                }
-            }
-
-            // ── Save & Test Buttons ──────────────────────────────────────────
-            Button(
-                onClick = {
-                    isSaving = true
-                    val setting = EmployeeAlarmSetting(
-                        personalAlarmTime = personalTime,
-                        reminder1Time = if (reminder1Enabled) reminder1Time else null,
-                        reminder2Time = if (reminder2Enabled) reminder2Time else null,
-                        repeatDays = selectedDays.toList().sorted(),
-                        vibrationEnabled = vibrationEnabled,
-                        snoozeEnabled = snoozeEnabled,
-                        enabled = enabled
-                    )
-
-                    // Check exact alarm permission before scheduling
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-                        showExactAlarmDialog = true
-                        isSaving = false
-                        return@Button
-                    }
-
-                    // 1. Schedule native Android Alarm
-                    val scheduled = alarmManager.saveAndScheduleAlarms(setting)
-
-                    // 2. Sync to Backend
-                    viewModel.saveAlarmSettings(setting) { success ->
-                        isSaving = false
-                        if (scheduled) {
-                            Toast.makeText(context, "Attendance alarms saved and scheduled successfully!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Alarm saved, but exact alarm permission may be needed in Android Settings.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                enabled = !isSaving
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                } else {
-                    Icon(Icons.Default.Save, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Save & Apply Alarms", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            if (showExactAlarmDialog) {
-                AlertDialog(
-                    onDismissRequest = { showExactAlarmDialog = false },
-                    title = { Text("Exact Alarm Permission Required") },
-                    text = {
-                        Text(
-                            "To schedule precise attendance alarms, please grant the exact alarm permission in Android Settings. Without this permission, alarms may be delayed by the system."
                         )
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                                    data = android.net.Uri.parse("package:" + context.packageName)
-                                }
-                                context.startActivity(intent)
-                                showExactAlarmDialog = false
-                            }
-                        ) {
-                            Text("Open Settings")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showExactAlarmDialog = false }) {
-                            Text("Cancel")
-                        }
+                    }
+                )
+            }
+            if (!notificationsEnabled) {
+                PermissionBanner(
+                    title = "Notifications are off",
+                    message = "Alarms will still ring, but reminder notifications may not appear.",
+                    actionLabel = "Open Settings",
+                    onAction = {
+                        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        })
                     }
                 )
             }
 
-            OutlinedButton(
-                onClick = {
-                    // Test notification trigger
-                    val testIntent = android.content.Intent(context, com.swayog.employee.core.alarm.AttendanceAlarmReceiver::class.java).apply {
-                        action = AttendanceAlarmManager.ACTION_ATTENDANCE_ALARM
-                        putExtra(AttendanceAlarmManager.EXTRA_ALARM_TYPE, "PERSONAL")
-                        putExtra(AttendanceAlarmManager.EXTRA_ALARM_LABEL, "Test Attendance Alarm Notification")
-                    }
-                    context.sendBroadcast(testIntent)
-                    Toast.makeText(context, "Test notification dispatched!", Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp),
-                shape = RoundedCornerShape(12.dp)
+            // ── Company reminders (admin-controlled) ─────────────────────────
+            Text(
+                "COMPANY REMINDERS",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            CompanyReminderRow(
+                label = "Attendance Preparation",
+                time = AttendanceAlarmManager.formatAmPm(policy.prepReminderTime),
+                enabled = policy.prepReminderEnabled
+            )
+            CompanyReminderRow(
+                label = "Final Reporting Reminder",
+                time = AttendanceAlarmManager.formatAmPm(policy.finalReminderTime),
+                enabled = policy.finalReminderEnabled
+            )
+
+            // ── Personal alarms ──────────────────────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Notifications, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Test Alarm Notification")
+                Text(
+                    "MY ALARMS",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                TextButton(onClick = onAddAlarm, enabled = alarms.size < AttendanceAlarmManager.MAX_ALARMS) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Add", fontSize = 13.sp)
+                }
+            }
+
+            if (alarms.isEmpty()) {
+                Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(20.dp).fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("No personal alarms", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Tap + to add your first alarm.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                alarms.forEach { alarm ->
+                    AlarmRow(
+                        alarm = alarm,
+                        onToggle = { enabled ->
+                            val ok = alarmManager.setAlarmEnabled(alarm.id, enabled)
+                            if (ok) {
+                                alarms = alarmManager.getAlarms()
+                                viewModel.syncAlarms(alarms)
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Could not schedule alarm — check exact alarm permission",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                reload()
+                            }
+                        },
+                        onClick = { onEditAlarm(alarm.id) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun PermissionBanner(
+    title: String,
+    message: String,
+    actionLabel: String,
+    onAction: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEA580C), modifier = Modifier.size(18.dp))
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF9A3412))
+            }
+            Text(message, fontSize = 12.sp, color = Color(0xFFC2410C), modifier = Modifier.padding(top = 4.dp))
+            TextButton(onClick = onAction, modifier = Modifier.padding(top = 2.dp)) {
+                Text(actionLabel, color = Color(0xFFEA580C), fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
     }
 }
 
+@Composable
+private fun CompanyReminderRow(label: String, time: String, enabled: Boolean) {
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "$time • Set by company admin",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    if (enabled) "ON" else "OFF",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (enabled) Color(0xFF16A34A) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Switch(checked = enabled, onCheckedChange = null, enabled = false)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlarmRow(
+    alarm: EmployeeAlarm,
+    onToggle: (Boolean) -> Unit,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    AttendanceAlarmManager.formatAmPm(alarm.time),
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (alarm.enabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    alarm.label.ifBlank { "Alarm" },
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    daySummary(alarm.repeatDays) +
+                        (alarm.soundName?.let { " • $it" } ?: ""),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Switch(checked = alarm.enabled, onCheckedChange = onToggle)
+        }
+    }
+}

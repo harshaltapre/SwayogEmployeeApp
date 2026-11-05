@@ -44,7 +44,6 @@ fun InventoryCoordinatorScreen(
     onNavigateBack: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
-    onNavigateToNotifications: () -> Unit = {},
     onNavigateToAttendance: () -> Unit = {},
     viewModel: InventoryViewModel = hiltViewModel()
 ) {
@@ -116,9 +115,6 @@ fun InventoryCoordinatorScreen(
                     }
                     IconButton(onClick = onNavigateToAttendance) {
                         Icon(Icons.Default.CalendarToday, contentDescription = "Attendance")
-                    }
-                    IconButton(onClick = onNavigateToNotifications) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Notifications")
                     }
                     IconButton(onClick = onNavigateToProfile) {
                         Icon(Icons.Default.Person, contentDescription = "Profile")
