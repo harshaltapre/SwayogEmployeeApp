@@ -392,20 +392,6 @@ class AttendanceAlarmManager(private val context: Context) {
         }
     }
 
-    fun areNotificationsEnabled(): Boolean {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            notificationManager.areNotificationsEnabled()
-        } else {
-            true
-        }
-    }
-
-    fun getReportingTimeLabel(): String {
-        val reportingTime = prefs.getString(KEY_REPORTING_TIME, DEFAULT_REPORTING_TIME) ?: DEFAULT_REPORTING_TIME
-        return formatAmPm(reportingTime)
-    }
-
     fun rescheduleSingleAlarm(requestCode: Int, setting: EmployeeAlarmSetting): Boolean {
         val (timeStr, alarmType, label) = when (requestCode) {
             REQ_PERSONAL -> Triple(setting.personalAlarmTime, "PERSONAL", "Morning Attendance Alarm")
