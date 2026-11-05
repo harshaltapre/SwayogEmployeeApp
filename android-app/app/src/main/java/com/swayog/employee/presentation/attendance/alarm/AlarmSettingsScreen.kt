@@ -2,6 +2,9 @@ package com.swayog.employee.presentation.attendance.alarm
 
 import android.app.TimePickerDialog
 import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,6 +42,16 @@ fun AlarmSettingsScreen(
     val initialLocal = remember { alarmManager.getLocalSettings() }
 
     var enabled by remember { mutableStateOf(initialLocal.enabled) }
+    var canScheduleExactAlarms by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                alarmManager.canScheduleExactAlarms()
+            } else {
+                true
+            }
+        )
+    }
+    var showExactAlarmDialog by remember { mutableStateOf(false) }
     var personalTime by remember { mutableStateOf(initialLocal.personalAlarmTime) }
     var reminder1Time by remember { mutableStateOf(initialLocal.reminder1Time ?: "10:00") }
     var reminder2Time by remember { mutableStateOf(initialLocal.reminder2Time ?: "10:15") }
@@ -152,6 +165,49 @@ fun AlarmSettingsScreen(
                             color = Color(0xFF1E40AF),
                             lineHeight = 16.sp
                         )
+                    }
+                }
+            }
+
+            // ── Exact Alarm Permission Status ───────────────────────────────
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !canScheduleExactAlarms) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEA580C), modifier = Modifier.size(20.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                "Exact Alarm Permission Required",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color(0xFF9A3412)
+                            )
+                            Text(
+                                "Android requires this permission for precise alarm scheduling. Without it, alarms may be delayed.",
+                                fontSize = 12.sp,
+                                color = Color(0xFFC2410C),
+                                lineHeight = 16.sp
+                            )
+                            Button(
+                                onClick = {
+                                    val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                        data = android.net.Uri.parse("package:" + context.packageName)
+                                    }
+                                    context.startActivity(intent)
+                                },
+                                modifier = Modifier.padding(top = 4.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C))
+                            ) {
+                                Text("Grant Permission", fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
             }
@@ -367,6 +423,13 @@ fun AlarmSettingsScreen(
                         enabled = enabled
                     )
 
+                    // Check exact alarm permission before scheduling
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+                        showExactAlarmDialog = true
+                        isSaving = false
+                        return@Button
+                    }
+
                     // 1. Schedule native Android Alarm
                     val scheduled = alarmManager.saveAndScheduleAlarms(setting)
 
@@ -393,6 +456,36 @@ fun AlarmSettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Save & Apply Alarms", fontWeight = FontWeight.Bold)
                 }
+            }
+
+            if (showExactAlarmDialog) {
+                AlertDialog(
+                    onDismissRequest = { showExactAlarmDialog = false },
+                    title = { Text("Exact Alarm Permission Required") },
+                    text = {
+                        Text(
+                            "To schedule precise attendance alarms, please grant the exact alarm permission in Android Settings. Without this permission, alarms may be delayed by the system."
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                    data = android.net.Uri.parse("package:" + context.packageName)
+                                }
+                                context.startActivity(intent)
+                                showExactAlarmDialog = false
+                            }
+                        ) {
+                            Text("Open Settings")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showExactAlarmDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
 
             OutlinedButton(
