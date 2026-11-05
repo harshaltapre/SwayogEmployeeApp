@@ -587,7 +587,13 @@ class AttendanceRepository @Inject constructor(
                 val errorMsg = if (!errBody.isNullOrBlank()) {
                     try {
                         val json = org.json.JSONObject(errBody)
-                        json.optString("error", json.optString("message", errBody))
+                        val error = json.optString("error", json.optString("message", errBody))
+                        // Improve error message for token expiration
+                        if (error.contains("expired", ignoreCase = true) || error.contains("token", ignoreCase = true)) {
+                            "Your session has expired. Please sign in again and resubmit your request."
+                        } else {
+                            error
+                        }
                     } catch (_: Exception) {
                         errBody
                     }

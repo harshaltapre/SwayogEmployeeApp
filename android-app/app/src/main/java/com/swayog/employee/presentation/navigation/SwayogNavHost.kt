@@ -31,6 +31,8 @@ fun SwayogNavHost(
     isLoggedIn: Boolean = true,
     userRole: String? = null,
     jobRole: String? = null,
+    pendingRoute: String? = null,
+    onPendingRouteConsumed: () -> Unit = {},
     onLogout: () -> Unit = {}
 ) {
     val isServiceCoordinator = androidx.compose.runtime.remember(userRole, jobRole) {
@@ -55,6 +57,21 @@ fun SwayogNavHost(
                 popUpTo(Screen.Login.route) { inclusive = true }
             }
         }
+    }
+
+    // Tapping an attendance alarm notification opens the screen it pointed at.
+    androidx.compose.runtime.LaunchedEffect(pendingRoute, isLoggedIn) {
+        val route = pendingRoute ?: return@LaunchedEffect
+        if (!isLoggedIn) return@LaunchedEffect
+        val destination = when (route) {
+            Screen.Attendance.route -> Screen.Attendance.route
+            Screen.AlarmSettings.route -> Screen.AlarmSettings.route
+            else -> null
+        }
+        if (destination != null && navController.currentDestination?.route != destination) {
+            navController.navigate(destination) { launchSingleTop = true }
+        }
+        onPendingRouteConsumed()
     }
 
     // Re-route when designation changes at runtime (web admin changed the role).

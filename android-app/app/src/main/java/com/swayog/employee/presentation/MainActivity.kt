@@ -37,9 +37,11 @@ import androidx.compose.ui.unit.dp
 @AndroidEntryPoint
 class MainActivity : androidx.fragment.app.FragmentActivity() {
     private val mainViewModel: MainViewModel by viewModels()
+    private val pendingRoute = androidx.compose.runtime.mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        consumeNavigateTo(intent)
         setContent {
             val isLoggedIn by mainViewModel.isLoggedIn.collectAsState()
             val userRole by mainViewModel.userRole.collectAsState()
@@ -64,6 +66,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             // to false while jobRole is still null, landing the user on Dashboard first.
             val isReady = isLoggedIn == false ||
                 (isLoggedIn == true && (userRole != null || jobRole != null))
+
+            // Keep the smart attendance alarms live for signed-in employees, including the
+            // default 10:20 alarm for anyone who never opened the alarm settings screen.
+            androidx.compose.runtime.LaunchedEffect(isLoggedIn) {
+                if (isLoggedIn == true) {
+                    com.swayog.employee.core.alarm.AttendanceAlarmManager(applicationContext)
+                        .rescheduleFromPreferences()
+                }
+            }
 
             CompositionLocalProvider(
                 LocalCompactViewEnabled provides compactViewEnabled,
@@ -107,6 +118,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     isLoggedIn = isLoggedIn == true,
                                     userRole = userRole,
                                     jobRole = jobRole,
+                                    pendingRoute = pendingRoute.value,
+                                    onPendingRouteConsumed = { pendingRoute.value = null },
                                     startDestination = if (isLoggedIn == true) {
                                         if (isInventoryCoordinator) {
                                             com.swayog.employee.presentation.navigation.Screen.InventoryCoordinator.route
@@ -139,5 +152,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onResume() {
         super.onResume()
         mainViewModel.onAppForegrounded()
+    }
+
+    override fun onNewIntent(intent: android.content.Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeNavigateTo(intent)
+    }
+
+    private fun consumeNavigateTo(intent: android.content.Intent?) {
+        val route = intent?.getStringExtra("NAVIGATE_TO")
+        if (!route.isNullOrBlank()) {
+            pendingRoute.value = route
+            intent.removeExtra("NAVIGATE_TO")
+        }
     }
 }

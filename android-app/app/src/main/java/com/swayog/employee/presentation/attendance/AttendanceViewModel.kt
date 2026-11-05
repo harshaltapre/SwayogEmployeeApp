@@ -78,6 +78,9 @@ class AttendanceViewModel @Inject constructor(
     private val _alarmSettings = MutableStateFlow<EmployeeAlarmSetting?>(null)
     val alarmSettings: StateFlow<EmployeeAlarmSetting?> = _alarmSettings.asStateFlow()
 
+    private val _companyReportingTime = MutableStateFlow<String?>(null)
+    val companyReportingTime: StateFlow<String?> = _companyReportingTime.asStateFlow()
+
     private val _pendingVerificationToken = MutableStateFlow<String?>(null)
     val pendingVerificationToken: StateFlow<String?> = _pendingVerificationToken.asStateFlow()
 
