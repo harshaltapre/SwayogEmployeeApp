@@ -98,10 +98,13 @@ fun AlarmSettingsScreen(
             // Re-arm company reminders immediately when the admin policy changes.
             alarmManager.rescheduleFromPreferences()
         }
-        if (resp.alarms.isNotEmpty()) {
-            // Backend is authoritative for the alarm list when present.
-            alarms = resp.alarms
+        if (resp.alarms.isNotEmpty() && alarmManager.getAlarms().isEmpty()) {
+            // Restore alarms previously synced to the backend (e.g. after a
+            // reinstall) so they are scheduled again. Local storage stays the
+            // single source of truth for what actually rings.
+            resp.alarms.forEach { alarmManager.upsertAlarm(it) }
         }
+        alarms = alarmManager.getAlarms()
         reload()
     }
 
@@ -199,27 +202,6 @@ fun AlarmSettingsScreen(
                 )
             }
 
-            // ── Company reminders (admin-controlled) ─────────────────────────
-            Text(
-                "COMPANY REMINDERS",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            CompanyReminderRow(
-                label = "Attendance Preparation",
-                time = AttendanceAlarmManager.formatAmPm(policy.prepReminderTime),
-                enabled = policy.prepReminderEnabled
-            )
-            CompanyReminderRow(
-                label = "Final Reporting Reminder",
-                time = AttendanceAlarmManager.formatAmPm(policy.finalReminderTime),
-                enabled = policy.finalReminderEnabled
-            )
-
             // ── Personal alarms ──────────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -246,9 +228,9 @@ fun AlarmSettingsScreen(
                         modifier = Modifier.padding(20.dp).fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("No personal alarms", fontWeight = FontWeight.SemiBold)
+                        Text("No alarms set", fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Tap + to add your first alarm.",
+                            "Create a personal alarm to receive reminders at your preferred time.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -302,35 +284,6 @@ private fun PermissionBanner(
             Text(message, fontSize = 12.sp, color = Color(0xFFC2410C), modifier = Modifier.padding(top = 4.dp))
             TextButton(onClick = onAction, modifier = Modifier.padding(top = 2.dp)) {
                 Text(actionLabel, color = Color(0xFFEA580C), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun CompanyReminderRow(label: String, time: String, enabled: Boolean) {
-    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "$time • Company notification",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    if (enabled) "ON" else "OFF",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (enabled) Color(0xFF16A34A) else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Switch(checked = enabled, onCheckedChange = null, enabled = false)
             }
         }
     }

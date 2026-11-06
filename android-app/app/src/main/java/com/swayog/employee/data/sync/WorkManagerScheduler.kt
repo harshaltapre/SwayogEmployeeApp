@@ -92,6 +92,26 @@ object WorkManagerScheduler {
     }
 
     /**
+     * Schedule the company attendance reminders worker (ordinary notifications).
+     * Runs every 15 minutes; the worker itself decides whether a reminder is due.
+     */
+    fun scheduleCompanyReminders(context: Context) {
+        val periodicWorkRequest = PeriodicWorkRequestBuilder<CompanyReminderWorker>(
+            15, TimeUnit.MINUTES
+        )
+            .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.MINUTES)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            CompanyReminderWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            periodicWorkRequest
+        )
+
+        android.util.Log.d("WorkManagerScheduler", "Scheduled company reminder checks every 15 minutes")
+    }
+
+    /**
      * Cancel the check-in reminder (e.g., on logout)
      */
     fun cancelCheckInReminder(context: Context) {

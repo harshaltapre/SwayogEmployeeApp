@@ -23,17 +23,16 @@ class AttendanceAlarmReceiver : BroadcastReceiver() {
         when (action) {
             AttendanceAlarmManager.ACTION_ATTENDANCE_ALARM -> {
                 val alarmJson = intent.getStringExtra(AttendanceAlarmManager.EXTRA_ALARM_JSON)
-                val companyType = intent.getStringExtra(AttendanceAlarmManager.EXTRA_COMPANY_TYPE)
                 val isSnooze = intent.hasExtra(AttendanceAlarmManager.EXTRA_SNOOZE_REMAINING)
                 val snoozeRemainingExtra = intent.getIntExtra(
                     AttendanceAlarmManager.EXTRA_SNOOZE_REMAINING,
                     AttendanceAlarmManager.DEFAULT_SNOOZE_COUNT
                 )
 
+                // Personal alarms only. Company reminders are delivered by
+                // CompanyReminderWorker as ordinary notifications.
                 if (alarmJson != null) {
                     handlePersonalAlarm(context, alarmManager, alarmJson, isSnooze, snoozeRemainingExtra)
-                } else if (companyType != null) {
-                    handleCompanyReminder(context, alarmManager, companyType, isSnooze, snoozeRemainingExtra)
                 }
             }
             AttendanceAlarmManager.ACTION_SNOOZE_ALARM,
@@ -89,79 +88,6 @@ class AttendanceAlarmReceiver : BroadcastReceiver() {
             snoozeRemaining = if (isSnooze) snoozeRemainingExtra else alarm.snoozeCount,
             notificationId = alarm.requestCode
         )
-    }
-
-    private fun handleCompanyReminder(
-        context: Context,
-        alarmManager: AttendanceAlarmManager,
-        companyType: String,
-        isSnooze: Boolean,
-        snoozeRemainingExtra: Int
-    ) {
-        if (!isSnooze) {
-            alarmManager.rescheduleCompanyReminder(companyType)
-        }
-
-        val policy = alarmManager.getPolicy()
-        val (label, time) = when (companyType) {
-            "PREP" -> "Attendance Preparation" to AttendanceAlarmManager.formatAmPm(policy.prepReminderTime)
-            "FINAL" -> "Final Reporting Reminder" to AttendanceAlarmManager.formatAmPm(policy.finalReminderTime)
-            else -> "Attendance Reminder" to ""
-        }
-
-        // Company reminders are informational only — a normal notification,
-        // never the full-screen ringing alarm experience.
-        postCompanyNotification(
-            context = context,
-            label = label,
-            time = time,
-            notificationId = when (companyType) {
-                "PREP" -> AttendanceAlarmManager.REQ_COMPANY_PREP
-                "FINAL" -> AttendanceAlarmManager.REQ_COMPANY_FINAL
-                else -> 0
-            }
-        )
-    }
-
-    /** Ordinary (non-alarm) notification for company-mandated reminders. */
-    private fun postCompanyNotification(
-        context: Context,
-        label: String,
-        time: String,
-        notificationId: Int
-    ) {
-        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            nm.createNotificationChannel(
-                NotificationChannel(
-                    AttendanceAlarmManager.COMPANY_CHANNEL_ID,
-                    "Company reminders",
-                    NotificationManager.IMPORTANCE_DEFAULT
-                ).apply {
-                    description = "Attendance preparation and reporting reminders"
-                }
-            )
-        }
-        val launch = PendingIntent.getActivity(
-            context, notificationId,
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra("NAVIGATE_TO", "attendance")
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(context, AttendanceAlarmManager.COMPANY_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(label)
-            .setContentText(
-                if (time.isNotBlank()) "Reminder for $time"
-                else "Attendance reminder"
-            )
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .setContentIntent(launch)
-            .build()
-        nm.notify(notificationId, notification)
     }
 
     private fun ringAlarm(

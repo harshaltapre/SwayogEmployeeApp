@@ -38,6 +38,8 @@ class SwayogEmployeeApp : Application(), Configuration.Provider {
         WorkManagerScheduler.scheduleCheckInReminder(this)
         // Schedule daily auto-checkout at 7:00 PM IST for employees who forgot to check out
         WorkManagerScheduler.scheduleAutoCheckout(this)
+        // Schedule periodic company attendance reminders (ordinary notifications)
+        WorkManagerScheduler.scheduleCompanyReminders(this)
     }
     
     private fun createNotificationChannel() {

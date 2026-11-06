@@ -13,7 +13,6 @@ import com.google.gson.reflect.TypeToken
 import com.swayog.employee.data.model.CompanyAlarmPolicy
 import com.swayog.employee.data.model.EmployeeAlarm
 import java.util.Calendar
-import java.util.UUID
 
 /**
  * Multi-alarm engine. Personal alarms are stored as a JSON list; each entry owns a
@@ -49,14 +48,7 @@ class AttendanceAlarmManager(private val context: Context) {
         private const val KEY_ALARMS_JSON = "alarm_entries_v2"
         private const val KEY_POLICY_JSON = "company_alarm_policy"
         private const val KEY_REQ_COUNTER = "alarm_req_counter"
-        private const val KEY_MIGRATED = "alarms_migrated_v2"
-
-        // Legacy keys (pre multi-alarm model) — read once for migration.
-        private const val LEGACY_KEY_ENABLED = "alarm_enabled"
-        private const val LEGACY_KEY_PERSONAL_TIME = "personal_alarm_time"
-        private const val LEGACY_KEY_REPEAT_DAYS = "repeat_days"
-        private const val LEGACY_KEY_VIBRATION = "vibration_enabled"
-        private const val LEGACY_KEY_SNOOZE = "snooze_enabled"
+        private const val KEY_OBSOLETE_CANCELLED = "obsolete_alarms_cancelled_v1"
 
         const val DEFAULT_REPORTING_TIME = "10:30"
         const val DEFAULT_TIMEZONE = "Asia/Kolkata"
@@ -85,13 +77,12 @@ class AttendanceAlarmManager(private val context: Context) {
             return String.format("%d:%02d %s", hour12, parts[1], suffix)
         }
 
-        fun defaultPolicy(): CompanyAlarmPolicy = CompanyAlarmPolicy()
     }
 
     // ── Alarm storage ──────────────────────────────────────────────────────────
 
     fun getAlarms(): List<EmployeeAlarm> {
-        migrateLegacyIfNeeded()
+        cancelObsoleteAlarmsOnce()
         val json = prefs.getString(KEY_ALARMS_JSON, null) ?: return emptyList()
         return try {
             val type = object : TypeToken<List<EmployeeAlarm>>() {}.type
@@ -107,45 +98,38 @@ class AttendanceAlarmManager(private val context: Context) {
         prefs.edit().putString(KEY_ALARMS_JSON, gson.toJson(alarms)).apply()
     }
 
-    /** Converts the legacy single-setting model into the new list on first run. */
-    private fun migrateLegacyIfNeeded() {
-        if (prefs.getBoolean(KEY_MIGRATED, false)) return
-        prefs.edit().putBoolean(KEY_MIGRATED, true).apply()
-        if (prefs.contains(KEY_ALARMS_JSON)) return
+    /**
+     * One-time cleanup after the company-alarm removal update. Cancels only the
+     * PendingIntents that are provably company/legacy-owned (fixed request codes);
+     * employee-created alarms use dynamically assigned request codes and are
+     * never touched here.
+     */
+    private fun cancelObsoleteAlarmsOnce() {
+        if (prefs.getBoolean(KEY_OBSOLETE_CANCELLED, false)) return
+        prefs.edit().putBoolean(KEY_OBSOLETE_CANCELLED, true).apply()
 
-        val legacyEnabled = prefs.getBoolean(LEGACY_KEY_ENABLED, true)
-        val legacyTime = normalizeTime(prefs.getString(LEGACY_KEY_PERSONAL_TIME, "09:30")) ?: "09:30"
-        val legacyDays = prefs.getString(LEGACY_KEY_REPEAT_DAYS, null)
-            ?.split(",")
-            ?.mapNotNull { it.trim().toIntOrNull() }
-            ?.filter { it in 0..6 }
-            ?.ifEmpty { DEFAULT_REPEAT_DAYS }
-            ?: DEFAULT_REPEAT_DAYS
-
-        val migrated = mutableListOf(
-            EmployeeAlarm(
-                id = UUID.randomUUID().toString(),
-                time = legacyTime,
-                label = "Personal Morning Alarm",
-                repeatDays = legacyDays,
-                enabled = legacyEnabled,
-                vibrationEnabled = prefs.getBoolean(LEGACY_KEY_VIBRATION, true),
-                snoozeEnabled = prefs.getBoolean(LEGACY_KEY_SNOOZE, true),
-                requestCode = nextRequestCode()
-            )
+        // Legacy fixed slots (pre multi-alarm) + company reminders + their snoozes.
+        val obsoleteCodes = listOf(
+            3001, 3002, 3003, 3004,          // REQ_PERSONAL / REQ_REMINDER_1 / REQ_REMINDER_2 / REQ_SNOOZE
+            REQ_COMPANY_PREP, REQ_COMPANY_FINAL,
+            SNOOZE_REQ_BASE + REQ_COMPANY_PREP,
+            SNOOZE_REQ_BASE + REQ_COMPANY_FINAL
         )
-        if (!prefs.contains(LEGACY_KEY_PERSONAL_TIME)) {
-            migrated.add(
-                EmployeeAlarm(
-                    id = UUID.randomUUID().toString(),
-                    time = "10:00",
-                    label = "Attendance Preparation",
-                    repeatDays = DEFAULT_REPEAT_DAYS,
-                    requestCode = nextRequestCode()
-                )
+        obsoleteCodes.forEach { reqCode ->
+            val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
+                action = ACTION_ATTENDANCE_ALARM
+            }
+            val pi = PendingIntent.getBroadcast(
+                context,
+                reqCode,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
             )
+            if (pi != null) {
+                alarmManager.cancel(pi)
+                pi.cancel()
+            }
         }
-        persistAlarms(migrated)
     }
 
     private fun nextRequestCode(): Int {
@@ -333,62 +317,12 @@ class AttendanceAlarmManager(private val context: Context) {
         }
     }
 
-    fun rescheduleCompanyReminder(type: String) {
-        val policy = getPolicy()
-        val (time, enabled, reqCode, label) = when (type) {
-            "PREP" -> listOf(policy.prepReminderTime, policy.prepReminderEnabled, REQ_COMPANY_PREP, "Attendance Preparation")
-            "FINAL" -> listOf(policy.finalReminderTime, policy.finalReminderEnabled, REQ_COMPANY_FINAL, "Final Reporting Reminder")
-            else -> return
-        }
-        if (enabled != true) {
-            val cancelIntent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
-                action = ACTION_ATTENDANCE_ALARM
-            }
-            val cancelPi = PendingIntent.getBroadcast(
-                context,
-                reqCode as Int,
-                cancelIntent,
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            )
-            if (cancelPi != null) {
-                alarmManager.cancel(cancelPi)
-                cancelPi.cancel()
-            }
-            return
-        }
-
-        val parts = (time as String).split(":").mapNotNull { it.toIntOrNull() }
-        if (parts.size != 2) return
-        val triggerTime = computeNextOccurrence(parts[0], parts[1], policy.workingDays)
-
-        val intent = Intent(context, AttendanceAlarmReceiver::class.java).apply {
-            action = ACTION_ATTENDANCE_ALARM
-            putExtra(EXTRA_COMPANY_TYPE, type)
-        }
-        val pi = PendingIntent.getBroadcast(
-            context,
-            reqCode as Int,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && canScheduleExactAlarms()) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pi)
-            } else {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pi)
-            }
-        } catch (e: SecurityException) {
-            Log.e("AttendanceAlarm", "SecurityException scheduling company reminder", e)
-        }
-    }
-
+    /** Re-arms every enabled personal alarm. Company reminders are handled by
+     *  CompanyReminderWorker as ordinary notifications — never scheduled here. */
     fun rescheduleFromPreferences(): Boolean {
-        val alarms = getAlarms()
-        for (a in alarms) {
+        for (a in getAlarms()) {
             if (a.enabled) scheduleAlarm(a) else cancelAlarm(a)
         }
-        rescheduleCompanyReminder("PREP")
-        rescheduleCompanyReminder("FINAL")
         return true
     }
 
