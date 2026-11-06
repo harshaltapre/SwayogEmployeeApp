@@ -109,22 +109,59 @@ class AttendanceAlarmReceiver : BroadcastReceiver() {
             else -> "Attendance Reminder" to ""
         }
 
-        ringAlarm(
+        // Company reminders are informational only — a normal notification,
+        // never the full-screen ringing alarm experience.
+        postCompanyNotification(
             context = context,
-            alarmManager = alarmManager,
-            alarmJson = null,
-            companyType = companyType,
             label = label,
             time = time,
-            vibration = true,
-            snoozeMinutes = AttendanceAlarmManager.DEFAULT_SNOOZE_MINUTES,
-            snoozeRemaining = if (isSnooze) snoozeRemainingExtra else 0, // company reminders: no snooze
             notificationId = when (companyType) {
                 "PREP" -> AttendanceAlarmManager.REQ_COMPANY_PREP
                 "FINAL" -> AttendanceAlarmManager.REQ_COMPANY_FINAL
                 else -> 0
             }
         )
+    }
+
+    /** Ordinary (non-alarm) notification for company-mandated reminders. */
+    private fun postCompanyNotification(
+        context: Context,
+        label: String,
+        time: String,
+        notificationId: Int
+    ) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    AttendanceAlarmManager.COMPANY_CHANNEL_ID,
+                    "Company reminders",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "Attendance preparation and reporting reminders"
+                }
+            )
+        }
+        val launch = PendingIntent.getActivity(
+            context, notificationId,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("NAVIGATE_TO", "attendance")
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, AttendanceAlarmManager.COMPANY_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(label)
+            .setContentText(
+                if (time.isNotBlank()) "Reminder for $time"
+                else "Attendance reminder"
+            )
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(launch)
+            .build()
+        nm.notify(notificationId, notification)
     }
 
     private fun ringAlarm(

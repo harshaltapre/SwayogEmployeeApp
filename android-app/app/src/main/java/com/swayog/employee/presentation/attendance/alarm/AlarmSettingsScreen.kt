@@ -318,7 +318,7 @@ private fun CompanyReminderRow(label: String, time: String, enabled: Boolean) {
             Column {
                 Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "$time • Set by company admin",
+                    "$time • Company notification",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

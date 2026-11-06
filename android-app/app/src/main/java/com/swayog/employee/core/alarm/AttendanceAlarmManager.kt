@@ -30,6 +30,7 @@ class AttendanceAlarmManager(private val context: Context) {
     companion object {
         const val PREFS_NAME = "swayog_attendance_alarms"
         const val CHANNEL_ID = "attendance_alarms_channel"
+        const val COMPANY_CHANNEL_ID = "company_reminders_channel"
         const val RINGING_CHANNEL_ID = "attendance_alarm_ringing_channel"
         const val ACTION_ATTENDANCE_ALARM = "com.swayog.employee.ACTION_ATTENDANCE_ALARM"
         const val ACTION_SNOOZE_ALARM = "com.swayog.employee.ACTION_SNOOZE_ALARM"
