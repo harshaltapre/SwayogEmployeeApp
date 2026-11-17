@@ -91,6 +91,13 @@ android {
         noCompress += "tflite"
     }
 
+    val isReleaseBuildRequested = gradle.startParameter.taskNames.any {
+        it.contains("assembleRelease", ignoreCase = true) ||
+        it.contains("bundleRelease", ignoreCase = true) ||
+        it.contains("packageRelease", ignoreCase = true)
+    }
+    val isCI = System.getenv("CI") == "true"
+
     signingConfigs {
         // Debug signing — generated automatically by Android Studio.
         // getByName("debug") is available by default.
@@ -134,9 +141,6 @@ android {
             }
             val rawStoreType = (System.getenv("RELEASE_STORE_TYPE")
                 ?: getLocalProperty("RELEASE_STORE_TYPE", "")).trim()
-
-            val isReleaseBuildRequested = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
-            val isCI = System.getenv("CI") == "true"
 
             if (keystoreFile != null && keystoreFile.exists()) {
                 val header = keystoreFile.inputStream().use { stream ->
@@ -188,7 +192,7 @@ android {
             val releaseConfig = signingConfigs.getByName("release")
             if (releaseConfig.storeFile != null && releaseConfig.storeFile!!.exists() && !releaseConfig.keyAlias.isNullOrBlank()) {
                 signingConfig = releaseConfig
-            } else if (System.getenv("CI") == "true" || gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+            } else if (System.getenv("CI") == "true" || isReleaseBuildRequested) {
                 throw GradleException(
                     "Cannot build release APK: Production release keystore was not found or credentials incomplete. " +
                     "Debug fallback is prohibited to prevent package conflict errors during app updates. " +

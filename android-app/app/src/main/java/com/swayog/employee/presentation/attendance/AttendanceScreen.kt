@@ -60,6 +60,7 @@ import com.google.maps.android.compose.*
 import com.swayog.employee.presentation.common.components.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -239,7 +240,75 @@ fun AttendanceScreen(
         }
     }
 
-    // Permission launchers & GPS locator
+    // Permission launcher (must be declared before startCheckInGpsFlow uses it)
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+        val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
+
+        if ((fineGranted || coarseGranted) && cameraGranted) {
+            // All permissions granted — do GPS flow inline to avoid forward reference
+            isLocatingForCheckIn = true
+            try {
+                fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                    .addOnSuccessListener { freshLoc: Location? ->
+                        isLocatingForCheckIn = false
+                        if (freshLoc != null) {
+                            if (freshLoc.accuracy <= 200) {
+                                currentLatitude = freshLoc.latitude
+                                currentLongitude = freshLoc.longitude
+                                currentLocationAccuracy = freshLoc.accuracy.toDouble()
+                                showCamera = true
+                            } else {
+                                showLocationInaccurateDialog = true
+                            }
+                        } else {
+                            fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
+                                if (lastLoc != null && lastLoc.accuracy <= 200 && (System.currentTimeMillis() - lastLoc.time) < 180_000L) {
+                                    currentLatitude = lastLoc.latitude
+                                    currentLongitude = lastLoc.longitude
+                                    currentLocationAccuracy = lastLoc.accuracy.toDouble()
+                                    showCamera = true
+                                } else {
+                                    showLocationUnavailableDialog = true
+                                }
+                            }.addOnFailureListener {
+                                showLocationUnavailableDialog = true
+                            }
+                        }
+                    }
+                    .addOnFailureListener {
+                        isLocatingForCheckIn = false
+                        fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
+                            if (lastLoc != null && lastLoc.accuracy <= 200 && (System.currentTimeMillis() - lastLoc.time) < 180_000L) {
+                                currentLatitude = lastLoc.latitude
+                                currentLongitude = lastLoc.longitude
+                                currentLocationAccuracy = lastLoc.accuracy.toDouble()
+                                showCamera = true
+                            } else {
+                                showLocationUnavailableDialog = true
+                            }
+                        }.addOnFailureListener {
+                            showLocationUnavailableDialog = true
+                        }
+                    }
+            } catch (e: SecurityException) {
+                isLocatingForCheckIn = false
+                showLocationPermissionDeniedDialog = true
+            }
+        } else {
+            isLocatingForCheckIn = false
+            if (!fineGranted && !coarseGranted) {
+                showLocationPermissionDeniedDialog = true
+            } else if (!cameraGranted) {
+                showCameraPermissionDeniedDialog = true
+            }
+        }
+    }
+
+    // GPS check-in flow — called after permissionLauncher is declared so no forward reference
     fun startCheckInGpsFlow() {
         val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -304,25 +373,6 @@ fun AttendanceScreen(
         } catch (e: SecurityException) {
             isLocatingForCheckIn = false
             showLocationPermissionDeniedDialog = true
-        }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
-        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
-        val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
-
-        if ((fineGranted || coarseGranted) && cameraGranted) {
-            startCheckInGpsFlow()
-        } else {
-            isLocatingForCheckIn = false
-            if (!fineGranted && !coarseGranted) {
-                showLocationPermissionDeniedDialog = true
-            } else if (!cameraGranted) {
-                showCameraPermissionDeniedDialog = true
-            }
         }
     }
 
