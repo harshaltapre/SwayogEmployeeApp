@@ -3,7 +3,7 @@ import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getRoleDashboardPath, isEpcPartnerJobRole, isInstallationTeamJobRole, isServiceExecutiveHeadJobRole, useAuth } from "@/lib/auth";
+import { getRoleDashboardPath, isEpcPartnerJobRole, isInstallationTeamJobRole, isMonitoringAnalystJobRole, isServiceExecutiveHeadJobRole, useAuth } from "@/lib/auth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import NotFound from "@/pages/not-found";
@@ -86,8 +86,18 @@ function ProtectedRoute({ component: Component, allowedRoles, path }: { componen
         const isPartnerRouteAccess = path.startsWith("/partner/") && (user.role === "partner" && !isEpcPartnerJobRole(user.jobRole) && !isInstallationTeamJobRole(user.jobRole));
         const isEpcRouteAccess = path.startsWith("/epc-contractor/") && (isEpcPartnerJobRole(user.jobRole) || (user.role as string) === "epc_contractor");
         const isInstallerRouteAccess = path.startsWith("/installer/") && (isInstallationTeamJobRole(user.jobRole) || (user.role as string) === "installer");
-        const isServiceExecutiveRouteAccess = path.startsWith("/service-executive") && (isServiceExecutiveHeadJobRole(user.jobRole) || user.role === "admin" || user.role === "super_admin");
-        const isAllowed = allowedRoles.includes(user.role) || isPartnerRouteAccess || isEpcRouteAccess || isInstallerRouteAccess || isServiceExecutiveRouteAccess;
+        const isServiceExecutiveRouteAccess = path.startsWith("/service-executive") && (
+          isServiceExecutiveHeadJobRole(user.jobRole) ||
+          isMonitoringAnalystJobRole(user.jobRole) ||
+          user.role === "admin" ||
+          user.role === "super_admin"
+        );
+        // The Service & Executive dashboard is restricted to executive heads,
+        // monitoring analysts, and admins — generic employee roles are denied.
+        const roleAllowed = path.startsWith("/service-executive")
+          ? isServiceExecutiveRouteAccess
+          : allowedRoles.includes(user.role);
+        const isAllowed = roleAllowed || isPartnerRouteAccess || isEpcRouteAccess || isInstallerRouteAccess;
         
         if (!isAllowed) {
           return <Redirect to={getRoleDashboardPath(user.role, user.jobRole)} />;

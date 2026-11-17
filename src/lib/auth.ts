@@ -153,6 +153,12 @@ export function isEpcPartnerJobRole(jobRole?: string): boolean {
   return normalized === "epccontractor" || normalized === "epc" || normalized === "epcpartner";
 }
 
+export function isMonitoringAnalystJobRole(jobRole?: string): boolean {
+  if (!jobRole) return false;
+  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
+  return normalized === "monitoringanalyst" || normalized === "monitoring";
+}
+
 export function isInstallationTeamJobRole(jobRole?: string): boolean {
   if (!jobRole) return false;
   const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
@@ -177,6 +183,10 @@ export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
 
   if (isServiceExecutiveHeadJobRole(jobRole)) {
     return '/service-executive/dashboard';
+  }
+
+  if (isMonitoringAnalystJobRole(jobRole)) {
+    return '/service-executive/dashboard?tab=liaisoning';
   }
 
   if (isInstallationTeamJobRole(jobRole) || r === 'installer') {

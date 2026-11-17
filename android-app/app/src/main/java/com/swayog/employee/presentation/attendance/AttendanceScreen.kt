@@ -97,6 +97,11 @@ fun AttendanceScreen(
     val liveOtDurationText by viewModel.liveSessionDurationText.collectAsState()
     val workforceSummary by viewModel.workforceSummary.collectAsState()
     val lateAllowanceSummary by viewModel.lateAllowanceSummary.collectAsState()
+    val isCheckInProcessing by viewModel.isCheckInProcessing.collectAsState()
+    val isCheckOutProcessing by viewModel.isCheckOutProcessing.collectAsState()
+
+    val coroutineScope = rememberCoroutineScope()
+    var isLocatingForCheckIn by remember { mutableStateOf(false) }
 
     // UI State
     var showCamera by remember { mutableStateOf(false) }
@@ -217,29 +222,91 @@ fun AttendanceScreen(
         }
     }
 
-    // Live clock
-    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            delay(1000L)
-        }
-    }
-    val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.getDefault()) }
-    val formattedTime = timeFormat.format(Date(currentTime))
-    // Derived from the live currentTime clock (updated every second) so the UI recomposes
-    // automatically when the clock crosses 6:30 PM.  Uses local system calendar so the
-    // comparison is always in the device's own timezone — consistent with how the rest of
-    // the attendance screen handles dates.
-    val isPast630Today: Boolean = remember(currentTime) {
+    // Clock evaluation every 30 seconds to minimize recomposition
+    var isPast630Today by remember {
         val cal = Calendar.getInstance()
-        cal.timeInMillis = currentTime
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val minute = cal.get(Calendar.MINUTE)
-        hour > 18 || (hour == 18 && minute >= 30)
+        mutableStateOf(hour > 18 || (hour == 18 && minute >= 30))
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            val cal = Calendar.getInstance()
+            val hour = cal.get(Calendar.HOUR_OF_DAY)
+            val minute = cal.get(Calendar.MINUTE)
+            isPast630Today = (hour > 18 || (hour == 18 && minute >= 30))
+        }
     }
 
-    // Permission launchers
+    // Permission launchers & GPS locator
+    fun startCheckInGpsFlow() {
+        val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val cameraGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!((fineGranted || coarseGranted) && cameraGranted)) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.CAMERA
+                )
+            )
+            return
+        }
+
+        isLocatingForCheckIn = true
+        try {
+            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener { freshLoc: Location? ->
+                    isLocatingForCheckIn = false
+                    if (freshLoc != null) {
+                        if (freshLoc.accuracy <= 200) {
+                            currentLatitude = freshLoc.latitude
+                            currentLongitude = freshLoc.longitude
+                            currentLocationAccuracy = freshLoc.accuracy.toDouble()
+                            showCamera = true
+                        } else {
+                            showLocationInaccurateDialog = true
+                        }
+                    } else {
+                        // Fallback to recent lastLocation if fresh satellite fix is delayed indoors
+                        fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
+                            if (lastLoc != null && lastLoc.accuracy <= 200 && (System.currentTimeMillis() - lastLoc.time) < 180_000L) {
+                                currentLatitude = lastLoc.latitude
+                                currentLongitude = lastLoc.longitude
+                                currentLocationAccuracy = lastLoc.accuracy.toDouble()
+                                showCamera = true
+                            } else {
+                                showLocationUnavailableDialog = true
+                            }
+                        }.addOnFailureListener {
+                            showLocationUnavailableDialog = true
+                        }
+                    }
+                }
+                .addOnFailureListener {
+                    isLocatingForCheckIn = false
+                    fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
+                        if (lastLoc != null && lastLoc.accuracy <= 200 && (System.currentTimeMillis() - lastLoc.time) < 180_000L) {
+                            currentLatitude = lastLoc.latitude
+                            currentLongitude = lastLoc.longitude
+                            currentLocationAccuracy = lastLoc.accuracy.toDouble()
+                            showCamera = true
+                        } else {
+                            showLocationUnavailableDialog = true
+                        }
+                    }.addOnFailureListener {
+                        showLocationUnavailableDialog = true
+                    }
+                }
+        } catch (e: SecurityException) {
+            isLocatingForCheckIn = false
+            showLocationPermissionDeniedDialog = true
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -248,34 +315,9 @@ fun AttendanceScreen(
         val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
 
         if ((fineGranted || coarseGranted) && cameraGranted) {
-            try {
-                // First attempt: fresh high-accuracy GPS fix
-                fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                    .addOnSuccessListener { freshLoc: Location? ->
-                        if (freshLoc != null) {
-                            // Validate location accuracy before proceeding
-                            if (freshLoc.accuracy <= 200) { // 200m accuracy threshold
-                                currentLatitude = freshLoc.latitude
-                                currentLongitude = freshLoc.longitude
-                                showCamera = true
-                            } else {
-                                showLocationInaccurateDialog = true
-                            }
-                        } else {
-                            // Fresh fix failed; do NOT fall back to stale last location
-                            showLocationUnavailableDialog = true
-                        }
-                    }
-                    .addOnFailureListener {
-                        // getCurrentLocation failed - block check-in
-                        showLocationUnavailableDialog = true
-                    }
-            } catch (e: SecurityException) {
-                // GPS disabled or permission permanently denied
-                showLocationPermissionDeniedDialog = true
-            }
+            startCheckInGpsFlow()
         } else {
-            // Location permission denied - show explanation
+            isLocatingForCheckIn = false
             if (!fineGranted && !coarseGranted) {
                 showLocationPermissionDeniedDialog = true
             } else if (!cameraGranted) {
@@ -296,36 +338,34 @@ fun AttendanceScreen(
             faceDescriptors = faceDescriptors,
             faceIndexManager = viewModel.faceIndexManager,
             onVerificationSuccessWithDescriptor = { bitmap, matchConfidence, liveDescriptor ->
-                // Apply Watermark
-                val format = java.text.SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a", java.util.Locale.getDefault())
-                val timestamp = format.format(java.util.Date())
-                val watermarkedBitmap = WatermarkHelper.addWatermark(bitmap, currentLatitude, currentLongitude, "Attendance Check-in", "Self", "N/A", timestamp)
+                showCamera = false
+                coroutineScope.launch(Dispatchers.Default) {
+                    val format = java.text.SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a", java.util.Locale.getDefault())
+                    val timestamp = format.format(java.util.Date())
+                    val watermarkedBitmap = WatermarkHelper.addWatermark(bitmap, currentLatitude, currentLongitude, "Attendance Check-in", "Self", "N/A", timestamp)
 
-                // Convert to Base64
-                val outputStream = ByteArrayOutputStream()
-                watermarkedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
-                val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+                    val outputStream = ByteArrayOutputStream()
+                    watermarkedBitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
+                    val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 
-                // Perform server-side face token verification before recording attendance
-                viewModel.verifyFaceWithServer(liveDescriptor, livenessVerified = true) { tokenResult ->
-                    val verificationToken = tokenResult.getOrNull()
-                    viewModel.checkIn(
-                        selfie = base64String,
-                        latitude = currentLatitude,
-                        longitude = currentLongitude,
-                        matchConfidence = matchConfidence,
-                        accuracy = currentLocationAccuracy,
-                        verificationToken = verificationToken
-                    ) { result ->
-                        showCamera = false
-                        if (result.isSuccess) {
-                            Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            val exception = result.exceptionOrNull()
-                            if (exception is OfflinePendingException) {
-                                Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                    withContext(Dispatchers.Main) {
+                        viewModel.checkIn(
+                            selfie = base64String,
+                            latitude = currentLatitude,
+                            longitude = currentLongitude,
+                            matchConfidence = matchConfidence,
+                            accuracy = currentLocationAccuracy,
+                            liveDescriptor = liveDescriptor
+                        ) { result ->
+                            if (result.isSuccess) {
+                                Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(context, "Check-in failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                                val exception = result.exceptionOrNull()
+                                if (exception is OfflinePendingException) {
+                                    Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "Check-in failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
                     }
@@ -528,13 +568,7 @@ fun AttendanceScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column {
-                                    Text(
-                                        text = formattedTime,
-                                        style = MaterialTheme.typography.headlineLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        letterSpacing = 2.sp
-                                    )
+                                    LiveClockDisplay()
                                     Text(
                                         text = "Current Time",
                                         style = MaterialTheme.typography.bodySmall,
@@ -1109,27 +1143,27 @@ fun AttendanceScreen(
                                     val isCutoffAbsentToday = isPast630Today && !isCheckedIn && !isAdminMarked && record?.status != "PRESENT" && record?.status != "LATE" && record?.status != "HALF_DAY" && record?.status != "HALF-DAY" && record?.status != "LEAVE"
 
                                     SwayogButton(
-                                        text = if (isAdminMarked) "Attendance Completed" else if (isCheckedIn) "Checked In" else if (isCutoffAbsentToday) "Absent (Cutoff 6:30 PM Passed)" else "Check In",
+                                        text = if (isLocatingForCheckIn) "Getting Location..."
+                                            else if (isCheckInProcessing) "Checking In..."
+                                            else if (isAdminMarked) "Attendance Completed"
+                                            else if (isCheckedIn) "Checked In"
+                                            else if (isCutoffAbsentToday) "Absent (Cutoff 6:30 PM Passed)"
+                                            else "Check In",
                                         onClick = {
                                             val hasEnrolledFace = isFaceEnrolled || faceDescriptors.isNotEmpty() || viewModel.faceIndexManager.getIndexSnapshot().isNotEmpty()
                                             if (!hasEnrolledFace) {
                                                 showEnrollmentBlocker = true
                                             } else {
-                                                permissionLauncher.launch(
-                                                    arrayOf(
-                                                        Manifest.permission.ACCESS_FINE_LOCATION,
-                                                        Manifest.permission.ACCESS_COARSE_LOCATION,
-                                                        Manifest.permission.CAMERA
-                                                    )
-                                                )
+                                                startCheckInGpsFlow()
                                             }
                                         },
-                                        enabled = !isCheckedIn && !isAttendanceCompleted && !isCutoffAbsentToday,
+                                        enabled = !isCheckedIn && !isAttendanceCompleted && !isCutoffAbsentToday && !isLocatingForCheckIn && !isCheckInProcessing,
+                                        isLoading = isLocatingForCheckIn || isCheckInProcessing,
                                         modifier = Modifier.weight(1f)
                                     )
 
                                     SwayogButton(
-                                        text = "Check Out",
+                                        text = if (isCheckOutProcessing) "Checking Out..." else "Check Out",
                                         onClick = {
                                             viewModel.checkOut { result ->
                                                 if (result.isSuccess) {
@@ -1144,7 +1178,8 @@ fun AttendanceScreen(
                                                 }
                                             }
                                         },
-                                        enabled = isCheckedIn && todayAttendance?.checkOutTime == null && !isAdminMarked,
+                                        enabled = isCheckedIn && todayAttendance?.checkOutTime == null && !isAdminMarked && !isCheckOutProcessing,
+                                        isLoading = isCheckOutProcessing,
                                         variant = ButtonVariant.Secondary,
                                         modifier = Modifier.weight(1f)
                                     )
@@ -1867,25 +1902,45 @@ fun AttendanceScreen(
                                                 }
 
                                                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                                                    val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
-                                                    val stream = ByteArrayOutputStream()
-                                                    bitmap.compress(Bitmap.CompressFormat.JPEG, 70, stream)
-                                                    val byteArray = stream.toByteArray()
-                                                    val base64Selfie = "data:image/jpeg;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP)
-
-                                                    viewModel.checkIn(base64Selfie, currentLatitude, currentLongitude) { result ->
-                                                        if (result.isSuccess) {
-                                                            Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
-                                                        } else {
-                                                            val exception = result.exceptionOrNull()
-                                                            if (exception is OfflinePendingException) {
-                                                                Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                                                    showCamera = false
+                                                    coroutineScope.launch(Dispatchers.Default) {
+                                                        val rawBitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                                                        val maxDim = 800
+                                                        val (scaledW, scaledH) = if (rawBitmap.width > maxDim || rawBitmap.height > maxDim) {
+                                                            if (rawBitmap.width >= rawBitmap.height) {
+                                                                maxDim to (maxDim * rawBitmap.height / rawBitmap.width)
                                                             } else {
-                                                                Toast.makeText(context, "Check-in failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                                                                (maxDim * rawBitmap.width / rawBitmap.height) to maxDim
+                                                            }
+                                                        } else {
+                                                            rawBitmap.width to rawBitmap.height
+                                                        }
+                                                        val bitmap = if (scaledW != rawBitmap.width || scaledH != rawBitmap.height) {
+                                                            Bitmap.createScaledBitmap(rawBitmap, scaledW, scaledH, true)
+                                                        } else {
+                                                            rawBitmap
+                                                        }
+                                                        val stream = ByteArrayOutputStream()
+                                                        bitmap.compress(Bitmap.CompressFormat.JPEG, 70, stream)
+                                                        val byteArray = stream.toByteArray()
+                                                        val base64Selfie = "data:image/jpeg;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP)
+                                                        try { photoFile.delete() } catch (_: Exception) {}
+
+                                                        withContext(Dispatchers.Main) {
+                                                            viewModel.checkIn(base64Selfie, currentLatitude, currentLongitude) { result ->
+                                                                if (result.isSuccess) {
+                                                                    Toast.makeText(context, "Checked in successfully!", Toast.LENGTH_SHORT).show()
+                                                                } else {
+                                                                    val exception = result.exceptionOrNull()
+                                                                    if (exception is OfflinePendingException) {
+                                                                        Toast.makeText(context, exception.message, Toast.LENGTH_LONG).show()
+                                                                    } else {
+                                                                        Toast.makeText(context, "Check-in failed: ${exception?.message}", Toast.LENGTH_LONG).show()
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
-                                                    showCamera = false
                                                 }
                                             }
                                         )
@@ -3788,4 +3843,26 @@ fun LateAllowanceCard(summary: com.swayog.employee.data.model.LateAllowanceSumma
             }
         }
     }
+}
+
+@Composable
+fun LiveClockDisplay(
+    modifier: Modifier = Modifier
+) {
+    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTime = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+    val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.getDefault()) }
+    Text(
+        text = timeFormat.format(Date(currentTime)),
+        style = MaterialTheme.typography.headlineLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        letterSpacing = 2.sp,
+        modifier = modifier
+    )
 }

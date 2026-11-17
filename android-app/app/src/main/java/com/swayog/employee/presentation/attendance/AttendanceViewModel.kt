@@ -90,6 +90,12 @@ class AttendanceViewModel @Inject constructor(
     private val _pendingVerificationToken = MutableStateFlow<String?>(null)
     val pendingVerificationToken: StateFlow<String?> = _pendingVerificationToken.asStateFlow()
 
+    private val _isCheckInProcessing = MutableStateFlow(false)
+    val isCheckInProcessing: StateFlow<Boolean> = _isCheckInProcessing.asStateFlow()
+
+    private val _isCheckOutProcessing = MutableStateFlow(false)
+    val isCheckOutProcessing: StateFlow<Boolean> = _isCheckOutProcessing.asStateFlow()
+
     val profilePhotoUrl: StateFlow<String?> = dataStoreManager.profilePhotoUrl.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -320,7 +326,15 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
-    fun loadData() {
+    @Volatile
+    private var lastLoadDataTime = 0L
+
+    fun loadData(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastLoadDataTime < 3000L) {
+            return
+        }
+        lastLoadDataTime = now
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Success
             loadRegularizationRequests()
@@ -389,30 +403,39 @@ class AttendanceViewModel @Inject constructor(
         matchConfidence: Float? = null,
         accuracy: Double? = null,
         verificationToken: String? = null,
+        liveDescriptor: List<Float>? = null,
         onResult: (Result<Unit>) -> Unit
     ) {
+        if (_isCheckInProcessing.value) {
+            android.util.Log.d("AttendanceViewModel", "Check-in already in progress, ignoring duplicate call")
+            return
+        }
+        _isCheckInProcessing.value = true
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Loading
             val token = verificationToken ?: _pendingVerificationToken.value
-            attendanceRepository.checkIn(
+            val result = attendanceRepository.checkIn(
                 selfie = selfie,
                 latitude = latitude,
                 longitude = longitude,
                 matchConfidence = matchConfidence,
                 accuracy = accuracy,
                 verificationToken = token,
-                faceVerified = token != null,
-                livenessVerified = token != null
+                faceVerified = token != null || liveDescriptor != null,
+                livenessVerified = token != null || liveDescriptor != null,
+                liveDescriptor = liveDescriptor
             )
-                .onSuccess { response ->
-                    _pendingVerificationToken.value = null
-                    loadData()
-                    onResult(Result.success(Unit))
-                }
-                .onFailure { error ->
-                    _attendanceState.value = AttendanceState.Success
-                    onResult(Result.failure(error))
-                }
+            
+            _isCheckInProcessing.value = false
+            _pendingVerificationToken.value = null
+            _attendanceState.value = AttendanceState.Success
+
+            result.onSuccess {
+                onResult(Result.success(Unit))
+                viewModelScope.launch { loadData(force = true) }
+            }.onFailure { error ->
+                onResult(Result.failure(error))
+            }
         }
     }
 
@@ -497,23 +520,29 @@ class AttendanceViewModel @Inject constructor(
     }
 
     fun checkOut(onResult: (Result<Unit>) -> Unit) {
+        if (_isCheckOutProcessing.value) {
+            android.util.Log.d("AttendanceViewModel", "Check-out already in progress, ignoring duplicate call")
+            return
+        }
+        _isCheckOutProcessing.value = true
         viewModelScope.launch {
             _attendanceState.value = AttendanceState.Loading
-            attendanceRepository.checkOut()
-                .onSuccess {
-                    loadData()
+            val result = attendanceRepository.checkOut()
+
+            _isCheckOutProcessing.value = false
+            result.onSuccess {
+                _attendanceState.value = AttendanceState.Success
+                onResult(Result.success(Unit))
+                viewModelScope.launch { loadData(force = true) }
+            }.onFailure { error ->
+                if (error is OfflinePendingException) {
                     _attendanceState.value = AttendanceState.Success
-                    onResult(Result.success(Unit))
+                    viewModelScope.launch { loadData(force = true) }
+                } else {
+                    _attendanceState.value = AttendanceState.Error(error.message ?: "Check-out failed")
                 }
-                .onFailure { error ->
-                    if (error is OfflinePendingException) {
-                        loadData()
-                        _attendanceState.value = AttendanceState.Success
-                    } else {
-                        _attendanceState.value = AttendanceState.Error(error.message ?: "Check-out failed")
-                    }
-                    onResult(Result.failure(error))
-                }
+                onResult(Result.failure(error))
+            }
         }
     }
 }

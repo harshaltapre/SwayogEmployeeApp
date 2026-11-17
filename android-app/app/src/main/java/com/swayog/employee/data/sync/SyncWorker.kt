@@ -260,11 +260,17 @@ class SyncWorker @AssistedInject constructor(
                                 matchConfidence = json.optDouble("matchConfidence").takeIf { !json.isNull("matchConfidence") }?.toFloat()
                             )
                             val response = apiService.checkIn(request)
-                            response.isSuccessful
+                            val isAlreadyDone = response.code() == 400 && try {
+                                response.errorBody()?.string()?.contains("Already checked in", ignoreCase = true) == true
+                            } catch (_: Exception) { false }
+                            response.isSuccessful || isAlreadyDone
                         }
                         item.endpoint.contains("check-out") && item.method == "POST" -> {
                             val response = apiService.checkOut()
-                            if (response.isSuccessful) {
+                            val isAlreadyDone = response.code() == 400 && try {
+                                response.errorBody()?.string()?.contains("Already checked out", ignoreCase = true) == true
+                            } catch (_: Exception) { false }
+                            if (response.isSuccessful || isAlreadyDone) {
                                 val userId = dataStoreManager.userId.first()
                                 val todayRecord = userId?.let { attendanceDao.getTodayAttendance(it) }
                                 if (todayRecord != null) {

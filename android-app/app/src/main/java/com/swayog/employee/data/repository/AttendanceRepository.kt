@@ -119,7 +119,8 @@ class AttendanceRepository @Inject constructor(
         accuracy: Double? = null,
         verificationToken: String? = null,
         faceVerified: Boolean = false,
-        livenessVerified: Boolean = false
+        livenessVerified: Boolean = false,
+        liveDescriptor: List<Float>? = null
     ): Result<CheckInResponse> {
         val userId = dataStoreManager.userId.first()
         if (userId.isNullOrBlank()) return Result.failure(Exception("User is not authenticated"))
@@ -136,7 +137,8 @@ class AttendanceRepository @Inject constructor(
                         accuracy = accuracy,
                         verificationToken = verificationToken,
                         faceVerified = faceVerified,
-                        livenessVerified = livenessVerified
+                        livenessVerified = livenessVerified,
+                        liveDescriptor = liveDescriptor
                     )
                 )
                 if (response.isSuccessful && response.body()?.result != null) {
@@ -165,6 +167,13 @@ class AttendanceRepository @Inject constructor(
                     // Return the actual server error so the user sees the real problem.
                     val errorMsg = ErrorUtils.formatResponseError(response)
                     android.util.Log.e("AttendanceRepository", "Check-in rejected by server (online): $errorMsg")
+
+                    // Idempotent recovery: If server confirms already checked in today, treat as success!
+                    if (errorMsg.contains("Already checked in", ignoreCase = true)) {
+                        android.util.Log.i("AttendanceRepository", "Attendance already recorded on server; completing as success")
+                        val todayRecord = getTodayAttendance().getOrNull()
+                        return Result.success(CheckInResponse(attendanceRecord = todayRecord))
+                    }
                     
                     // Provide specific guidance for authentication errors
                     val userFriendlyError = if (response.code() == 401 || errorMsg.contains("401", ignoreCase = true) || 
@@ -234,9 +243,17 @@ class AttendanceRepository @Inject constructor(
             put("matchConfidence", matchConfidence)
         }.toString()
         
+        val pending = outboxQueueDao.getPendingItems()
+        val existingCheckIn = pending.firstOrNull { it.endpoint.contains("check-in") }
+        if (existingCheckIn != null) {
+            outboxQueueDao.updateItem(existingCheckIn.copy(payload = payload))
+            scheduleSync()
+            return
+        }
+
         val outboxItem = OutboxQueueEntity(
             id = UUID.randomUUID().toString(),
-            endpoint = "attendance/check-in",
+            endpoint = "employee/attendance/check-in",
             method = "POST",
             payload = payload,
             createdAt = System.currentTimeMillis().toString()
@@ -283,6 +300,18 @@ class AttendanceRepository @Inject constructor(
                 } else {
                     val errorMsg = ErrorUtils.formatResponseError(response)
                     android.util.Log.e("AttendanceRepository", "Check-out rejected by server: $errorMsg")
+                    // Idempotent recovery: If server confirms already checked out today, treat as success!
+                    if (errorMsg.contains("Already checked out", ignoreCase = true)) {
+                        android.util.Log.i("AttendanceRepository", "Already checked out on server; completing local state")
+                        val userId = dataStoreManager.userId.first()
+                        val todayAttendance = userId?.let { attendanceDao.getTodayAttendance(it) }
+                        todayAttendance?.let {
+                            attendanceDao.updateAttendance(
+                                it.copy(checkOutTime = java.time.LocalDateTime.now().toString(), isSynced = true)
+                            )
+                        }
+                        return Result.success(Unit)
+                    }
                     Result.failure(Exception(errorMsg))
                 }
             } catch (e: Exception) {
@@ -319,6 +348,13 @@ class AttendanceRepository @Inject constructor(
     }
 
     private suspend fun saveCheckOutToOutbox() {
+        val pending = outboxQueueDao.getPendingItems()
+        val existingCheckOut = pending.firstOrNull { it.endpoint.contains("check-out") }
+        if (existingCheckOut != null) {
+            scheduleSync()
+            return
+        }
+
         val outboxItem = OutboxQueueEntity(
             id = UUID.randomUUID().toString(),
             endpoint = "employee/attendance/check-out",

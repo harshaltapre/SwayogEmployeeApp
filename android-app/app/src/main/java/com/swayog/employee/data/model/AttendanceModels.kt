@@ -41,7 +41,8 @@ data class CheckInRequest(
     val accuracy: Double? = null,
     val verificationToken: String? = null,
     val faceVerified: Boolean = false,
-    val livenessVerified: Boolean = false
+    val livenessVerified: Boolean = false,
+    val liveDescriptor: List<Float>? = null
 )
 
 data class FaceEnrollRequest(

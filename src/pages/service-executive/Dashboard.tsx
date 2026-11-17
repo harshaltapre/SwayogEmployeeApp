@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { SidebarLayout } from "@/components/SidebarLayout";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isMonitoringAnalystJobRole } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { PartnersLeadSection } from "./PartnersLeadSection";
 import {
@@ -121,17 +121,6 @@ const DUMMY_CONTRACTORS = [
   }
 ];
 
-const DUMMY_LIAISONING = [
-  { id: "LIA-1", name: "MSEDCL Liaisoning Squad", dept: "MSEDCL Grid Connectivity & Sanctions", phone: "+91 9822001122", status: "Operational" },
-  { id: "LIA-2", name: "MEDA Subsidies Desk", dept: "MEDA State Subsidy Disbursal", phone: "+91 9822003344", status: "Operational" },
-  { id: "LIA-3", name: "CEIG Electrical Inspectorate", dept: "CEIG Safety Clearances", phone: "+91 9822005566", status: "Operational" }
-];
-
-const DUMMY_CONSULTANTS = [
-  { id: "CON-1", name: "Dr. Arvind Mehta", title: "Principal Solar Tech Consultant", exp: "18 Years", phone: "+91 9811002233", status: "Active" },
-  { id: "CON-2", name: "Sunil Deshpande", title: "High Voltage Transmission Advisor", exp: "14 Years", phone: "+91 9811004455", status: "Active" }
-];
-
 const DUMMY_MANUFACTURERS = [
   { id: "MFG-1", companyName: "Waaree Energies Ltd", category: "Solar PV Modules", gst: "27WAAEE1234A1Z1", contact: "Regional Hub", phone: "+91 22 6644 4444", status: "Active" },
   { id: "MFG-2", companyName: "Sungrow Power", category: "Grid Inverters & ESS", gst: "27SUNG1234B1Z2", contact: "Support Desk", phone: "+91 22 7788 9900", status: "Active" },
@@ -160,9 +149,18 @@ const DUMMY_TRAINEES = [
   { id: "TRN-1", name: "Pranav Shinde", college: "COEP Pune", course: "B.Tech Electrical", duration: "6 Months", mentor: "Rajesh Kulkarni", progress: "85%" }
 ];
 
+const MONITORING_ANALYST_TABS = ["liaisoning", "liaisoning-process"];
+const LIAISONING_PROCESS_STATUSES = ["INITIATED", "SUBMITTED", "IN_PROGRESS", "APPROVED", "REJECTED", "ON_HOLD"];
+const LIAISONING_PROCESS_TYPES = ["Net Metering", "Government Subsidy", "CEIG Inspection", "DISCOM Sanction", "Other"];
+
 export default function ServiceExecutiveDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMonitoringAnalyst = isMonitoringAnalystJobRole(user?.jobRole);
+
+  // Monitoring Analysts are restricted to the Liaisoning modules only.
+  const sanitizeTab = (tab: string) =>
+    isMonitoringAnalyst && !MONITORING_ANALYST_TABS.includes(tab) ? "liaisoning" : tab;
 
   const getUrlTab = () => {
     if (typeof window !== "undefined") {
@@ -172,14 +170,15 @@ export default function ServiceExecutiveDashboard() {
     return "overview";
   };
 
-  const [activeTab, setActiveTab] = useState(getUrlTab);
+  const [activeTab, setActiveTab] = useState(() => sanitizeTab(getUrlTab()));
   const [searchQuery, setSearchQuery] = useState("");
 
   const handleTabChange = (val: string) => {
-    setActiveTab(val);
+    const next = sanitizeTab(val);
+    setActiveTab(next);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
-      url.searchParams.set("tab", val);
+      url.searchParams.set("tab", next);
       window.history.replaceState({}, "", url.toString());
     }
   };
@@ -187,13 +186,14 @@ export default function ServiceExecutiveDashboard() {
   useEffect(() => {
     const updateFromUrl = () => {
       const tab = getUrlTab();
-      setActiveTab(tab);
+      setActiveTab(sanitizeTab(tab));
     };
 
     updateFromUrl();
     window.addEventListener("popstate", updateFromUrl);
     return () => window.removeEventListener("popstate", updateFromUrl);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMonitoringAnalyst]);
 
   // Live state collections (synced with LocalStorage)
   const [contractors, setContractors] = useState<any[]>(() => {
@@ -238,23 +238,22 @@ export default function ServiceExecutiveDashboard() {
     return [];
   });
 
-  const [liaisoning, setLiaisoning] = useState(() => {
-    try {
-      const saved = localStorage.getItem("se_liaisoning");
-      return saved ? JSON.parse(saved) : DUMMY_LIAISONING;
-    } catch {
-      return DUMMY_LIAISONING;
-    }
-  });
+  // Liaisoning directory + process records are persisted in the backend
+  // (IsphereGreenEntry table via /api/v1/isphere-green).
+  const [liaisoning, setLiaisoning] = useState<any[]>([]);
+  const [consultants, setConsultants] = useState<any[]>([]);
+  const [liaisoningLoading, setLiaisoningLoading] = useState(false);
+  const [liaisoningSearch, setLiaisoningSearch] = useState("");
+  const [editingLiaisoning, setEditingLiaisoning] = useState<any | null>(null);
+  const [deletingLiaisoningId, setDeletingLiaisoningId] = useState<string | null>(null);
 
-  const [consultants, setConsultants] = useState(() => {
-    try {
-      const saved = localStorage.getItem("se_consultants");
-      return saved ? JSON.parse(saved) : DUMMY_CONSULTANTS;
-    } catch {
-      return DUMMY_CONSULTANTS;
-    }
-  });
+  const [processRecords, setProcessRecords] = useState<any[]>([]);
+  const [processLoading, setProcessLoading] = useState(false);
+  const [processSearch, setProcessSearch] = useState("");
+  const [isProcessDialogOpen, setIsProcessDialogOpen] = useState(false);
+  const [editingProcess, setEditingProcess] = useState<any | null>(null);
+  const [viewingProcess, setViewingProcess] = useState<any | null>(null);
+  const [deletingProcessId, setDeletingProcessId] = useState<string | null>(null);
 
   const [manufacturers, setManufacturers] = useState(() => {
     try {
@@ -439,6 +438,333 @@ export default function ServiceExecutiveDashboard() {
     fetchLiveInstallers();
   }, []);
 
+  // ─── LIAISONING MODULE (backend: IsphereGreenEntry via /api/v1/isphere-green) ───
+
+  const isphereHeaders = () => {
+    const token = localStorage.getItem("token");
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
+  const fetchIsphereEntries = async (subcategory: string) => {
+    const res = await fetch(
+      `/api/v1/isphere-green?category=SERVICE_EXECUTIVE&subcategory=${encodeURIComponent(subcategory)}`,
+      { headers: isphereHeaders() }
+    );
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) {
+      throw new Error(data?.message || `Failed to load ${subcategory} records`);
+    }
+    return Array.isArray(data.data) ? data.data : [];
+  };
+
+  const mapLiaisoningEntry = (item: any) => ({
+    id: item.id,
+    name: item.name,
+    dept: item.details?.department || item.details?.discomExpertise || item.place || "General",
+    location: item.place || "",
+    phone: item.phone || item.details?.officerPhone || "N/A",
+    status: item.status && item.status !== "ACTIVE" ? item.status : "Operational",
+    raw: item,
+  });
+
+  const mapConsultantEntry = (item: any) => ({
+    id: item.id,
+    name: item.name,
+    title: item.details?.title || item.details?.expertiseDomain || "Solar Consultant",
+    exp: item.details?.experienceYears || "—",
+    phone: item.phone || "N/A",
+    status: item.status === "ACTIVE" ? "Active" : (item.status || "Active"),
+    raw: item,
+  });
+
+  const mapProcessEntry = (item: any) => ({
+    id: item.id,
+    customerName: item.details?.customerName || item.name,
+    processType: item.details?.processType || "Other",
+    department: item.place || item.details?.department || "—",
+    officerName: item.details?.officerName || "—",
+    officerPhone: item.phone || item.details?.officerPhone || "—",
+    stage: item.details?.stage || item.status || "INITIATED",
+    submittedDate: item.details?.submittedDate || null,
+    remarks: item.details?.remarks || "",
+    status: item.status || "INITIATED",
+    raw: item,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  });
+
+  const loadLiaisoningData = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLiaisoningLoading(true);
+      setProcessLoading(true);
+    }
+    try {
+      const [specialists, consultantList, processes] = await Promise.all([
+        fetchIsphereEntries("LIAISONING"),
+        fetchIsphereEntries("CONSULTANT"),
+        fetchIsphereEntries("LIAISONING_PROCESS"),
+      ]);
+      setLiaisoning(specialists.map(mapLiaisoningEntry));
+      setConsultants(consultantList.map(mapConsultantEntry));
+      setProcessRecords(processes.map(mapProcessEntry));
+    } catch (err: any) {
+      console.error("Failed to load liaisoning data:", err);
+      toast({ title: "Load Failed", description: err?.message || "Could not load liaisoning records", variant: "destructive" });
+    } finally {
+      if (!silent) {
+        setLiaisoningLoading(false);
+        setProcessLoading(false);
+      }
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    loadLiaisoningData();
+  }, [loadLiaisoningData]);
+
+  const saveIsphereEntry = async (payload: any, id?: string | null) => {
+    const res = await fetch(id ? `/api/v1/isphere-green/${id}` : "/api/v1/isphere-green", {
+      method: id ? "PUT" : "POST",
+      headers: isphereHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) {
+      throw new Error(data?.message || "Failed to save record");
+    }
+    return data.data;
+  };
+
+  const deleteIsphereEntry = async (id: string) => {
+    const res = await fetch(`/api/v1/isphere-green/${id}`, {
+      method: "DELETE",
+      headers: isphereHeaders(),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) {
+      throw new Error(data?.message || "Failed to delete record");
+    }
+  };
+
+  // ─── LIAISONING SPECIALIST CRUD ────────────────────────────────────────────
+
+  const openAddLiaisoning = () => {
+    setEditingLiaisoning(null);
+    setNewLiaisoning({ ...emptyLiaisoningForm });
+    setIsAddLiaisoningOpen(true);
+  };
+
+  const openEditLiaisoning = (item: any) => {
+    setEditingLiaisoning(item);
+    setNewLiaisoning({
+      name: item.name || "",
+      dept: item.dept || "",
+      location: item.location || item.raw?.place || "",
+      phone: item.phone && item.phone !== "N/A" ? item.phone : "",
+    });
+    setIsAddLiaisoningOpen(true);
+  };
+
+  const handleCreateLiaisoning = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLiaisoning.name.trim()) {
+      toast({ title: "Validation Error", description: "Team / specialist name is required", variant: "destructive" });
+      return;
+    }
+    try {
+      await saveIsphereEntry(
+        {
+          category: "SERVICE_EXECUTIVE",
+          subcategory: "LIAISONING",
+          name: newLiaisoning.name.trim(),
+          place: newLiaisoning.location.trim() || newLiaisoning.dept.trim() || "General",
+          phone: newLiaisoning.phone.trim() || null,
+          details: {
+            department: newLiaisoning.dept.trim() || "Grid Approvals",
+            discomExpertise: newLiaisoning.dept.trim() || "",
+          },
+          status: "ACTIVE",
+        },
+        editingLiaisoning?.id ?? null
+      );
+      toast({
+        title: editingLiaisoning ? "Liaisoning Specialist Updated" : "Liaisoning Team Added",
+        description: `${newLiaisoning.name.trim()} ${editingLiaisoning ? "updated" : "registered"} successfully.`,
+      });
+      setIsAddLiaisoningOpen(false);
+      setEditingLiaisoning(null);
+      setNewLiaisoning({ ...emptyLiaisoningForm });
+      await loadLiaisoningData(true);
+    } catch (err: any) {
+      toast({ title: "Save Failed", description: err?.message || "Could not save liaisoning record", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteLiaisoning = async (id: string) => {
+    if (!confirm("Delete this liaisoning specialist record?")) return;
+    setDeletingLiaisoningId(id);
+    try {
+      await deleteIsphereEntry(id);
+      toast({ title: "Deleted", description: "Liaisoning record removed." });
+      await loadLiaisoningData(true);
+    } catch (err: any) {
+      toast({ title: "Delete Failed", description: err?.message || "Could not delete record", variant: "destructive" });
+    } finally {
+      setDeletingLiaisoningId(null);
+    }
+  };
+
+  // ─── CONSULTANT CRUD ───────────────────────────────────────────────────────
+
+  const openAddConsultant = () => {
+    setEditingConsultant(null);
+    setNewConsultant({ ...emptyConsultantForm });
+    setIsAddConsultantOpen(true);
+  };
+
+  const openEditConsultant = (item: any) => {
+    setEditingConsultant(item);
+    setNewConsultant({
+      name: item.name || "",
+      title: item.title && item.title !== "Solar Consultant" ? item.title : "",
+      exp: item.exp && item.exp !== "—" ? item.exp : "",
+      location: item.raw?.place || "",
+      phone: item.phone && item.phone !== "N/A" ? item.phone : "",
+    });
+    setIsAddConsultantOpen(true);
+  };
+
+  const handleSaveConsultant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newConsultant.name.trim()) {
+      toast({ title: "Validation Error", description: "Consultant name is required", variant: "destructive" });
+      return;
+    }
+    try {
+      await saveIsphereEntry(
+        {
+          category: "SERVICE_EXECUTIVE",
+          subcategory: "CONSULTANT",
+          name: newConsultant.name.trim(),
+          place: newConsultant.location.trim() || "General",
+          phone: newConsultant.phone.trim() || null,
+          details: {
+            title: newConsultant.title.trim() || "Solar Consultant",
+            expertiseDomain: newConsultant.title.trim() || "",
+            experienceYears: newConsultant.exp.trim() || "",
+          },
+          status: "ACTIVE",
+        },
+        editingConsultant?.id ?? null
+      );
+      toast({
+        title: editingConsultant ? "Consultant Updated" : "Consultant Added",
+        description: `${newConsultant.name.trim()} ${editingConsultant ? "updated" : "registered"} successfully.`,
+      });
+      setIsAddConsultantOpen(false);
+      setEditingConsultant(null);
+      setNewConsultant({ ...emptyConsultantForm });
+      await loadLiaisoningData(true);
+    } catch (err: any) {
+      toast({ title: "Save Failed", description: err?.message || "Could not save consultant record", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteConsultant = async (id: string) => {
+    if (!confirm("Delete this consultant record?")) return;
+    setDeletingLiaisoningId(id);
+    try {
+      await deleteIsphereEntry(id);
+      toast({ title: "Deleted", description: "Consultant record removed." });
+      await loadLiaisoningData(true);
+    } catch (err: any) {
+      toast({ title: "Delete Failed", description: err?.message || "Could not delete record", variant: "destructive" });
+    } finally {
+      setDeletingLiaisoningId(null);
+    }
+  };
+
+  // ─── LIAISONING PROCESS CRUD ───────────────────────────────────────────────
+
+  const openAddProcess = () => {
+    setEditingProcess(null);
+    setNewProcess({ ...emptyProcessForm, submittedDate: new Date().toISOString().split("T")[0] });
+    setIsProcessDialogOpen(true);
+  };
+
+  const openEditProcess = (item: any) => {
+    setEditingProcess(item);
+    setNewProcess({
+      customerName: item.customerName || "",
+      processType: LIAISONING_PROCESS_TYPES.includes(item.processType) ? item.processType : "Other",
+      department: item.department && item.department !== "—" ? item.department : "",
+      officerName: item.officerName && item.officerName !== "—" ? item.officerName : "",
+      officerPhone: item.officerPhone && item.officerPhone !== "—" ? item.officerPhone : "",
+      stage: LIAISONING_PROCESS_STATUSES.includes(item.stage) ? item.stage : "INITIATED",
+      submittedDate: item.submittedDate ? String(item.submittedDate).slice(0, 10) : new Date().toISOString().split("T")[0],
+      remarks: item.remarks || "",
+    });
+    setIsProcessDialogOpen(true);
+  };
+
+  const handleSaveProcess = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProcess.customerName.trim()) {
+      toast({ title: "Validation Error", description: "Customer / project name is required", variant: "destructive" });
+      return;
+    }
+    try {
+      await saveIsphereEntry(
+        {
+          category: "SERVICE_EXECUTIVE",
+          subcategory: "LIAISONING_PROCESS",
+          name: `${newProcess.processType} — ${newProcess.customerName.trim()}`,
+          place: newProcess.department.trim() || "General",
+          phone: newProcess.officerPhone.trim() || null,
+          details: {
+            customerName: newProcess.customerName.trim(),
+            processType: newProcess.processType,
+            department: newProcess.department.trim() || "General",
+            officerName: newProcess.officerName.trim() || "",
+            officerPhone: newProcess.officerPhone.trim() || "",
+            stage: newProcess.stage,
+            submittedDate: newProcess.submittedDate || null,
+            remarks: newProcess.remarks.trim() || "",
+          },
+          status: newProcess.stage,
+        },
+        editingProcess?.id ?? null
+      );
+      toast({
+        title: editingProcess ? "Process Updated" : "Process Created",
+        description: `${newProcess.customerName.trim()} — ${newProcess.processType} ${editingProcess ? "updated" : "created"} successfully.`,
+      });
+      setIsProcessDialogOpen(false);
+      setEditingProcess(null);
+      setNewProcess({ ...emptyProcessForm, submittedDate: new Date().toISOString().split("T")[0] });
+      await loadLiaisoningData(true);
+    } catch (err: any) {
+      toast({ title: "Save Failed", description: err?.message || "Could not save process record", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteProcess = async (id: string) => {
+    if (!confirm("Delete this liaisoning process record?")) return;
+    setDeletingProcessId(id);
+    try {
+      await deleteIsphereEntry(id);
+      toast({ title: "Deleted", description: "Process record removed." });
+      await loadLiaisoningData(true);
+    } catch (err: any) {
+      toast({ title: "Delete Failed", description: err?.message || "Could not delete record", variant: "destructive" });
+    } finally {
+      setDeletingProcessId(null);
+    }
+  };
+
   // Filtered queries across tabs
   const query = searchQuery.trim().toLowerCase();
 
@@ -482,6 +808,7 @@ export default function ServiceExecutiveDashboard() {
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [isAddInstallerOpen, setIsAddInstallerOpen] = useState(false);
   const [isAddLiaisoningOpen, setIsAddLiaisoningOpen] = useState(false);
+  const [isAddConsultantOpen, setIsAddConsultantOpen] = useState(false);
   const [isAddManufacturerOpen, setIsAddManufacturerOpen] = useState(false);
 
   // Forms
@@ -533,7 +860,24 @@ export default function ServiceExecutiveDashboard() {
     location: "Nagpur"
   });
 
-  const [newLiaisoning, setNewLiaisoning] = useState({ name: "", dept: "", phone: "" });
+  const emptyLiaisoningForm = { name: "", dept: "", location: "", phone: "" };
+  const [newLiaisoning, setNewLiaisoning] = useState({ ...emptyLiaisoningForm });
+
+  const emptyConsultantForm = { name: "", title: "", exp: "", location: "", phone: "" };
+  const [newConsultant, setNewConsultant] = useState({ ...emptyConsultantForm });
+  const [editingConsultant, setEditingConsultant] = useState<any | null>(null);
+
+  const emptyProcessForm = {
+    customerName: "",
+    processType: "Net Metering",
+    department: "",
+    officerName: "",
+    officerPhone: "",
+    stage: "INITIATED",
+    submittedDate: new Date().toISOString().split("T")[0],
+    remarks: "",
+  };
+  const [newProcess, setNewProcess] = useState({ ...emptyProcessForm });
   const [newMfg, setNewMfg] = useState({ companyName: "", category: "Solar PV Modules", gst: "", phone: "" });
 
   // Quick Credentials copy helper
@@ -809,21 +1153,43 @@ export default function ServiceExecutiveDashboard() {
     });
   };
 
-  const handleCreateLiaisoning = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newLiaisoning.name) return;
-    const created = {
-      id: `LIA-${liaisoning.length + 1}`,
-      name: newLiaisoning.name,
-      dept: newLiaisoning.dept || "Grid Approvals",
-      phone: newLiaisoning.phone || "+91 9800002233",
-      status: "Operational"
-    };
-    setLiaisoning([created, ...liaisoning]);
-    setIsAddLiaisoningOpen(false);
-    setNewLiaisoning({ name: "", dept: "", phone: "" });
-    toast({ title: "Liaisoning Team Added", description: `${created.name} registered!` });
-  };
+  const filteredLiaisoning = useMemo(() => {
+    const q = liaisoningSearch.trim().toLowerCase();
+    if (!q) return liaisoning;
+    return liaisoning.filter(l =>
+      l.name?.toLowerCase().includes(q) ||
+      l.dept?.toLowerCase().includes(q) ||
+      l.location?.toLowerCase().includes(q) ||
+      l.phone?.includes(q)
+    );
+  }, [liaisoning, liaisoningSearch]);
+
+  const filteredConsultants = useMemo(() => {
+    const q = liaisoningSearch.trim().toLowerCase();
+    if (!q) return consultants;
+    return consultants.filter(c =>
+      c.name?.toLowerCase().includes(q) ||
+      c.title?.toLowerCase().includes(q) ||
+      c.phone?.includes(q)
+    );
+  }, [consultants, liaisoningSearch]);
+
+  const filteredProcessRecords = useMemo(() => {
+    const q = processSearch.trim().toLowerCase();
+    if (!q) return processRecords;
+    return processRecords.filter(p =>
+      p.customerName?.toLowerCase().includes(q) ||
+      p.processType?.toLowerCase().includes(q) ||
+      p.department?.toLowerCase().includes(q) ||
+      p.officerName?.toLowerCase().includes(q)
+    );
+  }, [processRecords, processSearch]);
+
+  const processStats = useMemo(() => ({
+    total: processRecords.length,
+    inProgress: processRecords.filter(p => ["SUBMITTED", "IN_PROGRESS", "ON_HOLD"].includes(p.stage)).length,
+    approved: processRecords.filter(p => p.stage === "APPROVED").length,
+  }), [processRecords]);
 
   const handleCreateManufacturer = (e: React.FormEvent) => {
     e.preventDefault();
@@ -876,19 +1242,23 @@ export default function ServiceExecutiveDashboard() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-              <Button
-                onClick={() => setIsAddContractorOpen(true)}
-                className="bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs shadow-md rounded-xl gap-1.5"
-              >
-                <UserPlus className="h-4 w-4" /> Add EPC Contractor
-              </Button>
-              <Button
-                onClick={() => setIsAddProjectOpen(true)}
-                variant="outline"
-                className="border-emerald-400/50 text-emerald-100 hover:bg-emerald-800/40 font-bold text-xs shadow-md rounded-xl gap-1.5"
-              >
-                <Plus className="h-4 w-4 text-emerald-300" /> Create Solar Site
-              </Button>
+              {!isMonitoringAnalyst && (
+                <>
+                  <Button
+                    onClick={() => setIsAddContractorOpen(true)}
+                    className="bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs shadow-md rounded-xl gap-1.5"
+                  >
+                    <UserPlus className="h-4 w-4" /> Add EPC Contractor
+                  </Button>
+                  <Button
+                    onClick={() => setIsAddProjectOpen(true)}
+                    variant="outline"
+                    className="border-emerald-400/50 text-emerald-100 hover:bg-emerald-800/40 font-bold text-xs shadow-md rounded-xl gap-1.5"
+                  >
+                    <Plus className="h-4 w-4 text-emerald-300" /> Create Solar Site
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1294,50 +1664,276 @@ export default function ServiceExecutiveDashboard() {
 
           {/* TAB 5: LIAISONING */}
           <TabsContent value="liaisoning" className="space-y-6 m-0">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold text-slate-900">Liaisoning Teams & Technical Experts</h2>
                 <p className="text-xs text-slate-500">DISCOM connectivity, government approvals, and consulting engineers</p>
               </div>
-              <Button onClick={() => setIsAddLiaisoningOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white h-9 text-xs rounded-xl font-bold gap-1">
-                <Plus className="h-4 w-4" /> Add Liaisoning Team
-              </Button>
+              <div className="flex items-center gap-2.5">
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search specialists, consultants..."
+                    value={liaisoningSearch}
+                    onChange={(e) => setLiaisoningSearch(e.target.value)}
+                    className="pl-9 h-9 w-56 text-xs rounded-xl"
+                  />
+                </div>
+                <Button onClick={openAddLiaisoning} className="bg-emerald-600 hover:bg-emerald-500 text-white h-9 text-xs rounded-xl font-bold gap-1">
+                  <Plus className="h-4 w-4" /> Add Liaisoning Team
+                </Button>
+              </div>
             </div>
+
+            {/* Live statistics from database records */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="border shadow-xs rounded-2xl">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center"><FileCheck className="h-5 w-5" /></div>
+                  <div>
+                    <div className="text-xl font-black text-slate-900 leading-none">{liaisoning.length}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-1">Liaisoning Specialists</div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border shadow-xs rounded-2xl">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center"><UserCheck className="h-5 w-5" /></div>
+                  <div>
+                    <div className="text-xl font-black text-slate-900 leading-none">{consultants.length}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-1">Technical Consultants</div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border shadow-xs rounded-2xl">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center"><Clock className="h-5 w-5" /></div>
+                  <div>
+                    <div className="text-xl font-black text-slate-900 leading-none">{processStats.inProgress}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-1">Processes In Progress</div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border shadow-xs rounded-2xl">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center"><CheckCircle2 className="h-5 w-5" /></div>
+                  <div>
+                    <div className="text-xl font-black text-slate-900 leading-none">{processStats.approved}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-1">Approved Processes</div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="border shadow-xs rounded-2xl">
                 <CardHeader className="border-b pb-3">
-                  <CardTitle className="text-sm font-bold flex items-center gap-2">
-                    <FileCheck className="h-4 w-4 text-emerald-600" /> Liaisoning Specialists
+                  <CardTitle className="text-sm font-bold flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">
+                      <FileCheck className="h-4 w-4 text-emerald-600" /> Liaisoning Specialists
+                    </span>
+                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] font-bold">{filteredLiaisoning.length} records</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 pt-4">
-                  {liaisoning.map(l => (
-                    <div key={l.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-1">
-                      <div className="font-bold text-xs text-slate-900">{l.name}</div>
-                      <div className="text-[11px] text-slate-600">Dept: {l.dept} • Contact: {l.phone}</div>
-                      <Badge className="bg-emerald-600 text-[10px] mt-1 font-bold">{l.status}</Badge>
+                  {liaisoningLoading ? (
+                    <div className="flex items-center justify-center py-10 text-slate-400 text-xs gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" /> Loading specialists...
                     </div>
-                  ))}
+                  ) : filteredLiaisoning.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400 text-xs">
+                      {liaisoningSearch ? "No specialists match your search." : "No liaisoning specialists yet. Click \"Add Liaisoning Team\" to register one."}
+                    </div>
+                  ) : (
+                    filteredLiaisoning.map(l => (
+                      <div key={l.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-bold text-xs text-slate-900">{l.name}</div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button variant="ghost" size="sm" onClick={() => openEditLiaisoning(l)} className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-50" title="Edit">
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteLiaisoning(l.id)} disabled={deletingLiaisoningId === l.id} className="h-7 w-7 p-0 text-rose-600 hover:bg-rose-50" title="Delete">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-slate-600">Dept: {l.dept}{l.location ? ` • ${l.location}` : ""} • Contact: {l.phone}</div>
+                        <Badge className="bg-emerald-600 text-[10px] mt-1 font-bold">{l.status}</Badge>
+                      </div>
+                    ))
+                  )}
                 </CardContent>
               </Card>
 
               <Card className="border shadow-xs rounded-2xl">
                 <CardHeader className="border-b pb-3">
-                  <CardTitle className="text-sm font-bold flex items-center gap-2">
-                    <UserCheck className="h-4 w-4 text-teal-600" /> Solar Technical Consultants
+                  <CardTitle className="text-sm font-bold flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">
+                      <UserCheck className="h-4 w-4 text-teal-600" /> Solar Technical Consultants
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-teal-100 text-teal-800 border-teal-200 text-[10px] font-bold">{filteredConsultants.length} records</Badge>
+                      <Button variant="ghost" size="sm" onClick={openAddConsultant} className="h-7 px-2 text-[10px] font-bold text-teal-700 hover:bg-teal-50 gap-1">
+                        <Plus className="h-3 w-3" /> Add
+                      </Button>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 pt-4">
-                  {consultants.map(c => (
-                    <div key={c.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-1">
-                      <div className="font-bold text-xs text-slate-900">{c.name} ({c.title})</div>
-                      <div className="text-[11px] text-slate-600">Exp: {c.exp} • Contact: {c.phone}</div>
-                      <Badge className="bg-teal-600 text-[10px] mt-1 font-bold">{c.status}</Badge>
+                  {liaisoningLoading ? (
+                    <div className="flex items-center justify-center py-10 text-slate-400 text-xs gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" /> Loading consultants...
                     </div>
-                  ))}
+                  ) : filteredConsultants.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400 text-xs">
+                      {liaisoningSearch ? "No consultants match your search." : "No consultants yet. Click \"Add\" to register one."}
+                    </div>
+                  ) : (
+                    filteredConsultants.map(c => (
+                      <div key={c.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-bold text-xs text-slate-900">{c.name} ({c.title})</div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button variant="ghost" size="sm" onClick={() => openEditConsultant(c)} className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-50" title="Edit">
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteConsultant(c.id)} disabled={deletingLiaisoningId === c.id} className="h-7 w-7 p-0 text-rose-600 hover:bg-rose-50" title="Delete">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-slate-600">Exp: {c.exp} • Contact: {c.phone}</div>
+                        <Badge className="bg-teal-600 text-[10px] mt-1 font-bold">{c.status}</Badge>
+                      </div>
+                    ))
+                  )}
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* TAB 5B: LIAISONING PROCESS TRACKER */}
+          <TabsContent value="liaisoning-process" className="space-y-6 m-0">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Liaisoning Process Tracker</h2>
+                <p className="text-xs text-slate-500">Track DISCOM, subsidy, and regulatory approval cases end-to-end</p>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search customer, type, officer..."
+                    value={processSearch}
+                    onChange={(e) => setProcessSearch(e.target.value)}
+                    className="pl-9 h-9 w-56 text-xs rounded-xl"
+                  />
+                </div>
+                <Button onClick={openAddProcess} className="bg-emerald-600 hover:bg-emerald-500 text-white h-9 text-xs rounded-xl font-bold gap-1">
+                  <Plus className="h-4 w-4" /> New Process
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="border shadow-xs rounded-2xl">
+                <CardContent className="p-4">
+                  <div className="text-xl font-black text-slate-900 leading-none">{processStats.total}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-1">Total Processes</div>
+                </CardContent>
+              </Card>
+              <Card className="border shadow-xs rounded-2xl">
+                <CardContent className="p-4">
+                  <div className="text-xl font-black text-amber-600 leading-none">{processStats.inProgress}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-1">In Progress</div>
+                </CardContent>
+              </Card>
+              <Card className="border shadow-xs rounded-2xl">
+                <CardContent className="p-4">
+                  <div className="text-xl font-black text-emerald-600 leading-none">{processStats.approved}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-1">Approved</div>
+                </CardContent>
+              </Card>
+              <Card className="border shadow-xs rounded-2xl">
+                <CardContent className="p-4">
+                  <div className="text-xl font-black text-rose-600 leading-none">{processRecords.filter(p => p.stage === "REJECTED").length}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-1">Rejected</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="border shadow-xs rounded-2xl">
+              <CardContent className="p-0">
+                {processLoading ? (
+                  <div className="flex items-center justify-center py-14 text-slate-400 text-xs gap-2">
+                    <RefreshCw className="h-4 w-4 animate-spin" /> Loading process records...
+                  </div>
+                ) : filteredProcessRecords.length === 0 ? (
+                  <div className="text-center py-14 px-4">
+                    <FileCheck className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                    <p className="text-sm font-bold text-slate-700">{processSearch ? "No processes match your search" : "No liaisoning processes yet"}</p>
+                    <p className="text-xs text-slate-500 mt-1">Click "New Process" to register an approval case.</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50/90 text-[10px] uppercase font-bold text-slate-500">
+                        <TableHead className="p-3.5">Customer / Project</TableHead>
+                        <TableHead className="p-3.5">Process Type</TableHead>
+                        <TableHead className="p-3.5">Department / DISCOM</TableHead>
+                        <TableHead className="p-3.5">Liaisoning Officer</TableHead>
+                        <TableHead className="p-3.5">Submitted</TableHead>
+                        <TableHead className="p-3.5">Status</TableHead>
+                        <TableHead className="p-3.5 text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredProcessRecords.map((p) => (
+                        <TableRow key={p.id} className="text-xs hover:bg-slate-50/70 transition-colors">
+                          <TableCell className="p-3.5">
+                            <div className="font-bold text-slate-900">{p.customerName}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">ID: {String(p.id).slice(0, 8)}</div>
+                          </TableCell>
+                          <TableCell className="p-3.5">
+                            <Badge variant="outline" className="text-[10px] font-bold">{p.processType}</Badge>
+                          </TableCell>
+                          <TableCell className="p-3.5 font-medium text-slate-700">{p.department}</TableCell>
+                          <TableCell className="p-3.5">
+                            <div className="font-semibold text-slate-800">{p.officerName}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">{p.officerPhone}</div>
+                          </TableCell>
+                          <TableCell className="p-3.5 text-slate-600">{p.submittedDate ? new Date(p.submittedDate).toLocaleDateString("en-IN") : "—"}</TableCell>
+                          <TableCell className="p-3.5">
+                            <Badge className={
+                              p.stage === "APPROVED" ? "bg-emerald-600 font-bold" :
+                              p.stage === "REJECTED" ? "bg-rose-600 font-bold" :
+                              p.stage === "IN_PROGRESS" || p.stage === "SUBMITTED" ? "bg-amber-600 font-bold" :
+                              "bg-slate-500 font-bold"
+                            }>
+                              {p.stage.replace(/_/g, " ")}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="p-3.5 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => setViewingProcess(p)} className="h-7 w-7 p-0 text-slate-600 hover:text-slate-900" title="View">
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => openEditProcess(p)} className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-50" title="Edit">
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => handleDeleteProcess(p.id)} disabled={deletingProcessId === p.id} className="h-7 w-7 p-0 text-rose-600 hover:bg-rose-50" title="Delete">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* TAB 6: SUPPLY CHAIN */}
@@ -1881,20 +2477,29 @@ export default function ServiceExecutiveDashboard() {
           </DialogContent>
         </Dialog>
 
-        {/* DIALOG 4: ADD LIAISONING */}
-        <Dialog open={isAddLiaisoningOpen} onOpenChange={setIsAddLiaisoningOpen}>
+        {/* DIALOG 4: ADD / EDIT LIAISONING SPECIALIST */}
+        <Dialog open={isAddLiaisoningOpen} onOpenChange={(open) => { setIsAddLiaisoningOpen(open); if (!open) { setEditingLiaisoning(null); setNewLiaisoning({ ...emptyLiaisoningForm }); } }}>
           <DialogContent className="max-w-md p-6 rounded-2xl">
             <DialogHeader>
-              <DialogTitle className="text-base font-bold">Add Liaisoning Specialist</DialogTitle>
+              <DialogTitle className="text-base font-bold">{editingLiaisoning ? "Edit Liaisoning Specialist" : "Add Liaisoning Specialist"}</DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                {editingLiaisoning ? "Update specialist details." : "Register a DISCOM / government liaisoning specialist."}
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateLiaisoning} className="space-y-3.5 text-xs pt-2">
               <div className="space-y-1">
-                <Label className="font-bold">Team Name *</Label>
+                <Label className="font-bold">Team / Specialist Name *</Label>
                 <Input value={newLiaisoning.name} onChange={e => setNewLiaisoning({ ...newLiaisoning, name: e.target.value })} placeholder="e.g. MSEDCL Solar Sanction Team" required className="rounded-xl" />
               </div>
-              <div className="space-y-1">
-                <Label className="font-bold">Department / Area</Label>
-                <Input value={newLiaisoning.dept} onChange={e => setNewLiaisoning({ ...newLiaisoning, dept: e.target.value })} placeholder="e.g. Grid Clearances" className="rounded-xl" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-bold">Department / DISCOM</Label>
+                  <Input value={newLiaisoning.dept} onChange={e => setNewLiaisoning({ ...newLiaisoning, dept: e.target.value })} placeholder="e.g. Grid Clearances" className="rounded-xl" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-bold">Location / City</Label>
+                  <Input value={newLiaisoning.location} onChange={e => setNewLiaisoning({ ...newLiaisoning, location: e.target.value })} placeholder="e.g. Nagpur" className="rounded-xl" />
+                </div>
               </div>
               <div className="space-y-1">
                 <Label className="font-bold">Phone</Label>
@@ -1902,10 +2507,179 @@ export default function ServiceExecutiveDashboard() {
               </div>
               <DialogFooter className="pt-2">
                 <Button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white w-full text-xs rounded-xl font-bold">
-                  Add Liaisoning Record
+                  {editingLiaisoning ? "Save Changes" : "Add Liaisoning Record"}
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* DIALOG 4B: ADD / EDIT CONSULTANT */}
+        <Dialog open={isAddConsultantOpen} onOpenChange={(open) => { setIsAddConsultantOpen(open); if (!open) { setEditingConsultant(null); setNewConsultant({ ...emptyConsultantForm }); } }}>
+          <DialogContent className="max-w-md p-6 rounded-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold">{editingConsultant ? "Edit Consultant" : "Add Solar Technical Consultant"}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSaveConsultant} className="space-y-3.5 text-xs pt-2">
+              <div className="space-y-1">
+                <Label className="font-bold">Consultant Name *</Label>
+                <Input value={newConsultant.name} onChange={e => setNewConsultant({ ...newConsultant, name: e.target.value })} placeholder="e.g. Dr. Arvind Mehta" required className="rounded-xl" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-bold">Title / Role</Label>
+                  <Input value={newConsultant.title} onChange={e => setNewConsultant({ ...newConsultant, title: e.target.value })} placeholder="e.g. Principal Solar Tech Consultant" className="rounded-xl" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-bold">Experience</Label>
+                  <Input value={newConsultant.exp} onChange={e => setNewConsultant({ ...newConsultant, exp: e.target.value })} placeholder="e.g. 12 Years" className="rounded-xl" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-bold">Location / City</Label>
+                  <Input value={newConsultant.location} onChange={e => setNewConsultant({ ...newConsultant, location: e.target.value })} placeholder="e.g. Pune" className="rounded-xl" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-bold">Phone</Label>
+                  <Input value={newConsultant.phone} onChange={e => setNewConsultant({ ...newConsultant, phone: e.target.value })} placeholder="+91 9811002233" className="rounded-xl font-mono" />
+                </div>
+              </div>
+              <DialogFooter className="pt-2">
+                <Button type="submit" className="bg-teal-600 hover:bg-teal-500 text-white w-full text-xs rounded-xl font-bold">
+                  {editingConsultant ? "Save Changes" : "Add Consultant"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* DIALOG 4C: ADD / EDIT LIAISONING PROCESS */}
+        <Dialog open={isProcessDialogOpen} onOpenChange={(open) => { setIsProcessDialogOpen(open); if (!open) { setEditingProcess(null); setNewProcess({ ...emptyProcessForm, submittedDate: new Date().toISOString().split("T")[0] }); } }}>
+          <DialogContent className="max-w-lg p-6 rounded-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold">{editingProcess ? "Edit Liaisoning Process" : "New Liaisoning Process"}</DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                Register an approval / clearance case and track its status.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSaveProcess} className="space-y-3.5 text-xs pt-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-bold">Customer / Project Name *</Label>
+                  <Input value={newProcess.customerName} onChange={e => setNewProcess({ ...newProcess, customerName: e.target.value })} placeholder="e.g. Maharashtra Agro Industries" required className="rounded-xl" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-bold">Process Type *</Label>
+                  <Select value={newProcess.processType} onValueChange={v => setNewProcess({ ...newProcess, processType: v })}>
+                    <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {LIAISONING_PROCESS_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-bold">Department / DISCOM</Label>
+                  <Input value={newProcess.department} onChange={e => setNewProcess({ ...newProcess, department: e.target.value })} placeholder="e.g. MSEDCL Net Metering Cell" className="rounded-xl" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-bold">Status</Label>
+                  <Select value={newProcess.stage} onValueChange={v => setNewProcess({ ...newProcess, stage: v })}>
+                    <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {LIAISONING_PROCESS_STATUSES.map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-bold">Liaisoning Officer</Label>
+                  <Input value={newProcess.officerName} onChange={e => setNewProcess({ ...newProcess, officerName: e.target.value })} placeholder="e.g. Sunil Deshpande" className="rounded-xl" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="font-bold">Officer Phone</Label>
+                  <Input value={newProcess.officerPhone} onChange={e => setNewProcess({ ...newProcess, officerPhone: e.target.value })} placeholder="+91 9811004455" className="rounded-xl font-mono" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-bold">Submitted Date</Label>
+                  <Input type="date" value={newProcess.submittedDate} onChange={e => setNewProcess({ ...newProcess, submittedDate: e.target.value })} className="rounded-xl" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="font-bold">Remarks / Notes</Label>
+                <Textarea value={newProcess.remarks} onChange={e => setNewProcess({ ...newProcess, remarks: e.target.value })} placeholder="Case details, follow-up notes..." rows={2} className="rounded-xl" />
+              </div>
+              <DialogFooter className="pt-2">
+                <Button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white w-full text-xs rounded-xl font-bold">
+                  {editingProcess ? "Save Changes" : "Create Process"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* DIALOG 4D: VIEW LIAISONING PROCESS */}
+        <Dialog open={!!viewingProcess} onOpenChange={(open) => { if (!open) setViewingProcess(null); }}>
+          <DialogContent className="max-w-lg p-6 rounded-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <FileCheck className="h-5 w-5 text-emerald-600" /> Liaisoning Process Details
+              </DialogTitle>
+            </DialogHeader>
+            {viewingProcess && (
+              <div className="space-y-3 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl border bg-slate-50">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Customer / Project</div>
+                    <div className="font-bold text-slate-900 mt-0.5">{viewingProcess.customerName}</div>
+                  </div>
+                  <div className="p-3 rounded-xl border bg-slate-50">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Process Type</div>
+                    <div className="font-bold text-slate-900 mt-0.5">{viewingProcess.processType}</div>
+                  </div>
+                  <div className="p-3 rounded-xl border bg-slate-50">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Department / DISCOM</div>
+                    <div className="font-bold text-slate-900 mt-0.5">{viewingProcess.department}</div>
+                  </div>
+                  <div className="p-3 rounded-xl border bg-slate-50">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Status</div>
+                    <div className="mt-0.5">
+                      <Badge className={
+                        viewingProcess.stage === "APPROVED" ? "bg-emerald-600 font-bold" :
+                        viewingProcess.stage === "REJECTED" ? "bg-rose-600 font-bold" :
+                        "bg-amber-600 font-bold"
+                      }>{String(viewingProcess.stage).replace(/_/g, " ")}</Badge>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl border bg-slate-50">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Liaisoning Officer</div>
+                    <div className="font-bold text-slate-900 mt-0.5">{viewingProcess.officerName}</div>
+                    <div className="text-slate-500 font-mono">{viewingProcess.officerPhone}</div>
+                  </div>
+                  <div className="p-3 rounded-xl border bg-slate-50">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Submitted</div>
+                    <div className="font-bold text-slate-900 mt-0.5">{viewingProcess.submittedDate ? new Date(viewingProcess.submittedDate).toLocaleDateString("en-IN") : "—"}</div>
+                  </div>
+                </div>
+                {viewingProcess.remarks && (
+                  <div className="p-3 rounded-xl border bg-slate-50">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Remarks</div>
+                    <div className="text-slate-700">{viewingProcess.remarks}</div>
+                  </div>
+                )}
+                <DialogFooter className="pt-2">
+                  <Button variant="outline" onClick={() => setViewingProcess(null)} className="rounded-xl text-xs">Close</Button>
+                  <Button onClick={() => { openEditProcess(viewingProcess); setViewingProcess(null); }} className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold gap-1">
+                    <Edit className="h-3.5 w-3.5" /> Edit Process
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 

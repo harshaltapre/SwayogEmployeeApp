@@ -445,12 +445,11 @@ router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, 
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   try {
-    const { selfie, latitude, longitude, accuracy, faceVerified, matchConfidence, matchDistance, livenessVerified, verificationToken } = req.body;
+    const { selfie, latitude, longitude, accuracy, faceVerified, matchConfidence, matchDistance, livenessVerified, verificationToken, liveDescriptor } = req.body;
 
-    // Security: Do not accept client-side boolean flags as proof of face verification
-    // Require a valid server-issued verification token when face verification is enabled
+    // Security: Require either a valid server-issued verification token OR liveDescriptor for server verification
     const rules = await AttendanceService.getRulesAsync();
-    if (rules.faceRequired && !verificationToken) {
+    if (rules.faceRequired && !verificationToken && (!liveDescriptor || !Array.isArray(liveDescriptor))) {
       res.status(400).json({ error: "Face verification is required. Please complete face verification before checking in." });
       return;
     }
@@ -460,8 +459,9 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
       latitude: latitude ? Number(latitude) : null,
       longitude: longitude ? Number(longitude) : null,
       accuracy: accuracy ? Number(accuracy) : null,
-      faceVerified: false, // Will be set to true only after valid token verification in service
+      faceVerified: false, // Will be set to true only after valid token/descriptor verification in service
       verificationToken: verificationToken || null,
+      liveDescriptor: Array.isArray(liveDescriptor) ? liveDescriptor : null,
     });
 
     // Augment the CheckIn record with face recognition metadata if provided

@@ -32,10 +32,27 @@ import {
   evaluateAttendancePolicy,
   getKolkataTimeInfo,
   calculateHaversineDistance,
+  calculateCosineSimilarity,
   verifyFaceToken,
 } from "./attendancePolicyEngine.js";
 
+// Active in-flight attendance operations lock per employee
+const activeAttendanceOps = new Set<string>();
+
+// In-memory cache for attendance rules (60s TTL)
+let cachedRules: any = null;
+let rulesCachedAt = 0;
+const RULES_CACHE_TTL_MS = 60_000;
+
+export function invalidateRulesCache() {
+  cachedRules = null;
+  rulesCachedAt = 0;
+}
+
 export async function getRulesAsync() {
+  if (cachedRules && Date.now() - rulesCachedAt < RULES_CACHE_TTL_MS) {
+    return cachedRules;
+  }
   try {
     let dbRule = await prisma.attendanceRule.findUnique({
       where: { id: "default" },
@@ -61,6 +78,8 @@ export async function getRulesAsync() {
         },
       });
     }
+    cachedRules = dbRule;
+    rulesCachedAt = Date.now();
     return dbRule;
   } catch (err) {
     console.error("Failed to read rules from DB, returning defaults:", err);
@@ -87,6 +106,7 @@ export async function getRulesAsync() {
 }
 
 export async function saveRulesAsync(rules: any) {
+  invalidateRulesCache();
   try {
     await prisma.attendanceRule.upsert({
       where: { id: "default" },
@@ -226,8 +246,14 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
   return R * c; // in meters
 }
 
-export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: string | null; latitude?: number | null; longitude?: number | null; accuracy?: number | null; faceVerified?: boolean; verificationToken?: string | null; matchConfidence?: number | null }) {
-  const today = startOfDay(new Date());
+export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: string | null; latitude?: number | null; longitude?: number | null; accuracy?: number | null; faceVerified?: boolean; verificationToken?: string | null; liveDescriptor?: number[] | null; matchConfidence?: number | null }) {
+  const opKey = `checkin:${employeeId}`;
+  if (activeAttendanceOps.has(opKey)) {
+    throw new Error("A check-in operation is already in progress. Please wait a moment.");
+  }
+  activeAttendanceOps.add(opKey);
+  try {
+    const today = startOfDay(new Date());
   const existing = await prisma.attendanceRecord.findUnique({
     where: { employeeId_date: { employeeId, date: today } },
   });
@@ -276,23 +302,35 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
 
   const now = new Date();
 
-  // Validate Face Verification Token - required when face verification is enabled
+  // Validate Face: Support either direct liveDescriptor (1-round-trip) OR signed verificationToken
   let isFaceVerified = false;
-  if (rules.faceRequired) {
-    if (!opts?.verificationToken) {
-      throw new Error("Face verification is required. Please complete face verification before checking in.");
+  if (opts?.liveDescriptor && Array.isArray(opts.liveDescriptor) && opts.liveDescriptor.length === 128) {
+    const enrollment = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
+    if (enrollment && !enrollment.isDeleted) {
+      const threshold = rules.faceMatchThreshold || 0.55;
+      const score1 = calculateCosineSimilarity(opts.liveDescriptor, enrollment.descriptor1 as number[]);
+      const score2 = calculateCosineSimilarity(opts.liveDescriptor, enrollment.descriptor2 as number[]);
+      const score3 = calculateCosineSimilarity(opts.liveDescriptor, enrollment.descriptor3 as number[]);
+      const bestScore = Math.max(score1, score2, score3);
+      if (bestScore >= threshold) {
+        isFaceVerified = true;
+      } else if (rules.faceRequired) {
+        throw new Error(`Face match score too low (${(bestScore * 100).toFixed(1)}%). Expected at least ${(threshold * 100).toFixed(0)}%.`);
+      }
+    } else if (rules.faceRequired) {
+      throw new Error("No active face enrollment found for this employee. Please complete face enrollment in Settings.");
     }
+  } else if (opts?.verificationToken) {
     const tokenCheck = verifyFaceToken(opts.verificationToken, employeeId);
     if (!tokenCheck.valid) {
-      throw new Error(`Face verification failed: ${tokenCheck.error}`);
-    }
-    isFaceVerified = true;
-  } else if (opts?.verificationToken) {
-    // Optional: accept token even if not required, for enhanced security
-    const tokenCheck = verifyFaceToken(opts.verificationToken, employeeId);
-    if (tokenCheck.valid) {
+      if (rules.faceRequired) {
+        throw new Error(`Face verification failed: ${tokenCheck.error}`);
+      }
+    } else {
       isFaceVerified = true;
     }
+  } else if (rules.faceRequired) {
+    throw new Error("Face verification is required. Please complete face verification before checking in.");
   }
 
   // Evaluate attendance policy using centralized policy engine (Asia/Kolkata authority)
@@ -420,24 +458,33 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
     },
   });
 
-  // Create AdminNotification
-  const employee = await prisma.user.findUnique({ where: { id: employeeId } });
-  const message = `${employee?.fullName ?? "Employee"} checked in at ${now.toISOString()} (${status})`;
-
-  await prisma.adminNotification.create({
-    data: {
-      type: "CHECKIN_SELFIE",
-      message,
-      imageUrl: selfieUrl ?? null,
-      employeeId,
-    },
-  });
-
-  await recalculateMonthlyPerformance(employeeId).catch((err) => {
-    console.error("Failed to recalculate performance on check-in:", err);
+  // Asynchronously execute admin notification & performance calculation so the API response returns in <50ms
+  setImmediate(async () => {
+    try {
+      const employee = await prisma.user.findUnique({ where: { id: employeeId } });
+      const message = `${employee?.fullName ?? "Employee"} checked in at ${now.toISOString()} (${status})`;
+      await prisma.adminNotification.create({
+        data: {
+          type: "CHECKIN_SELFIE",
+          message,
+          imageUrl: selfieUrl ?? null,
+          employeeId,
+        },
+      });
+    } catch (err) {
+      console.error("Background notification error on check-in:", err);
+    }
+    try {
+      await recalculateMonthlyPerformance(employeeId);
+    } catch (err) {
+      console.error("Background performance recalculation error on check-in:", err);
+    }
   });
 
   return { attendance, checkInRecord };
+  } finally {
+    activeAttendanceOps.delete(opKey);
+  }
 }
 
 export async function getAlarmSettingsAsync(employeeId: string) {
@@ -678,6 +725,12 @@ export function isRecordAttendanceCompleted(record: {
 }
 
 export async function checkOut(employeeId: string) {
+  const opKey = `checkout:${employeeId}`;
+  if (activeAttendanceOps.has(opKey)) {
+    throw new Error("A check-out operation is already in progress. Please wait a moment.");
+  }
+  activeAttendanceOps.add(opKey);
+  try {
   const today = startOfDay(new Date());
   const record = await prisma.attendanceRecord.findUnique({
     where: { employeeId_date: { employeeId, date: today } },
@@ -705,8 +758,19 @@ export async function checkOut(employeeId: string) {
     data: { checkOutTime: now, totalMinutes, status },
   });
 
-  await recalculateMonthlyPerformance(employeeId);
+  // Recalculate monthly performance in background
+  setImmediate(async () => {
+    try {
+      await recalculateMonthlyPerformance(employeeId);
+    } catch (err) {
+      console.error("Background performance recalculation error on check-out:", err);
+    }
+  });
+
   return updated;
+  } finally {
+    activeAttendanceOps.delete(opKey);
+  }
 }
 
 export async function getTodayAttendance(employeeId: string) {
@@ -823,7 +887,7 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
   const weeklyOffDays: number[] = rules.weeklyOffDays && rules.weeklyOffDays.length > 0 ? rules.weeklyOffDays : [0];
   const workingDays = getWorkingDays(start, end, holidayDateSet, weeklyOffDays);
   
-  const presentCount = records.filter((r) => r.status === "PRESENT").length;
+  const presentCount = records.filter((r) => r.status === "PRESENT" || r.status === "PRESENT_LATE_ALLOWANCE").length;
   const lateCount = records.filter((r) => r.status === "LATE").length;
   const halfDays = records.filter((r) => r.status === "HALF_DAY").length;
   const leaves = records.filter((r) => r.status === "LEAVE").length;

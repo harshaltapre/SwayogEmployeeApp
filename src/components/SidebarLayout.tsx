@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
   isInventoryExecutiveJobRole,
+  isMonitoringAnalystJobRole,
   isSubAdminJobRole,
   isServiceExecutiveHeadJobRole,
   isEpcPartnerJobRole,
@@ -193,6 +194,18 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           { name: "Settings", href: "/employee/settings", icon: Settings },
         ];
         return appendUniqueCustomSections(baseItems);
+      }
+
+      if (isMonitoringAnalystJobRole(user.jobRole)) {
+        return [
+          { name: "Liaisoning Dashboard", href: "/service-executive/dashboard?tab=liaisoning", icon: LayoutDashboard },
+          { name: "Liaisoning Process", href: "/service-executive/dashboard?tab=liaisoning-process", icon: FileCheck },
+          { name: "Tasks", href: "/employee/tasks", icon: CheckSquare },
+          { name: "Attendance", href: "/employee/attendance", icon: Calendar },
+          { name: "Daily Commit", href: "/employee/daily-commit", icon: FileText },
+          { name: "Team Commits", href: "/employee/daily-commits/team", icon: ClipboardList },
+          { name: "Settings", href: "/employee/settings", icon: Settings },
+        ];
       }
 
       // Default Employee Sidebar + Granted Specialized Sections
