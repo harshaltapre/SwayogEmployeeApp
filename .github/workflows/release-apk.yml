@@ -142,10 +142,10 @@ jobs:
           fi
           echo "Android SDK setup completed successfully."
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
@@ -682,7 +682,6 @@ jobs:
           PRODUCTION_CERT_SHA256: ${{ steps.signing_secrets.outputs.PRODUCTION_CERT_SHA256 }}
           CERTIFICATE_SHA256: ${{ steps.verify_apk_cert.outputs.APK_CERT_SHA256 }}
         run: |
-          npm ci
           npx tsx scripts/deploy-release.ts \
             "../${{ steps.apk_info.outputs.APK_PATH }}" \
             "${{ steps.versioning.outputs.VERSION_NAME }}" \
@@ -710,7 +709,6 @@ jobs:
             exit 1
           fi
           
-          npm ci
           node -e '
           const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
           
@@ -728,7 +726,7 @@ jobs:
             const res = await client.send(new GetObjectCommand({
               Bucket: process.env.R2_BUCKET_NAME,
               Key: "latest.json",
-            }));
+            }), { abortSignal: AbortSignal.timeout(30_000) });
 
             const chunks = [];
             for await (const chunk of res.Body) chunks.push(chunk);
