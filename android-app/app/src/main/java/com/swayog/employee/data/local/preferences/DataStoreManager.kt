@@ -75,6 +75,14 @@ class DataStoreManager @Inject constructor(
 
         // OTA Update Dismissed Version
         val DISMISSED_UPDATE_VERSION_CODE = longPreferencesKey("dismissed_update_version_code")
+        val LAST_KNOWN_APP_VERSION_CODE = longPreferencesKey("last_known_app_version_code")
+
+        // Sync Health Telemetry
+        val LAST_SUCCESSFUL_SYNC_AT = longPreferencesKey("last_successful_sync_at")
+        val LAST_SYNC_STATUS = stringPreferencesKey("last_sync_status") // "SYNCED", "SYNCING", "FAILED", "OFFLINE"
+        val LAST_SYNC_ERROR = stringPreferencesKey("last_sync_error")
+        val LAST_SYNC_HTTP_CODE = intPreferencesKey("last_sync_http_code")
+        val TOKEN_REFRESH_FAILURE_COUNT = intPreferencesKey("token_refresh_failure_count")
     }
 
     val attendanceRule: Flow<com.swayog.employee.data.model.AttendanceRule> = context.dataStore.data.map { preferences ->
@@ -252,6 +260,31 @@ class DataStoreManager @Inject constructor(
             }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Atomically persist both access and refresh tokens in a single DataStore transaction.
+     * Returns true if both were saved, false otherwise.
+     */
+    suspend fun saveTokensAtomically(accessToken: String, refreshToken: String): Boolean {
+        val prevAccess = cachedAuthToken
+        val prevRefresh = cachedRefreshToken
+        return try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.AUTH_TOKEN] = accessToken
+                preferences[PreferencesKeys.REFRESH_TOKEN] = refreshToken
+                preferences[PreferencesKeys.LAST_ACTIVE_TIME] = System.currentTimeMillis()
+                preferences[PreferencesKeys.TOKEN_REFRESH_FAILURE_COUNT] = 0
+            }
+            cachedAuthToken = accessToken
+            cachedRefreshToken = refreshToken
+            true
+        } catch (e: Exception) {
+            cachedAuthToken = prevAccess
+            cachedRefreshToken = prevRefresh
+            android.util.Log.e("DataStoreManager", "Failed to persist tokens atomically: ${e.message}", e)
+            false
         }
     }
     
@@ -663,6 +696,82 @@ class DataStoreManager @Inject constructor(
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    // ── Sync Health & Post-Update Tracking ───────────────────────────────────
+
+    val lastSuccessfulSyncAt: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.LAST_SUCCESSFUL_SYNC_AT]
+    }
+
+    val lastSyncStatus: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.LAST_SYNC_STATUS] ?: "UNKNOWN"
+    }
+
+    val lastSyncError: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.LAST_SYNC_ERROR]
+    }
+
+    val lastSyncHttpCode: Flow<Int?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.LAST_SYNC_HTTP_CODE]
+    }
+
+    val tokenRefreshFailureCount: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.TOKEN_REFRESH_FAILURE_COUNT] ?: 0
+    }
+
+    suspend fun recordSyncSuccess(timestampMs: Long = System.currentTimeMillis()) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.LAST_SUCCESSFUL_SYNC_AT] = timestampMs
+                preferences[PreferencesKeys.LAST_SYNC_STATUS] = "SYNCED"
+                preferences.remove(PreferencesKeys.LAST_SYNC_ERROR)
+                preferences.remove(PreferencesKeys.LAST_SYNC_HTTP_CODE)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("DataStoreManager", "Failed to record sync success: ${e.message}")
+        }
+    }
+
+    suspend fun recordSyncFailure(error: String, httpCode: Int? = null, status: String = "FAILED") {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.LAST_SYNC_STATUS] = status
+                preferences[PreferencesKeys.LAST_SYNC_ERROR] = error.take(300)
+                if (httpCode != null) {
+                    preferences[PreferencesKeys.LAST_SYNC_HTTP_CODE] = httpCode
+                } else {
+                    preferences.remove(PreferencesKeys.LAST_SYNC_HTTP_CODE)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("DataStoreManager", "Failed to record sync failure: ${e.message}")
+        }
+    }
+
+    suspend fun incrementTokenRefreshFailure() {
+        try {
+            context.dataStore.edit { preferences ->
+                val current = preferences[PreferencesKeys.TOKEN_REFRESH_FAILURE_COUNT] ?: 0
+                preferences[PreferencesKeys.TOKEN_REFRESH_FAILURE_COUNT] = current + 1
+            }
+        } catch (_: Exception) {}
+    }
+
+    suspend fun getLastKnownAppVersionCode(): Long {
+        return try {
+            context.dataStore.data.first()[PreferencesKeys.LAST_KNOWN_APP_VERSION_CODE] ?: 0L
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    suspend fun setLastKnownAppVersionCode(versionCode: Long) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.LAST_KNOWN_APP_VERSION_CODE] = versionCode
+            }
+        } catch (_: Exception) {}
     }
 }
 

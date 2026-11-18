@@ -12,10 +12,12 @@ import com.swayog.employee.core.util.ErrorUtils
 import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.core.util.LocalFileHelper
 import com.swayog.employee.core.util.NetworkUtils
-import com.swayog.employee.data.sync.SyncWorker
+import com.swayog.employee.data.local.preferences.DataStoreManager
+import com.swayog.employee.data.sync.SyncManager
 import com.google.gson.Gson
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +47,9 @@ class TaskRepository @Inject constructor(
     private val taskDao: TaskDao,
     private val outboxQueueDao: OutboxQueueDao,
     private val dailyCommitDao: DailyCommitDao,
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val syncManager: SyncManager,
+    private val dataStoreManager: DataStoreManager
 ) {
     private val gson = Gson()
     
@@ -330,12 +334,16 @@ class TaskRepository @Inject constructor(
                 Result.success(task)
             } else {
                 // Add to outbox queue for offline sync
+                val ownerId = dataStoreManager.userId.first() ?: ""
+                val clientUploadId = UUID.randomUUID().toString()
                 val outboxItem = OutboxQueueEntity(
-                    id = UUID.randomUUID().toString(),
+                    id = clientUploadId,
                     endpoint = "tasks/$taskId",
                     method = "PATCH",
                     payload = """{"status":"$status"}""",
-                    createdAt = System.currentTimeMillis().toString()
+                    createdAt = System.currentTimeMillis().toString(),
+                    clientUploadId = clientUploadId,
+                    ownerUserId = ownerId
                 )
                 outboxQueueDao.insertItem(outboxItem)
                 
@@ -996,13 +1004,15 @@ class TaskRepository @Inject constructor(
             put("clientUploadId", effectiveUploadId)
         }.toString()
         
+        val ownerId = dataStoreManager.userId.first() ?: ""
         val outboxItem = OutboxQueueEntity(
             id = UUID.randomUUID().toString(),
             endpoint = "tasks/$cleanTaskId/complete",
             method = "PATCH",
             payload = payload,
             createdAt = System.currentTimeMillis().toString(),
-            clientUploadId = effectiveUploadId
+            clientUploadId = effectiveUploadId,
+            ownerUserId = ownerId
         )
         outboxQueueDao.insertItem(outboxItem)
 
@@ -1642,19 +1652,7 @@ class TaskRepository @Inject constructor(
     }
 
     private fun scheduleSync() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "offline_sync_work",
-            ExistingWorkPolicy.KEEP,
-            syncRequest
-        )
-        android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work after task queue update")
+        syncManager.scheduleSyncWorker()
+        android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work via SyncManager after task queue update")
     }
 }

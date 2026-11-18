@@ -12,7 +12,9 @@ import com.swayog.employee.data.local.dao.AttendanceDao
 import com.swayog.employee.data.local.dao.DailyCommitDao
 import com.swayog.employee.data.local.dao.OutboxQueueDao
 import com.swayog.employee.data.local.dao.TaskDao
+import com.swayog.employee.data.local.entity.AttendanceEntity
 import com.swayog.employee.data.local.entity.DailyCommitEntity
+import com.swayog.employee.data.local.entity.OutboxQueueEntity
 import com.swayog.employee.data.local.entity.TaskEntity
 import com.swayog.employee.data.model.*
 import dagger.assisted.Assisted
@@ -36,9 +38,25 @@ class SyncWorker @AssistedInject constructor(
 
     private val gson = Gson()
 
+    private sealed interface ItemOutcome {
+        object Synced : ItemOutcome
+        data class RetryableFailure(val error: String, val httpCode: Int? = null) : ItemOutcome
+        data class PermanentFailure(val error: String, val httpCode: Int? = null) : ItemOutcome
+        object AuthFailure : ItemOutcome
+    }
+
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            var hasFailure = false
+            val currentUserId = dataStoreManager.userId.first()
+            if (currentUserId.isNullOrBlank()) {
+                Log.d("TASK_SYNC", "SyncWorker skipped: no authenticated user")
+                return@withContext Result.success()
+            }
+
+            var hasRetryableFailure = false
+            var hasAuthFailure = false
+            var lastErrorMsg: String? = null
+            var lastHttpCode: Int? = null
 
             // 1. Check pending face enrollment sync
             try {
@@ -73,8 +91,12 @@ class SyncWorker @AssistedInject constructor(
                                 syncStatus = "SYNCED"
                             )
                             Log.d("TASK_SYNC", "SyncWorker successfully uploaded pending face enrollment")
+                        } else if (res.code() == 401 || res.code() == 403) {
+                            hasAuthFailure = true
                         } else {
-                            hasFailure = true
+                            hasRetryableFailure = true
+                            lastHttpCode = res.code()
+                            lastErrorMsg = "Face enrollment sync failed (HTTP ${res.code()})"
                         }
                     } else if (descriptors.isNotEmpty()) {
                         Log.e("TASK_SYNC", "Refusing to sync invalid local face descriptor set")
@@ -83,269 +105,397 @@ class SyncWorker @AssistedInject constructor(
                 }
             } catch (e: Exception) {
                 Log.e("TASK_SYNC", "Failed to sync pending face enrollment: ${e.message}", e)
-                hasFailure = true
+                hasRetryableFailure = true
+                lastErrorMsg = e.message
             }
 
-            val pendingItems = outboxQueueDao.getPendingItems()
-            Log.d("TASK_SYNC", "SyncWorker started with ${pendingItems.size} pending outbox item(s)")
+            // 2. Drain outbox items owned by the currently logged-in employee only
+            val processedIds = mutableSetOf<String>()
+            var pass = 0
+            while (pass < 5) {
+                pass++
+                val pendingItems = outboxQueueDao.getPendingItemsForUser(currentUserId)
+                    .filter { it.id !in processedIds }
+                if (pendingItems.isEmpty()) break
 
-            for (item in pendingItems) {
-                Log.d("TASK_SYNC", "Processing outbox item ${item.id} endpoint=${item.endpoint} method=${item.method} retryCount=${item.retryCount}")
-                val filesToDelete = mutableListOf<String>()
-                val success = try {
-                    when {
-                        item.endpoint.startsWith("tasks/") && item.method == "PATCH" -> {
-                            val taskId = item.endpoint.substringAfter("tasks/")
-                            if (taskId.isNotEmpty()) {
-                                val json = JSONObject(item.payload)
-                                val status = json.optString("status")
-                                val response = apiService.updateTask(taskId, UpdateTaskRequest(status = status))
-                                if (response.isSuccessful) {
-                                    val localTask = taskDao.getTaskById(taskId)
-                                    if (localTask != null) {
-                                        taskDao.updateTask(localTask.copy(status = status, isSynced = true))
-                                    }
-                                    true
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            }
+                Log.d("TASK_SYNC", "SyncWorker pass $pass processing ${pendingItems.size} pending item(s) for user $currentUserId")
+                for (item in pendingItems) {
+                    processedIds.add(item.id)
+                    val filesToDelete = mutableListOf<String>()
+                    val outcome = processOutboxItem(item, currentUserId, filesToDelete)
+                    val nowStr = System.currentTimeMillis().toString()
+
+                    when (outcome) {
+                        is ItemOutcome.Synced -> {
+                            filesToDelete.forEach { filePath -> LocalFileHelper.deleteFile(filePath) }
+                            outboxQueueDao.updateItem(item.copy(isSynced = true, status = "SYNCED", lastAttemptAt = nowStr, lastError = null))
+                            outboxQueueDao.deleteItem(item)
+                            Log.d("TASK_SYNC", "Successfully synced and removed item ${item.id}")
                         }
-                        item.endpoint.contains("complete") && item.method == "POST" -> {
-                            val json = JSONObject(item.payload)
-                            val taskId = json.optString("taskId")
-                            if (taskId.isNotEmpty()) {
-                                val beforeImageFilePath = if (json.isNull("beforeImageFilePath")) null else json.optString("beforeImageFilePath")
-                                val afterImageFilePath = if (json.isNull("afterImageFilePath")) null else json.optString("afterImageFilePath")
-                                
-                                val beforeImageUrl = beforeImageFilePath?.takeIf { it.isNotBlank() }?.let { 
-                                    filesToDelete.add(it)
-                                    LocalFileHelper.readFileToBase64(it) 
-                                } ?: json.optString("beforeImageUrl").takeIf { it.isNotEmpty() }
-                                
-                                val afterImageUrl = afterImageFilePath?.takeIf { it.isNotBlank() }?.let { 
-                                    filesToDelete.add(it)
-                                    LocalFileHelper.readFileToBase64(it) 
-                                } ?: json.optString("afterImageUrl").takeIf { it.isNotEmpty() }
-                                
-                                val imageFilePathsArray = json.optJSONArray("imageFilePaths")
-                                val imageFilePaths = if (imageFilePathsArray != null) {
-                                    List(imageFilePathsArray.length()) { imageFilePathsArray.getString(it) }
-                                } else null
-                                val images = imageFilePaths?.mapNotNull { 
-                                    filesToDelete.add(it)
-                                    LocalFileHelper.readFileToBase64(it) 
-                                }
-
-                                val beforeImagePathsArray = json.optJSONArray("beforeImagePaths")
-                                val beforeImagePaths = if (beforeImagePathsArray != null) {
-                                    List(beforeImagePathsArray.length()) { beforeImagePathsArray.getString(it) }
-                                } else null
-                                val beforeImages = beforeImagePaths?.mapNotNull { 
-                                    filesToDelete.add(it)
-                                    LocalFileHelper.readFileToBase64(it) 
-                                }
-
-                                val afterImagePathsArray = json.optJSONArray("afterImagePaths")
-                                val afterImagePaths = if (afterImagePathsArray != null) {
-                                    List(afterImagePathsArray.length()) { afterImagePathsArray.getString(it) }
-                                } else null
-                                val afterImages = afterImagePaths?.mapNotNull { 
-                                    filesToDelete.add(it)
-                                    LocalFileHelper.readFileToBase64(it) 
-                                }
-
-                                val maintenanceVideoFilePathsArray = json.optJSONArray("maintenanceVideoFilePaths")
-                                val maintenanceVideoFilePaths = if (maintenanceVideoFilePathsArray != null) {
-                                    List(maintenanceVideoFilePathsArray.length()) { maintenanceVideoFilePathsArray.getString(it) }
-                                } else null
-                                val maintenanceVideos = maintenanceVideoFilePaths?.mapNotNull { 
-                                    filesToDelete.add(it)
-                                    LocalFileHelper.readFileToBase64(it)
-                                } ?: run {
-                                    val payloadVideos = json.optJSONArray("maintenanceVideos")
-                                    if (payloadVideos != null) {
-                                        List(payloadVideos.length()) { index -> payloadVideos.getString(index) }
-                                            .filter { it.isNotBlank() }
-                                    } else null
-                                }
-
-                                val clientUploadId = item.clientUploadId ?: json.optString("clientUploadId").takeIf { it.isNotEmpty() }
-                                val request = CompleteTaskRequest(
-                                    message = json.optString("message"),
-                                    documentUrl = json.optString("documentUrl").takeIf { it.isNotEmpty() },
-                                    beforeImageUrl = beforeImageUrl,
-                                    afterImageUrl = afterImageUrl,
-                                    beforeLatitude = json.optDouble("beforeLatitude").takeIf { !json.isNull("beforeLatitude") },
-                                    beforeLongitude = json.optDouble("beforeLongitude").takeIf { !json.isNull("beforeLongitude") },
-                                    afterLatitude = json.optDouble("afterLatitude").takeIf { !json.isNull("afterLatitude") },
-                                    afterLongitude = json.optDouble("afterLongitude").takeIf { !json.isNull("afterLongitude") },
-                                    taskType = json.optString("taskType").takeIf { it.isNotEmpty() },
-                                    images = images,
-                                    sitePhotos = images,
-                                    beforeImages = beforeImages,
-                                    afterImages = afterImages,
-                                    maintenanceVideos = maintenanceVideos,
-                                    clientUploadId = clientUploadId
+                        is ItemOutcome.AuthFailure -> {
+                            hasAuthFailure = true
+                            lastErrorMsg = "Authentication required"
+                        }
+                        is ItemOutcome.PermanentFailure -> {
+                            outboxQueueDao.updateItem(
+                                item.copy(
+                                    status = "FAILED_PERMANENT",
+                                    retryCount = item.retryCount + 1,
+                                    lastError = outcome.error.take(300),
+                                    lastAttemptAt = nowStr
                                 )
-                                val response = apiService.completeTask(taskId, request)
-                                if (response.isSuccessful) {
-                                    val task = response.body()?.data
-                                    if (task != null) {
-                                        val entity = TaskEntity(
-                                            id = task.id,
-                                            jobType = task.jobType,
-                                            description = task.description,
-                                            customerName = task.customerName,
-                                            customerPhone = task.customerPhone,
-                                            address = task.address,
-                                            latitude = task.latitude,
-                                            longitude = task.longitude,
-                                            status = task.status,
-                                            scheduledTime = task.scheduledTime,
-                                            employeeUserId = task.employeeUserId,
-                                            assignedById = task.assignedById,
-                                            completionMessage = task.completionMessage,
-                                            completionDocumentUrl = task.completionDocumentUrl,
-                                            beforeImageUrl = task.beforeImageUrl,
-                                            afterImageUrl = task.afterImageUrl,
-                                            beforeLatitude = task.beforeLatitude,
-                                            beforeLongitude = task.beforeLongitude,
-                                            afterLatitude = task.afterLatitude,
-                                            afterLongitude = task.afterLongitude,
-                                            completedAt = task.completedAt,
-                                            createdAt = task.createdAt,
-                                            updatedAt = task.updatedAt,
-                                            isSynced = true,
-                                            invoiceJson = task.invoice?.let { gson.toJson(it) },
-                                            taskType = task.taskType,
-                                            imagesJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
-                                            sitePhotosJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
-                                            beforeImagesJson = beforeImages?.let { gson.toJson(it) },
-                                            afterImagesJson = afterImages?.let { gson.toJson(it) },
-                                            maintenanceVideosJson = task.maintenanceVideos?.filter { it.isNotBlank() }?.let { gson.toJson(it) },
-                                            assignedEmployeeName = task.assignedEmployeeName,
-                                            assignedEmployeePhone = task.assignedEmployeePhone
-                                        )
-                                        taskDao.updateTask(entity)
-                                    } else {
-                                        val localTask = taskDao.getTaskById(taskId)
-                                        if (localTask != null) {
-                                            taskDao.updateTask(localTask.copy(status = "completed", isSynced = true))
-                                        }
-                                    }
-                                    true
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            }
-                        }
-                        item.endpoint.contains("check-in") && item.method == "POST" -> {
-                            val json = JSONObject(item.payload)
-                            
-                            val selfieFilePath = if (json.isNull("selfieFilePath")) null else json.optString("selfieFilePath")
-                            val selfie = selfieFilePath?.takeIf { it.isNotBlank() }?.let { 
-                                filesToDelete.add(it)
-                                LocalFileHelper.readFileToBase64(it) 
-                            } ?: json.optString("selfie").takeIf { it.isNotEmpty() }
-                            
-                            val request = CheckInRequest(
-                                selfie = selfie,
-                                latitude = json.optDouble("latitude").takeIf { !json.isNull("latitude") },
-                                longitude = json.optDouble("longitude").takeIf { !json.isNull("longitude") },
-                                matchConfidence = json.optDouble("matchConfidence").takeIf { !json.isNull("matchConfidence") }?.toFloat()
                             )
-                            val response = apiService.checkIn(request)
-                            val isAlreadyDone = response.code() == 400 && try {
-                                response.errorBody()?.string()?.contains("Already checked in", ignoreCase = true) == true
-                            } catch (_: Exception) { false }
-                            response.isSuccessful || isAlreadyDone
+                            lastErrorMsg = outcome.error
+                            lastHttpCode = outcome.httpCode
+                            Log.w("TASK_SYNC", "Item ${item.id} permanently failed (${outcome.httpCode}): ${outcome.error}")
                         }
-                        item.endpoint.contains("check-out") && item.method == "POST" -> {
-                            val response = apiService.checkOut()
-                            val isAlreadyDone = response.code() == 400 && try {
-                                response.errorBody()?.string()?.contains("Already checked out", ignoreCase = true) == true
-                            } catch (_: Exception) { false }
-                            if (response.isSuccessful || isAlreadyDone) {
-                                val userId = dataStoreManager.userId.first()
-                                val todayRecord = userId?.let { attendanceDao.getTodayAttendance(it) }
-                                if (todayRecord != null) {
-                                    attendanceDao.updateAttendance(todayRecord.copy(isSynced = true))
-                                }
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        item.endpoint.contains("daily-commits") && item.method == "POST" -> {
-                            val json = JSONObject(item.payload)
-                            val request = DailyCommitRequest(
-                                commitDate = json.optString("commitDate"),
-                                taskWorkedOn = json.optString("taskWorkedOn"),
-                                workSummary = json.optString("workSummary"),
-                                hoursSpent = json.optDouble("hoursSpent"),
-                                issuesBlockers = json.optString("issuesBlockers").takeIf { it.isNotEmpty() },
-                                tomorrowPlan = json.optString("tomorrowPlan").takeIf { it.isNotEmpty() }
-                            )
-                            val response = apiService.createDailyCommit(request)
-                            if (response.isSuccessful && response.body()?.data != null) {
-                                val commit = response.body()!!.data!!
-                                val nowStr = java.time.LocalDateTime.now().toString()
-                                val entity = DailyCommitEntity(
-                                    id = commit.id,
-                                    employeeId = commit.employeeId,
-                                    commitDate = commit.commitDate,
-                                    taskWorkedOn = commit.taskWorkedOn,
-                                    workSummary = commit.workSummary,
-                                    hoursSpent = commit.hoursSpent,
-                                    issuesBlockers = commit.issuesBlockers,
-                                    tomorrowPlan = commit.tomorrowPlan,
-                                    attachmentUrl = commit.attachmentUrl,
-                                    submittedAt = commit.submittedAt ?: commit.createdAt ?: nowStr,
-                                    createdAt = commit.createdAt ?: commit.submittedAt ?: nowStr,
-                                    isSynced = true
+                        is ItemOutcome.RetryableFailure -> {
+                            outboxQueueDao.updateItem(
+                                item.copy(
+                                    status = "PENDING",
+                                    retryCount = item.retryCount + 1,
+                                    lastError = outcome.error.take(300),
+                                    lastAttemptAt = nowStr
                                 )
-                                dailyCommitDao.deleteUnsyncedByDate(commit.commitDate)
-                                dailyCommitDao.insertDailyCommit(entity)
-                            }
-                            response.isSuccessful
+                            )
+                            hasRetryableFailure = true
+                            lastErrorMsg = outcome.error
+                            lastHttpCode = outcome.httpCode
+                            Log.d("TASK_SYNC", "Retryable failure for item ${item.id}: ${outcome.error}")
                         }
-                        else -> false
                     }
-                } catch (e: Exception) {
-                    Log.e("TASK_SYNC", "Exception while syncing item ${item.id}: ${e.message}", e)
-                    false
-                }
-
-                if (success) {
-                    filesToDelete.forEach { filePath ->
-                        LocalFileHelper.deleteFile(filePath)
-                    }
-                    outboxQueueDao.updateItem(item.copy(isSynced = true))
-                    outboxQueueDao.deleteItem(item)
-                    Log.d("TASK_SYNC", "Successfully synced and removed item ${item.id}")
-                } else {
-                    val updatedItem = item.copy(retryCount = item.retryCount + 1)
-                    outboxQueueDao.updateItem(updatedItem)
-                    Log.d("TASK_SYNC", "Failed to sync item ${item.id}; incremented retryCount to ${updatedItem.retryCount}")
-                    hasFailure = true
                 }
             }
 
-            if (hasFailure) {
-                Log.d("TASK_SYNC", "SyncWorker completed with failures; requesting retry")
+            if (hasAuthFailure || hasRetryableFailure) {
+                dataStoreManager.recordSyncFailure(
+                    error = lastErrorMsg ?: "Background sync incomplete",
+                    httpCode = lastHttpCode
+                )
+                Log.d("TASK_SYNC", "SyncWorker completed with retryable/auth failures; requesting retry")
                 Result.retry()
             } else {
-                Log.d("TASK_SYNC", "SyncWorker completed successfully")
+                if (lastErrorMsg != null) {
+                    dataStoreManager.recordSyncFailure(error = lastErrorMsg, httpCode = lastHttpCode)
+                } else {
+                    dataStoreManager.recordSyncSuccess()
+                }
+                Log.d("TASK_SYNC", "SyncWorker completed")
                 Result.success()
             }
         } catch (e: Exception) {
             Log.e("TASK_SYNC", "SyncWorker failed with exception: ${e.message}", e)
+            dataStoreManager.recordSyncFailure(error = e.message ?: "SyncWorker exception")
             Result.retry()
+        }
+    }
+
+    private fun <T> classifyHttpFailure(response: retrofit2.Response<T>): ItemOutcome {
+        val code = response.code()
+        val msg = try {
+            response.errorBody()?.string()?.take(250)?.takeIf { it.isNotBlank() } ?: response.message()
+        } catch (_: Exception) {
+            response.message()
+        }
+        return when {
+            code == 401 || code == 403 -> ItemOutcome.AuthFailure
+            code == 400 || code == 404 || code == 409 || code == 422 -> ItemOutcome.PermanentFailure("HTTP $code: $msg", code)
+            else -> ItemOutcome.RetryableFailure("HTTP $code: $msg", code)
+        }
+    }
+
+    private suspend fun processOutboxItem(
+        item: OutboxQueueEntity,
+        currentUserId: String,
+        filesToDelete: MutableList<String>
+    ): ItemOutcome {
+        return try {
+            when {
+                item.endpoint.startsWith("tasks/") && item.method == "PATCH" -> {
+                    val taskId = item.endpoint.substringAfter("tasks/")
+                    if (taskId.isEmpty()) return ItemOutcome.PermanentFailure("Missing taskId")
+                    val json = JSONObject(item.payload)
+                    val status = json.optString("status")
+                    val response = apiService.updateTask(taskId, UpdateTaskRequest(status = status))
+                    if (response.isSuccessful) {
+                        val localTask = taskDao.getTaskById(taskId)
+                        if (localTask != null) {
+                            taskDao.updateTask(localTask.copy(status = status, isSynced = true))
+                        }
+                        ItemOutcome.Synced
+                    } else {
+                        classifyHttpFailure(response)
+                    }
+                }
+                item.endpoint.contains("complete") && item.method == "POST" -> {
+                    val json = JSONObject(item.payload)
+                    val taskId = json.optString("taskId")
+                    if (taskId.isEmpty()) return ItemOutcome.PermanentFailure("Missing taskId")
+                    val beforeImageFilePath = if (json.isNull("beforeImageFilePath")) null else json.optString("beforeImageFilePath")
+                    val afterImageFilePath = if (json.isNull("afterImageFilePath")) null else json.optString("afterImageFilePath")
+
+                    val beforeImageUrl = beforeImageFilePath?.takeIf { it.isNotBlank() }?.let {
+                        filesToDelete.add(it)
+                        LocalFileHelper.readFileToBase64(it)
+                    } ?: json.optString("beforeImageUrl").takeIf { it.isNotEmpty() }
+
+                    val afterImageUrl = afterImageFilePath?.takeIf { it.isNotBlank() }?.let {
+                        filesToDelete.add(it)
+                        LocalFileHelper.readFileToBase64(it)
+                    } ?: json.optString("afterImageUrl").takeIf { it.isNotEmpty() }
+
+                    val imageFilePathsArray = json.optJSONArray("imageFilePaths")
+                    val imageFilePaths = if (imageFilePathsArray != null) {
+                        List(imageFilePathsArray.length()) { imageFilePathsArray.getString(it) }
+                    } else null
+                    val images = imageFilePaths?.mapNotNull {
+                        filesToDelete.add(it)
+                        LocalFileHelper.readFileToBase64(it)
+                    }
+
+                    val beforeImagePathsArray = json.optJSONArray("beforeImagePaths")
+                    val beforeImagePaths = if (beforeImagePathsArray != null) {
+                        List(beforeImagePathsArray.length()) { beforeImagePathsArray.getString(it) }
+                    } else null
+                    val beforeImages = beforeImagePaths?.mapNotNull {
+                        filesToDelete.add(it)
+                        LocalFileHelper.readFileToBase64(it)
+                    }
+
+                    val afterImagePathsArray = json.optJSONArray("afterImagePaths")
+                    val afterImagePaths = if (afterImagePathsArray != null) {
+                        List(afterImagePathsArray.length()) { afterImagePathsArray.getString(it) }
+                    } else null
+                    val afterImages = afterImagePaths?.mapNotNull {
+                        filesToDelete.add(it)
+                        LocalFileHelper.readFileToBase64(it)
+                    }
+
+                    val maintenanceVideoFilePathsArray = json.optJSONArray("maintenanceVideoFilePaths")
+                    val maintenanceVideoFilePaths = if (maintenanceVideoFilePathsArray != null) {
+                        List(maintenanceVideoFilePathsArray.length()) { maintenanceVideoFilePathsArray.getString(it) }
+                    } else null
+                    val maintenanceVideos = maintenanceVideoFilePaths?.mapNotNull {
+                        filesToDelete.add(it)
+                        LocalFileHelper.readFileToBase64(it)
+                    } ?: run {
+                        val payloadVideos = json.optJSONArray("maintenanceVideos")
+                        if (payloadVideos != null) {
+                            List(payloadVideos.length()) { index -> payloadVideos.getString(index) }
+                                .filter { it.isNotBlank() }
+                        } else null
+                    }
+
+                    val clientUploadId = item.clientUploadId ?: json.optString("clientUploadId").takeIf { it.isNotEmpty() }
+                    val request = CompleteTaskRequest(
+                        message = json.optString("message"),
+                        documentUrl = json.optString("documentUrl").takeIf { it.isNotEmpty() },
+                        beforeImageUrl = beforeImageUrl,
+                        afterImageUrl = afterImageUrl,
+                        beforeLatitude = json.optDouble("beforeLatitude").takeIf { !json.isNull("beforeLatitude") },
+                        beforeLongitude = json.optDouble("beforeLongitude").takeIf { !json.isNull("beforeLongitude") },
+                        afterLatitude = json.optDouble("afterLatitude").takeIf { !json.isNull("afterLatitude") },
+                        afterLongitude = json.optDouble("afterLongitude").takeIf { !json.isNull("afterLongitude") },
+                        taskType = json.optString("taskType").takeIf { it.isNotEmpty() },
+                        images = images,
+                        sitePhotos = images,
+                        beforeImages = beforeImages,
+                        afterImages = afterImages,
+                        maintenanceVideos = maintenanceVideos,
+                        clientUploadId = clientUploadId
+                    )
+                    val response = apiService.completeTask(taskId, request)
+                    if (response.isSuccessful) {
+                        val task = response.body()?.data
+                        if (task != null) {
+                            val entity = TaskEntity(
+                                id = task.id,
+                                jobType = task.jobType,
+                                description = task.description,
+                                customerName = task.customerName,
+                                customerPhone = task.customerPhone,
+                                address = task.address,
+                                latitude = task.latitude,
+                                longitude = task.longitude,
+                                status = task.status,
+                                scheduledTime = task.scheduledTime,
+                                employeeUserId = task.employeeUserId,
+                                assignedById = task.assignedById,
+                                completionMessage = task.completionMessage,
+                                completionDocumentUrl = task.completionDocumentUrl,
+                                beforeImageUrl = task.beforeImageUrl,
+                                afterImageUrl = task.afterImageUrl,
+                                beforeLatitude = task.beforeLatitude,
+                                beforeLongitude = task.beforeLongitude,
+                                afterLatitude = task.afterLatitude,
+                                afterLongitude = task.afterLongitude,
+                                completedAt = task.completedAt,
+                                createdAt = task.createdAt,
+                                updatedAt = task.updatedAt,
+                                isSynced = true,
+                                invoiceJson = task.invoice?.let { gson.toJson(it) },
+                                taskType = task.taskType,
+                                imagesJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
+                                sitePhotosJson = (task.sitePhotos ?: task.images ?: images)?.let { gson.toJson(it) },
+                                beforeImagesJson = beforeImages?.let { gson.toJson(it) },
+                                afterImagesJson = afterImages?.let { gson.toJson(it) },
+                                maintenanceVideosJson = task.maintenanceVideos?.filter { it.isNotBlank() }?.let { gson.toJson(it) },
+                                assignedEmployeeName = task.assignedEmployeeName,
+                                assignedEmployeePhone = task.assignedEmployeePhone
+                            )
+                            taskDao.updateTask(entity)
+                        } else {
+                            val localTask = taskDao.getTaskById(taskId)
+                            if (localTask != null) {
+                                taskDao.updateTask(localTask.copy(status = "completed", isSynced = true))
+                            }
+                        }
+                        ItemOutcome.Synced
+                    } else {
+                        classifyHttpFailure(response)
+                    }
+                }
+                item.endpoint.contains("check-in") && item.method == "POST" -> {
+                    val json = JSONObject(item.payload)
+                    val selfieFilePath = if (json.isNull("selfieFilePath")) null else json.optString("selfieFilePath")
+                    val selfie = selfieFilePath?.takeIf { it.isNotBlank() }?.let {
+                        filesToDelete.add(it)
+                        LocalFileHelper.readFileToBase64(it)
+                    } ?: json.optString("selfie").takeIf { it.isNotEmpty() }
+
+                    val clientUploadId = item.clientUploadId ?: item.id
+                    val request = CheckInRequest(
+                        selfie = selfie,
+                        latitude = json.optDouble("latitude").takeIf { !json.isNull("latitude") },
+                        longitude = json.optDouble("longitude").takeIf { !json.isNull("longitude") },
+                        matchConfidence = json.optDouble("matchConfidence").takeIf { !json.isNull("matchConfidence") }?.toFloat(),
+                        accuracy = json.optDouble("accuracy").takeIf { !json.isNull("accuracy") },
+                        verificationToken = json.optString("verificationToken").takeIf { it.isNotEmpty() },
+                        faceVerified = json.optBoolean("faceVerified", false),
+                        livenessVerified = json.optBoolean("livenessVerified", false),
+                        clientUploadId = clientUploadId
+                    )
+                    val response = apiService.checkIn(request, clientUploadId)
+                    if (response.isSuccessful) {
+                        val attRecord = response.body()?.result?.attendanceRecord
+                        if (attRecord != null) {
+                            attendanceDao.insertAttendance(
+                                AttendanceEntity(
+                                    id = attRecord.id,
+                                    employeeId = currentUserId,
+                                    date = if (attRecord.date.length >= 10) attRecord.date.substring(0, 10) else attRecord.date,
+                                    checkInTime = attRecord.checkInTime,
+                                    checkOutTime = attRecord.checkOutTime,
+                                    totalMinutes = attRecord.totalMinutes,
+                                    status = attRecord.status,
+                                    notes = attRecord.notes,
+                                    checkInSelfieUrl = response.body()?.result?.checkIn?.selfieUrl,
+                                    checkInLocation = null,
+                                    isSynced = true,
+                                    source = attRecord.source,
+                                    manualOverride = attRecord.manualOverride,
+                                    reviewedBy = attRecord.reviewedBy,
+                                    reviewerName = attRecord.reviewerName,
+                                    isAttendanceCompleted = attRecord.isAttendanceCompleted
+                                )
+                            )
+                        }
+                        ItemOutcome.Synced
+                    } else if (response.code() == 409) {
+                        reconcileTodayFromServer(currentUserId)
+                        ItemOutcome.Synced
+                    } else {
+                        classifyHttpFailure(response)
+                    }
+                }
+                item.endpoint.contains("check-out") && item.method == "POST" -> {
+                    val clientUploadId = item.clientUploadId ?: item.id
+                    val response = apiService.checkOut(CheckOutRequest(clientUploadId), clientUploadId)
+                    if (response.isSuccessful) {
+                        reconcileTodayFromServer(currentUserId)
+                        ItemOutcome.Synced
+                    } else if (response.code() == 409) {
+                        reconcileTodayFromServer(currentUserId)
+                        ItemOutcome.Synced
+                    } else {
+                        classifyHttpFailure(response)
+                    }
+                }
+                item.endpoint.contains("daily-commits") && item.method == "POST" -> {
+                    val json = JSONObject(item.payload)
+                    val request = DailyCommitRequest(
+                        commitDate = json.optString("commitDate"),
+                        taskWorkedOn = json.optString("taskWorkedOn"),
+                        workSummary = json.optString("workSummary"),
+                        hoursSpent = json.optDouble("hoursSpent"),
+                        issuesBlockers = json.optString("issuesBlockers").takeIf { it.isNotEmpty() },
+                        tomorrowPlan = json.optString("tomorrowPlan").takeIf { it.isNotEmpty() }
+                    )
+                    val response = apiService.createDailyCommit(request)
+                    if (response.isSuccessful && response.body()?.data != null) {
+                        val commit = response.body()!!.data!!
+                        val nowStr = java.time.LocalDateTime.now().toString()
+                        val entity = DailyCommitEntity(
+                            id = commit.id,
+                            employeeId = commit.employeeId,
+                            commitDate = commit.commitDate,
+                            taskWorkedOn = commit.taskWorkedOn,
+                            workSummary = commit.workSummary,
+                            hoursSpent = commit.hoursSpent,
+                            issuesBlockers = commit.issuesBlockers,
+                            tomorrowPlan = commit.tomorrowPlan,
+                            attachmentUrl = commit.attachmentUrl,
+                            submittedAt = commit.submittedAt ?: commit.createdAt ?: nowStr,
+                            createdAt = commit.createdAt ?: commit.submittedAt ?: nowStr,
+                            isSynced = true
+                        )
+                        dailyCommitDao.deleteUnsyncedByDate(commit.commitDate)
+                        dailyCommitDao.insertDailyCommit(entity)
+                        ItemOutcome.Synced
+                    } else if (response.isSuccessful) {
+                        ItemOutcome.Synced
+                    } else {
+                        classifyHttpFailure(response)
+                    }
+                }
+                else -> ItemOutcome.PermanentFailure("Unsupported outbox endpoint: ${item.endpoint}")
+            }
+        } catch (e: Exception) {
+            Log.e("TASK_SYNC", "Exception while syncing item ${item.id}: ${e.message}", e)
+            ItemOutcome.RetryableFailure(e.message ?: "Network error")
+        }
+    }
+
+    private suspend fun reconcileTodayFromServer(userId: String) {
+        try {
+            val todayRes = apiService.getTodayAttendance()
+            if (todayRes.isSuccessful) {
+                val record = todayRes.body()?.record
+                if (record != null) {
+                    attendanceDao.insertAttendance(
+                        AttendanceEntity(
+                            id = record.id,
+                            employeeId = userId,
+                            date = if (record.date.length >= 10) record.date.substring(0, 10) else record.date,
+                            checkInTime = record.checkInTime,
+                            checkOutTime = record.checkOutTime,
+                            totalMinutes = record.totalMinutes,
+                            status = record.status,
+                            notes = record.notes,
+                            checkInSelfieUrl = null,
+                            checkInLocation = null,
+                            isSynced = true,
+                            source = record.source,
+                            manualOverride = record.manualOverride,
+                            reviewedBy = record.reviewedBy,
+                            reviewerName = record.reviewerName,
+                            isAttendanceCompleted = record.isAttendanceCompleted
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("TASK_SYNC", "Failed to reconcile today attendance: ${e.message}")
         }
     }
 }

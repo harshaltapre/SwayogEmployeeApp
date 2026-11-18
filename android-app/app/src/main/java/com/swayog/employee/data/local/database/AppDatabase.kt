@@ -19,7 +19,7 @@ import com.swayog.employee.data.local.entity.*
         CustomerEntity::class,
         OutboxQueueEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -130,6 +130,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE outbox_queue ADD COLUMN ownerUserId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE outbox_queue ADD COLUMN status TEXT NOT NULL DEFAULT 'PENDING'")
+                database.execSQL("ALTER TABLE outbox_queue ADD COLUMN lastError TEXT")
+                database.execSQL("ALTER TABLE outbox_queue ADD COLUMN lastAttemptAt TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -139,9 +148,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_12_14)
                     .addMigrations(*ALL_MIGRATIONS)
-                    .addMigrations(MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
-                    .fallbackToDestructiveMigration()
-                    .fallbackToDestructiveMigrationOnDowngrade()
+                    .addMigrations(MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
                     .build()
                 INSTANCE = instance
                 instance

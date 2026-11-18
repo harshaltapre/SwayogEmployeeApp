@@ -72,11 +72,20 @@ interface ApiService {
     
     @POST("employee/attendance/check-in")
     suspend fun checkIn(
-        @Body request: CheckInRequest
+        @Body request: CheckInRequest,
+        @Header("Idempotency-Key") idempotencyKey: String? = request.clientUploadId
     ): Response<CheckInApiResponse>
     
     @POST("employee/attendance/check-out")
-    suspend fun checkOut(): Response<ApiResponse<Unit>>
+    suspend fun checkOut(
+        @Body request: CheckOutRequest = CheckOutRequest(),
+        @Header("Idempotency-Key") idempotencyKey: String? = request.clientUploadId
+    ): Response<ApiResponse<Unit>>
+
+    @POST("attendance/sync-health")
+    suspend fun reportSyncHealth(
+        @Body request: SyncHealthReportRequest
+    ): Response<ApiResponse<Unit>>
     
     @POST("employee/attendance/work-description")
     suspend fun saveWorkDescription(

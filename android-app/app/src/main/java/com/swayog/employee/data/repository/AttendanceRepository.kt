@@ -13,7 +13,7 @@ import com.swayog.employee.core.util.OfflinePendingException
 import com.swayog.employee.core.util.OnlineSubmissionFailedException
 import com.swayog.employee.core.util.LocalFileHelper
 import com.swayog.employee.core.util.NetworkUtils
-import com.swayog.employee.data.sync.SyncWorker
+import com.swayog.employee.data.sync.SyncManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -33,9 +33,14 @@ class AttendanceRepository @Inject constructor(
     private val apiService: ApiService,
     private val dailyCommitRepository: DailyCommitRepository,
     private val dataStoreManager: com.swayog.employee.data.local.preferences.DataStoreManager,
-    private val faceIndexManager: com.swayog.employee.presentation.attendance.face.FaceIndexManager
+    private val faceIndexManager: com.swayog.employee.presentation.attendance.face.FaceIndexManager,
+    private val syncManager: SyncManager
 ) {
-    val pendingSyncCount: Flow<Int> = outboxQueueDao.getPendingCountFlow()
+    val pendingSyncCount: Flow<Int> = syncManager.pendingSyncCountForCurrentUser
+    val failedSyncCount: Flow<Int> = syncManager.failedSyncCountForCurrentUser
+    val lastSuccessfulSyncAt: Flow<Long?> = dataStoreManager.lastSuccessfulSyncAt
+    val lastSyncStatus: Flow<String> = dataStoreManager.lastSyncStatus
+    val lastSyncError: Flow<String?> = dataStoreManager.lastSyncError
     
     private fun formatDate(dateStr: String): String {
         return if (dateStr.length >= 10) dateStr.substring(0, 10) else dateStr
@@ -63,10 +68,10 @@ class AttendanceRepository @Inject constructor(
     suspend fun getTodayAttendance(): Result<AttendanceRecord?> {
         val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
         val userId = dataStoreManager.userId.first()
-        if (userId.isNullOrBlank()) return Result.success(null)
+        if (userId.isNullOrBlank()) return Result.failure(Exception("User is not authenticated"))
         return try {
             val response = apiService.getTodayAttendance()
-            
+
             if (response.isSuccessful && response.body() != null) {
                 val record = response.body()!!.record
                 if (record != null) {
@@ -96,18 +101,17 @@ class AttendanceRepository @Inject constructor(
                         )
                     )
                 }
+                dataStoreManager.recordSyncSuccess()
                 Result.success(record)
             } else {
-                val cached = attendanceDao.getTodayAttendance(userId, todayStr)
-                Result.success(cached?.toAttendanceRecord())
+                val errorMsg = ErrorUtils.formatResponseError(response)
+                dataStoreManager.recordSyncFailure(errorMsg, response.code())
+                Result.failure(OnlineSubmissionFailedException(errorMsg))
             }
         } catch (e: Exception) {
-            val cached = try { attendanceDao.getTodayAttendance(userId, todayStr) } catch (_: Exception) { null }
-            if (cached != null) {
-                Result.success(cached.toAttendanceRecord())
-            } else {
-                Result.failure(e)
-            }
+            val status = if (ErrorUtils.isNetworkException(e)) "OFFLINE" else "FAILED"
+            dataStoreManager.recordSyncFailure(e.message ?: "Refresh failed", null, status)
+            Result.failure(e)
         }
     }
     
@@ -124,6 +128,7 @@ class AttendanceRepository @Inject constructor(
     ): Result<CheckInResponse> {
         val userId = dataStoreManager.userId.first()
         if (userId.isNullOrBlank()) return Result.failure(Exception("User is not authenticated"))
+        val clientUploadId = UUID.randomUUID().toString()
         val isOnline = NetworkUtils.isNetworkAvailable(context)
         
         return if (isOnline) {
@@ -138,8 +143,10 @@ class AttendanceRepository @Inject constructor(
                         verificationToken = verificationToken,
                         faceVerified = faceVerified,
                         livenessVerified = livenessVerified,
-                        liveDescriptor = liveDescriptor
-                    )
+                        liveDescriptor = liveDescriptor,
+                        clientUploadId = clientUploadId
+                    ),
+                    idempotencyKey = clientUploadId
                 )
                 if (response.isSuccessful && response.body()?.result != null) {
                     val checkInResponse = response.body()!!.result!!
@@ -191,7 +198,7 @@ class AttendanceRepository @Inject constructor(
                 // If it's a different kind of exception (e.g. parsing error), report it as-is.
                 if (ErrorUtils.isNetworkException(e)) {
                     android.util.Log.w("AttendanceRepository", "Check-in network exception (saving to outbox): ${e.message}")
-                    saveCheckInToOutbox(selfie, latitude, longitude, matchConfidence)
+                    saveCheckInToOutbox(userId, clientUploadId, selfie, latitude, longitude, matchConfidence, accuracy, verificationToken, faceVerified, livenessVerified)
                     Result.failure(OfflinePendingException())
                 } else {
                     android.util.Log.e("AttendanceRepository", "Check-in unexpected exception (online): ${e.message}")
@@ -206,7 +213,7 @@ class AttendanceRepository @Inject constructor(
             // (which filters by userId) can pick up this record immediately.
             val realEmployeeId = userId
 
-            saveCheckInToOutbox(selfie, latitude, longitude, matchConfidence)
+            saveCheckInToOutbox(userId, clientUploadId, selfie, latitude, longitude, matchConfidence, accuracy, verificationToken, faceVerified, livenessVerified)
 
             // Create local attendance record
             val attendanceEntity = AttendanceEntity(
@@ -229,10 +236,16 @@ class AttendanceRepository @Inject constructor(
     }
     
     private suspend fun saveCheckInToOutbox(
+        ownerUserId: String,
+        clientUploadId: String,
         selfie: String?,
         latitude: Double?,
         longitude: Double?,
-        matchConfidence: Float?
+        matchConfidence: Float?,
+        accuracy: Double? = null,
+        verificationToken: String? = null,
+        faceVerified: Boolean = false,
+        livenessVerified: Boolean = false
     ) {
         val selfieFilePath = selfie?.let { LocalFileHelper.saveBase64ToFile(context, it, "attendance_selfie") }
 
@@ -241,6 +254,11 @@ class AttendanceRepository @Inject constructor(
             put("latitude", latitude)
             put("longitude", longitude)
             put("matchConfidence", matchConfidence)
+            put("accuracy", accuracy)
+            put("verificationToken", verificationToken)
+            put("faceVerified", faceVerified)
+            put("livenessVerified", livenessVerified)
+            put("clientUploadId", clientUploadId)
         }.toString()
         
         val pending = outboxQueueDao.getPendingItems()
@@ -252,43 +270,35 @@ class AttendanceRepository @Inject constructor(
         }
 
         val outboxItem = OutboxQueueEntity(
-            id = UUID.randomUUID().toString(),
-            endpoint = "employee/attendance/check-in",
+            id = clientUploadId,
+            endpoint = "attendance/check-in",
             method = "POST",
             payload = payload,
-            createdAt = System.currentTimeMillis().toString()
+            createdAt = System.currentTimeMillis().toString(),
+            clientUploadId = clientUploadId,
+            ownerUserId = ownerUserId
         )
         outboxQueueDao.insertItem(outboxItem)
         scheduleSync()
     }
     
     private fun scheduleSync() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "offline_sync_work",
-            ExistingWorkPolicy.REPLACE,
-            syncRequest
-        )
-        android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work after attendance queue update")
+        syncManager.scheduleSyncWorker()
+        android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work via SyncManager after attendance queue update")
     }
     
     suspend fun checkOut(): Result<Unit> {
+        val userId = dataStoreManager.userId.first()
+        if (userId.isNullOrBlank()) return Result.failure(Exception("User is not authenticated"))
+        val clientUploadId = UUID.randomUUID().toString()
         val isOnline = NetworkUtils.isNetworkAvailable(context)
         return if (isOnline) {
             try {
-                val response = apiService.checkOut()
+                val response = apiService.checkOut(CheckOutRequest(clientUploadId), clientUploadId)
                 if (response.isSuccessful) {
                     // Write the local DB update immediately so the UI updates even before
                     // we re-fetch from the server.
-                    val userId = dataStoreManager.userId.first()
-                    val todayAttendance = userId?.let { attendanceDao.getTodayAttendance(it) }
+                    val todayAttendance = attendanceDao.getTodayAttendance(userId)
                     todayAttendance?.let {
                         attendanceDao.updateAttendance(
                             it.copy(checkOutTime = java.time.LocalDateTime.now().toString(), isSynced = true)
@@ -301,10 +311,9 @@ class AttendanceRepository @Inject constructor(
                     val errorMsg = ErrorUtils.formatResponseError(response)
                     android.util.Log.e("AttendanceRepository", "Check-out rejected by server: $errorMsg")
                     // Idempotent recovery: If server confirms already checked out today, treat as success!
-                    if (errorMsg.contains("Already checked out", ignoreCase = true)) {
+                    if (errorMsg.contains("Already checked out", ignoreCase = true) || response.code() == 409) {
                         android.util.Log.i("AttendanceRepository", "Already checked out on server; completing local state")
-                        val userId = dataStoreManager.userId.first()
-                        val todayAttendance = userId?.let { attendanceDao.getTodayAttendance(it) }
+                        val todayAttendance = attendanceDao.getTodayAttendance(userId)
                         todayAttendance?.let {
                             attendanceDao.updateAttendance(
                                 it.copy(checkOutTime = java.time.LocalDateTime.now().toString(), isSynced = true)
@@ -312,11 +321,11 @@ class AttendanceRepository @Inject constructor(
                         }
                         return Result.success(Unit)
                     }
-                    Result.failure(Exception(errorMsg))
+                    Result.failure(OnlineSubmissionFailedException(errorMsg))
                 }
             } catch (e: Exception) {
                 if (ErrorUtils.isNetworkException(e)) {
-                    saveCheckOutToOutbox()
+                    saveCheckOutToOutbox(userId, clientUploadId)
                     updateLocalCheckOut()
                     Result.failure(OfflinePendingException("Check-out saved offline. Will sync automatically when online."))
                 } else {
@@ -324,7 +333,7 @@ class AttendanceRepository @Inject constructor(
                 }
             }
         } else {
-            saveCheckOutToOutbox()
+            saveCheckOutToOutbox(userId, clientUploadId)
             updateLocalCheckOut()
             Result.failure(OfflinePendingException("Check-out saved offline. Will sync automatically when online."))
         }
@@ -347,20 +356,21 @@ class AttendanceRepository @Inject constructor(
         }
     }
 
-    private suspend fun saveCheckOutToOutbox() {
-        val pending = outboxQueueDao.getPendingItems()
+    private suspend fun saveCheckOutToOutbox(ownerUserId: String, clientUploadId: String) {
+        val pending = outboxQueueDao.getPendingItemsForUser(ownerUserId)
         val existingCheckOut = pending.firstOrNull { it.endpoint.contains("check-out") }
         if (existingCheckOut != null) {
             scheduleSync()
             return
         }
-
         val outboxItem = OutboxQueueEntity(
-            id = UUID.randomUUID().toString(),
-            endpoint = "employee/attendance/check-out",
+            id = clientUploadId,
+            endpoint = "attendance/check-out",
             method = "POST",
-            payload = "{}",
-            createdAt = System.currentTimeMillis().toString()
+            payload = JSONObject().put("clientUploadId", clientUploadId).toString(),
+            createdAt = System.currentTimeMillis().toString(),
+            clientUploadId = clientUploadId,
+            ownerUserId = ownerUserId
         )
         outboxQueueDao.insertItem(outboxItem)
         scheduleSync()

@@ -2,7 +2,10 @@ package com.swayog.employee.presentation.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.swayog.employee.core.util.ErrorUtils
 import com.swayog.employee.data.local.preferences.DataStoreManager
+import com.swayog.employee.data.model.AttendanceSyncInfo
+import com.swayog.employee.data.model.SyncFreshness
 import com.swayog.employee.data.repository.AttendanceRepository
 import com.swayog.employee.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -63,6 +66,18 @@ class DashboardViewModel @Inject constructor(
     
     private val _performance = MutableStateFlow<com.swayog.employee.data.model.PerformanceSnapshot?>(null)
     val performance: StateFlow<com.swayog.employee.data.model.PerformanceSnapshot?> = _performance.asStateFlow()
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val _syncInfo = MutableStateFlow(AttendanceSyncInfo())
+    val syncInfo: StateFlow<AttendanceSyncInfo> = _syncInfo.asStateFlow()
+
+    val pendingSyncCount: StateFlow<Int> = attendanceRepository.pendingSyncCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val lastSuccessfulSyncAt: StateFlow<Long?> = attendanceRepository.lastSuccessfulSyncAt
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     
     init {
         viewModelScope.launch {
@@ -110,18 +125,18 @@ class DashboardViewModel @Inject constructor(
     
     fun loadDashboardData(userIdValue: String) {
         viewModelScope.launch {
-            // Set dashboard state to Success immediately to display cached Room DB data
-            // without blocking on network/API responses.
+            _isRefreshing.value = true
+            // Display cached Room DB data immediately while tracking live sync freshness separately.
             _dashboardState.value = DashboardState.Success
 
-            // Perform background network synchronization off the main thread.
-            withContext(Dispatchers.IO) {
-                try {
+            try {
+                // Perform background network synchronization off the main thread.
+                withContext(Dispatchers.IO) {
                     val tasksDeferred = async { taskRepository.refreshTasks(userIdValue) }
                     val attendanceDeferred = async { attendanceRepository.getTodayAttendance() }
-                    
+
                     val now = Calendar.getInstance()
-                    val perfDeferred = async { 
+                    val perfDeferred = async {
                         attendanceRepository.getPerformance(
                             now.get(Calendar.MONTH) + 1,
                             now.get(Calendar.YEAR)
@@ -132,23 +147,38 @@ class DashboardViewModel @Inject constructor(
                     val attendanceRes = attendanceDeferred.await()
                     val perfRes = perfDeferred.await()
 
-
                     taskRes.onSuccess { taskList ->
                         _tasks.value = taskList
                     }
 
                     attendanceRes.onSuccess { attendance ->
-                        // Always overwrite, including null (= not checked in today).
-                        // This prevents a stale checked-in state from persisting across days.
                         _todayAttendance.value = attendance
+                        _syncInfo.value = AttendanceSyncInfo(
+                            freshness = SyncFreshness.FRESH_FROM_SERVER,
+                            lastSuccessfulSyncAt = System.currentTimeMillis()
+                        )
+                    }.onFailure { err ->
+                        val isOffline = ErrorUtils.isNetworkException(err)
+                        _syncInfo.value = AttendanceSyncInfo(
+                            freshness = if (isOffline) SyncFreshness.CACHED_OFFLINE else SyncFreshness.SYNC_FAILED,
+                            lastSuccessfulSyncAt = lastSuccessfulSyncAt.value,
+                            errorMessage = err.message ?: "Failed to sync attendance"
+                        )
                     }
 
                     perfRes.onSuccess { perf ->
                         _performance.value = perf
                     }
-                } catch (e: Exception) {
-                    android.util.Log.e("DashboardViewModel", "Dashboard background refresh failed", e)
                 }
+            } catch (e: Exception) {
+                android.util.Log.e("DashboardViewModel", "Dashboard background refresh failed", e)
+                _syncInfo.value = AttendanceSyncInfo(
+                    freshness = SyncFreshness.SYNC_FAILED,
+                    lastSuccessfulSyncAt = lastSuccessfulSyncAt.value,
+                    errorMessage = e.message ?: "Dashboard refresh failed"
+                )
+            } finally {
+                _isRefreshing.value = false
             }
         }
     }
@@ -171,12 +201,27 @@ class DashboardViewModel @Inject constructor(
      */
     fun refreshTodayAttendance() {
         viewModelScope.launch {
-            attendanceRepository.getTodayAttendance()
-                .onSuccess { attendance ->
-                    _todayAttendance.value = attendance
-                }
-            // On failure we leave _todayAttendance as-is; the Room Flow
-            // will have already updated it via the local DB write done by check-in/out.
+            _isRefreshing.value = true
+            try {
+                attendanceRepository.getTodayAttendance()
+                    .onSuccess { attendance ->
+                        _todayAttendance.value = attendance
+                        _syncInfo.value = AttendanceSyncInfo(
+                            freshness = SyncFreshness.FRESH_FROM_SERVER,
+                            lastSuccessfulSyncAt = System.currentTimeMillis()
+                        )
+                    }
+                    .onFailure { err ->
+                        val isOffline = ErrorUtils.isNetworkException(err)
+                        _syncInfo.value = AttendanceSyncInfo(
+                            freshness = if (isOffline) SyncFreshness.CACHED_OFFLINE else SyncFreshness.SYNC_FAILED,
+                            lastSuccessfulSyncAt = lastSuccessfulSyncAt.value,
+                            errorMessage = err.message ?: "Unable to refresh attendance"
+                        )
+                    }
+            } finally {
+                _isRefreshing.value = false
+            }
         }
     }
     

@@ -508,10 +508,14 @@ model AttendanceRecord {
   effectiveCheckOutTime DateTime?
   checkOutSource        String?
   autoClosedAt          DateTime?
-  autoClosureReason     String?
+  autoClosureReason      String?
+  clientUploadId         String?
+  checkOutClientUploadId String?
   employee              User             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, date])
+  @@unique([employeeId, clientUploadId])
+  @@unique([employeeId, checkOutClientUploadId])
   @@index([date])
   @@index([employeeId])
   @@index([flagged])
@@ -540,6 +544,27 @@ model CheckIn {
   @@index([employeeId])
   @@index([createdAt])
   @@index([flagged])
+}
+
+model DeviceSyncHealth {
+  id                   String    @id @default(cuid())
+  employeeId           String    @unique
+  appVersionCode       Int       @default(0)
+  appVersionName       String?
+  androidVersion       String?
+  deviceModel          String?
+  pendingOutboxCount   Int       @default(0)
+  failedOutboxCount    Int       @default(0)
+  lastSuccessfulSyncAt DateTime?
+  lastSyncStatus       String    @default("UNKNOWN")
+  lastSyncError        String?
+  lastHttpCode         Int?
+  tokenRefreshFailures Int       @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([lastSyncStatus])
+  @@index([updatedAt])
 }
 
 model AdminNotification {

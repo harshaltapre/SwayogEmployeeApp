@@ -70,6 +70,9 @@ fun DashboardScreen(
     val performance by viewModel.performance.collectAsState()
     val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
     val serverUrl by viewModel.serverUrl.collectAsState()
+    val syncInfo by viewModel.syncInfo.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
 
     // Automatically refresh today attendance whenever dashboard resumes from background or navigates back
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -151,8 +154,15 @@ fun DashboardScreen(
                 SwayogTopBar(
                     title = "Dashboard",
                     actions = {
-                        IconButton(onClick = { viewModel.retryLoading() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        IconButton(onClick = { if (!isRefreshing) viewModel.retryLoading() }) {
+                            if (isRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                            }
                         }
                         IconButton(onClick = onNavigateToAlarmSettings) {
                             Icon(Icons.Default.Alarm, contentDescription = "Attendance Alarm")
@@ -221,6 +231,44 @@ fun DashboardScreen(
             }
             
             else -> {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    val showSyncBanner = syncInfo.freshness == com.swayog.employee.data.model.SyncFreshness.SYNC_FAILED ||
+                        syncInfo.freshness == com.swayog.employee.data.model.SyncFreshness.CACHED_OFFLINE ||
+                        pendingSyncCount > 0
+                    if (showSyncBanner) {
+                        val isError = syncInfo.freshness == com.swayog.employee.data.model.SyncFreshness.SYNC_FAILED
+                        Surface(
+                            color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(paddingValues)
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = when {
+                                        isError -> "Sync failed: ${syncInfo.errorMessage ?: "Server unreachable"}"
+                                        pendingSyncCount > 0 -> "$pendingSyncCount item(s) waiting to sync"
+                                        else -> "Offline mode — showing cached attendance"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(onClick = { viewModel.retryLoading() }) {
+                                    Text("Retry")
+                                }
+                            }
+                        }
+                    }
+                Box(modifier = Modifier.weight(1f)) {
                 if (isServiceCoordinator) {
                     when (currentTab) {
                         0 -> {
@@ -740,9 +788,11 @@ fun DashboardScreen(
                     }
                 }
             }
+                }
+                }
+            }
         }
     }
-}
 }
 }
 

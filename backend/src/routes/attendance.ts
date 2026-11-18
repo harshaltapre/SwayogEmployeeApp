@@ -445,12 +445,13 @@ router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, 
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   try {
-    const { selfie, latitude, longitude, accuracy, faceVerified, matchConfidence, matchDistance, livenessVerified, verificationToken, liveDescriptor } = req.body;
+    const { selfie, latitude, longitude, accuracy, matchConfidence, matchDistance, livenessVerified, verificationToken, liveDescriptor, clientUploadId: bodyUploadId } = req.body;
+    const idempotencyKey = (req.header("Idempotency-Key") || bodyUploadId || null) as string | null;
 
     // Security: Require either a valid server-issued verification token OR liveDescriptor for server verification
     const rules = await AttendanceService.getRulesAsync();
     if (rules.faceRequired && !verificationToken && (!liveDescriptor || !Array.isArray(liveDescriptor))) {
-      res.status(400).json({ error: "Face verification is required. Please complete face verification before checking in." });
+      res.status(422).json({ success: false, code: "FACE_VERIFICATION_REQUIRED", error: "Face verification is required. Please complete face verification before checking in." });
       return;
     }
 
@@ -462,19 +463,19 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
       faceVerified: false, // Will be set to true only after valid token/descriptor verification in service
       verificationToken: verificationToken || null,
       liveDescriptor: Array.isArray(liveDescriptor) ? liveDescriptor : null,
+      clientUploadId: idempotencyKey,
     });
 
     // Augment the CheckIn record with face recognition metadata if provided
-    if (result?.checkInRecord?.id && (matchConfidence !== undefined || matchDistance !== undefined)) {
+    if (!result.idempotentReplay && result?.checkInRecord?.id && (matchConfidence !== undefined || matchDistance !== undefined)) {
       await prisma.checkIn.update({
         where: { id: result.checkInRecord.id },
         data: {
           matchConfidence: matchConfidence != null ? Number(matchConfidence) : null,
           matchDistance: matchDistance != null ? Number(matchDistance) : null,
           livenessVerified: livenessVerified === true,
-          // Flag entries with low confidence (between threshold and threshold+0.1)
           flagged: matchConfidence != null
-            ? matchConfidence < (parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55") + 0.1 - 0 + 1 - 1) // keep readable
+            ? matchConfidence < (parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55") + 0.1)
               && matchConfidence >= parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55")
             : false,
         },
@@ -483,17 +484,38 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
 
     res.json({ success: true, result });
   } catch (err: any) {
-    res.status(400).json({ error: err?.message ?? "Unable to check in" });
+    const statusCode = err?.statusCode || 400;
+    res.status(statusCode).json({
+      success: false,
+      code: err?.code || "CHECK_IN_FAILED",
+      error: err?.message ?? "Unable to check in",
+    });
   }
 }));
 
 router.post("/check-out", employeeAuth, asyncHandler(async (req, res) => {
   try {
-    const record = await AttendanceService.checkOut(req.auth!.userId);
+    const idempotencyKey = (req.header("Idempotency-Key") || req.body?.clientUploadId || null) as string | null;
+    const record = await AttendanceService.checkOut(req.auth!.userId, { clientUploadId: idempotencyKey });
     res.json({ success: true, record });
   } catch (err: any) {
-    res.status(400).json({ error: err?.message ?? "Unable to check out" });
+    const statusCode = err?.statusCode || 400;
+    res.status(statusCode).json({
+      success: false,
+      code: err?.code || "CHECK_OUT_FAILED",
+      error: err?.message ?? "Unable to check out",
+    });
   }
+}));
+
+router.post("/sync-health", employeeAuth, asyncHandler(async (req, res) => {
+  const health = await AttendanceService.upsertSyncHealthAsync(req.auth!.userId, req.body || {});
+  res.json({ success: true, data: health });
+}));
+
+router.get("/admin/sync-health", adminAuth, asyncHandler(async (_req, res) => {
+  const records = await AttendanceService.listSyncHealthAsync();
+  res.json({ success: true, data: records });
 }));
 
 router.get("/today", authenticateAccessToken, asyncHandler(async (req, res) => {

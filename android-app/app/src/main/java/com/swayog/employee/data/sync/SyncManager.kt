@@ -4,10 +4,13 @@ import android.content.Context
 import androidx.work.*
 import com.swayog.employee.data.local.dao.OutboxQueueDao
 import com.swayog.employee.data.local.entity.OutboxQueueEntity
+import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.google.gson.Gson
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import java.util.*
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -17,13 +20,22 @@ import javax.inject.Singleton
 class SyncManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val outboxQueueDao: OutboxQueueDao,
+    private val dataStoreManager: DataStoreManager,
     private val gson: Gson
 ) {
     
     companion object {
         // All repositories share this unique work name so queued operations are
         // serialized by the same worker instead of racing each other.
-        private const val SYNC_WORK_NAME = "offline_sync_work"
+        const val SYNC_WORK_NAME = "offline_sync_work"
+    }
+
+    val pendingSyncCountForCurrentUser: Flow<Int> = dataStoreManager.userId.flatMapLatest { uid ->
+        if (uid.isNullOrBlank()) flowOf(0) else outboxQueueDao.getPendingCountFlowForUser(uid)
+    }
+
+    val failedSyncCountForCurrentUser: Flow<Int> = dataStoreManager.userId.flatMapLatest { uid ->
+        if (uid.isNullOrBlank()) flowOf(0) else outboxQueueDao.getFailedCountFlowForUser(uid)
     }
     
     /**
@@ -51,14 +63,18 @@ class SyncManager @Inject constructor(
             "afterLongitude" to (afterLongitude ?: 0.0)
         )
         
+        val ownerId = dataStoreManager.userId.first() ?: ""
+        val clientUploadId = UUID.randomUUID().toString()
         val item = OutboxQueueEntity(
-            id = UUID.randomUUID().toString(),
+            id = clientUploadId,
             endpoint = "tasks/$taskId",
             method = "PATCH",
             payload = gson.toJson(payload),
             createdAt = System.currentTimeMillis().toString(),
             retryCount = 0,
-            isSynced = false
+            isSynced = false,
+            clientUploadId = clientUploadId,
+            ownerUserId = ownerId
         )
         
         outboxQueueDao.insertItem(item)
@@ -79,14 +95,18 @@ class SyncManager @Inject constructor(
             "selfie" to (selfieUrl ?: "")
         )
         
+        val ownerId = dataStoreManager.userId.first() ?: ""
+        val clientUploadId = UUID.randomUUID().toString()
         val item = OutboxQueueEntity(
-            id = UUID.randomUUID().toString(),
+            id = clientUploadId,
             endpoint = "attendance/check-in",
             method = "POST",
             payload = gson.toJson(payload),
             createdAt = System.currentTimeMillis().toString(),
             retryCount = 0,
-            isSynced = false
+            isSynced = false,
+            clientUploadId = clientUploadId,
+            ownerUserId = ownerId
         )
         
         outboxQueueDao.insertItem(item)
@@ -112,14 +132,18 @@ class SyncManager @Inject constructor(
             "tomorrowPlan" to (tomorrowsPlan ?: "")
         )
         
+        val ownerId = dataStoreManager.userId.first() ?: ""
+        val clientUploadId = UUID.randomUUID().toString()
         val item = OutboxQueueEntity(
-            id = UUID.randomUUID().toString(),
+            id = clientUploadId,
             endpoint = "daily-commits",
             method = "POST",
             payload = gson.toJson(payload),
             createdAt = System.currentTimeMillis().toString(),
             retryCount = 0,
-            isSynced = false
+            isSynced = false,
+            clientUploadId = clientUploadId,
+            ownerUserId = ownerId
         )
         
         outboxQueueDao.insertItem(item)
@@ -134,9 +158,10 @@ class SyncManager @Inject constructor(
     }
     
     /**
-     * Schedule the sync worker with network constraint
+     * Schedule the sync worker with network constraint using KEEP so active
+     * sync work is never cancelled mid-flight.
      */
-    private fun scheduleSyncWorker() {
+    fun scheduleSyncWorker() {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -144,9 +169,9 @@ class SyncManager @Inject constructor(
         val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(constraints)
             .setBackoffCriteria(
-                BackoffPolicy.LINEAR,
+                BackoffPolicy.EXPONENTIAL,
                 WorkRequest.MIN_BACKOFF_MILLIS,
-                TimeUnit.MINUTES
+                TimeUnit.MILLISECONDS
             )
             .build()
         

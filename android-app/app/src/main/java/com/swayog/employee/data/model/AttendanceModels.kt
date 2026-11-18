@@ -42,7 +42,40 @@ data class CheckInRequest(
     val verificationToken: String? = null,
     val faceVerified: Boolean = false,
     val livenessVerified: Boolean = false,
-    val liveDescriptor: List<Float>? = null
+    val liveDescriptor: List<Float>? = null,
+    val clientUploadId: String? = null
+)
+
+data class CheckOutRequest(
+    val clientUploadId: String? = null
+)
+
+data class SyncHealthReportRequest(
+    val appVersionCode: Long,
+    val appVersionName: String,
+    val androidVersion: String,
+    val deviceModel: String,
+    val pendingOutboxCount: Int,
+    val failedOutboxCount: Int,
+    val lastSuccessfulSyncAt: Long?,
+    val lastSyncStatus: String,
+    val lastSyncError: String?,
+    val lastHttpCode: Int?,
+    val tokenRefreshFailures: Int
+)
+
+enum class SyncFreshness {
+    FRESH_FROM_SERVER,
+    CACHED_OFFLINE,
+    SYNC_PENDING,
+    SYNC_FAILED
+}
+
+data class AttendanceSyncInfo(
+    val freshness: SyncFreshness = SyncFreshness.CACHED_OFFLINE,
+    val lastSuccessfulSyncAt: Long? = null,
+    val errorMessage: String? = null,
+    val httpCode: Int? = null
 )
 
 data class FaceEnrollRequest(

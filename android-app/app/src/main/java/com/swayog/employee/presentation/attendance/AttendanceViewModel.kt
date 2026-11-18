@@ -111,6 +111,18 @@ class AttendanceViewModel @Inject constructor(
     val pendingSyncCount: StateFlow<Int> = attendanceRepository.pendingSyncCount
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    val failedSyncCount: StateFlow<Int> = attendanceRepository.failedSyncCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val lastSuccessfulSyncAt: StateFlow<Long?> = attendanceRepository.lastSuccessfulSyncAt
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val _syncInfo = MutableStateFlow(com.swayog.employee.data.model.AttendanceSyncInfo())
+    val syncInfo: StateFlow<com.swayog.employee.data.model.AttendanceSyncInfo> = _syncInfo.asStateFlow()
+
     private val _monthlyRecords = MutableStateFlow<List<AttendanceRecord>>(emptyList())
     val monthlyRecords: StateFlow<List<AttendanceRecord>> = _monthlyRecords.asStateFlow()
 
@@ -336,13 +348,14 @@ class AttendanceViewModel @Inject constructor(
         }
         lastLoadDataTime = now
         viewModelScope.launch {
+            _isRefreshing.value = true
             _attendanceState.value = AttendanceState.Success
             loadRegularizationRequests()
             loadLateAllowanceSummary()
             loadAlarmSettings()
             
-            withContext(Dispatchers.IO) {
-                try {
+            try {
+                withContext(Dispatchers.IO) {
                     val calendar = Calendar.getInstance()
                     val month = calendar.get(Calendar.MONTH) + 1
                     val year = calendar.get(Calendar.YEAR)
@@ -354,7 +367,20 @@ class AttendanceViewModel @Inject constructor(
                     val todayDeferred = async { attendanceRepository.getTodayAttendance() }
                     val perfDeferred = async { attendanceRepository.getPerformance(month, year) }
 
-                    todayDeferred.await()
+                    val todayResult = todayDeferred.await()
+                    todayResult.onSuccess {
+                        _syncInfo.value = com.swayog.employee.data.model.AttendanceSyncInfo(
+                            freshness = com.swayog.employee.data.model.SyncFreshness.FRESH_FROM_SERVER,
+                            lastSuccessfulSyncAt = System.currentTimeMillis()
+                        )
+                    }.onFailure { err ->
+                        val isOffline = com.swayog.employee.core.util.ErrorUtils.isNetworkException(err)
+                        _syncInfo.value = com.swayog.employee.data.model.AttendanceSyncInfo(
+                            freshness = if (isOffline) com.swayog.employee.data.model.SyncFreshness.CACHED_OFFLINE else com.swayog.employee.data.model.SyncFreshness.SYNC_FAILED,
+                            lastSuccessfulSyncAt = lastSuccessfulSyncAt.value,
+                            errorMessage = err.message ?: "Failed to sync attendance"
+                        )
+                    }
                     rulesDeferred.await()
                     faceDeferred.await()
                     
@@ -362,9 +388,16 @@ class AttendanceViewModel @Inject constructor(
                     perfResult.onSuccess { snapshot ->
                         _performance.value = snapshot
                     }
-                } catch (e: Exception) {
-                    android.util.Log.e("AttendanceViewModel", "Attendance background sync error: ${e.message}")
                 }
+            } catch (e: Exception) {
+                android.util.Log.e("AttendanceViewModel", "Attendance background sync error: ${e.message}")
+                _syncInfo.value = com.swayog.employee.data.model.AttendanceSyncInfo(
+                    freshness = com.swayog.employee.data.model.SyncFreshness.SYNC_FAILED,
+                    lastSuccessfulSyncAt = lastSuccessfulSyncAt.value,
+                    errorMessage = e.message ?: "Attendance sync error"
+                )
+            } finally {
+                _isRefreshing.value = false
             }
         }
     }

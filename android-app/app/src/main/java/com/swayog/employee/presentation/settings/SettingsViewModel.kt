@@ -26,8 +26,69 @@ class SettingsViewModel @Inject constructor(
     private val faceIndexManager: FaceIndexManager,
     private val apiService: ApiService,
     private val appUpdateManager: com.swayog.employee.core.update.AppUpdateManager,
+    private val syncManager: com.swayog.employee.data.sync.SyncManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
+
+    val lastSyncStatus: StateFlow<String> = dataStoreManager.lastSyncStatus.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = "UNKNOWN"
+    )
+
+    val lastSuccessfulSyncAt: StateFlow<Long?> = dataStoreManager.lastSuccessfulSyncAt.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    val lastSyncError: StateFlow<String?> = dataStoreManager.lastSyncError.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    val pendingSyncCount: StateFlow<Int> = syncManager.pendingSyncCountForCurrentUser.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    val failedSyncCount: StateFlow<Int> = syncManager.failedSyncCountForCurrentUser.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    fun triggerManualSyncAndReportHealth(onDone: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            try {
+                syncManager.scheduleSyncWorker()
+                val attResult = attendanceRepository.getTodayAttendance()
+                val req = com.swayog.employee.data.model.SyncHealthReportRequest(
+                    appVersionCode = com.swayog.employee.BuildConfig.VERSION_CODE.toLong(),
+                    appVersionName = com.swayog.employee.BuildConfig.VERSION_NAME,
+                    androidVersion = android.os.Build.VERSION.RELEASE ?: "unknown",
+                    deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+                    pendingOutboxCount = pendingSyncCount.value,
+                    failedOutboxCount = failedSyncCount.value,
+                    lastSuccessfulSyncAt = dataStoreManager.lastSuccessfulSyncAt.first(),
+                    lastSyncStatus = dataStoreManager.lastSyncStatus.first(),
+                    lastSyncError = dataStoreManager.lastSyncError.first(),
+                    lastHttpCode = dataStoreManager.lastSyncHttpCode.first(),
+                    tokenRefreshFailures = dataStoreManager.tokenRefreshFailureCount.first()
+                )
+                try { apiService.reportSyncHealth(req) } catch (_: Exception) {}
+                if (attResult.isSuccess) {
+                    onDone("Sync completed successfully")
+                } else {
+                    onDone("Sync failed: ${attResult.exceptionOrNull()?.message ?: "Server unreachable"}")
+                }
+            } catch (e: Exception) {
+                onDone("Sync error: ${e.message}")
+            }
+        }
+    }
 
     sealed interface UpdateEvent {
         data class UpdateFound(val versionName: String) : UpdateEvent

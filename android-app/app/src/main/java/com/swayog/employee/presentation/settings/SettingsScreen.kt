@@ -576,6 +576,52 @@ fun SettingsScreen(
                                 Text("Clear")
                             }
                         }
+
+                        Divider()
+
+                        val syncStatus by viewModel.lastSyncStatus.collectAsState()
+                        val lastSyncAt by viewModel.lastSuccessfulSyncAt.collectAsState()
+                        val lastSyncErr by viewModel.lastSyncError.collectAsState()
+                        val pendingSync by viewModel.pendingSyncCount.collectAsState()
+                        val failedSync by viewModel.failedSyncCount.collectAsState()
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Sync Health ($syncStatus)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                val lastSyncStr = lastSyncAt?.let {
+                                    java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(it))
+                                } ?: "Never"
+                                Text(
+                                    text = "Last sync: $lastSyncStr | Pending: $pendingSync | Failed: $failedSync",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                if (!lastSyncErr.isNullOrBlank()) {
+                                    Text(
+                                        text = lastSyncErr!!,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    viewModel.triggerManualSyncAndReportHealth { msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Text("Sync")
+                            }
+                        }
                     }
                 }
             }
