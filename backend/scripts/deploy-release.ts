@@ -13,7 +13,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import child_process from "child_process";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 
 // ---------------------------------------------------------------------------
 // Minimal self-contained R2 client — does NOT import from src/config/env.ts
@@ -47,18 +47,34 @@ async function uploadToR2(
   contentType: string,
   fileName: string
 ): Promise<void> {
-  await client.send(new PutObjectCommand({
-    Bucket: getBucketName(),
-    Key: objectKey,
-    Body: buffer,
-    ContentType: contentType,
-    Metadata: { originalFileName: fileName, uploadedAt: new Date().toISOString() },
-  }));
+  const md5Base64 = crypto.createHash("md5").update(buffer).digest("base64");
+  await client.send(
+    new PutObjectCommand({
+      Bucket: getBucketName(),
+      Key: objectKey,
+      Body: buffer,
+      ContentType: contentType,
+      ContentMD5: md5Base64,
+      Metadata: { originalFileName: fileName, uploadedAt: new Date().toISOString() },
+    }),
+    { abortSignal: AbortSignal.timeout(120_000) }
+  );
   console.log(`[Deploy] Uploaded: ${objectKey} (${buffer.length} bytes)`);
 }
 
+async function headFromR2(client: S3Client, objectKey: string): Promise<number> {
+  const res = await client.send(
+    new HeadObjectCommand({ Bucket: getBucketName(), Key: objectKey }),
+    { abortSignal: AbortSignal.timeout(30_000) }
+  );
+  return res.ContentLength ?? -1;
+}
+
 async function getFromR2(client: S3Client, objectKey: string): Promise<Buffer> {
-  const res = await client.send(new GetObjectCommand({ Bucket: getBucketName(), Key: objectKey }));
+  const res = await client.send(
+    new GetObjectCommand({ Bucket: getBucketName(), Key: objectKey }),
+    { abortSignal: AbortSignal.timeout(30_000) }
+  );
   if (!res.Body) throw new Error(`No body for key: ${objectKey}`);
   const chunks: Uint8Array[] = [];
   for await (const chunk of res.Body as any) chunks.push(chunk);
@@ -286,22 +302,20 @@ async function main() {
     console.log(`  1. ${buildSpecificApkKey}`);
     await uploadToR2(r2Client, apkBuffer, buildSpecificApkKey, "application/vnd.android.package-archive", `swayog-v${versionName}-${versionCode}.apk`);
 
-    const uploadedApk = await getFromR2(r2Client, buildSpecificApkKey);
-    const uploadedApkSha256 = crypto.createHash("sha256").update(uploadedApk).digest("hex");
-    if (uploadedApk.length !== fileSize || uploadedApkSha256 !== sha256) {
+    const uploadedApkSize = await headFromR2(r2Client, buildSpecificApkKey);
+    if (uploadedApkSize !== fileSize) {
       throw new Error(
-        `Uploaded APK verification failed for ${buildSpecificApkKey}: expected ${fileSize} bytes/${sha256}, got ${uploadedApk.length} bytes/${uploadedApkSha256}`
+        `Uploaded APK verification failed for ${buildSpecificApkKey}: expected ${fileSize} bytes, got ${uploadedApkSize} bytes`
       );
     }
 
     console.log(`  2. ${latestApkKey}`);
     await uploadToR2(r2Client, apkBuffer, latestApkKey, "application/vnd.android.package-archive", "app-release.apk");
 
-    const uploadedLatestApk = await getFromR2(r2Client, latestApkKey);
-    const latestApkSha256 = crypto.createHash("sha256").update(uploadedLatestApk).digest("hex");
-    if (uploadedLatestApk.length !== fileSize || latestApkSha256 !== sha256) {
+    const uploadedLatestSize = await headFromR2(r2Client, latestApkKey);
+    if (uploadedLatestSize !== fileSize) {
       throw new Error(
-        `Uploaded latest APK verification failed: expected ${fileSize} bytes/${sha256}, got ${uploadedLatestApk.length} bytes/${latestApkSha256}`
+        `Uploaded latest APK verification failed: expected ${fileSize} bytes, got ${uploadedLatestSize} bytes`
       );
     }
 
