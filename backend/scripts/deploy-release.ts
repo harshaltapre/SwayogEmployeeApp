@@ -47,14 +47,12 @@ async function uploadToR2(
   contentType: string,
   fileName: string
 ): Promise<void> {
-  const md5Base64 = crypto.createHash("md5").update(buffer).digest("base64");
   await client.send(
     new PutObjectCommand({
       Bucket: getBucketName(),
       Key: objectKey,
       Body: buffer,
       ContentType: contentType,
-      ContentMD5: md5Base64,
       Metadata: { originalFileName: fileName, uploadedAt: new Date().toISOString() },
     }),
     { abortSignal: AbortSignal.timeout(120_000) }
