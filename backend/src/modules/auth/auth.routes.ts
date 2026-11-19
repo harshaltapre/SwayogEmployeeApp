@@ -64,6 +64,7 @@ const meRateLimit = createRateLimit({
 authRoutes.post("/register", registerRateLimit, validateBody(registerSchema), asyncHandler(registerHandler));
 authRoutes.post("/login", loginRateLimit, validateBody(loginSchema), asyncHandler(loginHandler));
 authRoutes.post("/refresh", refreshRateLimit, validateBody(refreshSchema), asyncHandler(refreshHandler));
+authRoutes.post("/refresh-token", refreshRateLimit, validateBody(refreshSchema), asyncHandler(refreshHandler));
 authRoutes.post("/logout", logoutRateLimit, validateBody(logoutSchema), asyncHandler(logoutHandler));
 authRoutes.get("/me", authenticateAccessToken, meRateLimit, asyncHandler(meHandler));
 authRoutes.post("/change-password", authenticateAccessToken, validateBody(changePasswordSchema), asyncHandler(changePasswordHandler));

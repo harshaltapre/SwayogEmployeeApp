@@ -31,13 +31,18 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+let activeRefreshPromise: Promise<string> | null = null;
+
 /**
- * Response interceptor - handle token refresh on 401
+ * Response interceptor - handle token refresh on 401 with single-flight deduplication
+ * and transient network-error protection.
  */
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config;
+    const reqUrl = originalRequest?.url || "";
+    const isAuthEndpoint = reqUrl.includes("/auth/login") || reqUrl.includes("/auth/refresh");
 
     // If error is 401 and we haven't retried yet
     const retryHeader = originalRequest?.headers
@@ -46,24 +51,33 @@ apiClient.interceptors.response.use(
         : (originalRequest.headers as Record<string, unknown>)["X-Retry"]
       : undefined;
 
-    if (error.response?.status === 401 && originalRequest && !retryHeader) {
+    if (error.response?.status === 401 && originalRequest && !retryHeader && !isAuthEndpoint) {
       try {
-        // Try to refresh token
-        const refreshToken = useAuth.getState().refreshToken || cookie.get("refreshToken");
-        
-        if (!refreshToken) {
-          throw new Error('No refresh token available');
+        if (!activeRefreshPromise) {
+          activeRefreshPromise = (async () => {
+            try {
+              const refreshToken = useAuth.getState().refreshToken || cookie.get("refreshToken");
+              if (!refreshToken) {
+                const noTokenErr: any = new Error("No refresh token available");
+                noTokenErr.permanentAuthRejection = true;
+                throw noTokenErr;
+              }
+
+              const response = await apiClient.post("/auth/refresh", {
+                refreshToken,
+              });
+
+              const { data } = response.data;
+              const { login } = useAuth.getState();
+              login(data.accessToken, data.user, data.refreshToken);
+              return data.accessToken as string;
+            } finally {
+              activeRefreshPromise = null;
+            }
+          })();
         }
 
-        const response = await apiClient.post('/auth/refresh-token', {
-          refreshToken,
-        });
-
-        const { data } = response.data;
-        const { login } = useAuth.getState();
-        
-        // Update auth state with new token
-        login(data.accessToken, data.user, data.refreshToken);
+        const newAccessToken = await activeRefreshPromise;
 
         // Mark request as retried and retry it
         if (typeof originalRequest.headers.set === "function") {
@@ -71,17 +85,22 @@ apiClient.interceptors.response.use(
         } else {
           (originalRequest.headers as Record<string, string>)["X-Retry"] = "true";
         }
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
-        
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+
         return apiClient(originalRequest);
-      } catch (refreshError) {
-        // Refresh failed, logout user
-        const { logout } = useAuth.getState();
-        logout();
-        
-        // Redirect to login
-        window.location.href = '/login';
-        
+      } catch (refreshError: any) {
+        const refreshStatus = axios.isAxiosError(refreshError) ? refreshError.response?.status : undefined;
+        const isPermanentRejection =
+          refreshError?.permanentAuthRejection === true ||
+          refreshStatus === 401 ||
+          refreshStatus === 403;
+
+        if (isPermanentRejection) {
+          const { logout } = useAuth.getState();
+          logout();
+          window.location.href = "/login";
+        }
+
         return Promise.reject(refreshError);
       }
     }
@@ -205,7 +224,7 @@ export const authAPI = {
     api.post('/auth/login', data),
 
   refreshToken: (refreshToken: string) =>
-    api.post('/auth/refresh-token', { refreshToken }),
+    api.post('/auth/refresh', { refreshToken }),
 
   logout: () => api.post('/auth/logout'),
 

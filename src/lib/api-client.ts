@@ -268,6 +268,9 @@ export type UpdateCustomerInput = Partial<CreateCustomerInput> & {
   contractEndDate?: string;
   paymentTerms?: string;
   commissionAmount?: number;
+  assignedEpc?: string | null;
+  epcAssignmentStatus?: string | null;
+  assignedEmployeeId?: string | null;
 };
 
 export type InvoiceRecord = {

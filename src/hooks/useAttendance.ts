@@ -17,21 +17,25 @@ function getErrorMessage(error: unknown): string {
 
 export const useTodayAttendance = () => useQuery({
   queryKey: ["attendance", "today"],
-  queryFn: () => apiClient.get("/attendance/today").then((r) => r.data.record),
-  refetchInterval: 15_000,
-  refetchOnWindowFocus: true,
+  queryFn: ({ signal }) => apiClient.get("/attendance/today", { signal }).then((r) => r.data.record),
+  staleTime: 15_000,
+  refetchInterval: 30_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useMonthlyAttendance = (month: number, year: number) => useQuery({
   queryKey: ["attendance", "monthly", month, year],
-  queryFn: () => apiClient.get(`/attendance/monthly?month=${month}&year=${year}`).then((r) => r.data),
-  refetchInterval: 30_000,
-  refetchOnWindowFocus: true,
+  queryFn: ({ signal }) => apiClient.get(`/attendance/monthly?month=${month}&year=${year}`, { signal }).then((r) => r.data),
+  staleTime: 30_000,
+  refetchInterval: 60_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useMyPerformance = (month: number, year: number) => useQuery({
   queryKey: ["performance", "mine", month, year],
-  queryFn: () => apiClient.get(`/attendance/performance?month=${month}&year=${year}`).then((r) => r.data.snapshot),
+  queryFn: ({ signal }) => apiClient.get(`/attendance/performance?month=${month}&year=${year}`, { signal }).then((r) => r.data.snapshot),
+  staleTime: 60_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useCheckIn = () => {
@@ -80,32 +84,42 @@ export const useSubmitWork = () => {
 
 export const useTeamPerformance = (month: number, year: number) => useQuery({
   queryKey: ["admin", "team-performance", month, year],
-  queryFn: () => apiClient.get(`/attendance/admin/team-performance?month=${month}&year=${year}`).then((r) => r.data.snapshots),
-  refetchInterval: 10_000,
+  queryFn: ({ signal }) => apiClient.get(`/attendance/admin/team-performance?month=${month}&year=${year}`, { signal }).then((r) => r.data.snapshots),
+  staleTime: 30_000,
+  refetchInterval: 60_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useTeamAttendance = (month: number, year: number) => useQuery({
   queryKey: ["admin", "team-attendance", month, year],
-  queryFn: () => apiClient.get(`/attendance/admin/team-attendance?month=${month}&year=${year}`).then((r) => r.data.snapshots),
-  refetchInterval: 10_000,
+  queryFn: ({ signal }) => apiClient.get(`/attendance/admin/team-attendance?month=${month}&year=${year}`, { signal }).then((r) => r.data.snapshots),
+  staleTime: 30_000,
+  refetchInterval: 60_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useEmployeePerformance = (employeeId: string, month: number, year: number) => useQuery({
   queryKey: ["admin", "employee-performance", employeeId, month, year],
-  queryFn: () => apiClient.get(`/attendance/admin/employee/${employeeId}/performance?month=${month}&year=${year}`).then((r) => r.data.snapshot),
+  queryFn: ({ signal }) => apiClient.get(`/attendance/admin/employee/${employeeId}/performance?month=${month}&year=${year}`, { signal }).then((r) => r.data.snapshot),
   enabled: !!employeeId,
+  staleTime: 60_000,
+  placeholderData: (prev) => prev,
 });
 
 export const usePendingWorkReviews = () => useQuery({
   queryKey: ["admin", "work-submissions", "pending"],
-  queryFn: () => apiClient.get("/attendance/admin/work-submissions/pending").then((r) => r.data.submissions),
-  refetchInterval: 30_000,
+  queryFn: ({ signal }) => apiClient.get("/attendance/admin/work-submissions/pending", { signal }).then((r) => r.data.submissions),
+  staleTime: 30_000,
+  refetchInterval: 60_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useAdminCheckInNotifications = () => useQuery({
   queryKey: ["admin", "checkin-notifications"],
-  queryFn: () => apiClient.get('/attendance/admin/notifications').then((r) => r.data.notifications),
-  refetchInterval: 30_000,
+  queryFn: ({ signal }) => apiClient.get('/attendance/admin/notifications', { signal }).then((r) => r.data.notifications),
+  staleTime: 15_000,
+  refetchInterval: 45_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useReviewWork = () => {
@@ -119,20 +133,25 @@ export const useReviewWork = () => {
 
 export const useEmployeeWorkSubmissions = (employeeId?: string) => useQuery({
   queryKey: ["work-submissions", employeeId],
-  queryFn: () => apiClient.get(`/attendance/work-submissions${employeeId ? `?employeeId=${employeeId}` : ""}`).then((r) => r.data.submissions),
+  queryFn: ({ signal }) => apiClient.get(`/attendance/work-submissions${employeeId ? `?employeeId=${employeeId}` : ""}`, { signal }).then((r) => r.data.submissions),
   enabled: !!employeeId,
+  staleTime: 30_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useEmployeeMonthlyAttendance = (employeeId: string, month: number, year: number) => useQuery({
   queryKey: ["admin", "employee-attendance", employeeId, month, year],
-  queryFn: () => apiClient.get(`/attendance/admin/employee/${employeeId}/monthly?month=${month}&year=${year}`).then((r) => r.data),
+  queryFn: ({ signal }) => apiClient.get(`/attendance/admin/employee/${employeeId}/monthly?month=${month}&year=${year}`, { signal }).then((r) => r.data),
   enabled: !!employeeId,
-  refetchInterval: 10_000,
+  staleTime: 60_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useAttendanceRules = () => useQuery({
   queryKey: ["attendance-rules"],
-  queryFn: () => apiClient.get("/attendance/rules").then((r) => r.data),
+  queryFn: ({ signal }) => apiClient.get("/attendance/rules", { signal }).then((r) => r.data),
+  staleTime: 5 * 60_000,
+  placeholderData: (prev) => prev,
 });
 
 export const useUpdateAttendanceRules = () => {
@@ -366,10 +385,10 @@ export interface TodaySummaryData {
 
 export const useAdminTodaySummary = () => useQuery({
   queryKey: ["admin", "attendance", "today-summary"],
-  queryFn: () => apiClient.get("/attendance/admin/today-summary").then((r) => r.data as TodaySummaryData),
-  refetchInterval: 60_000,
-  refetchIntervalInBackground: true,
-  refetchOnWindowFocus: true,
+  queryFn: ({ signal }) => apiClient.get("/attendance/admin/today-summary", { signal }).then((r) => r.data as TodaySummaryData),
+  staleTime: 15_000,
+  refetchInterval: 45_000,
+  placeholderData: (prev) => prev,
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -489,3 +508,84 @@ export const useRejectRegularizationRequest = () => {
     },
   });
 };
+
+// ── Company alarm policy & ringtones (admin-managed) ─────────────────────────
+
+export interface CompanyAlarmPolicy {
+  reportingTime: string;
+  timezone: string;
+  workingDays: number[];
+  personalDefaultTime: string;
+  prepReminderTime: string;
+  prepReminderEnabled: boolean;
+  finalReminderTime: string;
+  finalReminderEnabled: boolean;
+  policyNote?: string | null;
+  companySoundName?: string | null;
+  companySoundUrl?: string | null;
+}
+
+export interface CompanyRingtone {
+  id: string;
+  name: string;
+  objectKey?: string;
+  mimeType?: string;
+  url?: string | null;
+}
+
+export const useCompanyAlarmPolicy = () => useQuery({
+  queryKey: ["attendance", "alarm-policy"],
+  queryFn: () => apiClient.get("/attendance/alarm-policy").then((r) => r.data as { policy: CompanyAlarmPolicy; ringtones: CompanyRingtone[] }),
+});
+
+export const useUpdateAlarmPolicy = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<CompanyAlarmPolicy> & { defaultSoundName?: string | null; defaultSoundKey?: string | null }) =>
+      apiClient.post("/attendance/admin/alarm-policy", data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance", "alarm-policy"] });
+      qc.invalidateQueries({ queryKey: ["attendance", "alarm-settings"] });
+    },
+  });
+};
+
+export const useCompanyRingtones = () => useQuery({
+  queryKey: ["attendance", "admin-ringtones"],
+  queryFn: () => apiClient.get("/attendance/admin/ringtones").then((r) => r.data.ringtones as CompanyRingtone[]),
+});
+
+export const useUploadRingtone = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, name }: { file: File; name?: string }) => {
+      const form = new FormData();
+      form.append("file", file);
+      if (name) form.append("name", name);
+      return apiClient.post("/attendance/admin/ringtones", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }).then((r) => r.data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance", "admin-ringtones"] });
+      qc.invalidateQueries({ queryKey: ["attendance", "alarm-policy"] });
+    },
+  });
+};
+
+export const useDeleteRingtone = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/attendance/admin/ringtones/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance", "admin-ringtones"] });
+      qc.invalidateQueries({ queryKey: ["attendance", "alarm-policy"] });
+    },
+  });
+};
+
+export const useAdminAuditLogs = () => useQuery({
+  queryKey: ["admin", "attendance", "audit-logs"],
+  queryFn: () => apiClient.get("/attendance/admin/audit-logs").then((r) => r.data.logs),
+  refetchInterval: 30_000,
+});

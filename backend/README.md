@@ -1,4 +1,4 @@
- # Swayog Dashboard Backend
+# Swayog Dashboard Backend
 
 The backend is an Express API written in TypeScript. Prisma manages the PostgreSQL schema and migrations. API routes are versioned under `/api/v1`.
 

@@ -48,6 +48,7 @@ import {
   BarChart3,
   MapPin,
   Trash2,
+  Layers,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
@@ -296,7 +297,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       if (isProjectCoordinatorJobRole(user.jobRole)) {
         return [
           { name: "Dashboard", href: "/project-coordinator/dashboard?tab=overview", icon: LayoutDashboard, sectionHeader: "Project Workspace" },
-          { name: "Leads", href: "/project-coordinator/dashboard?tab=my-projects", icon: Briefcase },
+          { name: "Project Lifecycle", href: "/project-coordinator/dashboard?tab=lifecycle", icon: Layers },
           { name: "Site Survey & Feasibility", href: "/project-coordinator/dashboard?tab=site-survey", icon: MapPin },
           { name: "Project Planning & Scheduling", href: "/project-coordinator/dashboard?tab=planning", icon: Calendar },
           { name: "Team Allocation", href: "/project-coordinator/dashboard?tab=team-allocation", icon: Users },

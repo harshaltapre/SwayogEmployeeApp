@@ -1,11 +1,19 @@
 import { prisma } from "./prisma.js";
 import { getWaareeLiveTelemetry } from "./waaree.js";
 
+let isSyncingWaareePower = false;
+let isSyncingWaareeStats = false;
+
 /**
  * Updates current power (kW) and online/offline status for all active Waaree customers
  * Interval: 5 minutes
  */
 export async function syncWaareeCurrentPower() {
+  if (isSyncingWaareePower) {
+    console.log("[Waaree Scheduler] Skipping power sync - previous run is still active.");
+    return;
+  }
+  isSyncingWaareePower = true;
   console.log("[Waaree Scheduler] Starting 5-minute instantaneous current power and status sync...");
   try {
     const activeCustomers = await prisma.customer.findMany({
@@ -66,6 +74,8 @@ export async function syncWaareeCurrentPower() {
     console.log("[Waaree Scheduler] 5-minute current power and status sync finished.");
   } catch (err: any) {
     console.error("[Waaree Scheduler Error] Global current power sync failed:", err.message);
+  } finally {
+    isSyncingWaareePower = false;
   }
 }
 
@@ -74,6 +84,11 @@ export async function syncWaareeCurrentPower() {
  * Interval: 30 minutes
  */
 export async function syncWaareeGenerationStats() {
+  if (isSyncingWaareeStats) {
+    console.log("[Waaree Scheduler] Skipping generation stats sync - previous run is still active.");
+    return;
+  }
+  isSyncingWaareeStats = true;
   console.log("[Waaree Scheduler] Starting 30-minute historical generation metrics sync...");
   try {
     const activeCustomers = await prisma.customer.findMany({
@@ -142,6 +157,8 @@ export async function syncWaareeGenerationStats() {
     console.log("[Waaree Scheduler] 30-minute generation metrics sync finished.");
   } catch (err: any) {
     console.error("[Waaree Scheduler Error] Global generation stats sync failed:", err.message);
+  } finally {
+    isSyncingWaareeStats = false;
   }
 }
 

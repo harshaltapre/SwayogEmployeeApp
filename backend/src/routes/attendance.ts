@@ -1,10 +1,12 @@
 import { Router } from "express";
 import multer from "multer";
+import crypto from "crypto";
 import { UserRole } from "@prisma/client";
 import { authenticateAccessToken, authorizeRoles } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { prisma } from "../lib/prisma.js";
 import * as AttendanceService from "../services/attendanceService.js";
+import { processMissingCheckOuts } from "../services/autoCheckoutService.js";
 import {
   generateFaceVerificationToken,
   verifyFaceToken,
@@ -14,11 +16,38 @@ import {
 import { uploadToR2, isR2Configured } from "../services/r2StorageService.js";
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
+import {
+  getVapidPublicKey,
+  saveAdminPushSubscription,
+  removeAdminPushSubscription,
+  getAdminSubscriptionStatus,
+  sendPushToAdmins,
+} from "../services/webPushService.js";
+import { getNotificationTitle } from "../services/notificationService.js";
+import {
+  parseAttendanceReportFilters,
+  getAttendanceReportOptions,
+  AttendanceReportError,
+} from "../services/attendanceReportService.js";
+import { generateExecutiveAttendanceWorkbook } from "../services/attendanceExecutiveReport.js";
 
 
 
 const router = Router();
+
+// Diagnostic logging for attendance API requests taking longer than 500ms
+router.use((req, res, next) => {
+  const start = Date.now();
+  const method = req.method;
+  const urlPath = req.originalUrl || req.path;
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (duration > 500) {
+      console.warn(`[Attendance API Diagnostic] Slow response: ${method} ${urlPath} -> ${res.statusCode} (${duration}ms)`);
+    }
+  });
+  next();
+});
 
 const employeeAuth = [
   authenticateAccessToken,
@@ -34,7 +63,6 @@ const employeeAuth = [
 const adminAuth = [authenticateAccessToken, authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.DEPARTMENT_HEAD, UserRole.TEAM_LEAD, UserRole.SUB_ADMIN)];
 const superAdminAuth = [authenticateAccessToken, authorizeRoles(UserRole.SUPER_ADMIN)];
 
-// In-memory upload for company alarm ringtones (audio only, max 20MB)
 const ringtoneUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -47,6 +75,37 @@ const ringtoneUpload = multer({
 });
 
 const PHOTOS_FILE_PATH = path.join(process.cwd(), "data", "profile-photos.json");
+
+function getIndiaDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  const year = Number(value("year"));
+  const month = Number(value("month"));
+  const day = Number(value("day"));
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(value("weekday"));
+  return {
+    date: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    utcStart: new Date(Date.UTC(year, month - 1, day)),
+    weekday: weekday >= 0 ? weekday : 0,
+  };
+}
+
+function getIndiaMinutes(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value || 0);
+  return value("hour") * 60 + value("minute");
+}
 
 function getAllPhotos(): Record<string, string> {
   try {
@@ -69,6 +128,18 @@ function savePhoto(userId: string, photoDataUrl: string) {
   fs.writeFileSync(PHOTOS_FILE_PATH, JSON.stringify(all), "utf8");
 }
 
+const isValidDescriptor = (d: any): d is number[] =>
+  Array.isArray(d) && d.length === 128 && d.every((v: any) => typeof v === "number" && !isNaN(v));
+
+const calcEuclideanDistance = (a: number[], b: number[]): number => {
+  let sum = 0;
+  for (let i = 0; i < 128; i++) {
+    const diff = a[i] - b[i];
+    sum += diff * diff;
+  }
+  return Math.sqrt(sum);
+};
+
 router.get("/rules", authenticateAccessToken, asyncHandler(async (req, res) => {
   const rules = await AttendanceService.getRulesAsync();
   res.json(rules);
@@ -84,6 +155,10 @@ router.post("/rules", adminAuth, asyncHandler(async (req, res) => {
   }
 }));
 
+router.post("/auto-checkout/run", adminAuth, asyncHandler(async (req, res) => {
+  const result = await processMissingCheckOuts();
+  res.json({ success: true, ...result });
+}));
 
 // ── Live Face Verification with Short-Lived Signed Token ─────────────────────
 router.post(
@@ -118,27 +193,38 @@ router.post(
     const rules = await AttendanceService.getRulesAsync();
     const threshold = rules.faceMatchThreshold || 0.55;
 
-    const desc1 = enrollment.descriptor1 as number[];
-    const desc2 = enrollment.descriptor2 as number[];
-    const desc3 = enrollment.descriptor3 as number[];
+    const candidates: number[][] = [];
+    if (isValidDescriptor(enrollment.descriptor1)) candidates.push(enrollment.descriptor1 as number[]);
+    if (isValidDescriptor(enrollment.descriptor2)) candidates.push(enrollment.descriptor2 as number[]);
+    if (isValidDescriptor(enrollment.descriptor3)) candidates.push(enrollment.descriptor3 as number[]);
+    if (isValidDescriptor(enrollment.webDescriptor1)) candidates.push(enrollment.webDescriptor1 as number[]);
+    if (isValidDescriptor(enrollment.webDescriptor2)) candidates.push(enrollment.webDescriptor2 as number[]);
+    if (isValidDescriptor(enrollment.webDescriptor3)) candidates.push(enrollment.webDescriptor3 as number[]);
 
-    const score1 = calculateCosineSimilarity(liveDescriptor, desc1);
-    const score2 = calculateCosineSimilarity(liveDescriptor, desc2);
-    const score3 = calculateCosineSimilarity(liveDescriptor, desc3);
-    const bestScore = Math.max(score1, score2, score3);
+    let bestCosine = 0;
+    let minEuclidean = Infinity;
+    for (const stored of candidates) {
+      const cos = calculateCosineSimilarity(liveDescriptor, stored);
+      if (cos > bestCosine) bestCosine = cos;
+      const dist = calcEuclideanDistance(liveDescriptor, stored);
+      if (dist < minEuclidean) minEuclidean = dist;
+    }
 
+    const euclideanConfidence = Number.isFinite(minEuclidean) ? Math.max(0, Math.min(1, 1 - minEuclidean)) : 0;
+    const bestScore = Math.max(bestCosine, euclideanConfidence);
+    const isMatched = bestCosine >= threshold || minEuclidean <= threshold;
     const kolkata = getKolkataTimeInfo();
 
-    if (bestScore < threshold) {
+    if (!isMatched) {
       await prisma.attendanceAuditEvent.create({
         data: {
           employeeId,
           date: kolkata.dateObj,
           eventType: "FACE_VERIFICATION_FAILED",
           reason: `Face match score ${bestScore.toFixed(3)} is below required threshold ${threshold.toFixed(2)}`,
-          metadata: { bestScore, threshold, score1, score2, score3 },
+          metadata: { bestScore, bestCosine, minEuclidean, threshold },
         },
-      }).catch(() => { });
+      }).catch(() => {});
 
       res.status(403).json({
         success: false,
@@ -148,7 +234,6 @@ router.post(
       return;
     }
 
-    // Success: Generate short-lived signed verification token
     const { token, expiresAt } = generateFaceVerificationToken({
       employeeId,
       matchScore: bestScore,
@@ -162,9 +247,9 @@ router.post(
         date: kolkata.dateObj,
         eventType: "FACE_VERIFICATION_SUCCESS",
         reason: `Face verification passed with match score ${(bestScore * 100).toFixed(1)}%`,
-        metadata: { bestScore, threshold },
+        metadata: { bestScore, bestCosine, minEuclidean, threshold },
       },
-    }).catch(() => { });
+    }).catch(() => {});
 
     res.json({
       success: true,
@@ -175,7 +260,7 @@ router.post(
   })
 );
 
-// ── Employee Alarm Settings ──────────────────────────────────────────────────
+// ── Employee Alarm Settings & Company Alarm Policy ───────────────────────────
 router.get("/alarm-settings", authenticateAccessToken, asyncHandler(async (req, res) => {
   const settings = await AttendanceService.getAlarmSettingsAsync(req.auth!.userId);
   res.json(settings);
@@ -186,10 +271,7 @@ router.post("/alarm-settings", authenticateAccessToken, asyncHandler(async (req,
   res.json({ success: true, setting: updated });
 }));
 
-// ── Company Alarm Policy & Ringtones ─────────────────────────────────────────
-
-// Employee-facing: merged company alarm policy + published ringtones
-router.get("/alarm-policy", authenticateAccessToken, asyncHandler(async (req, res) => {
+router.get("/alarm-policy", authenticateAccessToken, asyncHandler(async (_req, res) => {
   const [policy, ringtones] = await Promise.all([
     AttendanceService.getCompanyAlarmPolicyAsync(),
     AttendanceService.listCompanyRingtonesAsync(),
@@ -197,7 +279,6 @@ router.get("/alarm-policy", authenticateAccessToken, asyncHandler(async (req, re
   res.json({ policy, ringtones });
 }));
 
-// Admin: update company alarm policy (reminder times/toggles, default sound, note)
 router.post("/admin/alarm-policy", adminAuth, asyncHandler(async (req, res) => {
   const ok = await AttendanceService.saveCompanyAlarmPolicyAsync(req.body || {});
   if (!ok) {
@@ -208,13 +289,11 @@ router.post("/admin/alarm-policy", adminAuth, asyncHandler(async (req, res) => {
   res.json({ success: true, policy });
 }));
 
-// Admin: list ringtones (with fresh URLs)
-router.get("/admin/ringtones", adminAuth, asyncHandler(async (req, res) => {
+router.get("/admin/ringtones", adminAuth, asyncHandler(async (_req, res) => {
   const ringtones = await AttendanceService.listCompanyRingtonesAsync();
   res.json({ ringtones });
 }));
 
-// Admin: upload a company ringtone to R2
 router.post("/admin/ringtones", adminAuth, ringtoneUpload.single("file"), asyncHandler(async (req, res) => {
   if (!isR2Configured()) {
     res.status(503).json({ error: "File storage is not configured on the server" });
@@ -249,17 +328,15 @@ router.post("/admin/ringtones", adminAuth, ringtoneUpload.single("file"), asyncH
   });
 }));
 
-// Admin: delete a company ringtone (removes DB row + R2 object)
 router.delete("/admin/ringtones/:id", adminAuth, asyncHandler(async (req, res) => {
-  const ok = await AttendanceService.deleteCompanyRingtoneAsync(req.params.id);
-  if (!ok) {
+  const deleted = await AttendanceService.deleteCompanyRingtoneAsync(req.params.id);
+  if (!deleted) {
     res.status(404).json({ error: "Ringtone not found" });
     return;
   }
   res.json({ success: true });
 }));
 
-// ── Late Allowance Summary ─────────────────────────────────────────────────
 router.get("/late-allowance-summary", authenticateAccessToken, asyncHandler(async (req, res) => {
   const month = req.query.month ? parseInt(req.query.month as string, 10) : undefined;
   const year = req.query.year ? parseInt(req.query.year as string, 10) : undefined;
@@ -267,82 +344,23 @@ router.get("/late-allowance-summary", authenticateAccessToken, asyncHandler(asyn
   res.json(summary);
 }));
 
-
-// ── Public / Employee Attendance Policy Endpoint ─────────────────────────────
 router.get("/policy", authenticateAccessToken, asyncHandler(async (req, res) => {
   const rules = await AttendanceService.getRulesAsync();
+  const allowance = await AttendanceService.getLateAllowanceSummaryAsync(req.auth!.userId);
   res.json({
     reportingTime: rules.reportingTime || "10:30",
-    monthlyLateAllowance: rules.monthlyLateAllowance || 3,
+    shiftStart: rules.shiftStart,
+    monthlyLateAllowance: rules.monthlyLateAllowance ?? 3,
     timezone: rules.timezone || "Asia/Kolkata",
-    faceRequired: rules.faceRequired !== false,
-    geofenceEnabled: rules.geofenceEnabled === true,
-    geofenceActive: rules.geofenceActive !== false,
+    faceRequired: rules.faceRequired,
+    geofenceEnabled: rules.geofenceEnabled,
     officeLat: rules.officeLat,
     officeLng: rules.officeLng,
     officeRadius: rules.officeRadius,
-    minLocationAccuracy: rules.minLocationAccuracy || 100.0,
-    weeklyOffDays: rules.weeklyOffDays || [0],
-    policyStatus: rules.policyStatus || "ACTIVE",
+    weeklyOffDays: rules.weeklyOffDays,
+    dailyWorkingHours: rules.dailyWorkingHours,
+    allowanceSummary: allowance,
   });
-}));
-
-// ── Admin Export Attendance Report (CSV) ──────────────────────────────────────
-router.get("/admin/export", adminAuth, asyncHandler(async (req, res) => {
-  const month = req.query.month ? parseInt(req.query.month as string, 10) : new Date().getMonth() + 1;
-  const year = req.query.year ? parseInt(req.query.year as string, 10) : new Date().getFullYear();
-
-  const startDate = new Date(Date.UTC(year, month - 1, 1));
-  const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-
-  const employees = await prisma.user.findMany({
-    where: { isActive: true },
-    select: { id: true, fullName: true, employeeCode: true, loginId: true },
-    orderBy: { fullName: "asc" },
-  });
-
-  const records = await prisma.attendanceRecord.findMany({
-    where: { date: { gte: startDate, lte: endDate } },
-  });
-
-  const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
-  const counters = await prisma.monthlyLateCounter.findMany({
-    where: { yearMonth },
-  });
-  const counterMap = new Map<string, any>(counters.map((c: any) => [c.employeeId, c]));
-
-  const headers = "Employee Code,Employee Name,Login ID,Present Days,Late Allowances Used (Max 3),Half Days,Absent Days,Total Working Hours";
-  const rows = employees.map((emp: any) => {
-    const empRecords = records.filter((r: any) => r.employeeId === emp.id);
-    const presentCount = empRecords.filter((r: any) => r.status === "PRESENT" || r.status === "PRESENT_LATE_ALLOWANCE").length;
-    const halfDayCount = empRecords.filter((r: any) => r.status === "HALF_DAY").length;
-    const absentCount = empRecords.filter((r: any) => r.status === "ABSENT").length;
-    const totalMinutes = empRecords.reduce((sum: number, r: any) => sum + (r.totalMinutes || 0), 0);
-    const totalHours = (totalMinutes / 60).toFixed(1);
-    const counter: any = counterMap.get(emp.id);
-    const lateDaysUsed = counter ? counter.lateDaysUsed : 0;
-    const allowancesUsed = Math.min(lateDaysUsed, 3);
-
-    return `"${emp.employeeCode || ""}",${emp.fullName || ""},${emp.loginId || ""},${presentCount},${allowancesUsed}/3,${halfDayCount},${absentCount},${totalHours}`;
-  });
-
-  const csv = [headers, ...rows].join("\n");
-  res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", `attachment; filename="attendance-report-${yearMonth}.csv"`);
-  res.send(csv);
-}));
-
-// ── Audit Logs ─────────────────────────────────────────────────────────────
-router.get("/admin/audit-logs", adminAuth, asyncHandler(async (req, res) => {
-  const logs = await prisma.attendanceAuditEvent.findMany({
-    take: 100,
-    orderBy: { createdAt: "desc" },
-    include: {
-      employee: { select: { id: true, fullName: true, loginId: true, employeeCode: true } },
-      actor: { select: { id: true, fullName: true } },
-    },
-  });
-  res.json({ logs });
 }));
 
 // ── Festival Holidays ───────────────────────────────────────────────────────
@@ -445,64 +463,56 @@ router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, 
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   try {
+    const employeeId = req.auth!.userId;
     const {
       selfie,
       latitude,
       longitude,
       accuracy,
-      matchConfidence,
-      matchDistance,
+      liveDescriptor,
       livenessVerified,
       verificationToken,
-      liveDescriptor,
+      matchConfidence,
+      matchDistance,
       clientUploadId: bodyUploadId,
     } = req.body;
     const idempotencyKey = (req.header("Idempotency-Key") || bodyUploadId || null) as string | null;
 
-    // Security: Never trust client boolean flags as proof of face verification.
-    // Require either a valid server-issued verificationToken OR perform live server-side
-    // verification of the submitted 128-element descriptor against PostgreSQL FaceEnrollment.
     const rules = await AttendanceService.getRulesAsync();
+    let verifiedMatchConfidence: number | null = matchConfidence != null ? Number(matchConfidence) : null;
+    let verifiedMatchDistance: number | null = matchDistance != null ? Number(matchDistance) : null;
     let effectiveVerificationToken: string | null = verificationToken || null;
+    let isFaceVerified = false;
 
-    if (rules.faceRequired && !effectiveVerificationToken) {
-      if (Array.isArray(liveDescriptor) && liveDescriptor.length === 128 && livenessVerified === true) {
-        const employeeId = req.auth!.userId;
-        const enrollment = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
-        if (!enrollment || enrollment.isDeleted) {
-          res.status(404).json({
-            success: false,
-            code: "FACE_NOT_ENROLLED",
-            error: "No active face enrollment found for this employee. Please complete face enrollment in Settings first.",
-          });
-          return;
-        }
-        const threshold = rules.faceMatchThreshold || 0.55;
-        const desc1 = enrollment.descriptor1 as number[];
-        const desc2 = enrollment.descriptor2 as number[];
-        const desc3 = enrollment.descriptor3 as number[];
-        const bestScore = Math.max(
-          calculateCosineSimilarity(liveDescriptor, desc1),
-          calculateCosineSimilarity(liveDescriptor, desc2),
-          calculateCosineSimilarity(liveDescriptor, desc3)
-        );
-        if (bestScore < threshold) {
-          res.status(403).json({
-            success: false,
-            code: "FACE_MATCH_FAILED",
-            error: `Face match score too low (${(bestScore * 100).toFixed(1)}%). Expected at least ${(threshold * 100).toFixed(0)}%.`,
-            matchScore: bestScore,
-          });
-          return;
-        }
-        const issued = generateFaceVerificationToken({
-          employeeId,
-          matchScore: bestScore,
-          livenessVerified: true,
-          expiresInSeconds: 300,
+    if (effectiveVerificationToken) {
+      const tokenCheck = verifyFaceToken(effectiveVerificationToken, employeeId);
+      if (!tokenCheck.valid) {
+        res.status(422).json({
+          success: false,
+          code: "FACE_TOKEN_INVALID",
+          error: `Face verification failed: ${tokenCheck.error}`,
         });
-        effectiveVerificationToken = issued.token;
-      } else {
+        return;
+      }
+      isFaceVerified = true;
+      if (verifiedMatchConfidence == null && tokenCheck.payload?.matchScore != null) {
+        verifiedMatchConfidence = Number(tokenCheck.payload.matchScore);
+      }
+    } else if (rules.faceRequired) {
+      const enrollment = await prisma.faceEnrollment.findUnique({
+        where: { employeeId },
+      });
+
+      if (!enrollment || enrollment.isDeleted) {
+        res.status(404).json({
+          success: false,
+          code: "FACE_NOT_ENROLLED",
+          error: "Face enrollment required. Please go to Settings → Face ID and enroll your face before checking in.",
+        });
+        return;
+      }
+
+      if (!isValidDescriptor(liveDescriptor)) {
         res.status(422).json({
           success: false,
           code: "FACE_VERIFICATION_REQUIRED",
@@ -510,33 +520,74 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
         });
         return;
       }
+
+      const candidates: number[][] = [];
+      if (isValidDescriptor(enrollment.descriptor1)) candidates.push(enrollment.descriptor1 as number[]);
+      if (isValidDescriptor(enrollment.descriptor2)) candidates.push(enrollment.descriptor2 as number[]);
+      if (isValidDescriptor(enrollment.descriptor3)) candidates.push(enrollment.descriptor3 as number[]);
+      if (isValidDescriptor(enrollment.webDescriptor1)) candidates.push(enrollment.webDescriptor1 as number[]);
+      if (isValidDescriptor(enrollment.webDescriptor2)) candidates.push(enrollment.webDescriptor2 as number[]);
+      if (isValidDescriptor(enrollment.webDescriptor3)) candidates.push(enrollment.webDescriptor3 as number[]);
+
+      let bestCosine = 0;
+      let minDistance = Infinity;
+      for (const stored of candidates) {
+        const cos = calculateCosineSimilarity(liveDescriptor, stored);
+        if (cos > bestCosine) bestCosine = cos;
+        const dist = calcEuclideanDistance(liveDescriptor, stored);
+        if (dist < minDistance) minDistance = dist;
+      }
+
+      const threshold = rules.faceMatchThreshold != null ? rules.faceMatchThreshold : 0.55;
+      const isMatched = bestCosine >= threshold || minDistance <= threshold;
+      if (!isMatched) {
+        res.status(403).json({
+          success: false,
+          code: "FACE_MATCH_FAILED",
+          error: `Face verification failed. Please ensure good lighting and look directly at the camera.`,
+          matchScore: Math.max(bestCosine, Number.isFinite(minDistance) ? Math.max(0, 1 - minDistance) : 0),
+        });
+        return;
+      }
+
+      verifiedMatchDistance = Number.isFinite(minDistance) ? minDistance : null;
+      verifiedMatchConfidence = Math.max(
+        bestCosine,
+        Number.isFinite(minDistance) ? Math.max(0, Math.min(1, 1 - minDistance)) : 0
+      );
+      const issued = generateFaceVerificationToken({
+        employeeId,
+        matchScore: verifiedMatchConfidence,
+        livenessVerified: true,
+        expiresInSeconds: 300,
+      });
+      effectiveVerificationToken = issued.token;
+      isFaceVerified = true;
+    } else if (isValidDescriptor(liveDescriptor)) {
+      const enrollment = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
+      if (enrollment && !enrollment.isDeleted) {
+        const stored = (enrollment.webDescriptor1 || enrollment.descriptor1) as number[];
+        if (isValidDescriptor(stored)) {
+          const dist = calcEuclideanDistance(liveDescriptor, stored);
+          const cos = calculateCosineSimilarity(liveDescriptor, stored);
+          verifiedMatchDistance = dist;
+          verifiedMatchConfidence = Math.max(cos, Math.max(0, Math.min(1, 1 - dist)));
+        }
+      }
     }
 
-    const result = await AttendanceService.checkIn(req.auth!.userId, {
+    const result = await AttendanceService.checkIn(employeeId, {
       selfieDataUrl: selfie ?? null,
-      latitude: latitude ? Number(latitude) : null,
-      longitude: longitude ? Number(longitude) : null,
-      accuracy: accuracy ? Number(accuracy) : null,
-      faceVerified: false, // Will be set to true only after valid token verification in service
+      latitude: latitude != null ? Number(latitude) : null,
+      longitude: longitude != null ? Number(longitude) : null,
+      accuracy: accuracy != null ? Number(accuracy) : null,
+      faceVerified: isFaceVerified,
       verificationToken: effectiveVerificationToken,
+      matchConfidence: verifiedMatchConfidence,
+      matchDistance: verifiedMatchDistance,
+      livenessVerified: livenessVerified === true || isFaceVerified,
       clientUploadId: idempotencyKey,
     });
-
-    // Augment the CheckIn record with face recognition metadata if provided
-    if (!result.idempotentReplay && result?.checkInRecord?.id && (matchConfidence !== undefined || matchDistance !== undefined)) {
-      await prisma.checkIn.update({
-        where: { id: result.checkInRecord.id },
-        data: {
-          matchConfidence: matchConfidence != null ? Number(matchConfidence) : null,
-          matchDistance: matchDistance != null ? Number(matchDistance) : null,
-          livenessVerified: livenessVerified === true,
-          flagged: matchConfidence != null
-            ? matchConfidence < (parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55") + 0.1)
-            && matchConfidence >= parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55")
-            : false,
-        },
-      }).catch(() => { /* non-critical, don't fail check-in */ });
-    }
 
     res.json({ success: true, result });
   } catch (err: any) {
@@ -549,7 +600,7 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   }
 }));
 
-router.post("/check-out", employeeAuth, asyncHandler(async (req, res) => {
+const handleCheckOutEndpoint = asyncHandler(async (req, res) => {
   try {
     const idempotencyKey = (req.header("Idempotency-Key") || req.body?.clientUploadId || null) as string | null;
     const record = await AttendanceService.checkOut(req.auth!.userId, { clientUploadId: idempotencyKey });
@@ -562,7 +613,11 @@ router.post("/check-out", employeeAuth, asyncHandler(async (req, res) => {
       error: err?.message ?? "Unable to check out",
     });
   }
-}));
+});
+
+router.post("/check-out", employeeAuth, handleCheckOutEndpoint);
+router.post("/checkout", employeeAuth, handleCheckOutEndpoint);
+router.post("/employee/check-out", employeeAuth, handleCheckOutEndpoint);
 
 router.post("/sync-health", employeeAuth, asyncHandler(async (req, res) => {
   const health = await AttendanceService.upsertSyncHealthAsync(req.auth!.userId, req.body || {});
@@ -575,14 +630,14 @@ router.get("/admin/sync-health", adminAuth, asyncHandler(async (_req, res) => {
 }));
 
 router.get("/today", authenticateAccessToken, asyncHandler(async (req, res) => {
-  const record = await AttendanceService.getTodayAttendance(req.auth!.userId);
+  const record = await AttendanceService.getTodayAttendance(req.auth!.userId, req.auth?.role);
   res.json({ record });
 }));
 
 router.get("/monthly", authenticateAccessToken, asyncHandler(async (req, res) => {
   const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
   const year = parseInt(req.query.year as string) || new Date().getFullYear();
-  const data = await AttendanceService.getMonthlyAttendance(req.auth!.userId, month, year);
+  const data = await AttendanceService.getMonthlyAttendance(req.auth!.userId, month, year, req.auth?.role);
   res.json(data);
 }));
 
@@ -628,14 +683,14 @@ router.get("/work-submissions", authenticateAccessToken, asyncHandler(async (req
 
   if (req.query.employeeId) {
     const requestedId = String(req.query.employeeId);
-
+    
     // Check if the requested employee reports recursively to the logged-in user
     // or if the logged-in user is an Admin/Superadmin/Subadmin
     const isAdmin =
       req.auth!.role === UserRole.SUPER_ADMIN ||
       req.auth!.role === UserRole.ADMIN ||
       req.auth!.role === UserRole.SUB_ADMIN;
-
+    
     let isAllowed = isAdmin;
     if (!isAllowed) {
       const reporteeIds = await getRecursiveReporteeIds(req.auth!.userId);
@@ -661,13 +716,37 @@ router.get("/work-submissions", authenticateAccessToken, asyncHandler(async (req
   res.json({ submissions });
 }));
 
+async function resolveEmployeeUserId(rawId: string): Promise<string> {
+  if (!rawId) return rawId;
+  const directUser = await prisma.user.findUnique({
+    where: { id: rawId },
+    select: { id: true },
+  });
+  if (directUser) return directUser.id;
+
+  const userByLoginOrCode = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { loginId: rawId },
+        { employeeCode: rawId },
+        { email: rawId.toLowerCase() },
+      ],
+    },
+    select: { id: true },
+  });
+  if (userByLoginOrCode) return userByLoginOrCode.id;
+
+  return rawId;
+}
+
 router.get(
   "/admin/employee/:employeeId/monthly",
   adminAuth,
   asyncHandler(async (req, res) => {
     const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
     const year = parseInt(req.query.year as string) || new Date().getFullYear();
-    const data = await AttendanceService.getMonthlyAttendance(req.params.employeeId, month, year);
+    const resolvedId = await resolveEmployeeUserId(req.params.employeeId);
+    const data = await AttendanceService.getMonthlyAttendance(resolvedId, month, year, req.auth?.role);
     res.json(data);
   }),
 );
@@ -678,10 +757,32 @@ router.get(
   asyncHandler(async (req, res) => {
     const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
     const year = parseInt(req.query.year as string) || new Date().getFullYear();
-    const snapshot = await prisma.performanceSnapshot.findUnique({
-      where: { employeeId_month_year: { employeeId: req.params.employeeId, month, year } },
+    const resolvedId = await resolveEmployeeUserId(req.params.employeeId);
+    let snapshot = await prisma.performanceSnapshot.findUnique({
+      where: { employeeId_month_year: { employeeId: resolvedId, month, year } },
     });
+    if (!snapshot) {
+      try {
+        await AttendanceService.recalculateMonthlyPerformance(resolvedId, month, year);
+        snapshot = await prisma.performanceSnapshot.findUnique({
+          where: { employeeId_month_year: { employeeId: resolvedId, month, year } },
+        });
+      } catch (err) {
+        console.error("Recalculate monthly performance error:", err);
+      }
+    }
     res.json({ snapshot });
+  }),
+);
+
+router.get(
+  "/admin/team-attendance",
+  adminAuth,
+  asyncHandler(async (req, res) => {
+    const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year as string) || new Date().getFullYear();
+    const snapshots = await AttendanceService.getTeamAttendanceSnapshots(month, year);
+    res.json({ snapshots });
   }),
 );
 
@@ -691,7 +792,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
     const year = parseInt(req.query.year as string) || new Date().getFullYear();
-
+    
     let snapshots = await prisma.performanceSnapshot.findMany({
       where: { month, year },
       include: {
@@ -712,7 +813,7 @@ router.get(
       const employees = await prisma.user.findMany({
         where: { role: { in: [UserRole.EMPLOYEE, UserRole.SUB_ADMIN] } },
       });
-
+      
       for (const emp of employees) {
         try {
           await AttendanceService.recalculateMonthlyPerformance(emp.id, month, year);
@@ -760,10 +861,9 @@ router.get(
   "/admin/today-summary",
   adminAuth,
   asyncHandler(async (req, res) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const indiaToday = getIndiaDateParts();
+    const today = indiaToday.utcStart;
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
 
     const [activeEmployees, todayRecords, rules, todayHoliday] = await Promise.all([
       prisma.user.findMany({
@@ -777,7 +877,7 @@ router.get(
           loginId: true,
           role: true,
           employeeProfile: {
-            select: { jobRole: true, zone: true, profilePhoto: true },
+          select: { jobRole: true, zone: true },
           },
         },
         orderBy: { fullName: "asc" },
@@ -797,9 +897,11 @@ router.get(
     ]);
 
     const weeklyOffDays: number[] = rules.weeklyOffDays && rules.weeklyOffDays.length > 0 ? rules.weeklyOffDays : [0];
-    const isWeeklyOff = weeklyOffDays.includes(new Date().getDay());
+    const isWeeklyOff = weeklyOffDays.includes(indiaToday.weekday);
 
     const recordMap = new Map<string, any>(todayRecords.map((r: any) => [r.employeeId, r]));
+    const shiftParts = String(rules.shiftStart || "09:15").split(":").map(Number);
+    const shiftStartMinutes = (shiftParts[0] || 0) * 60 + (shiftParts[1] || 0);
 
     let onTimeCount = 0;
     let lateCount = 0;
@@ -814,10 +916,16 @@ router.get(
 
       if (record) {
         status = record.status;
-        if (record.source === "ADMIN_ASSIGNED") adminAssignedCount++;
-        if (record.status === "PRESENT") onTimeCount++;
-        else if (record.status === "LATE") lateCount++;
-        else if (record.status === "HALF_DAY") halfDayCount++;
+        const isSelfPunchMode = Boolean(record.displayAsSelfPunch);
+        if (!isSelfPunchMode && (record.source?.startsWith("ADMIN") || record.manualOverride)) adminAssignedCount++;
+        if (record.status === "HALF_DAY") {
+          halfDayCount++;
+        } else if (record.status === "PRESENT" || record.status === "LATE" || record.checkInTime) {
+          const isLate = record.status === "LATE"
+            || (record.checkInTime && getIndiaMinutes(new Date(record.checkInTime)) > shiftStartMinutes);
+          if (isLate) lateCount++;
+          else onTimeCount++;
+        }
         else if (record.status === "LEAVE") leaveCount++;
         else if (record.status === "ABSENT") explicitAbsentCount++;
       }
@@ -832,17 +940,22 @@ router.get(
         status,
         checkInTime: record?.checkInTime || null,
         checkOutTime: record?.checkOutTime || null,
-        source: record?.source || null,
+        actualCheckOutTime: record?.actualCheckOutTime || null,
+        effectiveCheckOutTime: record?.effectiveCheckOutTime || record?.checkOutTime || null,
+        checkOutSource: record?.checkOutSource || null,
+        isAutoClosed: record?.checkOutSource === "SYSTEM_AUTO_CLOSURE",
+        source: record?.displayAsSelfPunch ? "EMPLOYEE_CHECK_IN" : (record?.source || null),
         totalMinutes: record?.totalMinutes || null,
-        notes: record?.notes || null,
+        notes: record?.displayAsSelfPunch ? null : (record?.notes || null),
       };
     });
 
     const checkedInCount = onTimeCount + lateCount + halfDayCount;
-    const pendingCount = Math.max(0, activeEmployees.length - checkedInCount - leaveCount - explicitAbsentCount);
+    const expectedEmployees = isWeeklyOff || todayHoliday ? 0 : activeEmployees.length;
+    const pendingCount = Math.max(0, expectedEmployees - checkedInCount - leaveCount - explicitAbsentCount);
 
     res.json({
-      date: today.toISOString().split("T")[0],
+      date: indiaToday.date,
       totalEmployees: activeEmployees.length,
       checkedIn: checkedInCount,
       onTime: onTimeCount,
@@ -855,6 +968,8 @@ router.get(
       isWeeklyOff,
       holiday: todayHoliday ? { name: todayHoliday.name, description: todayHoliday.description } : null,
       shiftStart: rules.shiftStart,
+      shiftEnd: rules.shiftEnd || "18:30",
+      autoCheckoutGraceMinutes: rules.autoCheckoutGraceMinutes ?? 30,
       employees: employeeSummaries,
     });
   }),
@@ -873,14 +988,222 @@ router.get("/admin/checkins", adminAuth, asyncHandler(async (req, res) => {
   res.json({ checkins });
 }));
 
-// Admin: get notifications (unread only)
+// Admin: get notifications (with employee details and history preservation)
 router.get("/admin/notifications", adminAuth, asyncHandler(async (req, res) => {
+  const unreadOnly = req.query.unreadOnly === "true";
   const notifications = await prisma.adminNotification.findMany({
-    where: { read: false },
+    where: unreadOnly ? { read: false } : undefined,
     orderBy: { createdAt: "desc" },
     take: 100,
   });
-  res.json({ notifications });
+
+  const employeeIds = [...new Set(notifications.map((n: any) => n.employeeId).filter(Boolean))];
+  const employees = employeeIds.length > 0
+    ? await prisma.user.findMany({
+        where: { id: { in: employeeIds } },
+        select: { id: true, fullName: true, employeeCode: true, email: true, role: true },
+      })
+    : [];
+
+  const employeeMap = new Map(employees.map((e: any) => [e.id, e]));
+
+  const enriched = notifications.map((n: any) => ({
+    ...n,
+    title: getNotificationTitle(n.type),
+    employee: employeeMap.get(n.employeeId) || null,
+  }));
+
+  res.json({ notifications: enriched });
+}));
+
+// Admin: Get filter options (departments, employees, years) for CEO Excel Export
+router.get("/admin/report-options", adminAuth, asyncHandler(async (_req, res) => {
+  const options = await getAttendanceReportOptions();
+  res.json({ success: true, data: options });
+}));
+
+// Admin: Export 10-Sheet CEO-Grade Attendance & Workforce Excel Workbook (.xlsx)
+router.get("/admin/export-excel", adminAuth, asyncHandler(async (req: any, res) => {
+  try {
+    const query = { ...req.query } as Record<string, unknown>;
+    if (!query.startDate || !query.endDate) {
+      const now = new Date();
+      const y = Number(query.year) || now.getFullYear();
+      const m = Number(query.month) || now.getMonth() + 1;
+      const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      query.startDate = `${y}-${String(m).padStart(2, "0")}-01`;
+      query.endDate = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    }
+
+    const filters = parseAttendanceReportFilters(query);
+    const reportScope = (req.query.reportType as any) || "complete";
+    const actor = req.auth?.fullName || req.auth?.loginId || req.auth?.userId || "Administrator";
+
+    const { buffer, filename } = await generateExecutiveAttendanceWorkbook(
+      filters,
+      { generatedBy: String(actor), generatedAt: new Date() },
+      { reportScope }
+    );
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(buffer);
+  } catch (error: any) {
+    if (error instanceof AttendanceReportError) {
+      res.status(error.statusCode).json({ success: false, error: error.message, code: error.code });
+      return;
+    }
+    throw error;
+  }
+}));
+
+// Admin: Get attendance data for Excel report generation
+router.get("/admin/report-data", adminAuth, asyncHandler(async (req, res) => {
+  const { startDate, endDate, employeeIds, designation, department, zone } = req.query;
+  
+  let start: Date, end: Date;
+  if (startDate && typeof startDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+    const [y, m, d] = startDate.split("-").map(Number);
+    start = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+  } else if (startDate) {
+    start = new Date(startDate as string);
+    start.setHours(0, 0, 0, 0);
+  } else {
+    start = new Date();
+    start.setHours(0, 0, 0, 0);
+  }
+
+  if (endDate && typeof endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    const [y, m, d] = endDate.split("-").map(Number);
+    end = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
+  } else if (endDate) {
+    end = new Date(endDate as string);
+    end.setHours(23, 59, 59, 999);
+  } else {
+    end = new Date();
+    end.setHours(23, 59, 59, 999);
+  }
+
+  // Build employee filter
+  const employeeFilter: any = {
+    role: { in: [UserRole.EMPLOYEE, UserRole.SUB_ADMIN, UserRole.DEPARTMENT_HEAD, UserRole.TEAM_LEAD] },
+  };
+  if (employeeIds && typeof employeeIds === "string") {
+    employeeFilter.id = { in: (employeeIds as string).split(",") };
+  }
+  if (designation) {
+    employeeFilter.employeeProfile = { jobRole: designation as string };
+  }
+  if (department) {
+    employeeFilter.departmentId = department as string;
+  }
+  if (zone) {
+    employeeFilter.employeeProfile = { ...employeeFilter.employeeProfile, zone: zone as string };
+  }
+
+  // Fetch employees
+  const employees = await prisma.user.findMany({
+    where: employeeFilter,
+    include: {
+      employeeProfile: true,
+      department: true,
+    },
+    orderBy: { fullName: "asc" },
+  });
+
+  const employeeIdsList = employees.map(e => e.id);
+
+  // Fetch check-ins for GPS coordinates and timestamps
+  const checkIns = await prisma.checkIn.findMany({
+    where: {
+      employeeId: { in: employeeIdsList },
+      createdAt: { gte: start, lte: end },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const checkInMap = new Map<string, any>();
+  for (const ci of checkIns) {
+    const key = `${ci.employeeId}_${new Date(ci.createdAt).toISOString().slice(0, 10)}`;
+    if (!checkInMap.has(key)) {
+      checkInMap.set(key, ci);
+    }
+  }
+
+  // Fetch attendance records
+  const rawRecords = await prisma.attendanceRecord.findMany({
+    where: {
+      employeeId: { in: employeeIdsList },
+      date: { gte: start, lte: end },
+    },
+    include: {
+      employee: {
+        include: {
+          employeeProfile: true,
+          department: true,
+        },
+      },
+    },
+    orderBy: { date: "asc" },
+  });
+
+  const attendanceRecords = rawRecords.map((r) => {
+    const dateStr = r.date ? new Date(r.date).toISOString().slice(0, 10) : "";
+    const ci = checkInMap.get(`${r.employeeId}_${dateStr}`);
+    return {
+      ...r,
+      workingDuration: r.totalMinutes ? Math.round((r.totalMinutes / 60) * 100) / 100 : 0,
+      overtimeDuration: r.overtimeMinutes ? Math.round((r.overtimeMinutes / 60) * 100) / 100 : 0,
+      lateArrivalDuration: 0,
+      approvedOvertimeDuration: r.overtimeMinutes ? Math.round((r.overtimeMinutes / 60) * 100) / 100 : 0,
+      remarks: r.notes || r.overrideReason || "",
+      location: ci?.latitude ? "Workplace (GPS)" : (r.source === "ADMIN_ASSIGNED" ? "Admin Assigned" : "Workplace"),
+      latitude: ci?.latitude || null,
+      longitude: ci?.longitude || null,
+    };
+  });
+
+  // Fetch holidays
+  const holidays = await prisma.holiday.findMany({
+    where: {
+      date: { gte: start, lte: end },
+    },
+    orderBy: { date: "asc" },
+  });
+
+  // Fetch leave requests
+  const rawLeaves = await prisma.leaveRequest.findMany({
+    where: {
+      employeeId: { in: employeeIdsList },
+      startDate: { lte: end },
+      endDate: { gte: start },
+      status: "APPROVED",
+    },
+    include: {
+      leaveType: true,
+    },
+  });
+
+  const leaveRequests = rawLeaves.map((l) => ({
+    ...l,
+    leaveType: l.leaveType?.isPaid ? "PAID" : "UNPAID",
+    leaveTypeName: l.leaveType?.name || (l.leaveType?.isPaid ? "Paid Leave" : "Unpaid Leave"),
+    isPaid: l.leaveType?.isPaid ?? true,
+  }));
+
+  // Fetch attendance rules
+  const rules = await AttendanceService.getRulesAsync();
+
+  res.json({
+    employees,
+    attendanceRecords,
+    holidays,
+    leaveRequests,
+    rules,
+    startDate: startDate || start.toISOString().split("T")[0],
+    endDate: endDate || end.toISOString().split("T")[0],
+  });
 }));
 
 // Admin: mark all notifications as read
@@ -901,7 +1224,7 @@ router.delete("/admin/notifications/clear-all", adminAuth, asyncHandler(async (r
 // Admin: delete single notification
 router.delete("/admin/notifications/:id", adminAuth, asyncHandler(async (req, res) => {
   const id = req.params.id;
-  await prisma.adminNotification.delete({ where: { id } }).catch(() => { });
+  await prisma.adminNotification.delete({ where: { id } }).catch(() => {});
   res.json({ success: true });
 }));
 
@@ -911,6 +1234,60 @@ router.patch("/admin/notifications/:id/read", adminAuth, asyncHandler(async (req
   const updated = await prisma.adminNotification.update({ where: { id }, data: { read: true } });
   res.json({ success: true, updated });
 }));
+
+// Admin: Web Push routes
+router.get("/admin/push/public-key", adminAuth, asyncHandler(async (req, res) => {
+  const publicKey = getVapidPublicKey();
+  res.json({ publicKey });
+}));
+
+router.post("/admin/push/subscribe", adminAuth, asyncHandler(async (req, res) => {
+  const { subscription } = req.body;
+  if (!subscription || !subscription.endpoint || !subscription.keys) {
+    res.status(400).json({ error: "Invalid subscription payload" });
+    return;
+  }
+
+  const userAgent = req.headers["user-agent"] || "";
+  await saveAdminPushSubscription({
+    userId: req.auth!.userId,
+    role: req.auth!.role,
+    subscription,
+    userAgent,
+  });
+
+  res.json({ success: true, message: "Push notification subscription enrolled successfully" });
+}));
+
+router.post("/admin/push/unsubscribe", adminAuth, asyncHandler(async (req, res) => {
+  const { endpoint } = req.body;
+  if (!endpoint) {
+    res.status(400).json({ error: "Endpoint is required" });
+    return;
+  }
+
+  const removed = await removeAdminPushSubscription(endpoint);
+  res.json({ success: true, removed });
+}));
+
+router.get("/admin/push/status", adminAuth, asyncHandler(async (req, res) => {
+  const status = await getAdminSubscriptionStatus(req.auth!.userId);
+  res.json(status);
+}));
+
+router.post("/admin/push/test", adminAuth, asyncHandler(async (req, res) => {
+  const result = await sendPushToAdmins({
+    title: "Swayog Admin Notification Test",
+    body: "Browser Web Push notifications are active and connected to live employee events!",
+    data: {
+      url: "/admin/attendance",
+      type: "SYSTEM_TEST",
+    },
+  });
+
+  res.json({ success: true, ...result });
+}));
+
 
 router.patch(
   "/admin/work-submissions/:id/review",
@@ -936,12 +1313,6 @@ router.patch(
 // ═══════════════════════════════════════════════════════════════════════════════
 // FACE RECOGNITION ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Helper to validate 128-dim float descriptors
- */
-const isValidDescriptor = (d: any) =>
-  Array.isArray(d) && d.length === 128 && d.every((v: any) => typeof v === "number");
 
 /**
  * POST /face/enroll
@@ -973,6 +1344,60 @@ router.post(
     const existing = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
     const nextVersion = existing ? existing.syncVersion + 1 : 1;
 
+    if (enrollmentSource === "WEB") {
+      const keepMobile = existing && existing.enrollmentSource === "MOBILE" && !existing.isDeleted;
+      const updateData: any = {
+        webDescriptor1: descriptor1,
+        webDescriptor2: descriptor2,
+        webDescriptor3: descriptor3,
+        webModelVersion: modelVersion,
+        webEnrolledAt: new Date(),
+        syncVersion: nextVersion,
+        isDeleted: false,
+        deletedAt: null,
+      };
+
+      if (!keepMobile) {
+        updateData.descriptor1 = descriptor1;
+        updateData.descriptor2 = descriptor2;
+        updateData.descriptor3 = descriptor3;
+        updateData.modelVersion = modelVersion;
+        updateData.enrollmentSource = "WEB";
+        updateData.enrolledAt = new Date();
+      }
+
+      const enrollment = await prisma.faceEnrollment.upsert({
+        where: { employeeId },
+        create: {
+          employeeId,
+          descriptor1,
+          descriptor2,
+          descriptor3,
+          modelVersion,
+          syncVersion: nextVersion,
+          enrollmentSource: "WEB",
+          webDescriptor1: descriptor1,
+          webDescriptor2: descriptor2,
+          webDescriptor3: descriptor3,
+          webModelVersion: modelVersion,
+          webEnrolledAt: new Date(),
+          isDeleted: false,
+          deletedAt: null,
+        },
+        update: updateData,
+      });
+
+      res.json({
+        success: true,
+        enrolledAt: enrollment.webEnrolledAt || enrollment.enrolledAt,
+        syncVersion: enrollment.syncVersion,
+        enrollmentId: enrollment.id,
+        enrollmentSource: "WEB",
+      });
+      return;
+    }
+
+    // MOBILE enrollment
     const enrollment = await prisma.faceEnrollment.upsert({
       where: { employeeId },
       create: {
@@ -982,7 +1407,7 @@ router.post(
         descriptor3,
         modelVersion,
         syncVersion: nextVersion,
-        enrollmentSource,
+        enrollmentSource: "MOBILE",
         isDeleted: false,
         deletedAt: null,
       },
@@ -993,7 +1418,7 @@ router.post(
         enrolledAt: new Date(),
         modelVersion,
         syncVersion: nextVersion,
-        enrollmentSource,
+        enrollmentSource: "MOBILE",
         isDeleted: false,
         deletedAt: null,
       },
@@ -1044,6 +1469,60 @@ router.post(
     const existing = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
     const nextVersion = existing ? existing.syncVersion + 1 : 1;
 
+    if (enrollmentSource === "WEB") {
+      const keepMobile = existing && existing.enrollmentSource === "MOBILE" && !existing.isDeleted;
+      const updateData: any = {
+        webDescriptor1: descriptor1,
+        webDescriptor2: descriptor2,
+        webDescriptor3: descriptor3,
+        webModelVersion: modelVersion,
+        webEnrolledAt: new Date(),
+        syncVersion: nextVersion,
+        isDeleted: false,
+        deletedAt: null,
+      };
+
+      if (!keepMobile) {
+        updateData.descriptor1 = descriptor1;
+        updateData.descriptor2 = descriptor2;
+        updateData.descriptor3 = descriptor3;
+        updateData.modelVersion = modelVersion;
+        updateData.enrollmentSource = "WEB";
+        updateData.enrolledAt = new Date();
+      }
+
+      const enrollment = await prisma.faceEnrollment.upsert({
+        where: { employeeId },
+        create: {
+          employeeId,
+          descriptor1,
+          descriptor2,
+          descriptor3,
+          modelVersion,
+          syncVersion: nextVersion,
+          enrollmentSource: "WEB",
+          webDescriptor1: descriptor1,
+          webDescriptor2: descriptor2,
+          webDescriptor3: descriptor3,
+          webModelVersion: modelVersion,
+          webEnrolledAt: new Date(),
+          isDeleted: false,
+          deletedAt: null,
+        },
+        update: updateData,
+      });
+
+      res.json({
+        success: true,
+        enrolledAt: enrollment.webEnrolledAt || enrollment.enrolledAt,
+        syncVersion: enrollment.syncVersion,
+        enrollmentId: enrollment.id,
+        enrollmentSource: "WEB",
+      });
+      return;
+    }
+
+    // MOBILE enrollment
     const enrollment = await prisma.faceEnrollment.upsert({
       where: { employeeId },
       create: {
@@ -1053,7 +1532,7 @@ router.post(
         descriptor3,
         modelVersion,
         syncVersion: nextVersion,
-        enrollmentSource,
+        enrollmentSource: "MOBILE",
         isDeleted: false,
         deletedAt: null,
       },
@@ -1064,7 +1543,7 @@ router.post(
         enrolledAt: new Date(),
         modelVersion,
         syncVersion: nextVersion,
-        enrollmentSource,
+        enrollmentSource: "MOBILE",
         isDeleted: false,
         deletedAt: null,
       },
@@ -1084,6 +1563,7 @@ router.post(
  * GET /face/enrollment
  * Returns the stored face descriptors for the requesting employee.
  * Admin/SuperAdmin can pass ?employeeId= to get another employee's descriptors.
+ * Supports ?platform=WEB | MOBILE to return model-compatible descriptors.
  */
 router.get(
   "/face/enrollment",
@@ -1107,6 +1587,11 @@ router.get(
         descriptor1: true,
         descriptor2: true,
         descriptor3: true,
+        webDescriptor1: true,
+        webDescriptor2: true,
+        webDescriptor3: true,
+        webModelVersion: true,
+        webEnrolledAt: true,
         enrolledAt: true,
         modelVersion: true,
         syncVersion: true,
@@ -1121,7 +1606,76 @@ router.get(
       return;
     }
 
-    res.json({ enrollment, enrolled: true });
+    const platform = String(req.query.platform || (req.headers["user-agent"]?.includes("okhttp") ? "MOBILE" : "WEB")).toUpperCase();
+
+    if (platform === "WEB") {
+      // Check for web descriptors first
+      if (enrollment.webDescriptor1 && enrollment.webDescriptor2 && enrollment.webDescriptor3) {
+        res.json({
+          enrolled: true,
+          enrollment: {
+            id: enrollment.id,
+            employeeId: enrollment.employeeId,
+            descriptor1: enrollment.webDescriptor1,
+            descriptor2: enrollment.webDescriptor2,
+            descriptor3: enrollment.webDescriptor3,
+            enrolledAt: enrollment.webEnrolledAt || enrollment.enrolledAt,
+            modelVersion: enrollment.webModelVersion || "face-api-ssd-mobilenetv1-v1",
+            syncVersion: enrollment.syncVersion,
+            enrollmentSource: "WEB",
+            updatedAt: enrollment.updatedAt,
+          },
+        });
+        return;
+      }
+
+      // Check if primary enrollment is web-compatible
+      if (enrollment.modelVersion === "face-api-ssd-mobilenetv1-v1") {
+        res.json({
+          enrolled: true,
+          enrollment: {
+            id: enrollment.id,
+            employeeId: enrollment.employeeId,
+            descriptor1: enrollment.descriptor1,
+            descriptor2: enrollment.descriptor2,
+            descriptor3: enrollment.descriptor3,
+            enrolledAt: enrollment.enrolledAt,
+            modelVersion: enrollment.modelVersion,
+            syncVersion: enrollment.syncVersion,
+            enrollmentSource: enrollment.enrollmentSource,
+            updatedAt: enrollment.updatedAt,
+          },
+        });
+        return;
+      }
+
+      // Only mobile enrollment exists — inform client to enroll on web
+      res.json({
+        enrolled: false,
+        enrollment: null,
+        mobileEnrolled: true,
+        modelVersion: enrollment.modelVersion,
+        message: "Face was enrolled using the mobile app model. Please enroll your face in Settings → Face ID to enable browser check-in.",
+      });
+      return;
+    }
+
+    // MOBILE or other client
+    res.json({
+      enrolled: true,
+      enrollment: {
+        id: enrollment.id,
+        employeeId: enrollment.employeeId,
+        descriptor1: enrollment.descriptor1,
+        descriptor2: enrollment.descriptor2,
+        descriptor3: enrollment.descriptor3,
+        enrolledAt: enrollment.enrolledAt,
+        modelVersion: enrollment.modelVersion,
+        syncVersion: enrollment.syncVersion,
+        enrollmentSource: enrollment.enrollmentSource,
+        updatedAt: enrollment.updatedAt,
+      },
+    });
   }),
 );
 
@@ -1154,6 +1708,8 @@ router.get(
             enrollmentSource: true,
             isDeleted: true,
             updatedAt: true,
+            webDescriptor1: true,
+            webEnrolledAt: true,
           },
         },
       },
@@ -1162,6 +1718,9 @@ router.get(
 
     const result = employees.map((e) => {
       const activeEnrollment = e.faceEnrollment && !e.faceEnrollment.isDeleted ? e.faceEnrollment : null;
+      const webEnrolled = activeEnrollment !== null && Boolean(
+        activeEnrollment.webDescriptor1 || activeEnrollment.modelVersion === "face-api-ssd-mobilenetv1-v1"
+      );
       return {
         id: e.id,
         fullName: e.fullName,
@@ -1169,6 +1728,7 @@ router.get(
         employeeCode: e.employeeCode,
         department: e.department?.name ?? "—",
         enrolled: activeEnrollment !== null,
+        webEnrolled,
         enrolledAt: activeEnrollment?.enrolledAt ?? null,
         modelVersion: activeEnrollment?.modelVersion ?? null,
         syncVersion: activeEnrollment?.syncVersion ?? null,
@@ -1291,7 +1851,7 @@ router.patch(
  * Requires mandatory remark explaining why the employee forgot.
  */
 const handleAdminApplyAttendance = asyncHandler(async (req, res) => {
-  const { employeeId, date, status, checkInTime, checkOutTime, remark } = req.body;
+  const { employeeId, date, status, checkInTime, checkOutTime, remark, displayAsSelfPunch, display_as_self_punch } = req.body;
 
   if (!employeeId) {
     res.status(400).json({ error: "Employee ID is required." });
@@ -1305,16 +1865,28 @@ const handleAdminApplyAttendance = asyncHandler(async (req, res) => {
     res.status(400).json({ error: "Attendance status is required." });
     return;
   }
-  if (!remark || typeof remark !== "string" || remark.trim().length < 3) {
-    res.status(400).json({ error: "A remark explaining why the employee forgot or why attendance is being updated is required (at least 3 characters)." });
-    return;
-  }
-
   const validStatuses = ["PRESENT", "LATE", "HALF_DAY", "ABSENT", "LEAVE"];
   if (!validStatuses.includes(status)) {
     res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
     return;
   }
+
+  // Authorize displayAsSelfPunch - ONLY Super Admin can set it to true
+  const requestedDisplayAsSelfPunch = displayAsSelfPunch !== undefined ? displayAsSelfPunch : display_as_self_punch;
+  if (requestedDisplayAsSelfPunch === true && req.auth?.role !== UserRole.SUPER_ADMIN) {
+    res.status(403).json({ error: "Unauthorized: Only Super Admin can enable 'Display as Self Punch'." });
+    return;
+  }
+
+  const isSelfPunch = Boolean(requestedDisplayAsSelfPunch);
+  if (!isSelfPunch && (!remark || typeof remark !== "string" || remark.trim().length < 3)) {
+    res.status(400).json({ error: "A remark explaining why the employee forgot or why attendance is being updated is required (at least 3 characters)." });
+    return;
+  }
+
+  const sanitizedRemark = (typeof remark === "string" && remark.trim().length > 0)
+    ? remark.trim()
+    : (isSelfPunch ? "Self Punch Regularization" : "");
 
   const result = await AttendanceService.applyOrUpdateAttendanceRecord({
     employeeId,
@@ -1322,8 +1894,9 @@ const handleAdminApplyAttendance = asyncHandler(async (req, res) => {
     status,
     checkInTime,
     checkOutTime,
-    remark,
+    remark: sanitizedRemark,
     adminUserId: req.auth!.userId,
+    displayAsSelfPunch: requestedDisplayAsSelfPunch !== undefined ? Boolean(requestedDisplayAsSelfPunch) : undefined,
   });
 
   res.json({
@@ -1496,4 +2069,3 @@ router.post(
 );
 
 export default router;
-

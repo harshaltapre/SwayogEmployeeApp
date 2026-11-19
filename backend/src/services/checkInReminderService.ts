@@ -2,11 +2,19 @@ import { prisma } from "../lib/prisma.js";
 import { UserRole } from "@prisma/client";
 import { createEmployeeNotification } from "./employeeNotificationService.js";
 
+let isReminderRunning = false;
+
 /**
  * Checks all active employees and sends a check-in reminder notification on working days
  * if the employee has not checked in yet today.
+ * Concurrency guarded to prevent overlapping runs.
  */
 export async function sendCheckInReminders() {
+  if (isReminderRunning) {
+    console.log("[CheckInReminder] Skipping run - previous execution is still running.");
+    return { count: 0, reason: "Already running" };
+  }
+  isReminderRunning = true;
   try {
     const now = new Date();
     const todayYear = now.getFullYear();
@@ -114,5 +122,7 @@ export async function sendCheckInReminders() {
   } catch (err: any) {
     console.error("[CheckInReminderService] Error sending check-in reminders:", err);
     return { error: err.message };
+  } finally {
+    isReminderRunning = false;
   }
 }

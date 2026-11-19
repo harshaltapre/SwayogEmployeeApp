@@ -182,6 +182,89 @@ function createMockPrismaWrapper() {
   return mockClientInstance;
 }
 
+function getOptimizedDatabaseUrl(): string {
+  const rawUrl = process.env.DATABASE_URL || env.DATABASE_URL || "";
+  if (!rawUrl) return rawUrl;
+
+  try {
+    const urlObj = new URL(rawUrl);
+    const host = urlObj.hostname.toLowerCase();
+    const isNeon = host.includes("neon.tech");
+    const isPooler = host.includes("-pooler") || isNeon;
+
+    // PgBouncer setting for Neon / pooled connections
+    if (isPooler && !urlObj.searchParams.has("pgbouncer")) {
+      urlObj.searchParams.set("pgbouncer", "true");
+    }
+
+    // Ensure connection pool timeout is at least 20s (default 10s is too fragile during burst query fanout)
+    const currentPoolTimeout = urlObj.searchParams.get("pool_timeout");
+    if (!currentPoolTimeout || parseInt(currentPoolTimeout, 10) < 20) {
+      urlObj.searchParams.set("pool_timeout", "20");
+    }
+
+    // Ensure connect timeout is configured
+    if (!urlObj.searchParams.has("connect_timeout")) {
+      urlObj.searchParams.set("connect_timeout", "15");
+    }
+
+    return urlObj.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function isTransientDbError(error: any): boolean {
+  if (!error) return false;
+  const code = error.code;
+  const msg = String(error.message || "");
+
+  // Non-recoverable errors: do not retry
+  if (
+    code === "P2002" || // Unique constraint failed
+    code === "P2003" || // Foreign key constraint failed
+    code === "P2025" || // Record to update not found
+    code === "P2014" || // Required relation violation
+    code === "P2000" || // Value too long for column
+    msg.includes("exceeded the data transfer quota") ||
+    msg.includes("quota")
+  ) {
+    return false;
+  }
+
+  // Recoverable connection/timeout errors
+  return (
+    code === "P2024" || // Timed out fetching a new connection from the connection pool
+    code === "P1001" || // Can't reach database server
+    code === "P1002" || // Database server reached but timed out
+    code === "P1003" || // Database does not exist
+    code === "P1008" || // Operations timed out
+    code === "P1017" || // Server closed the connection
+    msg.includes("Timed out fetching a new connection") ||
+    msg.includes("connection pool") ||
+    msg.includes("Can't reach database server") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("EADDRNOTAVAIL") ||
+    msg.includes("ConnectionReset") ||
+    msg.includes("forcibly closed") ||
+    msg.includes("10054")
+  );
+}
+
+function getRetryDelayWithJitter(attempt: number, isPoolTimeout: boolean): number {
+  if (isPoolTimeout) {
+    // For connection pool saturation: allow active queries to drain
+    // Jitter between 500ms and 1500ms
+    return Math.floor(Math.random() * 1000) + 500;
+  }
+  // Full exponential backoff with jitter: 200ms, 400ms... + random 50-200ms
+  const base = 200 * Math.pow(2, attempt - 1);
+  const jitter = Math.floor(Math.random() * 200) + 50;
+  return Math.min(2500, base + jitter);
+}
+
 function getPrisma(): any {
   if (mockMode) {
     return createMockPrismaWrapper();
@@ -190,6 +273,11 @@ function getPrisma(): any {
   if (prismaClientInstance) return prismaClientInstance;
 
   const rawClient = new PrismaClient({
+    datasources: {
+      db: {
+        url: getOptimizedDatabaseUrl(),
+      },
+    },
     log: process.env.NODE_ENV === 'development'
       ? ['warn', 'error']
       : ['error'],
@@ -216,52 +304,48 @@ function getPrisma(): any {
             }
           }
 
-          try {
-            const result = await query(args);
-            // Decrypt incoming database results
-            return processFields(result, decryptVal);
-          } catch (error: any) {
-            const errStr = String(error?.message || "");
-            const isConnectionError = 
-              errStr.includes("Can't reach database server") || 
-              errStr.includes("EADDRNOTAVAIL") ||
-              errStr.includes("ECONNREFUSED") ||
-              errStr.includes("connection refused") ||
-              errStr.includes("ConnectionReset") ||
-              errStr.includes("forcibly closed") ||
-              errStr.includes("Timed out fetching a new connection") ||
-              errStr.includes("connection pool") ||
-              errStr.includes("exceeded the data transfer quota") ||
-              errStr.includes("quota") ||
-              errStr.includes("10054") ||
-              error?.code === "P2024" ||
-              error?.code === "P1001" ||
-              error?.code === "P1002" ||
-              error?.code === "P1003" ||
-              error?.code === "P1008" ||
-              error?.code === "P1017";
+          const startTime = Date.now();
+          const MAX_RETRIES = 2;
+          let attempt = 0;
 
-            if (isConnectionError) {
-              try {
-                console.warn(`[Prisma] Connection issue detected (${error?.message || error?.code}). Retrying query...`);
-                await new Promise((r) => setTimeout(r, 500));
-                const retryResult = await query(args);
-                return processFields(retryResult, decryptVal);
-              } catch (retryErr: any) {
-                if (allowMockFallback()) {
-                  console.warn("[Prisma] Database connection unavailable (or quota exceeded). Switching to mock database fallback because USE_MOCK_FALLBACK is explicitly enabled in a non-production environment.");
-                  mockMode = true;
-                  await ensureMockDbInitialized();
-                  const mockClient = createMockPrismaWrapper();
-                  const modelProp = (mockClient as any)[model];
-                  if (modelProp && typeof modelProp[operation] === 'function') {
-                    return modelProp[operation](args);
-                  }
-                }
-                throw retryErr;
+          while (true) {
+            try {
+              const result = await query(args);
+              const duration = Date.now() - startTime;
+              if (duration > 1500) {
+                console.warn(`[Prisma Diagnostic] Slow query ${model}.${operation} took ${duration}ms`);
               }
+              // Decrypt incoming database results
+              return processFields(result, decryptVal);
+            } catch (error: any) {
+              attempt++;
+              const isPoolTimeout = error?.code === "P2024" || String(error?.message || "").includes("connection pool");
+              const maxAllowed = isPoolTimeout ? 1 : MAX_RETRIES;
+
+              if (attempt <= maxAllowed && isTransientDbError(error)) {
+                const delay = getRetryDelayWithJitter(attempt, isPoolTimeout);
+                console.warn(
+                  `[Prisma Diagnostic] Transient DB issue on ${model}.${operation} (${error?.code || "ERR"}). Retrying attempt ${attempt}/${maxAllowed} in ${delay}ms...`
+                );
+                await new Promise((r) => setTimeout(r, delay));
+                continue;
+              }
+
+              if (allowMockFallback()) {
+                console.warn(
+                  "[Prisma] Database connection unavailable. Switching to mock database fallback because USE_MOCK_FALLBACK is explicitly enabled in a non-production environment."
+                );
+                mockMode = true;
+                await ensureMockDbInitialized();
+                const mockClient = createMockPrismaWrapper();
+                const modelProp = (mockClient as any)[model];
+                if (modelProp && typeof modelProp[operation] === "function") {
+                  return modelProp[operation](args);
+                }
+              }
+
+              throw error;
             }
-            throw error;
           }
         }
       }
@@ -297,18 +381,11 @@ export const prisma: any = new Proxy({} as any, {
             try {
               return await value.apply(instance, args);
             } catch (error: any) {
-              const errStr = String(error?.message || "");
-              const isConnectionError = 
-                errStr.includes("Can't reach database server") || 
-                errStr.includes("ECONNREFUSED") ||
-                errStr.includes("ConnectionReset") ||
-                errStr.includes("forcibly closed") ||
-                errStr.includes("10054") ||
-                error?.code === "P1001";
-              if (isConnectionError) {
+              if (isTransientDbError(error)) {
                 try {
-                  console.warn(`[Prisma] Connection reset on raw query (${error?.message || error?.code}). Retrying in 500ms...`);
-                  await new Promise((r) => setTimeout(r, 500));
+                  const delay = getRetryDelayWithJitter(1, false);
+                  console.warn(`[Prisma Diagnostic] Transient error on raw query (${error?.code || "ERR"}). Retrying in ${delay}ms...`);
+                  await new Promise((r) => setTimeout(r, delay));
                   return await value.apply(instance, args);
                 } catch (retryErr: any) {
                   if (allowMockFallback()) {

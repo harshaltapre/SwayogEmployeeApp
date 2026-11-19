@@ -88,9 +88,12 @@ export function getUtcTimeFromIst(recordDate: Date, timeStr: string): Date {
   return result;
 }
 
+let isAutoCheckoutRunning = false;
+
 /**
  * Automatically finalizes missing check-outs once shift end + grace period has elapsed.
  * - Idempotent: Can be run repeatedly safely.
+ * - Concurrency guarded: Prevents overlapping scheduler executions.
  * - Preserves actual check-out times and manual administrative overrides.
  * - Records full audit details distinguishing actual device punches from system-generated closures.
  */
@@ -106,8 +109,16 @@ export async function processMissingCheckOuts(): Promise<{
     totalMinutes: number;
   }>;
 }> {
-  const now = new Date();
-  const timing = await getEffectiveShiftTiming();
+  if (isAutoCheckoutRunning) {
+    console.log("[AutoCheckout] Skipping run - previous execution is still running.");
+    return { processedCount: 0, closedRecords: [] };
+  }
+  isAutoCheckoutRunning = true;
+  const startTime = Date.now();
+
+  try {
+    const now = new Date();
+    const timing = await getEffectiveShiftTiming();
 
   // Find all attendance records with check-in recorded but NO check-out time
   // Eligible records: employee self check-ins (manualOverride: false) or
@@ -207,12 +218,15 @@ export async function processMissingCheckOuts(): Promise<{
     });
   }
 
-  if (closedRecords.length > 0) {
-    console.log(`[AutoCheckout] Successfully auto-finalized ${closedRecords.length} missing check-out records at configured shift end (${timing.shiftEnd}).`);
-  }
+    if (closedRecords.length > 0) {
+      console.log(`[AutoCheckout] Successfully auto-finalized ${closedRecords.length} missing check-out records at configured shift end (${timing.shiftEnd}) in ${Date.now() - startTime}ms.`);
+    }
 
-  return {
-    processedCount: closedRecords.length,
-    closedRecords,
-  };
+    return {
+      processedCount: closedRecords.length,
+      closedRecords,
+    };
+  } finally {
+    isAutoCheckoutRunning = false;
+  }
 }

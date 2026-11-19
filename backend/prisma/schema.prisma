@@ -553,6 +553,7 @@ model CheckIn {
 
   @@index([employeeId])
   @@index([createdAt])
+  @@index([employeeId, createdAt])
   @@index([flagged])
 }
 

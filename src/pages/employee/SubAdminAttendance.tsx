@@ -30,6 +30,7 @@ import {
   Sun,
   PartyPopper,
   Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCheckIn, useCheckOut, useAttendanceRules, useFaceEnrollmentStatus, useMonthlyAttendance, useTodayAttendance } from "@/hooks/useAttendance";
@@ -164,8 +165,9 @@ function mapDbRecordToFrontend(dbRecord: any, checkIns: any[]): AttendanceRecord
   const dbStatus = String(dbRecord.status).toUpperCase();
   let statusStr: AttendanceStatus = "present";
   if (dbStatus === "LATE") statusStr = "late";
+  else if (dbStatus === "PRESENT_LATE_ALLOWANCE") statusStr = "present";
   else if (dbStatus === "ABSENT") statusStr = "absent";
-  else if (dbStatus === "LEAVE") statusStr = "leave";
+  else if (dbStatus === "LEAVE" || dbStatus === "ON_LEAVE") statusStr = "leave";
   else if (dbStatus === "HALF_DAY") statusStr = "half-day";
 
   const workHours = dbRecord.totalMinutes ? parseFloat((dbRecord.totalMinutes / 60).toFixed(1)) : 0;
@@ -312,8 +314,25 @@ export default function SubAdminAttendance() {
 
   const currentMonthNum = currentDate.getMonth() + 1;
   const currentYearNum = currentDate.getFullYear();
-  const { data: monthlyData } = useMonthlyAttendance(currentMonthNum, currentYearNum);
-  const { data: todayDbRecord, refetch: refetchTodayRecord } = useTodayAttendance();
+  const {
+    data: monthlyData,
+    isLoading: loadingMonthly,
+    isFetching: fetchingMonthly,
+    isError: errorMonthly,
+    refetch: refetchMonthly,
+  } = useMonthlyAttendance(currentMonthNum, currentYearNum);
+  const {
+    data: todayDbRecord,
+    isLoading: loadingToday,
+    isFetching: fetchingToday,
+    isError: errorToday,
+    refetch: refetchTodayRecord,
+  } = useTodayAttendance();
+
+  const isRefreshing = fetchingMonthly || fetchingToday;
+  const handleManualRefresh = async () => {
+    await Promise.all([refetchMonthly(), refetchTodayRecord()]);
+  };
 
   // Sync attendance from DB monthly data and merge local breaks
   useEffect(() => {
@@ -832,7 +851,38 @@ export default function SubAdminAttendance() {
 
   return (
     <SubAdminLayout>
-      <PageHeader title="My Attendance" description="Track your daily check-ins, work hours, and attendance history." />
+      <PageHeader
+        title="My Attendance"
+        description="Track your daily check-ins, work hours, and attendance history."
+        action={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 shadow-sm"
+          >
+            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+            <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
+          </Button>
+        }
+      />
+
+      {(errorMonthly || errorToday) && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              {records.length > 0
+                ? "Showing latest cached attendance data. Background sync will retry automatically."
+                : "Unable to load attendance records. Please check your connection and refresh."}
+            </span>
+          </div>
+          <Button variant="ghost" size="sm" onClick={handleManualRefresh} disabled={isRefreshing} className="h-7 text-xs">
+            Retry
+          </Button>
+        </div>
+      )}
 
       {/* ── Live Check-In Card & Rules Grid ─────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">

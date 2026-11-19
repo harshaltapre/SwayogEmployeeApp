@@ -2,11 +2,19 @@ import { prisma } from "./prisma.js";
 import { GrowattApiClient } from "./growatt-api.js";
 import { decryptToken } from "./encryption.js";
 
+let isSyncingGrowattPower = false;
+let isSyncingGrowattStats = false;
+
 /**
  * Updates current power (kW) and online/offline status for all active Growatt customers
  * Interval: 5 minutes
  */
 export async function syncGrowattCurrentPower() {
+  if (isSyncingGrowattPower) {
+    console.log("[Growatt Scheduler] Skipping power sync - previous run is still active.");
+    return;
+  }
+  isSyncingGrowattPower = true;
   console.log("[Growatt Scheduler] Starting 5-minute instantaneous current power and status sync...");
   try {
     const activeCustomers = await prisma.growattCustomer.findMany({
@@ -64,6 +72,8 @@ export async function syncGrowattCurrentPower() {
     console.log("[Growatt Scheduler] 5-minute current power and status sync finished.");
   } catch (err: any) {
     console.error("[Growatt Scheduler Error] Global current power sync failed:", err.message);
+  } finally {
+    isSyncingGrowattPower = false;
   }
 }
 
@@ -72,6 +82,11 @@ export async function syncGrowattCurrentPower() {
  * Interval: 30 minutes
  */
 export async function syncGrowattGenerationStats() {
+  if (isSyncingGrowattStats) {
+    console.log("[Growatt Scheduler] Skipping generation stats sync - previous run is still active.");
+    return;
+  }
+  isSyncingGrowattStats = true;
   console.log("[Growatt Scheduler] Starting 30-minute historical generation metrics sync...");
   try {
     const activeCustomers = await prisma.growattCustomer.findMany({
@@ -90,6 +105,8 @@ export async function syncGrowattGenerationStats() {
     console.log("[Growatt Scheduler] 30-minute generation metrics sync finished.");
   } catch (err: any) {
     console.error("[Growatt Scheduler Error] Global generation stats sync failed:", err.message);
+  } finally {
+    isSyncingGrowattStats = false;
   }
 }
 
