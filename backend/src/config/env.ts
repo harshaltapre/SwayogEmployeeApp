@@ -16,21 +16,54 @@ try {
   currentDir = process.cwd();
 }
 
-// Find and load .env file from all candidate locations
+// Find and load env files, but never override values supplied by the runtime environment unless they are placeholder/dummy values.
+// This is critical in Vercel/production where process.env values should win over checked-in local files,
+// but prevents local Windows/OS dummy variables (e.g. postgres://USER:PASSWORD@HOST:5432/DBNAME) from breaking connections.
+const isPlaceholderDbUrl = (url?: string) =>
+  !url ||
+  url.includes("USER:PASSWORD") ||
+  url.includes("@HOST:5432") ||
+  url.includes("@HOST.neon.tech") ||
+  url.includes("DBNAME");
+
+if (isPlaceholderDbUrl(process.env.DATABASE_URL)) {
+  delete process.env.DATABASE_URL;
+}
+if (isPlaceholderDbUrl(process.env.DIRECT_URL)) {
+  delete process.env.DIRECT_URL;
+}
+
 const candidateEnvPaths = [
   path.join(process.cwd(), ".env"),
+  path.join(process.cwd(), ".env.local"),
+  path.join(process.cwd(), ".env.production"),
+  path.join(process.cwd(), ".env.development"),
   path.join(process.cwd(), "backend", ".env"),
+  path.join(process.cwd(), "backend", ".env.local"),
+  path.join(process.cwd(), "backend", ".env.production"),
+  path.join(process.cwd(), "backend", ".env.development"),
   path.join(currentDir, ".env"),
+  path.join(currentDir, ".env.local"),
+  path.join(currentDir, ".env.production"),
+  path.join(currentDir, ".env.development"),
   path.join(currentDir, "..", ".env"),
+  path.join(currentDir, "..", ".env.local"),
+  path.join(currentDir, "..", ".env.production"),
+  path.join(currentDir, "..", ".env.development"),
   path.join(currentDir, "..", "..", ".env"),
+  path.join(currentDir, "..", "..", ".env.local"),
+  path.join(currentDir, "..", "..", ".env.production"),
+  path.join(currentDir, "..", "..", ".env.development"),
 ];
 
 let loadedEnv = false;
-for (const envPath of candidateEnvPaths) {
+for (const envPath of Array.from(new Set(candidateEnvPaths))) {
   if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath, override: true });
-    loadedEnv = true;
-    break;
+    const shouldOverride = !process.env.VERCEL || isPlaceholderDbUrl(process.env.DATABASE_URL);
+    const loaded = dotenv.config({ path: envPath, override: shouldOverride });
+    if (loaded.parsed) {
+      loadedEnv = true;
+    }
   }
 }
 
@@ -70,6 +103,7 @@ const envSchema = z.object({
   ),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   REDIS_ENABLED: boolString.default("false"),
+  USE_MOCK_FALLBACK: boolString.default("false"),
   REDIS_KEY_PREFIX: z.string().default("swayog"),
   AUTH_LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
   AUTH_LOGIN_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900000),
@@ -137,4 +171,11 @@ try {
 }
 
 export const env = parsedEnv;
+
+if (env.DATABASE_URL) {
+  process.env.DATABASE_URL = env.DATABASE_URL;
+}
+if (env.DIRECT_URL) {
+  process.env.DIRECT_URL = env.DIRECT_URL;
+}
 

@@ -4,10 +4,14 @@ import android.content.Context
 import androidx.work.*
 import com.swayog.employee.data.local.dao.OutboxQueueDao
 import com.swayog.employee.data.local.entity.OutboxQueueEntity
+import com.swayog.employee.data.local.preferences.DataStoreManager
 import com.google.gson.Gson
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import java.util.*
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -17,13 +21,23 @@ import javax.inject.Singleton
 class SyncManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val outboxQueueDao: OutboxQueueDao,
+    private val dataStoreManager: DataStoreManager,
     private val gson: Gson
 ) {
     
     companion object {
         // All repositories share this unique work name so queued operations are
         // serialized by the same worker instead of racing each other.
-        private const val SYNC_WORK_NAME = "offline_sync_work"
+        const val SYNC_WORK_NAME = "offline_sync_work"
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val pendingSyncCountForCurrentUser: Flow<Int> = dataStoreManager.userId.flatMapLatest { userId ->
+        if (userId.isNullOrBlank()) {
+            flowOf(0)
+        } else {
+            outboxQueueDao.getPendingCountFlowForUser(userId)
+        }
     }
     
     /**
@@ -40,6 +54,10 @@ class SyncManager @Inject constructor(
         afterLatitude: Double?,
         afterLongitude: Double?
     ) {
+        val ownerId = dataStoreManager.userId.first().orEmpty()
+        if (ownerId.isBlank()) return
+
+        val clientUploadId = UUID.randomUUID().toString()
         val payload = mapOf(
             "status" to status,
             "completionMessage" to (completionMessage ?: ""),
@@ -48,7 +66,8 @@ class SyncManager @Inject constructor(
             "beforeLatitude" to (beforeLatitude ?: 0.0),
             "beforeLongitude" to (beforeLongitude ?: 0.0),
             "afterLatitude" to (afterLatitude ?: 0.0),
-            "afterLongitude" to (afterLongitude ?: 0.0)
+            "afterLongitude" to (afterLongitude ?: 0.0),
+            "clientUploadId" to clientUploadId
         )
         
         val item = OutboxQueueEntity(
@@ -58,11 +77,13 @@ class SyncManager @Inject constructor(
             payload = gson.toJson(payload),
             createdAt = System.currentTimeMillis().toString(),
             retryCount = 0,
-            isSynced = false
+            isSynced = false,
+            clientUploadId = clientUploadId,
+            ownerUserId = ownerId
         )
         
         outboxQueueDao.insertItem(item)
-        scheduleSyncWorker()
+        scheduleSync()
     }
     
     /**
@@ -73,10 +94,15 @@ class SyncManager @Inject constructor(
         longitude: Double,
         selfieUrl: String?
     ) {
+        val ownerId = dataStoreManager.userId.first().orEmpty()
+        if (ownerId.isBlank()) return
+
+        val clientUploadId = UUID.randomUUID().toString()
         val payload = mapOf(
             "latitude" to latitude,
             "longitude" to longitude,
-            "selfie" to (selfieUrl ?: "")
+            "selfie" to (selfieUrl ?: ""),
+            "clientUploadId" to clientUploadId
         )
         
         val item = OutboxQueueEntity(
@@ -86,11 +112,13 @@ class SyncManager @Inject constructor(
             payload = gson.toJson(payload),
             createdAt = System.currentTimeMillis().toString(),
             retryCount = 0,
-            isSynced = false
+            isSynced = false,
+            clientUploadId = clientUploadId,
+            ownerUserId = ownerId
         )
         
         outboxQueueDao.insertItem(item)
-        scheduleSyncWorker()
+        scheduleSync()
     }
     
     /**
@@ -103,6 +131,10 @@ class SyncManager @Inject constructor(
         blockers: String?,
         tomorrowsPlan: String?
     ) {
+        val ownerId = dataStoreManager.userId.first().orEmpty()
+        if (ownerId.isBlank()) return
+
+        val clientUploadId = UUID.randomUUID().toString()
         val payload = mapOf(
             "commitDate" to java.time.LocalDate.now().toString(),
             "taskWorkedOn" to tasksWorkedOn,
@@ -119,24 +151,29 @@ class SyncManager @Inject constructor(
             payload = gson.toJson(payload),
             createdAt = System.currentTimeMillis().toString(),
             retryCount = 0,
-            isSynced = false
+            isSynced = false,
+            clientUploadId = clientUploadId,
+            ownerUserId = ownerId
         )
         
         outboxQueueDao.insertItem(item)
-        scheduleSyncWorker()
+        scheduleSync()
     }
     
     /**
-     * Get the count of pending sync items
+     * Get the count of pending sync items for the currently logged-in user
      */
     suspend fun getPendingSyncCount(): Int {
-        return outboxQueueDao.getPendingCount()
+        val ownerId = dataStoreManager.userId.first().orEmpty()
+        return if (ownerId.isBlank()) 0 else outboxQueueDao.getPendingCountForUser(ownerId)
     }
-    
+
     /**
-     * Schedule the sync worker with network constraint
+     * Central entry point for scheduling background synchronization.
+     * Always uses [ExistingWorkPolicy.KEEP] so an already running SyncWorker is never
+     * cancelled mid-flight; SyncWorker itself re-checks the queue in a drain loop before exiting.
      */
-    private fun scheduleSyncWorker() {
+    fun scheduleSync() {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -144,9 +181,9 @@ class SyncManager @Inject constructor(
         val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(constraints)
             .setBackoffCriteria(
-                BackoffPolicy.LINEAR,
-                WorkRequest.MIN_BACKOFF_MILLIS,
-                TimeUnit.MINUTES
+                BackoffPolicy.EXPONENTIAL,
+                30L,
+                TimeUnit.SECONDS
             )
             .build()
         

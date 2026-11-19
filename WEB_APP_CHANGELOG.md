@@ -1,6 +1,6 @@
 # Swayog Employee App - Web Application Changelog
 
-**Audit Date:** January 2025  
+**Last Updated:** November 2026
 **Platform:** Web (React + TypeScript + Vite)  
 **Backend:** Express.js + Prisma ORM
 
@@ -357,33 +357,32 @@ This document provides a comprehensive audit of all functionality implemented in
 
 ## 11. Financial Management
 
-### Frontend (via `src/lib/api-client.ts`)
-- Invoice management hooks
-- Financial summary endpoints
+### Frontend (`src/pages/finance/Dashboard.tsx`)
+- Finance workspace tabs for overview, customer receivables, invoices and collections, vendor payables and expenses, partner payouts, zone breakdown, and company P&L.
+- Date-range filtering, invoice/customer/vendor search, invoice creation, payment recording, and expense entry.
+- P&L visibility is limited to finance managers, finance heads, and admins.
 
-### Backend (`backend/src/modules/financials/financials.controller.ts`)
-**Endpoints:**
-- **GET** `/financials/summary` - Financial summary (revenue, collected, pending)
-- **GET** `/financials/monthly-pnl` - Monthly P&L
-- **GET** `/financials/zone-breakdown` - Revenue by zone
-- **GET** `/financials/amc-contracts` - AMC contracts list
-- **GET** `/financials/partner-payouts` - Partner payout status
+### Backend (`/api/v1/financials` and `/api/v1/invoices`)
+- `GET /financials/me` - Resolve current finance level and permissions.
+- `GET /financials/summary` - Invoice-based revenue, collections, receivables, and separately labeled estimated pipeline.
+- `GET /financials/zones` - Zone revenue and comparative growth.
+- `GET /financials/pnl` - Monthly P&L using invoices, confirmed/paid commissions, finalized salaries, and expenses.
+- `GET /financials/customer-ledger` - Customer receivables and unbilled amounts.
+- `GET /financials/vendor-payables` - Supplier, commission, payroll, and expense totals.
+- `GET` / `POST /financials/expenses` - List and record expenses.
+- `GET /financials/amc` - Active AMC contracts.
+- `GET /financials/payouts` - Partner payout status, scoped to the requesting partner where applicable.
+- `POST /financials/commissions/:customerId/confirm` - Confirm a commission payment with proof upload.
+- `GET` / `POST /invoices`, `PATCH` / `DELETE /invoices/:id` - List, create, update, and delete invoices.
 
-**Invoice Management (`backend/src/modules/financials/invoice.routes.ts`):**
-- **GET** `/invoices` - List invoices
-- **POST** `/invoices` - Create invoice (with file upload)
-- **PATCH** `/invoices/:id` - Update invoice
-- **DELETE** `/invoices/:id` - Delete invoice
-
-**Financial Features:**
-- Revenue calculation (₹60,000 per kW)
-- Commission tracking (₹1,000 per kW fallback)
-- Monthly P&L with trend analysis
-- Zone-based revenue breakdown
-- Partner payout tracking
-- Invoice types: INSTALLATION, AMC, REPAIR, SERVICE, OTHER
-- Payment status tracking: PENDING, PAID, FAILED, CANCELLED
-- File upload support for invoice proofs
+### Finance authorization and accounting rules
+- Finance roles are resolved from the active user's database role, department, and designation on each request; finance designation alone is rejected when the user belongs to another department.
+- Finance executives can view operational finance records and create/update invoices. Managers and heads can additionally delete invoices, view company P&L, and approve commission payments; admins have oversight access.
+- The default Finance Manager approval limit is ₹100,000 and can be changed with `FINANCE_MANAGER_APPROVAL_LIMIT_INR`. Amounts above the limit require a Finance Head or Admin.
+- Maker-checker rules prevent an approver from approving a transaction they created or a payment to themselves.
+- Service Coordinators are restricted to AMC finance records and AMC invoice writes. Customer and partner invoice access is scoped to their own records.
+- `FINANCE_ESTIMATED_RATE_PER_KW` (default ₹60,000) is used only for the estimated pipeline metric; it is not recognized or presented as revenue.
+- Invoice types: INSTALLATION, AMC, REPAIR, SERVICE, OTHER. Payment statuses: PENDING, PAID, FAILED, CANCELLED. Invoice proof uploads accept JPG, PNG, or PDF files up to 5 MB.
 
 ---
 
@@ -709,6 +708,34 @@ The backend provides mobile-compatible endpoints in `employee.routes.ts`:
 
 ---
 
+## 27. Marketing Workspace
+
+### Frontend (`src/pages/marketing/Dashboard.tsx`)
+**Features:**
+- Manage marketing leads, campaigns, and follow-ups in the marketing workspace.
+- Import leads from `.xlsx` and `.xls` files using a downloadable template with Name, Phone, Address, Email, Source, and Status columns.
+- Validate spreadsheet rows and preview valid and invalid rows before import; valid rows can be imported in bulk.
+- Export the lead list to an Excel workbook, including the lead address.
+- Capture and display lead addresses in lead forms and workspace views.
+- Migrate existing browser-stored leads, campaigns, and follow-ups to the persisted marketing workspace.
+
+### Backend (`backend/src/modules/marketing/`)
+**Endpoints (mounted at `/api/v1/marketing`):**
+- **GET** `/api/v1/marketing/leads` - List marketing leads.
+- **POST** `/api/v1/marketing/leads` - Create a lead, including its optional address.
+- **PATCH** `/api/v1/marketing/leads/:id` - Update lead status, assignment, follow-up date, or address.
+- **POST** `/api/v1/marketing/workspace/import` - Bulk import leads, campaigns, and follow-ups for workspace migration.
+- **GET/POST/PATCH** `/api/v1/marketing/campaigns` - List, create, and update campaign status.
+- **GET/POST/PATCH** `/api/v1/marketing/follow-ups` - List, create, and update follow-ups.
+
+Marketing routes require authentication and are limited to administrators and employees whose job role is Marketing Executive.
+
+### Data
+- `MarketingLead.address` is an optional persisted address; marketing lead create, update, and workspace-import operations support it.
+- Excel file parsing and lead export are handled in the frontend; the API accepts validated workspace records rather than raw spreadsheet files.
+
+---
+
 ## Summary
 
 The web application provides a comprehensive solar energy management system with:
@@ -723,6 +750,7 @@ The web application provides a comprehensive solar energy management system with
 - **AMC management** (scheduling and tracking)
 - **Communication** (messaging and notifications)
 - **Partner management** (external partners)
+- **Marketing workspace** (leads, campaigns, follow-ups, Excel lead import/export)
 - **Super admin controls** (system management)
 
 The system uses React + TypeScript for the frontend, Express.js + Prisma for the backend, and integrates with multiple third-party APIs for inverter monitoring and payments (Razorpay).

@@ -151,6 +151,8 @@ export default function CustomerService() {
   };
 
   const handleSubmitRequest = () => {
+    if (createRequestMutation.isPending) return;
+
     const trimmedDescription = description.trim();
     if (!trimmedDescription) {
       toast({

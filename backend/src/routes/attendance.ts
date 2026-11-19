@@ -138,7 +138,7 @@ router.post(
           reason: `Face match score ${bestScore.toFixed(3)} is below required threshold ${threshold.toFixed(2)}`,
           metadata: { bestScore, threshold, score1, score2, score3 },
         },
-      }).catch(() => {});
+      }).catch(() => { });
 
       res.status(403).json({
         success: false,
@@ -164,7 +164,7 @@ router.post(
         reason: `Face verification passed with match score ${(bestScore * 100).toFixed(1)}%`,
         metadata: { bestScore, threshold },
       },
-    }).catch(() => {});
+    }).catch(() => { });
 
     res.json({
       success: true,
@@ -445,12 +445,14 @@ router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, 
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   try {
-    const { selfie, latitude, longitude, accuracy, faceVerified, matchConfidence, matchDistance, livenessVerified, verificationToken, liveDescriptor } = req.body;
+    const { selfie, latitude, longitude, accuracy, matchConfidence, matchDistance, livenessVerified, verificationToken, clientUploadId: bodyUploadId } = req.body;
+    const idempotencyKey = (req.header("Idempotency-Key") || bodyUploadId || null) as string | null;
 
-    // Security: Require either a valid server-issued verification token OR liveDescriptor for server verification
+    // Security: Do not accept client-side boolean flags as proof of face verification
+    // Require a valid server-issued verification token when face verification is enabled
     const rules = await AttendanceService.getRulesAsync();
-    if (rules.faceRequired && !verificationToken && (!liveDescriptor || !Array.isArray(liveDescriptor))) {
-      res.status(400).json({ error: "Face verification is required. Please complete face verification before checking in." });
+    if (rules.faceRequired && !verificationToken) {
+      res.status(422).json({ success: false, code: "FACE_VERIFICATION_REQUIRED", error: "Face verification is required. Please complete face verification before checking in." });
       return;
     }
 
@@ -459,23 +461,22 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
       latitude: latitude ? Number(latitude) : null,
       longitude: longitude ? Number(longitude) : null,
       accuracy: accuracy ? Number(accuracy) : null,
-      faceVerified: false, // Will be set to true only after valid token/descriptor verification in service
+      faceVerified: false, // Will be set to true only after valid token verification in service
       verificationToken: verificationToken || null,
-      liveDescriptor: Array.isArray(liveDescriptor) ? liveDescriptor : null,
+      clientUploadId: idempotencyKey,
     });
 
     // Augment the CheckIn record with face recognition metadata if provided
-    if (result?.checkInRecord?.id && (matchConfidence !== undefined || matchDistance !== undefined)) {
+    if (!result.idempotentReplay && result?.checkInRecord?.id && (matchConfidence !== undefined || matchDistance !== undefined)) {
       await prisma.checkIn.update({
         where: { id: result.checkInRecord.id },
         data: {
           matchConfidence: matchConfidence != null ? Number(matchConfidence) : null,
           matchDistance: matchDistance != null ? Number(matchDistance) : null,
           livenessVerified: livenessVerified === true,
-          // Flag entries with low confidence (between threshold and threshold+0.1)
           flagged: matchConfidence != null
-            ? matchConfidence < (parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55") + 0.1 - 0 + 1 - 1) // keep readable
-              && matchConfidence >= parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55")
+            ? matchConfidence < (parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55") + 0.1)
+            && matchConfidence >= parseFloat(process.env.FACE_MATCH_THRESHOLD || "0.55")
             : false,
         },
       }).catch(() => { /* non-critical, don't fail check-in */ });
@@ -483,17 +484,38 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
 
     res.json({ success: true, result });
   } catch (err: any) {
-    res.status(400).json({ error: err?.message ?? "Unable to check in" });
+    const statusCode = err?.statusCode || 400;
+    res.status(statusCode).json({
+      success: false,
+      code: err?.code || "CHECK_IN_FAILED",
+      error: err?.message ?? "Unable to check in",
+    });
   }
 }));
 
 router.post("/check-out", employeeAuth, asyncHandler(async (req, res) => {
   try {
-    const record = await AttendanceService.checkOut(req.auth!.userId);
+    const idempotencyKey = (req.header("Idempotency-Key") || req.body?.clientUploadId || null) as string | null;
+    const record = await AttendanceService.checkOut(req.auth!.userId, { clientUploadId: idempotencyKey });
     res.json({ success: true, record });
   } catch (err: any) {
-    res.status(400).json({ error: err?.message ?? "Unable to check out" });
+    const statusCode = err?.statusCode || 400;
+    res.status(statusCode).json({
+      success: false,
+      code: err?.code || "CHECK_OUT_FAILED",
+      error: err?.message ?? "Unable to check out",
+    });
   }
+}));
+
+router.post("/sync-health", employeeAuth, asyncHandler(async (req, res) => {
+  const health = await AttendanceService.upsertSyncHealthAsync(req.auth!.userId, req.body || {});
+  res.json({ success: true, data: health });
+}));
+
+router.get("/admin/sync-health", adminAuth, asyncHandler(async (_req, res) => {
+  const records = await AttendanceService.listSyncHealthAsync();
+  res.json({ success: true, data: records });
 }));
 
 router.get("/today", authenticateAccessToken, asyncHandler(async (req, res) => {
@@ -550,14 +572,14 @@ router.get("/work-submissions", authenticateAccessToken, asyncHandler(async (req
 
   if (req.query.employeeId) {
     const requestedId = String(req.query.employeeId);
-    
+
     // Check if the requested employee reports recursively to the logged-in user
     // or if the logged-in user is an Admin/Superadmin/Subadmin
     const isAdmin =
       req.auth!.role === UserRole.SUPER_ADMIN ||
       req.auth!.role === UserRole.ADMIN ||
       req.auth!.role === UserRole.SUB_ADMIN;
-    
+
     let isAllowed = isAdmin;
     if (!isAllowed) {
       const reporteeIds = await getRecursiveReporteeIds(req.auth!.userId);
@@ -613,7 +635,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
     const year = parseInt(req.query.year as string) || new Date().getFullYear();
-    
+
     let snapshots = await prisma.performanceSnapshot.findMany({
       where: { month, year },
       include: {
@@ -634,7 +656,7 @@ router.get(
       const employees = await prisma.user.findMany({
         where: { role: { in: [UserRole.EMPLOYEE, UserRole.SUB_ADMIN] } },
       });
-      
+
       for (const emp of employees) {
         try {
           await AttendanceService.recalculateMonthlyPerformance(emp.id, month, year);
@@ -823,7 +845,7 @@ router.delete("/admin/notifications/clear-all", adminAuth, asyncHandler(async (r
 // Admin: delete single notification
 router.delete("/admin/notifications/:id", adminAuth, asyncHandler(async (req, res) => {
   const id = req.params.id;
-  await prisma.adminNotification.delete({ where: { id } }).catch(() => {});
+  await prisma.adminNotification.delete({ where: { id } }).catch(() => { });
   res.json({ success: true });
 }));
 

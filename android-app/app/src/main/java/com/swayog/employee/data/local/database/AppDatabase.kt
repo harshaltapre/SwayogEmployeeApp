@@ -19,7 +19,7 @@ import com.swayog.employee.data.local.entity.*
         CustomerEntity::class,
         OutboxQueueEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -120,13 +120,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATION_16_17 = object : Migration(16, 17) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 try {
-                    database.execSQL("ALTER TABLE tasks ADD COLUMN photoRemarksJson TEXT")
+                    db.execSQL("ALTER TABLE tasks ADD COLUMN photoRemarksJson TEXT")
                 } catch (e: Exception) {
                     // Column may already exist; ignore
                 }
+            }
+        }
+
+        /**
+         * Version 18 adds explicit employee ownership (ownerUserId) and sync diagnostic fields
+         * (lastError, lastAttemptAt) to outbox_queue without dropping any existing rows.
+         * Legacy pre-v18 rows receive ownerUserId = '' and are quarantined by SyncWorker
+         * so they are never replayed under another employee's session or silently deleted.
+         */
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox_queue` ADD COLUMN `ownerUserId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `outbox_queue` ADD COLUMN `lastError` TEXT")
+                db.execSQL("ALTER TABLE `outbox_queue` ADD COLUMN `lastAttemptAt` INTEGER")
             }
         }
 
@@ -139,9 +153,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_12_14)
                     .addMigrations(*ALL_MIGRATIONS)
-                    .addMigrations(MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
-                    .fallbackToDestructiveMigration()
-                    .fallbackToDestructiveMigrationOnDowngrade()
+                    .addMigrations(MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
                     .build()
                 INSTANCE = instance
                 instance

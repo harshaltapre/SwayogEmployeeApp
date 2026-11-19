@@ -274,6 +274,7 @@ export default function AdminCustomers() {
   });
   const rawCustomers = customersData ?? [];
   const customers = rawCustomers.filter((c: any) => {
+    if (c.isRejected) return false;
     if (partnerFilter !== "all") {
       const matchPartnerCode = c.partner?.partnerCode?.toLowerCase() === partnerFilter.toLowerCase();
       const matchPartnerName = c.partner?.name?.toLowerCase() === partnerFilter.toLowerCase();
@@ -1152,7 +1153,7 @@ export default function AdminCustomers() {
                           <TableCell>
                             <div className="font-medium text-slate-900">{c.name}</div>
                             <div className="flex items-center text-xs text-slate-500 mt-0.5">
-                              <MapPin className="w-3 h-3 mr-1" />{c.city}
+                              <MapPin className="w-3 h-3 mr-1 shrink-0" /><span className="line-clamp-2" title={c.address || c.city}>{c.address || c.city}</span>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -1256,7 +1257,7 @@ export default function AdminCustomers() {
                           </div>
                           <div className="font-semibold text-white">{c.name}</div>
                           <div className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3" /> {c.city}
+                            <MapPin className="w-3 h-3 shrink-0" /> <span className="truncate" title={c.address || c.city}>{c.address || c.city}</span>
                           </div>
                           {c.partner && (
                             <div className="text-[11px] text-emerald-300 mt-1">

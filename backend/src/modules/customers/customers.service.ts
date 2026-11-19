@@ -22,6 +22,15 @@ import type {
 
 const COMPLETED_PROJECT_STAGE = 11;
 
+function getOnboardingStage(status: {
+  siteVisitCompleted: boolean;
+  documentsCollected: boolean;
+}): number {
+  if (!status.siteVisitCompleted) return 0;
+  if (!status.documentsCollected) return 1;
+  return COMPLETED_PROJECT_STAGE;
+}
+
 const amcStatusMap: Record<"active" | "expired" | "none", CustomerAmcStatus> = {
   active: CustomerAmcStatus.ACTIVE,
   expired: CustomerAmcStatus.EXPIRED,
@@ -103,6 +112,11 @@ function serializeCustomer(customer: any) {
     status: customer.status.toLowerCase(),
     partnerId: customer.partnerId,
     projectStage: customer.projectStage,
+    siteVisitCompleted: customer.siteVisitCompleted,
+    documentsCollected: customer.documentsCollected,
+    solarSystemInstalled: customer.solarSystemInstalled,
+    isRejected: Boolean(customer.isRejected),
+    rejectionReason: customer.rejectionReason ?? null,
     userId: customer.userId,
     commissionAmount: customer.commissionAmount,
     commissionStatus: customer.commissionStatus,
@@ -316,8 +330,12 @@ export async function createCustomer(auth: AuthContext, input: CreateCustomerInp
   const normalizedEmail = normalizeText(input.email);
   const normalizedPhone = normalizePhone(input.phoneNumber);
   const normalizedName = normalizeText(input.fullName);
-  const normalizedCity = normalizeText(input.city);
-  const normalizedAddress = normalizeText(input.address);
+  const city = input.city || "Pune";
+  const address = input.address || "Pending Onboarding";
+  const systemSizeKw = input.systemSizeKw ?? 1;
+  const installationDate = input.installationDate ? new Date(input.installationDate) : new Date();
+  const normalizedCity = normalizeText(city);
+  const normalizedAddress = normalizeText(address);
 
   // Check BOTH Customer and User tables to prevent 500 errors on unique constraints
   const [existingCustomerEmail, existingUserEmail] = await Promise.all([
@@ -345,8 +363,8 @@ export async function createCustomer(auth: AuthContext, input: CreateCustomerInp
       phoneNumber: normalizedPhone,
       city: { equals: normalizedCity, mode: "insensitive" },
       address: { equals: normalizedAddress, mode: "insensitive" },
-      systemSizeKw: input.systemSizeKw,
-      installationDate: new Date(input.installationDate),
+      systemSizeKw,
+      installationDate,
       panelBrand: input.panelBrand ?? null,
       inverterBrand: input.inverterBrand ?? null,
       amcStatus: amcStatusMap[input.amcStatus],
@@ -362,7 +380,7 @@ export async function createCustomer(auth: AuthContext, input: CreateCustomerInp
   }
 
   const customerCode = partnerId
-    ? (await generatePartnerCustomerId(partnerId, new Date(input.installationDate || Date.now()))).customerId
+    ? (await generatePartnerCustomerId(partnerId, installationDate)).customerId
     : await generateCustomerCode();
   const pwdToUse = input.portalPassword || crypto.randomBytes(4).toString('hex');
   const passwordHash = await hashPassword(pwdToUse);
@@ -399,10 +417,10 @@ export async function createCustomer(auth: AuthContext, input: CreateCustomerInp
           fullName: input.fullName,
           email: normalizedEmail,
           phoneNumber: normalizedPhone,
-          city: input.city,
-          address: input.address,
-          systemSizeKw: input.systemSizeKw,
-          installationDate: new Date(input.installationDate),
+          city,
+          address,
+          systemSizeKw,
+          installationDate,
           warrantyExpiry: toOptionalDate(input.warrantyExpiry ?? null),
           panelBrand: input.panelBrand,
           inverterBrand: input.inverterBrand,
@@ -422,7 +440,20 @@ export async function createCustomer(auth: AuthContext, input: CreateCustomerInp
           cleaningsPerMonth: input.cleaningsPerMonth !== undefined ? Number(input.cleaningsPerMonth) : 2,
           status: customerStatusMap[input.status],
           partnerId,
-          projectStage: COMPLETED_PROJECT_STAGE,
+          projectStage: input.projectStage ?? (
+            input.siteVisitCompleted !== undefined ||
+            input.documentsCollected !== undefined
+              ? getOnboardingStage({
+                  siteVisitCompleted: input.siteVisitCompleted ?? false,
+                  documentsCollected: input.documentsCollected ?? false,
+                })
+              : COMPLETED_PROJECT_STAGE
+          ),
+          siteVisitCompleted: input.siteVisitCompleted ?? (input.projectStage === undefined || input.projectStage >= COMPLETED_PROJECT_STAGE),
+          documentsCollected: input.documentsCollected ?? (input.projectStage === undefined || input.projectStage >= COMPLETED_PROJECT_STAGE),
+          solarSystemInstalled: input.solarSystemInstalled ?? false,
+          isRejected: input.isRejected ?? false,
+          rejectionReason: input.rejectionReason ?? null,
           commissionAmount: input.commissionAmount ?? null,
           monthlyCleaningRate: input.monthlyCleaningRate ?? null,
           paymentTerms: input.paymentTerms ?? null,
@@ -532,7 +563,7 @@ export async function bulkImportCustomers(auth: AuthContext, input: BulkCustomer
           email,
           phoneNumber: normalizePhone(row.phoneNumber),
           portalPassword: undefined,
-          projectStage: COMPLETED_PROJECT_STAGE,
+          projectStage: row.projectStage ?? COMPLETED_PROJECT_STAGE,
         });
         results.successful++;
         results.created++;
@@ -702,7 +733,18 @@ export async function updateCustomer(auth: AuthContext, id: number, input: Updat
       cleaningsPerMonth: input.cleaningsPerMonth !== undefined ? Number(input.cleaningsPerMonth) : undefined,
       status: input.status ? customerStatusMap[input.status] : undefined,
       partnerId,
-      projectStage: COMPLETED_PROJECT_STAGE,
+      projectStage: input.siteVisitCompleted !== undefined ||
+        input.documentsCollected !== undefined
+        ? getOnboardingStage({
+            siteVisitCompleted: input.siteVisitCompleted ?? existing.siteVisitCompleted,
+            documentsCollected: input.documentsCollected ?? existing.documentsCollected,
+          })
+        : input.projectStage ?? existing.projectStage,
+      siteVisitCompleted: input.siteVisitCompleted,
+      documentsCollected: input.documentsCollected,
+      solarSystemInstalled: input.solarSystemInstalled,
+      isRejected: input.isRejected,
+      rejectionReason: input.rejectionReason,
       assignedEpc: (input as any).assignedEpc !== undefined ? (input as any).assignedEpc : undefined,
       // When EPC is reassigned, reset acceptance status back to PENDING (null)
       ...((input as any).assignedEpc !== undefined ? { epcAssignmentStatus: null } : {}),

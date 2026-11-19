@@ -1,17 +1,70 @@
- {
-  "refreshToken": "string"
-}
+# API Endpoint Reference
 
-```
+This document describes the HTTP API provided by the Swayog Dashboard backend.
+Unless a section says otherwise, paths below are relative to the `/api/v1`
+prefix. For example, `POST /auth/login` is available at
+`POST /api/v1/auth/login`.
 
-**Response:**
+Protected endpoints require an access token in the
+`Authorization: Bearer <access-token>` header. Request bodies are JSON unless
+the endpoint documents a file upload. Responses use JSON; authentication
+responses are wrapped in a `data` property.
+
+## Authentication Endpoints
+
+Base path: `/api/v1/auth`
+
+### POST /auth/register
+
+Register a customer account. This route is public; `role` may be omitted and,
+if supplied, must be `CUSTOMER`.
+
+**Request body:**
+
 ```json
 {
-  "success": true,
-  "accessToken": "string",
+  "fullName": "Example Customer",
+  "email": "customer@example.com",
+  "phoneNumber": "1234567890",
+  "password": "replace-with-a-secure-password",
+  "role": "CUSTOMER"
+}
+```
+
+`phoneNumber` and `role` are optional. `password` must contain at least eight
+characters. A successful response has status `201` and returns the session
+under `data`.
+
+### POST /auth/login
+
+Log in with the user's identifier, password, and assigned role.
+
+**Request body:**
+
+```json
+{
+  "identifier": "user@example.com",
+  "password": "replace-with-a-secure-password",
+  "role": "EMPLOYEE"
+}
+```
+
+`identifier` may be the account's supported login identifier. A successful
+response returns the access token, refresh token, and user under `data`.
+
+### POST /auth/refresh
+
+Exchange a refresh token for a new session.
+
+**Request body:**
+
+```json
+{
   "refreshToken": "string"
 }
 ```
+
+The refreshed session is returned under `data`.
 
 **Roles Allowed:** PUBLIC
 
@@ -19,23 +72,27 @@
 
 ### POST /auth/logout
 
-**Description:** Logout user (invalidate refresh token)
+Invalidate a refresh token. This route does not require an access token.
 
-**Request Headers:**
+**Request Body:**
 
-```
-Authorization: Bearer <token>
+```json
+{
+  "refreshToken": "string"
+}
 ```
 
 **Response:**
 
 ```json
 {
-  "success": true
+  "data": {
+    "success": true
+  }
 }
 ```
 
-**Roles Allowed:** AUTHENTICATED
+**Roles Allowed:** PUBLIC (valid refresh token required)
 
 ---
 
@@ -53,7 +110,6 @@ Authorization: Bearer <token>
 
 ```json
 {
-  "success": true,
   "data": {
     "id": "string",
     "loginId": "string",
@@ -93,12 +149,169 @@ Authorization: Bearer <token>
 
 ```json
 {
-  "success": true,
-  "message": "Password changed successfully"
+  "data": {
+    "success": true
+  }
 }
 ```
 
 **Roles Allowed:** AUTHENTICATED
+
+---
+
+## Customer Onboarding Endpoints
+
+Base path: `/api/v1/onboarding`
+
+All routes require an access token. Admin, super-admin, and sub-admin users
+manage onboarding records; employees can read requests and submit surveys.
+Project Coordinators can create site visits. Conversion approval is limited to
+admins and super admins. Marketing Executive employees can create requests.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/stats` | Onboarding dashboard counts (management roles). |
+| `GET` | `/requests` | List requests; supports `stage`, `search`, `assignedEmployeeId`, `offset`, and `limit`. |
+| `POST` | `/requests` | Create an onboarding request (management roles and Marketing Executive). |
+| `GET` | `/requests/:id` | Get a request and its details. |
+| `PATCH` | `/requests/:id` | Update request details. |
+| `PATCH` | `/requests/:id/stage` | Change the workflow stage. |
+| `POST` | `/requests/:id/approve-conversion` | Approve conversion into a customer (admin or super admin). |
+| `POST` | `/site-visits` | Schedule a visit (management roles or Project Coordinator). |
+| `PATCH` | `/site-visits/:id` | Update visit details. |
+| `POST` | `/site-visits/:id/submit-survey` | Submit a survey. |
+| `POST` | `/site-visits/:id/review` | Review a submitted survey. |
+| `POST` | `/site-visits/:id/images` | Upload a survey image (`multipart/form-data`, field `image`). |
+| `GET` | `/site-visits/:id/images` | List survey images. |
+| `POST` | `/quotations` | Create a quotation. |
+| `PATCH` | `/quotations/:id` | Update a quotation. |
+
+Use the stage values `NEW_REQUEST`, `INITIAL_REVIEW`, `SITE_VISIT_PENDING`,
+`SITE_VISIT_SCHEDULED`, `SITE_VISIT_COMPLETED`, `QUOTATION_DRAFT`,
+`QUOTATION_REVIEW`, `QUOTATION_SENT`, `CUSTOMER_DECISION_PENDING`,
+`ONBOARDING_APPROVAL`, `APPROVED_CONVERTED`, and `REJECTED_CANCELLED`.
+
+---
+
+## Marketing Endpoints
+
+Base path: `/api/v1/marketing`
+
+All endpoints require a valid access token. `ADMIN`, `SUPER_ADMIN`, and
+`SUB_ADMIN` users can manage marketing data. Marketing Executive employees can
+also manage it. Project Coordinators, Liaisoning employees, and Monitoring
+Analysts have read-only access to the lead list.
+
+### GET /leads
+
+List marketing leads. The response is `{ "data": [/* lead records */] }`.
+
+### POST /leads
+
+Create a marketing lead.
+
+**Request Body:**
+
+```json
+{
+  "name": "string",
+  "phone": "string",
+  "email": "string",
+  "address": "string",
+  "source": "Website | Campaign | Referral | Partner | Other"
+}
+```
+
+`email` and `address` are optional. The response is `201 Created` with the created record in `data`.
+
+### POST /leads/bulk
+
+Bulk-import marketing leads. The request body and import limits are validated
+by the API.
+
+### PATCH /leads/:id
+
+Update lead fields. All fields are optional.
+
+```json
+{
+  "status": "New | Contacted | Qualified | Converted | Disqualified",
+  "assignedTo": "string or null",
+  "followUpAt": "string or null",
+  "address": "string or null"
+}
+```
+
+### DELETE /leads/:id
+
+Soft-delete a lead. Supply a deletion remark of at least three characters:
+
+```json
+{
+  "remark": "Duplicate record"
+}
+```
+
+### GET /deleted-leads
+
+List deleted marketing leads.
+
+### POST /deleted-leads/:id/restore
+
+Restore a deleted lead.
+
+### GET /campaigns
+
+List marketing campaigns.
+
+### POST /campaigns
+
+Create a campaign with `name`, `channel`, and `budget`; optional `startDate` is a string.
+
+### PATCH /campaigns/:id
+
+Update campaign status (`Planned`, `Active`, or `Completed`).
+
+### GET /follow-ups
+
+List marketing follow-ups.
+
+### POST /follow-ups
+
+Create a follow-up with `leadId`, `date`, and `note`.
+
+### PATCH /follow-ups/:id
+
+Update follow-up completion with `{ "done": true }` or `{ "done": false }`.
+
+### POST /workspace/import
+
+Bulk-import existing workspace records (used to migrate browser-stored data).
+The JSON body may include `leads`, `campaigns`, and `followUps` arrays. Limits
+are 2,000 leads, 1,000 campaigns, and 2,000 follow-ups per request. Lead
+entries support the same lead fields plus an `id`; campaigns and follow-ups
+also require their record IDs. The response reports imported counts for each
+array.
+
+Excel parsing, row validation, template download, and lead export are frontend features. Uploading an Excel file directly to this API is not supported.
+
+---
+
+## Android App Update Endpoints
+
+The primary update endpoints are public and are mounted under
+`/api/v1/app/update`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/app/update/latest.json` | Return the current Android release manifest as JSON. |
+| `GET` | `/api/v1/app/update/download/latest` | Redirect to the latest APK download. |
+| `GET` | `/api/v1/app/update/releases/android/:versionName/build-:versionCode/app-release.apk` | Redirect to a specific version's APK download. |
+
+The manifest includes the app ID, platform, version code and name, mandatory
+update flag, release notes, APK URL, and SHA-256 checksum. If no authoritative
+manifest is available, the manifest route returns `503`. The download routes
+return a redirect when R2 is configured; otherwise they return an error.
 
 ---
 
@@ -673,6 +886,38 @@ Authorization: Bearer <token>
 ```
 
 **Roles Allowed:** AUTHENTICATED
+
+---
+
+### GET /attendance/admin/team-attendance
+
+**Description:** Get monthly attendance percentages for employees and sub-admins
+
+**Request Headers:**
+
+```
+Authorization: ******
+```
+
+**Query Parameters:**
+
+- `month` (number, optional): Month (1-12, default: current)
+- `year` (number, optional): Year (default: current)
+
+**Response:**
+
+```json
+{
+  "snapshots": [
+    {
+      "employeeId": "string",
+      "attendancePercent": "number"
+    }
+  ]
+}
+```
+
+**Roles Allowed:** SUPER_ADMIN, ADMIN, DEPARTMENT_HEAD, TEAM_LEAD, SUB_ADMIN
 
 ---
 
@@ -1905,83 +2150,67 @@ Authorization: Bearer <token>
 
 ## Financial Management Endpoints
 
+All finance endpoints require a bearer access token. The finance API resolves the caller's current finance role and permissions from the database for each request; UI visibility is not an authorization boundary.
+
+Base paths below are relative to `/api/v1`.
+
+### Finance access levels
+
+- `SUPER_ADMIN` and `ADMIN` have finance oversight.
+- Finance employees are recognized by a finance designation (`Finance Executive`, `Accountant`, `Finance Manager`, `Finance Head`, and supported equivalent titles) and, when assigned, the `FINANCE` department. Finance executives can view operational finance data, create/update invoices, and view commissions. Finance managers and heads can also delete invoices, approve commission payouts, and view company P&L.
+- A manager's commission approval limit is `FINANCE_MANAGER_APPROVAL_LIMIT_INR` (default ₹100,000). Higher amounts require a finance head or admin.
+- Approvers cannot approve transactions they created or payments to themselves.
+- Service Coordinators can view AMC records and list/create/update AMC invoices only. Customers see their own invoices, and partners see invoices and payouts scoped to their own customers.
+
+The finance access endpoint reports the caller's resolved level and capabilities:
+
+### GET /financials/me
+
+Returns `level`, `permissions`, `isServiceCoordinator`, `managerApprovalLimit`, and `canApproveAboveManagerLimit` for the authenticated caller.
+
+### Finance dashboard and reporting
+
+All reporting endpoints accept optional `from` and `to` date query parameters (ISO date or datetime). `to` dates supplied as `YYYY-MM-DD` include the full day.
+
+| Method and path | Description | Access |
+| --- | --- | --- |
+| `GET /financials/summary` | Invoice-based invoiced revenue, collected amount, outstanding balance, collection rate, and separately identified estimated pipeline value. | Finance dashboard permission |
+| `GET /financials/zones` | Revenue and customer counts by zone, with comparison-period growth. | Finance dashboard permission |
+| `GET /financials/pnl` | Monthly revenue, commissions, finalized salary costs, other expenses, profit, margin, and trend. | Finance manager, head, or admin |
+| `GET /financials/customer-ledger` | Customer invoicing, collections, receivables, and unbilled contract amounts. | Finance dashboard permission |
+| `GET /financials/vendor-payables` | Supplier purchases, partner commission payables, payroll totals, and expenses. | Finance dashboard permission |
+| `GET /financials/amc` | Active AMC contracts. | Finance dashboard permission or Service Coordinator |
+| `GET /financials/payouts` | Partner commission payout status; partners receive only their own data. | Finance commission-view permission or partner |
+
+### Expenses and commissions
+
+| Method and path | Description | Access |
+| --- | --- | --- |
+| `GET /financials/expenses` | List expenses; supports optional `from` and `to`. | Finance dashboard permission |
+| `POST /financials/expenses` | Record an expense using `category`, positive `amount`, and optional `expenseDate`, `zone`, and `notes`. | Finance invoice-create permission |
+| `POST /financials/commissions/:customerId/confirm` | Confirm a partner commission payment. Submit the payment proof as multipart form field `proof`. | Finance manager/head/admin, subject to approval limits and maker-checker rules |
+
+### Invoice management
+
+Invoices use the `/invoices` base path. List filters are optional `customerId`, `invoiceType` (`installation`, `amc`, `repair`, `service`, or `other`), `from`, and `to`. Results are row-scoped: finance staff can see all invoices, Service Coordinators only AMC invoices, customers their own invoices, and partners invoices for their customers.
+
 ### GET /invoices
 
-**Description:** List invoices
-
-**Request Headers:**
-
-```
-Authorization: Bearer <token>
-```
-
-**Query Parameters:**
-
-- `customerId` (number, optional): Filter by customer
-- `invoiceType` (string, optional): Filter by type
-- `paymentStatus` (string, optional): Filter by payment status
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "string",
-      "invoiceNumber": "string",
-      "customerId": "number",
-      "invoiceType": "string",
-      "amount": "number",
-      "paymentStatus": "string",
-      "amountPaid": "number",
-      "invoiceDate": "ISO8601",
-      "paymentDate": "ISO8601",
-      "zone": "string",
-      "state": "string",
-      "partnerId": "string"
-    }
-  ]
-}
-```
-
-**Roles Allowed:** SUPER_ADMIN, ADMIN, SUB_ADMIN, EMPLOYEE, TEAM_LEAD, DEPARTMENT_HEAD
+Returns invoices with customer name/code, payment status, date, and outstanding amount.
 
 ---
 
 ### POST /invoices
 
-**Description:** Create invoice
+Creates an invoice. Submit `customerId`, positive `amount`, and optional `invoiceType`, `invoiceNumber`, `description`, `date`, `status`, and `paymentMethod`. Accepts a `proof` upload as multipart form data (JPG, PNG, or PDF; maximum 5 MB). Finance staff with invoice-create permission can create invoices; Service Coordinators are limited to AMC invoices.
 
-**Request Headers:**
+### PATCH /invoices/:id
 
-```
-Authorization: Bearer <token>
-```
+Updates invoice fields `description`, `amount`, `status`, `amountPaid`, `dueDate`, and/or `invoiceNumber`. Finance staff with invoice-update permission can update invoices; Service Coordinators may update AMC invoices only.
 
-**Request Body:**
+### DELETE /invoices/:id
 
-```json
-{
-  "customerId": "number",
-  "invoiceType": "string",
-  "amount": "number",
-  "description": "string",
-  "zone": "string",
-  "state": "string"
-}
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "data": { /* Created Invoice object */ }
-}
-```
-
-**Roles Allowed:** SUPER_ADMIN, ADMIN, SUB_ADMIN
+Deletes an invoice. Requires finance invoice-delete permission (finance manager/head or admin).
 
 ---
 

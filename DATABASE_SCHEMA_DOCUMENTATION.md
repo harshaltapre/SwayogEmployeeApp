@@ -13,12 +13,48 @@ The Swayog Energy Dashboard uses a PostgreSQL database with a comprehensive sche
 - User management with role-based access control
 - Task management with multi-employee assignment
 - Customer and partner management
+- Marketing leads, campaigns, and follow-ups
 - AMC (Annual Maintenance Contract) scheduling
 - Attendance tracking with face recognition
 - Financial management (invoices, payments)
 - Inventory management
 - Inverter data integration (multiple providers)
 - Notification system
+
+---
+
+## Marketing Models
+
+### MarketingLead
+
+**Purpose:** Marketing prospect and lead tracking.
+
+**Fields:**
+- `id` (String, CUID, Primary Key): Lead identifier
+- `name` (String): Lead name
+- `phone` (String): Contact phone number
+- `email` (String, Optional): Contact email
+- `address` (String, Optional): Lead or site address
+- `source` (String): Lead source
+- `status` (String, Default: `"New"`): Lead status
+- `assignedTo` (String, Optional): Assigned owner
+- `followUpAt` (String, Optional): Follow-up date or time
+- `createdById` (String, Optional): Creating user reference
+- `createdAt`, `updatedAt` (DateTime): Record timestamps
+
+**Indexes:** `createdAt`, `status`, `source`, `createdById`
+
+### MarketingCampaign
+
+**Purpose:** Marketing campaign tracking.
+
+**Fields:** `id`, `name`, `channel`, `budget`, and `status` are required/defaulted scalar values; `startDate` and `createdById` are optional. `createdAt` and `updatedAt` track record timestamps.
+
+### MarketingFollowUp
+
+**Purpose:** Follow-up notes associated with a marketing lead.
+
+**Fields:** `id`, `leadId`, `date`, and `note`; `done` defaults to `false`; `createdById` is optional; `createdAt` and `updatedAt` track record timestamps.
 
 ---
 

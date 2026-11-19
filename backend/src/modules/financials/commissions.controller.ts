@@ -4,6 +4,7 @@ import multer from "multer";
 import path from "path";
 import { prisma } from "../../lib/prisma.js";
 import { ApiError } from "../../middleware/error.js";
+import { checkApprovalAuthority } from "./finance-access.js";
 
 // Setup multer memory storage (store proof image directly in PostgreSQL as Data URL, not in local filesystem)
 const storage = multer.memoryStorage();
@@ -43,10 +44,30 @@ export const confirmCommissionPayment = async (req: Request, res: Response) => {
 
   const customer = await prisma.customer.findUnique({
     where: { id },
+    include: { partner: { select: { userId: true } } },
   });
 
   if (!customer) {
     throw new ApiError(404, "Customer not found");
+  }
+
+  if (customer.commissionStatus === "COMPLETED") {
+    throw new ApiError(409, "Commission for this customer has already been confirmed as paid.");
+  }
+
+  // A payout can only be confirmed against an agreed commission amount — never an assumed per-kW figure.
+  if (customer.commissionAmount == null || !(customer.commissionAmount > 0)) {
+    throw new ApiError(400, "No approved commission amount is set for this customer. Set the agreed commission before confirming payment.");
+  }
+
+  const authority = checkApprovalAuthority({
+    level: req.finance?.level ?? null,
+    approverId: req.auth!.userId,
+    amount: customer.commissionAmount,
+    beneficiaryUserId: customer.partner?.userId ?? null,
+  });
+  if (!authority.allowed) {
+    throw new ApiError(403, authority.reason);
   }
 
   // Convert uploaded image/file buffer to base64 Data URL to store directly in PostgreSQL
@@ -66,13 +87,14 @@ export const confirmCommissionPayment = async (req: Request, res: Response) => {
   // Log the action
   await prisma.auditLog.create({
     data: {
-      // @ts-ignore
-      actorId: req.auth?.userId || "system",
+      actorId: req.auth?.userId ?? null,
       action: "COMMISSION_PAID",
       entity: "Customer",
       entityId: String(id),
       metadata: {
         commissionAmount: customer.commissionAmount,
+        partnerId: customer.partnerId,
+        approverFinanceLevel: req.finance?.level ?? null,
         hasProof: true,
       },
     },

@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth, isSubAdminJobRole } from "@/lib/auth";
@@ -29,18 +29,8 @@ interface SubAdminLayoutProps {
 }
 
 export function SubAdminLayout({ children }: SubAdminLayoutProps) {
-  const { user } = useAuth();
-
-  // If the logged-in user is an employee/intern/team_lead (not a dedicated sub_admin),
-  // render within their standard SidebarLayout so they stay on the exact same place
-  // with their authentic role badge, regular employee links, and only assigned permissions.
-  if (user && user.role !== "sub_admin" && !isSubAdminJobRole(user.jobRole)) {
-    return <SidebarLayout>{children}</SidebarLayout>;
-  }
-
-  const [location] = useLocation();
-  const { logout } = useAuth();
-  const [, setLocation] = useLocation();
+  const { user, logout } = useAuth();
+  const [location, setLocation] = useLocation();
 
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStep, setTourStep] = useState(0);
@@ -48,10 +38,9 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
     const saved = localStorage.getItem('quickTourEnabled');
     return saved === null ? true : saved === 'true';
   });
-  const canShowQuickTour = ["employee", "team_lead", "department_head"].includes(user?.role ?? "");
 
   // Keep in sync when localStorage changes (e.g. Settings page updates it)
-  useState(() => {
+  useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'quickTourEnabled') {
         setQuickTourEnabledState(e.newValue === null ? true : e.newValue === 'true');
@@ -59,7 +48,7 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  });
+  }, []);
 
   const tourSteps = [
     {
@@ -77,10 +66,19 @@ export function SubAdminLayout({ children }: SubAdminLayoutProps) {
     {
       title: "Account Settings & Personalization ⚙️",
       desc: "Personalize your profile page, choose light/dark/system themes, and upload your profile photo template which is required for secure attendance check-ins.",
-    }
+    },
   ];
 
+  const canShowQuickTour = Boolean(user && ["employee", "team_lead", "department_head"].includes(user.role ?? ""));
+
   if (!user) return null;
+
+  // If the logged-in user is an employee/intern/team_lead (not a dedicated sub_admin),
+  // render within their standard SidebarLayout so they stay on the exact same place
+  // with their authentic role badge, regular employee links, and only assigned permissions.
+  if (user.role !== "sub_admin" && !isSubAdminJobRole(user.jobRole)) {
+    return <SidebarLayout>{children}</SidebarLayout>;
+  }
 
   const isStandardEmployee = user.role === "employee" && !isSubAdminJobRole(user.jobRole);
 

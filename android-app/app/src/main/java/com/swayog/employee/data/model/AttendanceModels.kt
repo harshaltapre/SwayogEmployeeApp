@@ -42,7 +42,26 @@ data class CheckInRequest(
     val verificationToken: String? = null,
     val faceVerified: Boolean = false,
     val livenessVerified: Boolean = false,
-    val liveDescriptor: List<Float>? = null
+    val liveDescriptor: List<Float>? = null,
+    val clientUploadId: String? = null
+)
+
+data class CheckOutRequest(
+    val clientUploadId: String? = null
+)
+
+data class SyncHealthReportRequest(
+    val appVersionCode: Long,
+    val appVersionName: String?,
+    val androidVersion: String?,
+    val deviceModel: String?,
+    val pendingOutboxCount: Int,
+    val failedOutboxCount: Int,
+    val lastSuccessfulSyncAt: Long?,
+    val lastSyncStatus: String,
+    val lastSyncError: String?,
+    val lastHttpCode: Int?,
+    val tokenRefreshFailures: Int
 )
 
 data class FaceEnrollRequest(

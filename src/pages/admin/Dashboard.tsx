@@ -1,30 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
 import { SidebarLayout } from "@/components/SidebarLayout";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-
-// Fix for default marker icons in Leaflet
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
-
-const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
-  mumbai: { lat: 19.0760, lng: 72.8777 },
-  pune: { lat: 18.5204, lng: 73.8567 },
-  nagpur: { lat: 21.1458, lng: 79.0882 },
-  bhopal: { lat: 23.2599, lng: 77.4126 },
-  indore: { lat: 22.7196, lng: 75.8577 },
-  lucknow: { lat: 26.8467, lng: 80.9462 },
-  kanpur: { lat: 26.4499, lng: 80.3319 },
-  jaipur: { lat: 26.9124, lng: 75.7873 },
-  nashik: { lat: 19.9975, lng: 73.7898 },
-  delhi: { lat: 28.6139, lng: 77.2090 },
-  bangalore: { lat: 12.9716, lng: 77.5946 },
-};
 import { PageHeader } from "@/components/PageHeader";
 import { StatCard } from "@/components/StatCard";
 import {
@@ -41,7 +16,7 @@ import {
   getGetRecentActivityQueryKey,
   useListCustomers,
 } from "@/lib/api-client";
-import { Users, Zap, Wrench, IndianRupee, AlertTriangle, Package, MapPin, TrendingUp, Calendar, ChevronRight, CheckCircle2, RefreshCw, Shield } from "lucide-react";
+import { Users, Zap, Wrench, IndianRupee, AlertTriangle, Package, TrendingUp, Calendar, ChevronRight, CheckCircle2, RefreshCw, Shield } from "lucide-react";
 import { usePollWithVisibility, useCacheInvalidation } from "@/lib/data-sync";
 import { subscribeCustomerDataChanged } from "@/lib/entity-sync";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,7 +33,6 @@ import { AdminNotificationBell } from "@/components/AdminNotificationBell";
 export default function AdminDashboard() {
   const [revenueView, setRevenueView] = useState<"monthly" | "yearly">("monthly");
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
-  const [viewMode, setViewMode] = useState<"grid" | "map">("grid");
 
   // Declare customers FIRST so it can be used in the useMemo below
   const { data: customers, isLoading: customersLoading, refetch: refetchCustomers } = useListCustomers();
@@ -76,51 +50,6 @@ export default function AdminDashboard() {
       }
     });
     return { pending, completed };
-  }, [customers]);
-
-  const dynamicActiveJobs = useMemo(() => {
-    if (!customers) return [];
-    
-    const groups: Record<string, { zone: string; state: string; jobs: number; kw: number; lat: number; lng: number; color: string }> = {};
-    const colors = ["#F59E0B", "#F97316", "#EAB308", "#10B981", "#22C55E", "#3B82F6", "#6366F1", "#EC4899"];
-    let colorIndex = 0;
-    
-    customers.forEach((c: any) => {
-      const completedCount = (c.projectStage ?? -1) + 1;
-      const isJobActive = c.status === "active" || completedCount < 12;
-      if (!isJobActive) return;
-      
-      const zoneName = c.city || "Other";
-      const state = zoneName.toLowerCase().includes("mumbai") || zoneName.toLowerCase().includes("pune") || zoneName.toLowerCase().includes("nagpur") || zoneName.toLowerCase().includes("nashik") ? "MH" :
-                    zoneName.toLowerCase().includes("bhopal") || zoneName.toLowerCase().includes("indore") ? "MP" :
-                    zoneName.toLowerCase().includes("lucknow") || zoneName.toLowerCase().includes("kanpur") ? "UP" :
-                    zoneName.toLowerCase().includes("jaipur") ? "RJ" : "IN";
-
-      if (!groups[zoneName]) {
-        const normCity = zoneName.toLowerCase().trim();
-        const preset = CITY_COORDS[normCity];
-        groups[zoneName] = {
-          zone: zoneName,
-          state,
-          jobs: 0,
-          kw: 0,
-          lat: c.latitude || preset?.lat || 20.5937,
-          lng: c.longitude || preset?.lng || 78.9629,
-          color: colors[colorIndex % colors.length]
-        };
-        colorIndex++;
-      }
-      
-      groups[zoneName].jobs += 1;
-      groups[zoneName].kw += Number(c.systemSizeKw || 0);
-      
-      if (c.latitude && c.longitude) {
-        groups[zoneName].lat = c.latitude;
-        groups[zoneName].lng = c.longitude;
-      }
-    });
-    
-    return Object.values(groups);
   }, [customers]);
 
   const { data: summary, isLoading: loadingSummary, refetch: refetchSummary } = useGetAdminDashboardSummary({
@@ -182,9 +111,6 @@ export default function AdminDashboard() {
         return years;
       }, []);
   const chartKey = revenueView === "monthly" ? "month" : "month";
-
-  const totalJobsOnMap = dynamicActiveJobs.reduce((s, z) => s + z.jobs, 0);
-  const totalKwOnMap = dynamicActiveJobs.reduce((s, z) => s + z.kw, 0);
 
   return (
     <SidebarLayout>
@@ -377,157 +303,6 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Map View of Active Jobs */}
-      <Card className="shadow-sm border-slate-200 mb-6">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-lg font-semibold flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-orange-500" /> Active Jobs — Zone Map View
-            </CardTitle>
-            <p className="text-xs text-slate-500 mt-1">
-              {totalJobsOnMap} active jobs · {totalKwOnMap.toFixed(1)} kW total across {dynamicActiveJobs.length} zones
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-              <Button
-                variant="ghost"
-                size="sm"
-                className={`rounded-none px-4 h-8 text-xs font-medium ${viewMode === "grid" ? "bg-primary text-white hover:bg-primary" : "text-slate-600 hover:bg-slate-50"}`}
-                onClick={() => setViewMode("grid")}
-              >
-                Grid View
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={`rounded-none px-4 h-8 text-xs font-medium border-l border-slate-200 ${viewMode === "map" ? "bg-primary text-white hover:bg-primary" : "text-slate-600 hover:bg-slate-50"}`}
-                onClick={() => setViewMode("map")}
-              >
-                Interactive Map
-              </Button>
-            </div>
-            <div className="hidden sm:flex gap-4 text-xs text-slate-500">
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-orange-500 inline-block" /> Maharashtra</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-500 inline-block" /> Madhya Pradesh</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-500 inline-block" /> Other States</span>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {viewMode === "grid" ? (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-              {dynamicActiveJobs.map((zone) => {
-                const pct = Math.round((zone.jobs / totalJobsOnMap) * 100);
-                return (
-                  <div key={zone.zone} className="relative rounded-xl border border-slate-100 bg-slate-50 p-4 overflow-hidden">
-                    <div
-                      className="absolute bottom-0 left-0 right-0 opacity-10"
-                      style={{ height: `${pct}%`, background: zone.color }}
-                    />
-                    <div className="relative z-10">
-                      <div className="flex items-center justify-between mb-2">
-                        <span
-                          className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                          style={{ background: `${zone.color}22`, color: zone.color }}
-                        >
-                          {zone.state}
-                        </span>
-                        <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                      </div>
-                      <div className="font-semibold text-slate-800 text-sm leading-tight">{zone.zone}</div>
-                      <div className="mt-2 flex items-end justify-between">
-                        <div>
-                          <div className="text-2xl font-bold" style={{ color: zone.color }}>{zone.jobs}</div>
-                          <div className="text-[10px] text-slate-500">active jobs</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-semibold text-slate-700">{zone.kw} kW</div>
-                          <div className="text-[10px] text-slate-500">installed</div>
-                        </div>
-                      </div>
-                      <div className="mt-2 bg-slate-200 rounded-full h-1">
-                        <div className="h-1 rounded-full" style={{ width: `${pct}%`, background: zone.color }} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="h-[400px] w-full rounded-xl overflow-hidden border border-slate-200 mb-6 z-0">
-              <MapContainer
-                center={[20.5937, 78.9629]}
-                zoom={5}
-                style={{ height: "100%", width: "100%" }}
-              >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                {customers?.filter((c: any) => {
-                  const completedCount = (c.projectStage ?? -1) + 1;
-                  return c.status === "active" || completedCount < 12;
-                }).map((c: any) => {
-                  const normCity = (c.city || "").toLowerCase().trim();
-                  const preset = CITY_COORDS[normCity];
-                  const lat = c.latitude || preset?.lat;
-                  const lng = c.longitude || preset?.lng;
-                  
-                  if (!lat || !lng) return null;
-                  
-                  return (
-                    <Marker key={c.id} position={[lat, lng]}>
-                      <Popup>
-                        <div className="p-1">
-                          <h4 className="font-bold text-sm text-slate-900">{c.name}</h4>
-                          <p className="text-xs text-slate-500 mt-0.5">{c.address || c.city}</p>
-                          <div className="mt-2 text-xs border-t border-slate-100 pt-1.5 flex justify-between gap-4">
-                            <span>Capacity: <strong>{c.systemSizeKw} kW</strong></span>
-                            <span>Stage: <strong>{(c.projectStage ?? -1) + 1}/12</strong></span>
-                          </div>
-                        </div>
-                      </Popup>
-                    </Marker>
-                  );
-                })}
-              </MapContainer>
-            </div>
-          )}
-
-          {/* Zone summary bar */}
-          <div className="rounded-xl bg-slate-900 text-white p-4 flex flex-wrap gap-6 justify-between items-center">
-            <div>
-              <div className="text-xs text-slate-400 uppercase tracking-widest mb-1">Top Zone</div>
-              <div className="text-lg font-bold text-amber-400">
-                {dynamicActiveJobs.reduce((prev, current) => (prev.jobs > current.jobs) ? prev : current, { zone: "None", jobs: 0 }).zone}
-              </div>
-              <div className="text-xs text-slate-400">
-                {dynamicActiveJobs.reduce((prev, current) => (prev.jobs > current.jobs) ? prev : current, { jobs: 0, kw: 0 }).jobs} jobs · {dynamicActiveJobs.reduce((prev, current) => (prev.jobs > current.jobs) ? prev : current, { jobs: 0, kw: 0 }).kw.toFixed(1)} kW
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 uppercase tracking-widest mb-1">Total Active Jobs</div>
-              <div className="text-2xl font-bold text-white">{totalJobsOnMap}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 uppercase tracking-widest mb-1">Total Capacity</div>
-              <div className="text-2xl font-bold text-green-400">{totalKwOnMap.toFixed(0)} kW</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 uppercase tracking-widest mb-1">States Covered</div>
-              <div className="text-2xl font-bold text-blue-400">
-                {new Set(dynamicActiveJobs.map(z => z.state)).size}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 uppercase tracking-widest mb-1">Active Zones</div>
-              <div className="text-2xl font-bold text-violet-400">{dynamicActiveJobs.length}</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Installations + Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

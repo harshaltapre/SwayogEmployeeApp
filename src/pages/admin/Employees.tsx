@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { format } from "date-fns";
 import { SidebarLayout } from "@/components/SidebarLayout";
 import { PageHeader } from "@/components/PageHeader";
 import {
@@ -8,16 +9,16 @@ import {
   useUpdateInternalUser,
   type EmployeeRecord,
 } from "@/lib/api-client";
-import { useEmployeePerformance } from "@/hooks/useAttendance";
+import { useEmployeeMonthlyAttendance, useTeamAttendance } from "@/hooks/useAttendance";
 import { usePollWithVisibility } from "@/lib/data-sync";
 import { ExcelImportDialog } from "@/components/ExcelImportDialog";
 import { BulkTaskAssignModal } from "@/components/employees/BulkTaskAssignModal";
 import { useBulkEmployeeImport } from "@/hooks/use-bulk-import";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Search, Plus, MapPin, ClipboardList, Star, BadgeCheck, UserCheck, ChevronRight, Loader2, Pencil, Trash2, RefreshCw, Filter, Upload, LayoutGrid, List, Download } from "lucide-react";
+import { Search, Plus, MapPin, ClipboardList, BadgeCheck, UserCheck, ChevronRight, Loader2, Pencil, Trash2, RefreshCw, Filter, Upload, LayoutGrid, List, Download, Users, IndianRupee, CheckCircle, Calendar } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -58,6 +59,7 @@ const JOB_ROLES = [
   "Service & Executive Head",
   "Isphere Green head",
   "Sub Admin",
+  "Marketing Executive",
   "Other Position",
 ];
 
@@ -72,34 +74,47 @@ const taskMap: Record<string, string[]> = {
   "8": ["AMC Renewal – Pune"],
 };
 
-function getColorForPerformance(value: number) {
-  if (value >= 4.5) return "#22C55E";
-  if (value >= 3.5) return "#F59E0B";
-  return "#EF4444";
-}
-
 function EmployeeCard({
   emp,
-  now,
+  month,
+  year,
   onOpenEdit,
   onDeleteEmployee,
   setLocation,
 }: {
   emp: EmployeeRecord;
-  now: Date;
+  month: number;
+  year: number;
   onOpenEdit: (emp: EmployeeRecord) => void;
   onDeleteEmployee: (emp: EmployeeRecord) => void;
   setLocation: (path: string) => void;
 }) {
-  const { data: perf } = useEmployeePerformance(String(emp.id), now.getMonth() + 1, now.getFullYear());
-  const performanceScore = perf?.performanceScore ?? null;
-  const attendancePercent = perf?.attendancePercent ?? null;
-  const tasksText = perf ? `${perf.tasksCompleted}/${perf.tasksAssigned}` : "—";
+  const targetId = emp.userId || emp.loginId || String(emp.id);
+  const { data: attendanceData } = useEmployeeMonthlyAttendance(targetId, month, year);
+  const records = attendanceData?.records || [];
+  const hasAttendanceRecords = records.length > 0 || (attendanceData && (attendanceData.present > 0 || attendanceData.late > 0 || attendanceData.halfDays > 0 || attendanceData.leaves > 0));
+  const attendancePercent = attendanceData?.attendancePercent ?? 0;
+
+  // Latest punch
+  const latestRecord = [...records].reverse().find(r => r.status || r.checkInTime);
+  let latestPunchText = "";
+  if (latestRecord) {
+    try {
+      const d = new Date(latestRecord.date);
+      const dateStr = format(d, "dd MMM");
+      const statusStr = (latestRecord.status || "PRESENT").replace(/_/g, " ").toLowerCase();
+      latestPunchText = `${dateStr} • ${statusStr.charAt(0).toUpperCase() + statusStr.slice(1)}`;
+    } catch {
+      latestPunchText = `${latestRecord.status || "Recorded"}`;
+    }
+  }
+
   const tasks = taskMap[String(emp.id)] ?? [];
+  const tasksText = String(tasks.length);
 
   return (
-    <Card key={emp.id} className="shadow-sm border-slate-200/80 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden bg-white">
-      <CardContent className="p-0">
+    <Card key={emp.id} className="shadow-sm border-slate-200/80 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden bg-white flex flex-col justify-between">
+      <CardContent className="p-0 flex flex-col h-full">
         <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b border-slate-100 bg-slate-50/40">
           <div className="flex items-center gap-3">
             <Avatar className="h-11 w-11 border border-slate-200 shadow-sm">
@@ -115,98 +130,155 @@ function EmployeeCard({
           <StatusBadge status={emp.status} className="text-[9px] uppercase tracking-wider" />
         </div>
 
-        <div className="p-5 space-y-4 font-sans text-left">
-          <div className="flex items-center justify-between">
-            <Badge variant="outline" className="font-mono text-xs text-blue-700 border-blue-200 bg-blue-50/50">
-              <BadgeCheck className="w-3.5 h-3.5 mr-1 text-blue-600" /> {emp.loginId ?? `EMP-${String(emp.id).padStart(3, "0")}`}
-            </Badge>
-            <div className="flex items-center text-xs text-slate-500 gap-1 font-semibold">
-              <MapPin className="w-3.5 h-3.5 text-slate-400" /> {emp.zone}
-            </div>
-          </div>
-
-          <div className="text-xs text-slate-700 font-medium">
-            Salary: <span className="font-bold text-slate-900">₹{Number(emp.monthlySalaryInr ?? 0).toLocaleString("en-IN")}</span> / month
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
-              <span className="flex items-center gap-1.5"><Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-400" /> Monthly Performance</span>
-            </div>
-            {performanceScore !== null ? (
-              <div className="flex items-center gap-2 pt-1">
-                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${(performanceScore / 5) * 100}%`, background: getColorForPerformance(performanceScore) }} />
-                </div>
-                <span className="text-xs font-bold font-mono" style={{ color: getColorForPerformance(performanceScore) }}>{performanceScore.toFixed(1)}</span>
+        <div className="p-5 space-y-4 font-sans text-left flex-1 flex flex-col justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Badge variant="outline" className="font-mono text-xs text-blue-700 border-blue-200 bg-blue-50/50">
+                <BadgeCheck className="w-3.5 h-3.5 mr-1 text-blue-600" /> {emp.loginId ?? `EMP-${String(emp.id).padStart(3, "0")}`}
+              </Badge>
+              <div className="flex items-center text-xs text-slate-500 gap-1 font-semibold">
+                <MapPin className="w-3.5 h-3.5 text-slate-400" /> {emp.zone}
               </div>
-            ) : (
-              <div className="text-xs text-slate-400 italic">No ratings data yet</div>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
-              <span className="flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5 text-emerald-500" /> Attendance Log</span>
             </div>
-            {attendancePercent !== null ? (
-              <div className="flex items-center gap-2 pt-1">
-                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${attendancePercent}%`, background: attendancePercent >= 90 ? "#1e8e3e" : attendancePercent >= 80 ? "#f9ab00" : "#d93025" }} />
-                </div>
-                <span className="text-xs font-bold font-mono" style={{ color: attendancePercent >= 90 ? "#1e8e3e" : attendancePercent >= 80 ? "#f9ab00" : "#d93025" }}>{attendancePercent}%</span>
+
+            <div className="text-xs text-slate-700 font-medium">
+              Salary: <span className="font-bold text-slate-900">₹{Number(emp.monthlySalaryInr ?? 0).toLocaleString("en-IN")}</span> / month
+            </div>
+
+            {/* Attendance Log Section */}
+            <div className="space-y-1.5 pt-1 border-t border-slate-100">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
+                <span className="flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-500" /> Attendance Log
+                </span>
+                {hasAttendanceRecords ? (
+                  <span
+                    className="text-xs font-bold font-mono"
+                    style={{
+                      color: attendancePercent >= 90 ? "#16a34a" : attendancePercent >= 75 ? "#f59e0b" : "#dc2626",
+                    }}
+                  >
+                    {attendancePercent}%
+                  </span>
+                ) : null}
               </div>
-            ) : (
-              <div className="text-xs text-slate-400 italic">No attendance data yet</div>
-            )}
-          </div>
 
-          <div className="space-y-2 border-t pt-3">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
-              <span className="flex items-center gap-1.5"><ClipboardList className="w-3.5 h-3.5 text-blue-500" /> Active Tasks</span>
-              <Badge className="bg-slate-100 hover:bg-slate-100 text-slate-700 font-mono text-[10px]">{tasksText}</Badge>
-            </div>
-            <div className="space-y-1">
-              {tasks.slice(0, 2).map((t, i) => (
-                <div key={i} className="text-xs bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-slate-700 truncate font-medium">
-                  {t}
+              {hasAttendanceRecords ? (
+                <div className="space-y-2">
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, attendancePercent))}%`,
+                        background: attendancePercent >= 90 ? "#16a34a" : attendancePercent >= 75 ? "#f59e0b" : "#dc2626",
+                      }}
+                    />
+                  </div>
+
+                  {/* Attendance Breakdown Grid */}
+                  <div className="grid grid-cols-3 gap-1.5 text-[10px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    <div>
+                      <span className="text-slate-400 block text-[9px] uppercase font-semibold">Present</span>
+                      <span className="font-bold text-slate-900">{attendanceData?.present ?? 0} d</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[9px] uppercase font-semibold">Absent</span>
+                      <span className="font-bold text-slate-900">{attendanceData?.absent ?? 0} d</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[9px] uppercase font-semibold">Half / Leave</span>
+                      <span className="font-bold text-slate-900">{attendanceData?.halfDays ?? 0} / {attendanceData?.leaves ?? 0}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[9px] uppercase font-semibold">Logged Hrs</span>
+                      <span className="font-bold text-slate-900">{attendanceData?.totalLoggedHours ?? 0}h</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-slate-400 block text-[9px] uppercase font-semibold">Approved Overtime</span>
+                      <span className="font-bold text-slate-900">{attendanceData?.totalOvertimeHours ?? 0}h</span>
+                    </div>
+                  </div>
+
+                  {/* Most Recent Attendance Punch */}
+                  {latestPunchText && (
+                    <div className="flex items-center justify-between text-[11px] pt-0.5">
+                      <span className="text-slate-400">Latest punch:</span>
+                      <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[10px]">
+                        {latestPunchText}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              ))}
-              {tasks.length === 0 && (
-                <div className="text-xs text-slate-400 italic py-1">No tasks assigned currently</div>
+              ) : (
+                <div className="text-xs text-slate-400 italic py-1 px-2.5 rounded bg-slate-50 border border-dashed border-slate-200 text-center">
+                  No attendance data yet
+                </div>
               )}
-              {tasks.length > 2 && (
-                <div className="text-[10px] text-blue-600 font-bold hover:underline cursor-pointer">+{tasks.length - 2} more tasks scheduled</div>
-              )}
+            </div>
+
+            {/* Active Tasks */}
+            <div className="space-y-1.5 border-t border-slate-100 pt-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
+                <span className="flex items-center gap-1.5"><ClipboardList className="w-3.5 h-3.5 text-blue-500" /> Active Tasks</span>
+                <Badge className="bg-slate-100 hover:bg-slate-100 text-slate-700 font-mono text-[10px]">{tasksText}</Badge>
+              </div>
+              <div className="space-y-1">
+                {tasks.slice(0, 1).map((t, i) => (
+                  <div key={i} className="text-[11px] bg-slate-50 border border-slate-100 rounded px-2 py-1 text-slate-700 truncate font-medium">
+                    {t}
+                  </div>
+                ))}
+                {tasks.length === 0 && (
+                  <div className="text-[11px] text-slate-400 italic">No tasks assigned currently</div>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            <Button variant="outline" size="sm" className="text-xs h-8 border-slate-200 hover:bg-slate-50 font-semibold cursor-pointer" onClick={() => onOpenEdit(emp)}>
-              <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
-            </Button>
-            <ConfirmModal
-              title="Remove employee?"
-              description={`This will permanently remove ${emp.name}.`}
-              onConfirm={() => onDeleteEmployee(emp)}
-              confirmText="Remove"
-              variant="destructive"
-              trigger={
-                <Button variant="destructive" size="sm" className="text-xs h-8 font-semibold cursor-pointer bg-red-50 text-red-600 hover:bg-red-100 border border-red-200/50">
-                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
-                </Button>
-              }
-            />
-          </div>
+          {/* Action buttons */}
+          <div className="pt-2 border-t border-slate-100 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-8 border-slate-200 hover:bg-slate-50 font-semibold cursor-pointer"
+                onClick={() => onOpenEdit(emp)}
+              >
+                <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
+              </Button>
+              <ConfirmModal
+                title="Remove employee?"
+                description={`This will permanently remove ${emp.name}.`}
+                onConfirm={() => onDeleteEmployee(emp)}
+                confirmText="Remove"
+                variant="destructive"
+                trigger={
+                  <Button variant="destructive" size="sm" className="text-xs h-8 font-semibold cursor-pointer bg-red-50 text-red-600 hover:bg-red-100 border border-red-200/50">
+                    <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
+                  </Button>
+                }
+              />
+            </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full text-xs h-8 mt-2 border-slate-200 hover:bg-slate-50 hover:text-blue-600 font-bold transition-colors cursor-pointer"
-            onClick={() => setLocation(`/admin/employees/${emp.id}`)}
-          >
-            View Full Profile <ChevronRight className="w-3.5 h-3.5 ml-1" />
-          </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full text-xs h-8 border-slate-200 hover:bg-slate-50 hover:text-emerald-700 font-semibold transition-colors cursor-pointer"
+                onClick={() => setLocation(`/admin/attendance?employeeId=${targetId}`)}
+              >
+                <UserCheck className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Log
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full text-xs h-8 border-slate-200 hover:bg-slate-50 hover:text-blue-600 font-semibold transition-colors cursor-pointer"
+                onClick={() => setLocation(`/admin/employees/${emp.id}`)}
+              >
+                Profile <ChevronRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -215,21 +287,39 @@ function EmployeeCard({
 
 function EmployeeRow({
   emp,
-  now,
+  month,
+  year,
   onOpenEdit,
   onDeleteEmployee,
   setLocation,
 }: {
   emp: EmployeeRecord;
-  now: Date;
+  month: number;
+  year: number;
   onOpenEdit: (emp: EmployeeRecord) => void;
   onDeleteEmployee: (emp: EmployeeRecord) => void;
   setLocation: (path: string) => void;
 }) {
-  const { data: perf } = useEmployeePerformance(String(emp.id), now.getMonth() + 1, now.getFullYear());
-  const performanceScore = perf?.performanceScore ?? null;
-  const attendancePercent = perf?.attendancePercent ?? null;
+  const targetId = emp.userId || emp.loginId || String(emp.id);
+  const { data: attendanceData } = useEmployeeMonthlyAttendance(targetId, month, year);
+  const records = attendanceData?.records || [];
+  const hasAttendanceRecords = records.length > 0 || (attendanceData && (attendanceData.present > 0 || attendanceData.late > 0 || attendanceData.halfDays > 0 || attendanceData.leaves > 0));
+  const attendancePercent = attendanceData?.attendancePercent ?? 0;
   const empId = emp.loginId ?? `EMP-${String(emp.id).padStart(3, "0")}`;
+
+  // Latest punch
+  const latestRecord = [...records].reverse().find(r => r.status || r.checkInTime);
+  let latestPunchText = "—";
+  if (latestRecord) {
+    try {
+      const d = new Date(latestRecord.date);
+      const dateStr = format(d, "dd MMM");
+      const statusStr = (latestRecord.status || "PRESENT").replace(/_/g, " ").toLowerCase();
+      latestPunchText = `${dateStr} • ${statusStr.charAt(0).toUpperCase() + statusStr.slice(1)}`;
+    } catch {
+      latestPunchText = `${latestRecord.status || "Recorded"}`;
+    }
+  }
 
   return (
     <tr key={emp.id} className="hover:bg-slate-50/80 transition-colors">
@@ -256,38 +346,50 @@ function EmployeeRow({
       </td>
       <td className="px-6 py-4 text-sm text-slate-600 font-medium">{emp.zone}</td>
       <td className="px-6 py-4 text-sm text-slate-900 font-semibold text-right">₹{Number(emp.monthlySalaryInr ?? 0).toLocaleString("en-IN")}</td>
-      <td className="px-6 py-4 min-w-[120px]">
-        {performanceScore !== null ? (
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all" style={{ width: `${(performanceScore / 5) * 100}%`, background: getColorForPerformance(performanceScore) }} />
+      <td className="px-6 py-4 min-w-[150px]">
+        {hasAttendanceRecords ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold" style={{ color: attendancePercent >= 90 ? "#16a34a" : attendancePercent >= 75 ? "#f59e0b" : "#dc2626" }}>
+                {attendancePercent}%
+              </span>
+              <span className="text-[10px] text-slate-500">{attendanceData?.present ?? 0}P • {attendanceData?.absent ?? 0}A</span>
             </div>
-            <span className="text-xs font-semibold" style={{ color: getColorForPerformance(performanceScore) }}>{performanceScore.toFixed(1)}</span>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${attendancePercent}%`,
+                  background: attendancePercent >= 90 ? "#16a34a" : attendancePercent >= 75 ? "#f59e0b" : "#dc2626",
+                }}
+              />
+            </div>
           </div>
         ) : (
-          <span className="text-xs text-slate-400">No data</span>
+          <span className="text-xs text-slate-400 italic">No attendance data</span>
         )}
       </td>
-      <td className="px-6 py-4 min-w-[120px]">
-        {attendancePercent !== null ? (
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all" style={{ width: `${attendancePercent}%`, background: attendancePercent >= 90 ? "#22C55E" : attendancePercent >= 80 ? "#F59E0B" : "#EF4444" }} />
-            </div>
-            <span className="text-xs font-semibold" style={{ color: attendancePercent >= 90 ? "#22C55E" : attendancePercent >= 80 ? "#F59E0B" : "#EF4444" }}>{attendancePercent}%</span>
-          </div>
-        ) : (
-          <span className="text-xs text-slate-400">No data</span>
-        )}
+      <td className="px-6 py-4 text-xs text-slate-600 whitespace-nowrap">
+        {latestPunchText}
       </td>
       <td className="px-6 py-4 text-center">
         <StatusBadge status={emp.status} className="text-[10px]" />
       </td>
       <td className="px-6 py-4 text-right">
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-end gap-1.5">
           <Button
             variant="ghost"
             size="icon"
+            title="View Attendance Log"
+            className="h-8 w-8 text-slate-400 hover:text-emerald-600 transition-colors"
+            onClick={() => setLocation(`/admin/attendance?employeeId=${targetId}`)}
+          >
+            <UserCheck className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Edit Employee"
             className="h-8 w-8 text-slate-400 hover:text-primary transition-colors"
             onClick={() => onOpenEdit(emp)}
           >
@@ -296,6 +398,7 @@ function EmployeeRow({
           <Button
             variant="ghost"
             size="icon"
+            title="View Profile"
             className="h-8 w-8 text-slate-400 hover:text-primary transition-colors"
             onClick={() => setLocation(`/admin/employees/${emp.id}`)}
           >
@@ -311,6 +414,7 @@ function EmployeeRow({
               <Button
                 variant="ghost"
                 size="icon"
+                title="Remove"
                 className="h-8 w-8 text-slate-400 hover:text-destructive transition-colors"
               >
                 <Trash2 className="h-4 w-4" />
@@ -384,19 +488,6 @@ function getErrorMessage(error: unknown): string {
   return "Unable to process request";
 }
 
-function PerformanceBar({ value }: { value: number }) {
-  const color = value >= 4.5 ? "#22C55E" : value >= 3.5 ? "#F59E0B" : "#EF4444";
-  const pct = (value / 5) * 100;
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <span className="text-xs font-semibold" style={{ color }}>{value.toFixed(1)}</span>
-    </div>
-  );
-}
-
 function AttendanceBar({ value }: { value: number }) {
   const color = value >= 90 ? "#22C55E" : value >= 80 ? "#F59E0B" : "#EF4444";
   return (
@@ -420,6 +511,9 @@ export default function AdminEmployees() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(() => now.getFullYear());
+  const { data: teamAttendance } = useTeamAttendance(selectedMonth, selectedYear);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
@@ -636,12 +730,20 @@ export default function AdminEmployees() {
     });
   };
 
+  // Calculate summary metrics
+  const totalEmployees = employees?.length || 0;
+  const totalPayroll = employees?.reduce((s, e) => s + (e.monthlySalaryInr || 0), 0) || 0;
+  const snapshotsList = Array.isArray(teamAttendance) ? teamAttendance : [];
+  const avgAttendance = snapshotsList.length > 0
+    ? Math.round(snapshotsList.reduce((acc: number, s: any) => acc + (s.attendancePercent ?? 0), 0) / snapshotsList.length)
+    : 0;
+
   return (
     <SidebarLayout>
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
         <PageHeader
           title="Employee Management"
-          description="View employee profiles, assigned tasks, performance, and attendance."
+          description="View employee profiles, assigned tasks, and attendance."
         />
         <div className="flex gap-2">
           <Button
@@ -890,9 +992,53 @@ export default function AdminEmployees() {
         </div>
       </div>
 
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">Total Employees</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">{isLoading ? "..." : totalEmployees}</p>
+              </div>
+              <div className="p-3 bg-violet-100 rounded-lg">
+                <Users className="w-5 h-5 text-violet-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">Monthly Payroll</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">{isLoading ? "..." : `₹${(totalPayroll / 100000).toFixed(2)}L`}</p>
+                <p className="text-xs text-slate-400 mt-1">Live database total</p>
+              </div>
+              <div className="p-3 bg-rose-100 rounded-lg">
+                <IndianRupee className="w-5 h-5 text-rose-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">Avg Attendance</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">{isLoading ? "..." : `${avgAttendance}%`}</p>
+              </div>
+              <div className="p-3 bg-emerald-100 rounded-lg">
+                <CheckCircle className="w-5 h-5 text-emerald-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Search and Filters */}
-      <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="relative">
+      <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+        <div className="relative lg:col-span-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
             placeholder="Search by name or role..."
@@ -923,15 +1069,42 @@ export default function AdminEmployees() {
           ))}
         </select>
 
-        <div className="text-sm text-slate-500 flex items-center px-3">
+        <select
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(Number(e.target.value))}
+          className="h-10 px-3 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-700"
+        >
+          {[
+            { v: 1, n: "January" }, { v: 2, n: "February" }, { v: 3, n: "March" },
+            { v: 4, n: "April" }, { v: 5, n: "May" }, { v: 6, n: "June" },
+            { v: 7, n: "July" }, { v: 8, n: "August" }, { v: 9, n: "September" },
+            { v: 10, n: "October" }, { v: 11, n: "November" }, { v: 12, n: "December" },
+          ].map(m => (
+            <option key={m.v} value={m.v}>{m.n}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(Number(e.target.value))}
+          className="h-10 px-3 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-700"
+        >
+          {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-sm text-slate-500 font-medium">
           Showing {filtered?.length || 0} of {employees?.length || 0} employees
         </div>
 
-        <div className="flex bg-slate-100 p-1 rounded-lg self-center">
+        <div className="flex bg-slate-100 p-1 rounded-lg">
           <Button
             variant={viewMode === "grid" ? "secondary" : "ghost"}
             size="sm"
-            className={`h-8 px-3 transition-all ${viewMode === "grid" ? "shadow-sm" : ""}`}
+            className={`h-8 px-3 transition-all ${viewMode === "grid" ? "shadow-sm bg-white" : ""}`}
             onClick={() => setViewMode("grid")}
           >
             <LayoutGrid className="h-4 w-4 mr-2" /> Grid
@@ -939,7 +1112,7 @@ export default function AdminEmployees() {
           <Button
             variant={viewMode === "table" ? "secondary" : "ghost"}
             size="sm"
-            className={`h-8 px-3 transition-all ${viewMode === "table" ? "shadow-sm" : ""}`}
+            className={`h-8 px-3 transition-all ${viewMode === "table" ? "shadow-sm bg-white" : ""}`}
             onClick={() => setViewMode("table")}
           >
             <List className="h-4 w-4 mr-2" /> Table
@@ -957,7 +1130,8 @@ export default function AdminEmployees() {
               <EmployeeCard
                 key={emp.id}
                 emp={emp}
-                now={now}
+                month={selectedMonth}
+                year={selectedYear}
                 onOpenEdit={onOpenEdit}
                 onDeleteEmployee={onDeleteEmployee}
                 setLocation={setLocation}
@@ -975,8 +1149,8 @@ export default function AdminEmployees() {
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">ID / Role</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Zone</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Salary</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Rating</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Attendance</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Latest Punch</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Status</th>
                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                 </tr>
@@ -997,7 +1171,8 @@ export default function AdminEmployees() {
                     <EmployeeRow
                       key={emp.id}
                       emp={emp}
-                      now={now}
+                      month={selectedMonth}
+                      year={selectedYear}
                       onOpenEdit={onOpenEdit}
                       onDeleteEmployee={onDeleteEmployee}
                       setLocation={setLocation}

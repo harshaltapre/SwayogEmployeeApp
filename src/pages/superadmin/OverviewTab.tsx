@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import { Users, Zap, IndianRupee, AlertTriangle, Globe, TrendingUp, Package, MapPin, ChevronRight } from "lucide-react";
 import { C, ZONES, MONTHLY_REV, YEARLY_REV, COMPLAINT_PIE, PERF_RADAR, INSTALLATIONS_DATA, StatCard, Card, Pill } from "./shared";
-import { useListCustomers, useListEmployees, useGetAdminDashboardSummary, useGetComplaintStats, useListPartners, useListInventory } from "@/lib/api-client";
+import { useListCustomers, useGetAdminDashboardSummary } from "@/lib/api-client";
 import { subscribeCustomerDataChanged } from "@/lib/entity-sync";
 
 interface OverviewTabProps {
@@ -16,11 +16,7 @@ export default function OverviewTab({ onNavigate }: OverviewTabProps) {
   const [revView, setRevView] = useState<"monthly" | "yearly">("monthly");
   const chartData = revView === "monthly" ? MONTHLY_REV : YEARLY_REV;
   const { data: summary, isLoading: summaryLoading, refetch: refetchSummary } = useGetAdminDashboardSummary();
-  const { data: complaintStats, isLoading: statsLoading } = useGetComplaintStats();
-  const { data: customers, isLoading: customersLoading, refetch: refetchCustomers } = useListCustomers();
-  const { data: employees, isLoading: employeesLoading } = useListEmployees();
-  const { data: partners, isLoading: partnersLoading } = useListPartners();
-  const { data: inventory, isLoading: inventoryLoading } = useListInventory();
+  const { data: customers, isLoading: customersLoading, refetch: refetchCustomers } = useListCustomers({ limit: 8 });
 
   useEffect(() => {
     return subscribeCustomerDataChanged(() => {
@@ -29,52 +25,41 @@ export default function OverviewTab({ onNavigate }: OverviewTabProps) {
     });
   }, [refetchCustomers, refetchSummary]);
 
-  const totalEmployees = employees?.length || 0;
-  const inactiveEmployees = employees?.filter((e) => e.status !== "active").length || 0;
-
-  const totalKw = Array.isArray(customers) ? customers.reduce((s, c) => s + (Number(c.systemSizeKw) || 0), 0) : 0;
+  const totalKw = summary?.totalInstalledCapacityKw || 0;
   const totalProjectValue = totalKw * 60000;
   const formattedProjectValue = totalProjectValue >= 100000 
     ? `₹${(totalProjectValue / 100000).toFixed(1)}L`
     : `₹${(totalProjectValue / 1000).toFixed(1)}k`;
-
-  const realPendingComplaints = complaintStats ? (complaintStats.new + complaintStats.assigned) : 0;
-
-  const totalPartners = partners?.length || 0;
-  const inactivePartners = partners?.filter(p => p.status !== "active").length || 0;
-  const lowStockCount = inventory?.filter(i => i.isLowStock).length || 0;
 
   const monthlyRev = summary?.monthlyRevenue || 0;
   const formattedMonthlyRev = monthlyRev >= 100000 
     ? `₹${(monthlyRev / 100000).toFixed(1)}L`
     : `₹${(monthlyRev / 1000).toFixed(1)}k`;
 
-  const totalCustomersDisplay = summary?.totalCustomers !== undefined 
-    ? summary.totalCustomers.toString() 
-    : (customers?.length || 0).toString();
+  const totalCustomersDisplay = summary?.totalCustomers?.toString() || "0";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
-        <StatCard title="Total Customers"        value={customersLoading && summaryLoading ? "..." : totalCustomersDisplay}  icon={<Users size={20} color={C.gold} />}          trend={8.4}   accent={C.gold} />
-        <StatCard title="Project Value (Est.)"   value={customersLoading ? "..." : formattedProjectValue}  icon={<IndianRupee size={20} color={C.emerald} />} trend={34.8}  accent={C.emerald} />
+        <StatCard title="Total Customers"        value={summaryLoading ? "..." : totalCustomersDisplay}  icon={<Users size={20} color={C.gold} />}          trend={8.4}   accent={C.gold} />
+        <StatCard title="Project Value (Est.)"   value={summaryLoading ? "..." : formattedProjectValue}  icon={<IndianRupee size={20} color={C.emerald} />} trend={34.8}  accent={C.emerald} />
         <StatCard title="Active Installations"   value={summaryLoading ? "..." : (summary?.activeInstallations || "0")}  icon={<Zap size={20} color={C.sky} />}            trend={12.1}  accent={C.sky} />
-        <StatCard title="Open Complaints"        value={statsLoading ? "..." : realPendingComplaints.toString()}     icon={<AlertTriangle size={20} color={C.rose} />}  trend={-6.2}  accent={C.rose} />
+        <StatCard title="Open Complaints"        value={summaryLoading ? "..." : (summary?.openComplaints || 0).toString()}     icon={<AlertTriangle size={20} color={C.rose} />}  trend={-6.2}  accent={C.rose} />
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
         <StatCard 
           title="Employees" 
-          value={employeesLoading ? "..." : totalEmployees.toString()} 
+          value={summaryLoading ? "..." : (summary?.totalEmployees || 0).toString()}
           icon={<Users size={20} color={C.violet} />} 
-          sub={`${inactiveEmployees} inactive`} 
+          sub={`${summary?.inactiveEmployees || 0} inactive`}
           accent={C.violet} 
         />
         <StatCard 
           title="Partner Companies"  
-          value={partnersLoading ? "..." : totalPartners.toString()}      
+          value={summaryLoading ? "..." : (summary?.totalPartners || 0).toString()}
           icon={<Globe size={20} color={C.sky} />}          
-          sub={partnersLoading ? "" : `${inactivePartners} inactive`}      
+          sub={`${summary?.inactivePartners || 0} inactive`}
           accent={C.sky} 
         />
         <StatCard 
@@ -86,9 +71,9 @@ export default function OverviewTab({ onNavigate }: OverviewTabProps) {
         />
         <StatCard 
           title="Inventory Items Low" 
-          value={inventoryLoading ? "..." : lowStockCount.toString()}      
+          value={summaryLoading ? "..." : (summary?.lowStockCount || 0).toString()}
           icon={<Package size={20} color={C.amber} />}      
-          sub={lowStockCount > 0 ? "Needs reorder" : "Stock healthy"}    
+          sub={(summary?.lowStockCount || 0) > 0 ? "Needs reorder" : "Stock healthy"}
           accent={C.amber} 
         />
       </div>

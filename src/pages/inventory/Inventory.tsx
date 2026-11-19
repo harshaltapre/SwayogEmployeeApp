@@ -23,15 +23,6 @@ export default function InventoryManagementPage() {
   const [historyItem, setHistoryItem] = useState<InventoryRecord | null>(null);
   const { toast } = useToast();
 
-  if (!user) return null;
-  const isSuperOrAdmin = user.role === "super_admin" || user.role === "admin";
-  const isExec = isInventoryExecutiveJobRole(user.jobRole);
-  if (!isSuperOrAdmin && !isExec) {
-    return <Redirect to="/employee/dashboard" />;
-  }
-
-  const canManage = isExec;
-
   const createMutation = useCreateInventory({
     mutation: {
       onSuccess: () => {
@@ -57,6 +48,15 @@ export default function InventoryManagementPage() {
       },
     },
   });
+
+  if (!user) return null;
+  const isSuperOrAdmin = user.role === "super_admin" || user.role === "admin";
+  const isExec = isInventoryExecutiveJobRole(user.jobRole);
+  if (!isSuperOrAdmin && !isExec) {
+    return <Redirect to="/employee/dashboard" />;
+  }
+
+  const canManage = isExec;
 
   const filtered = inventory?.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase()) || item.sku.toLowerCase().includes(search.toLowerCase());

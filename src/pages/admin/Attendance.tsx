@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useListEmployees } from "@/lib/api-client";
 import {
-  useTeamPerformance,
+  useTeamAttendance,
   useEmployeeMonthlyAttendance,
   useAttendanceRules,
   useUpdateAttendanceRules,
@@ -23,6 +23,9 @@ import {
   HolidayRecord,
 } from "@/hooks/useAttendance";
 import { resolveConfiguredApiBaseUrl } from "@/lib/resolve-api-base-url";
+import { useToast } from "@/hooks/use-toast";
+import { apiClient } from "@/lib/api-utils";
+import { generateAttendanceExcelWorkbook } from "@/lib/attendance-report-generator";
 
 export function resolveStaticUrl(url: string | null | undefined): string {
   if (!url) return "";
@@ -64,9 +67,11 @@ import {
   Info,
   ArrowLeft,
   X,
+  Download,
+  FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { AttendanceAlarmPolicyCard } from "@/components/admin/AttendanceAlarmPolicyCard";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -74,6 +79,8 @@ import { useAuth } from "@/lib/auth";
 // Types
 interface AttendanceRule {
   shiftStart: string;
+  shiftEnd?: string;
+  autoCheckoutGraceMinutes?: number;
   faceRequired: boolean;
   geofenceEnabled: boolean;
   officeLat: number;
@@ -82,17 +89,12 @@ interface AttendanceRule {
   faceMatchThreshold?: number;
   weeklyOffDays?: number[];
   dailyWorkingHours?: number;
-  // Smart attendance policy fields
-  reportingTime?: string;         // e.g. "10:30"
-  monthlyLateAllowance?: number;  // default 3
-  timezone?: string;              // "Asia/Kolkata"
-  geofenceActive?: boolean;
-  minLocationAccuracy?: number;   // meters
-  policyStatus?: string;          // "ACTIVE" | "DRAFT"
 }
 
 const DEFAULT_RULES: AttendanceRule = {
-  shiftStart: "09:15",
+  shiftStart: "10:30",
+  shiftEnd: "18:30",
+  autoCheckoutGraceMinutes: 30,
   faceRequired: true,
   geofenceEnabled: false,
   officeLat: 21.175401747696093, // Swayog Energy Pvt. Ltd., Nagpur
@@ -101,12 +103,6 @@ const DEFAULT_RULES: AttendanceRule = {
   faceMatchThreshold: 0.55,
   weeklyOffDays: [0],
   dailyWorkingHours: 9.0,
-  reportingTime: "10:30",
-  monthlyLateAllowance: 3,
-  timezone: "Asia/Kolkata",
-  geofenceActive: false,
-  minLocationAccuracy: 50,
-  policyStatus: "ACTIVE",
 };
 
 const ConditionalWrapper = ({ condition, wrapper, children }: { condition: boolean; wrapper: (children: React.ReactNode) => React.ReactNode; children: React.ReactNode }) =>
@@ -114,6 +110,7 @@ const ConditionalWrapper = ({ condition, wrapper, children }: { condition: boole
 
 export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) {
   const { user } = useAuth();
+  const { toast } = useToast();
   const isSuperAdmin = user?.role === "super_admin" || String(user?.role || "").toUpperCase() === "SUPER_ADMIN";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -161,8 +158,8 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
   // Fetch employees list
   const { data: employees = [], isLoading: loadingEmployees } = useListEmployees();
 
-  // Fetch team performance/attendance snapshots for selected month
-  const { data: performanceSnapshots = [], isLoading: loadingSnapshots } = useTeamPerformance(
+  // Fetch attendance snapshots for selected month
+  const { data: attendanceSnapshots = [], isLoading: loadingSnapshots } = useTeamAttendance(
     selectedMonth,
     selectedYear
   );
@@ -212,6 +209,118 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
   const [rejectError, setRejectError] = useState("");
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [acceptSuccessMsg, setAcceptSuccessMsg] = useState("");
+
+  // Report dialog state
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState<"daily" | "monthly" | "yearly" | "custom">("monthly");
+  const [reportDayDate, setReportDayDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reportMonth, setReportMonth] = useState(() => new Date().getMonth());
+  const [reportYear, setReportYear] = useState(selectedYear);
+  const [reportStartDate, setReportStartDate] = useState("");
+  const [reportEndDate, setReportEndDate] = useState("");
+  const [reportEmployeeFilter, setReportEmployeeFilter] = useState<"all" | "specific">("all");
+  const [selectedReportEmployees, setSelectedReportEmployees] = useState<string[]>([]);
+  const [reportDepartment, setReportDepartment] = useState<string>("all");
+  const [reportType, setReportType] = useState<"complete" | "daily" | "department" | "individual" | "weekly" | "exceptions">("complete");
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
+  // Generate 10-Sheet CEO-Grade Attendance Excel Workbook
+  const handleGenerateReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      let startDateStr: string;
+      let endDateStr: string;
+
+      if (reportPeriod === "daily") {
+        const now = new Date();
+        const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        const dayStr = reportDayDate || todayLocal;
+        startDateStr = dayStr;
+        endDateStr = dayStr;
+      } else if (reportPeriod === "monthly") {
+        const lastDay = new Date(reportYear, reportMonth + 1, 0).getDate();
+        startDateStr = `${reportYear}-${String(reportMonth + 1).padStart(2, "0")}-01`;
+        endDateStr = `${reportYear}-${String(reportMonth + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      } else if (reportPeriod === "yearly") {
+        startDateStr = `${reportYear}-01-01`;
+        endDateStr = `${reportYear}-12-31`;
+      } else {
+        startDateStr = reportStartDate || `${reportYear}-01-01`;
+        endDateStr = reportEndDate || `${reportYear}-12-31`;
+      }
+
+      const queryParams: Record<string, string> = {
+        startDate: startDateStr,
+        endDate: endDateStr,
+        reportType: reportPeriod === "daily" ? "daily" : "complete",
+        status: "ACTIVE",
+      };
+
+      const response = await apiClient.get("/attendance/admin/export-excel", {
+        params: queryParams,
+        responseType: "blob",
+        timeout: 120000, // 2 minutes for 10-sheet + 12-month workbook generation
+      });
+
+      const blob = new Blob([response.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      let filename: string;
+      if (reportPeriod === "daily") {
+        filename = `Swayog_Day_Attendance_Report_${startDateStr}.xlsx`;
+      } else if (reportPeriod === "monthly") {
+        const monthName = new Date(reportYear, reportMonth, 1).toLocaleString("default", { month: "long" });
+        filename = `Swayog_CEO_Attendance_Report_${reportYear}_${monthName}.xlsx`;
+      } else if (reportPeriod === "yearly") {
+        filename = `Swayog_CEO_Attendance_Report_${reportYear}.xlsx`;
+      } else {
+        filename = `Swayog_CEO_Attendance_Report_${startDateStr}_to_${endDateStr}.xlsx`;
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        if (link.parentNode) {
+          link.parentNode.removeChild(link);
+        }
+        URL.revokeObjectURL(url);
+      }, 200);
+
+      toast({
+        title: "CEO Attendance Workbook Ready",
+        description: "Downloaded 10-sheet Excel workbook with 12-month comparison, calendar matrix, and audit logs.",
+      });
+      setReportDialogOpen(false);
+    } catch (error: any) {
+      console.error("Error generating report:", error);
+      let errMsg = "Failed to generate CEO attendance Excel workbook.";
+      if (error?.response?.data instanceof Blob) {
+        try {
+          const text = await error.response.data.text();
+          const parsed = JSON.parse(text);
+          if (parsed?.error) errMsg = parsed.error;
+        } catch {
+          // keep default
+        }
+      } else if (error?.response?.data?.error) {
+        errMsg = error.response.data.error;
+      } else if (error?.message) {
+        errMsg = error.message;
+      }
+      toast({
+        title: "Export Failed",
+        description: errMsg,
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
 
   const handleOpenApplyModal = (employee?: any, existingRecord?: any) => {
     setFormError("");
@@ -426,13 +535,26 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
   const nextHoliday = upcomingHolidays[0];
 
   const getAttendancePercentForEmployee = (empId: string) => {
-    const snap = performanceSnapshots.find((s: any) => String(s.employeeId) === String(empId));
+    const snap = attendanceSnapshots.find((s: any) => String(s.employeeId) === String(empId));
     return snap ? Math.round(snap.attendancePercent) : 0;
   };
 
-  const getPerformanceScoreForEmployee = (empId: string) => {
-    const snap = performanceSnapshots.find((s: any) => String(s.employeeId) === String(empId));
-    return snap ? snap.performanceScore.toFixed(1) : "—";
+  const getTodayAttendanceForEmployee = (empId: string) => {
+    return todaySummary?.employees?.find((employee) => String(employee.id) === String(empId));
+  };
+
+  const formatTodayAttendanceTime = (value: string | null | undefined) => {
+    if (!value) return "—";
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(date);
   };
 
   const filteredEmployees = employees.filter((emp: any) => {
@@ -441,8 +563,8 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
     return nameMatch || roleMatch;
   });
 
-  const avgAttendance = performanceSnapshots.length
-    ? Math.round(performanceSnapshots.reduce((acc: number, cur: any) => acc + cur.attendancePercent, 0) / performanceSnapshots.length)
+  const avgAttendance = attendanceSnapshots.length
+    ? Math.round(attendanceSnapshots.reduce((acc: number, cur: any) => acc + cur.attendancePercent, 0) / attendanceSnapshots.length)
     : 85;
 
   const totalEmpCount = employees.length;
@@ -488,18 +610,10 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
       case "SUNDAY_HOLIDAY":
       case "WEEKLY_OFF":
         return (
-          <Badge className="bg-blue-100 text-blue-800 border-blue-200 font-semibold gap-1">
-            <Sun className="h-3 w-3 inline text-blue-500" /> Weekly Off
+          <Badge className="bg-amber-100 text-amber-800 border-amber-200 font-semibold gap-1">
+            <Sun className="h-3 w-3 inline text-amber-600" /> Weekly Off
           </Badge>
         );
-      case "PRESENT_LATE_ALLOWANCE":
-        return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Late (Allowed)</Badge>;
-      case "MANUAL_REVIEW":
-        return <Badge className="bg-orange-100 text-orange-800 border-orange-200">Manual Review</Badge>;
-      case "PENDING_VERIFICATION":
-        return <Badge className="bg-violet-100 text-violet-800 border-violet-200">Pending</Badge>;
-      case "ON_LEAVE":
-        return <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200">On Leave</Badge>;
       default:
         return <Badge className="bg-slate-100 text-slate-800 border-slate-200">{status}</Badge>;
     }
@@ -775,6 +889,14 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                   {/* Actions & Month Switcher */}
                   <div className="flex flex-wrap items-center gap-2.5">
                     <Button
+                      onClick={() => setReportDialogOpen(true)}
+                      variant="outline"
+                      className="font-semibold text-xs gap-1.5 h-9 border-primary text-primary hover:bg-primary/5"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" /> Download Attendance Report
+                    </Button>
+
+                    <Button
                       onClick={() => handleOpenApplyModal()}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5 shadow-sm h-9"
                     >
@@ -805,7 +927,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                         <th className="px-6 py-4">Employee Details</th>
                         <th className="px-6 py-4">Designation</th>
                         <th className="px-6 py-4 text-center">Attendance % ({monthName})</th>
-                        <th className="px-6 py-4 text-center">Performance Index</th>
+                        <th className="px-6 py-4 text-center">Today's Check-in / Check-out</th>
                         <th className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -813,7 +935,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                       {loadingEmployees || loadingSnapshots ? (
                         <tr>
                           <td colSpan={5} className="text-center py-10 text-slate-500 font-medium">
-                            Loading attendance records and performance profiles...
+                            Loading attendance records...
                           </td>
                         </tr>
                       ) : filteredEmployees.length === 0 ? (
@@ -826,7 +948,9 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                         filteredEmployees.map((emp: any) => {
                           const empIdStr = String(emp.userId || emp.id);
                           const percent = getAttendancePercentForEmployee(empIdStr);
-                          const score = getPerformanceScoreForEmployee(empIdStr);
+                          const todayAttendance = getTodayAttendanceForEmployee(empIdStr);
+                          const hasCheckedIn = Boolean(todayAttendance?.checkInTime);
+                          const hasCheckedOut = Boolean(todayAttendance?.checkOutTime);
 
                           return (
                             <tr key={empIdStr} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
@@ -860,8 +984,28 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                                   <span className="text-xs font-semibold">{percent}%</span>
                                 </div>
                               </td>
-                              <td className="px-6 py-4 text-center font-bold text-slate-700 dark:text-slate-300">
-                                {score}
+                              <td className="px-6 py-4 text-center">
+                                <div className="space-y-1 text-xs">
+                                  <div>
+                                    <span className="font-semibold text-slate-600 dark:text-slate-400">In: </span>
+                                    <span className="font-medium text-slate-900 dark:text-white">
+                                      {formatTodayAttendanceTime(todayAttendance?.checkInTime)}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold text-slate-600 dark:text-slate-400">Out: </span>
+                                    <span className={cn(
+                                      "font-medium",
+                                      hasCheckedIn && !hasCheckedOut
+                                        ? "text-amber-600 dark:text-amber-400"
+                                        : "text-slate-900 dark:text-white"
+                                    )}>
+                                      {hasCheckedIn && !hasCheckedOut
+                                        ? "Not Checked Out"
+                                        : formatTodayAttendanceTime(todayAttendance?.checkOutTime)}
+                                    </span>
+                                  </div>
+                                </div>
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <div className="flex items-center justify-end gap-2">
@@ -1304,7 +1448,7 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Shift Start Time</label>
                     <Input
@@ -1313,6 +1457,28 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                       onChange={(e) => setRules((r) => ({ ...r, shiftStart: e.target.value }))}
                     />
                     <p className="text-xs text-slate-500">Check-ins logged after this time are automatically marked as Late.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Shift End Time (Auto-Checkout)</label>
+                    <Input
+                      type="time"
+                      value={rules.shiftEnd || "18:30"}
+                      onChange={(e) => setRules((r) => ({ ...r, shiftEnd: e.target.value }))}
+                    />
+                    <p className="text-xs text-slate-500">Missing check-outs automatically close at this time once shift and grace period conclude.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Auto Check-Out Grace (Mins)</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="180"
+                      value={rules.autoCheckoutGraceMinutes ?? 30}
+                      onChange={(e) => setRules((r) => ({ ...r, autoCheckoutGraceMinutes: parseInt(e.target.value, 10) || 0 }))}
+                    />
+                    <p className="text-xs text-slate-500">Grace period after shift end before automatic closure takes effect.</p>
                   </div>
 
                   <div className="flex flex-col justify-center gap-2">
@@ -1477,57 +1643,12 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                   )}
                 </div>
 
-                {/* Smart Attendance Policy */}
-                <div className="border-t border-border pt-4 mt-2">
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">📋 Smart Attendance Policy</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-500">Reporting Time (IST)</label>
-                      <Input
-                        type="time"
-                        value={rules.reportingTime ?? "10:30"}
-                        onChange={(e) => setRules((r) => ({ ...r, reportingTime: e.target.value }))}
-                      />
-                      <p className="text-[10px] text-slate-400">Official check-in deadline. Employees cannot change this.</p>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-500">Monthly Late Allowance (days)</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={10}
-                        value={rules.monthlyLateAllowance ?? 3}
-                        onChange={(e) => setRules((r) => ({ ...r, monthlyLateAllowance: parseInt(e.target.value) || 3 }))}
-                      />
-                      <p className="text-[10px] text-slate-400">Late arrivals allowed before HALF_DAY is applied each month.</p>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-500">Min. GPS Accuracy (meters)</label>
-                      <Input
-                        type="number"
-                        min={5}
-                        max={500}
-                        value={rules.minLocationAccuracy ?? 50}
-                        onChange={(e) => setRules((r) => ({ ...r, minLocationAccuracy: parseInt(e.target.value) || 50 }))}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-500">Timezone</label>
-                      <Input value="Asia/Kolkata" disabled className="opacity-60" />
-                      <p className="text-[10px] text-slate-400">Fixed to IST for all attendance calculations.</p>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="flex justify-end gap-2 border-t border-border pt-6">
                   <Button variant="outline" onClick={() => setRules(DEFAULT_RULES)}>Reset to Default</Button>
                   <Button onClick={handleSaveRules}>Save Rule Config</Button>
                 </div>
               </CardContent>
             </Card>
-
-            {/* Company attendance alarm policy + ringtone management */}
-            <AttendanceAlarmPolicyCard />
           </div>
         )}
 
@@ -1648,7 +1769,12 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
 
                               let displayStatus = rec.status;
                               let holidayNameDisplay = undefined;
-                              if (!rec.checkInTime && !rec.checkOutTime) {
+                              if (
+                                !rec.checkInTime
+                                && !rec.checkOutTime
+                                && rec.status !== "ABSENT"
+                                && rec.status !== "LEAVE"
+                              ) {
                                 if (matchedHoliday) {
                                   displayStatus = "HOLIDAY";
                                   holidayNameDisplay = matchedHoliday.name;
@@ -1750,19 +1876,9 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
 
                                         return (
                                           <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span className="text-[10px] text-slate-400 font-mono">
-                                                {coordsText}
-                                              </span>
-                                              {isWorkplaceFallback && (
-                                                <span
-                                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-800 text-amber-300/90 border border-amber-600/30 shrink-0"
-                                                  title="Configured workplace coordinates for Swayog Energy Pvt. Ltd., Nagpur. Employee device GPS was not captured."
-                                                >
-                                                  Workplace
-                                                </span>
-                                              )}
-                                            </div>
+                                            <span className="text-[10px] text-slate-400 font-mono">
+                                              {coordsText}
+                                            </span>
                                             <a
                                               href={`https://www.google.com/maps?q=${lat},${lng}`}
                                               target="_blank"
@@ -1919,6 +2035,63 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                         "{selectedAuditRecord.audit?.remark || selectedAuditRecord.overrideReason || selectedAuditRecord.notes || selectedAuditRecord.admin_remark || "No remark entered"}"
                       </span>
                     </p>
+                  </div>
+                </div>
+
+                {/* ── Check-Out Provenance & Audit ────────────────────────────── */}
+                <div className="bg-blue-50/70 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-900/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-blue-950 dark:text-blue-300">Check-Out Provenance & Audit</span>
+                    <Badge className={cn("text-[10px]",
+                      (selectedAuditRecord.audit?.isAutoClosed || selectedAuditRecord.checkOutSource === "SYSTEM_AUTO_CLOSURE")
+                        ? "bg-amber-800 text-amber-200"
+                        : "bg-blue-900/70 text-blue-200"
+                    )}>
+                      {selectedAuditRecord.audit?.checkOutSource || selectedAuditRecord.checkOutSource || (selectedAuditRecord.checkOutTime ? "RECORDED" : "NONE")}
+                    </Badge>
+                  </div>
+                  <div className="text-slate-700 dark:text-slate-300 space-y-1 text-xs">
+                    {(selectedAuditRecord.audit?.isAutoClosed || selectedAuditRecord.checkOutSource === "SYSTEM_AUTO_CLOSURE") ? (
+                      <>
+                        <p>
+                          <strong className="text-slate-900 dark:text-white">Assumed Check-Out Time:</strong>{" "}
+                          <span className="font-semibold text-amber-600 dark:text-amber-400">
+                            {selectedAuditRecord.checkOutTime ? new Date(selectedAuditRecord.checkOutTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "—"} (Scheduled Shift End)
+                          </span>
+                        </p>
+                        <p>
+                          <strong className="text-slate-900 dark:text-white">Actual Device Punch Captured:</strong>{" "}
+                          <span className="text-rose-600 dark:text-rose-400">No (Missing Check-Out Automatically Closed by System)</span>
+                        </p>
+                        <p>
+                          <strong className="text-slate-900 dark:text-white">Closure Reason:</strong>{" "}
+                          <span className="italic">
+                            {selectedAuditRecord.audit?.autoClosureReason || selectedAuditRecord.autoClosureReason || "Automatically finalized by system upon scheduled shift end"}
+                          </span>
+                        </p>
+                        {(selectedAuditRecord.audit?.autoClosedAt || selectedAuditRecord.autoClosedAt) && (
+                          <p>
+                            <strong className="text-slate-900 dark:text-white">Auto-Closure Execution:</strong>{" "}
+                            {new Date(selectedAuditRecord.audit?.autoClosedAt || selectedAuditRecord.autoClosedAt).toLocaleString("en-IN")}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p>
+                          <strong className="text-slate-900 dark:text-white">Actual Recorded Check-Out Time:</strong>{" "}
+                          <span>
+                            {selectedAuditRecord.checkOutTime ? new Date(selectedAuditRecord.checkOutTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "None recorded"}
+                          </span>
+                        </p>
+                        <p>
+                          <strong className="text-slate-900 dark:text-white">Punch Source:</strong>{" "}
+                          <span>
+                            {selectedAuditRecord.manualOverride ? "Administrator Assigned / Corrected" : "Live Employee Punch"}
+                          </span>
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -2450,6 +2623,178 @@ export default function AdminAttendance({ isTab = false }: { isTab?: boolean }) 
                   )}
                 </Button>
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Attendance Report Dialog */}
+        <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-primary" />
+                Download Attendance Analysis Report
+              </DialogTitle>
+              <DialogDescription>
+                Generate comprehensive Excel report with employee attendance analysis, daily logs, and location details.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              {/* Report Period */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold">Report Period</label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={reportPeriod === "daily" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setReportPeriod("daily");
+                      setReportType("daily");
+                    }}
+                  >
+                    Day Report
+                  </Button>
+                  <Button
+                    variant={reportPeriod === "monthly" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setReportPeriod("monthly");
+                      if (reportType === "daily") setReportType("complete");
+                    }}
+                  >
+                    Monthly
+                  </Button>
+                  <Button
+                    variant={reportPeriod === "yearly" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setReportPeriod("yearly");
+                      if (reportType === "daily") setReportType("complete");
+                    }}
+                  >
+                    Yearly
+                  </Button>
+                  <Button
+                    variant={reportPeriod === "custom" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setReportPeriod("custom");
+                      if (reportType === "daily") setReportType("complete");
+                    }}
+                  >
+                    Custom Range
+                  </Button>
+                </div>
+              </div>
+
+              {/* Single Day Date Picker */}
+              {reportPeriod === "daily" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Select Date (IST)</label>
+                  <Input
+                    type="date"
+                    value={reportDayDate}
+                    onChange={(e) => setReportDayDate(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-500">
+                    Generates a Day Report with In Time, Out Time, IST Location, clickable Google Maps link, and Remaining employees/hours.
+                  </p>
+                </div>
+              )}
+
+              {/* Month/Year Selection */}
+              {reportPeriod === "monthly" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Year</label>
+                    <select
+                      value={reportYear}
+                      onChange={(e) => setReportYear(Number(e.target.value))}
+                      className="w-full px-3 py-2 border rounded-md"
+                    >
+                      {Array.from({ length: 5 }, (_, i) => {
+                        const year = new Date().getFullYear() - 2 + i;
+                        return <option key={year} value={year}>{year}</option>;
+                      })}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Month</label>
+                    <select
+                      value={reportMonth}
+                      onChange={(e) => setReportMonth(Number(e.target.value))}
+                      className="w-full px-3 py-2 border rounded-md"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <option key={i} value={i}>
+                          {new Date(0, i).toLocaleString("default", { month: "long" })}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {reportPeriod === "yearly" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Year</label>
+                  <select
+                    value={reportYear}
+                    onChange={(e) => setReportYear(Number(e.target.value))}
+                    className="w-full px-3 py-2 border rounded-md"
+                  >
+                    {Array.from({ length: 5 }, (_, i) => {
+                      const year = new Date().getFullYear() - 2 + i;
+                      return <option key={year} value={year}>{year}</option>;
+                    })}
+                  </select>
+                </div>
+              )}
+
+              {reportPeriod === "custom" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Start Date</label>
+                    <Input
+                      type="date"
+                      value={reportStartDate}
+                      onChange={(e) => setReportStartDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">End Date</label>
+                    <Input
+                      type="date"
+                      value={reportEndDate}
+                      onChange={(e) => setReportEndDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setReportDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleGenerateReport}
+                  disabled={isGeneratingReport}
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  {isGeneratingReport ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 mr-2" />
+                      Generate Report
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
             </div>
           </DialogContent>
         </Dialog>

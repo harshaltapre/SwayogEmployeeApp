@@ -225,6 +225,7 @@ export function UserFormModal({ user, onClose, onSaved }: { user?: SAUser; onClo
                     <option value="Service Coordinator">Service Coordinator</option>
                     <option value="Service & Executive Head">Service & Executive Head</option>
                     <option value="Isphere Green head">Isphere Green head</option>
+                    <option value="Marketing Executive">Marketing Executive</option>
                     <option value="Other Position">Other Position</option>
                   </select>
                 </FormField>
@@ -580,6 +581,7 @@ const ROLE_TEMPLATES: Record<ImportCategory, {
         "Service Coordinator",
         "Service & Executive Head",
         "Isphere Green head",
+        "Marketing Executive",
         "Sub Admin",
         "Other Position",
       ],

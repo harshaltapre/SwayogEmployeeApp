@@ -19,7 +19,7 @@ import {
   type SpecializedSection,
   hasSectionAccess,
 } from "@/lib/section-permissions";
-import { superAdminApi, type SAUser } from "@/lib/superadmin-api";
+import { useUpdateInternalUser } from "@/lib/api-client";
 import { notifyEmployeeDataChanged } from "@/lib/entity-sync";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -47,6 +47,7 @@ export function EmployeePermissionsModal({
   onSaved,
 }: EmployeePermissionsModalProps) {
   const { toast } = useToast();
+  const updatePermissionsMutation = useUpdateInternalUser();
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(() => {
     const existing = Array.isArray(user.permissions) ? user.permissions : [];
     return [...existing];
@@ -104,8 +105,11 @@ export function EmployeePermissionsModal({
     setIsSaving(true);
     setError(null);
     try {
-      const updated = await superAdminApi.updateUserPermissions(user.id, selectedPermissions);
-      
+      const updated = await updatePermissionsMutation.mutateAsync({
+        userId: user.id,
+        data: { permissions: selectedPermissions },
+      });
+
       // If current logged-in session belongs to this user, update immediately
       const currentAuthUser = useAuth.getState().user;
       if (
@@ -128,34 +132,7 @@ export function EmployeePermissionsModal({
       onClose();
     } catch (err: any) {
       console.error("Failed to update permissions:", err);
-      // Fallback: try standard updateUser if endpoint uses updateUser
-      try {
-        const fallbackUpdated = await superAdminApi.updateUser(user.id, {
-          permissions: selectedPermissions,
-        });
-
-        const currentAuthUser = useAuth.getState().user;
-        if (
-          currentAuthUser &&
-          (String(currentAuthUser.id) === String(user.id) ||
-           (currentAuthUser.email && user.email && currentAuthUser.email.toLowerCase() === user.email.toLowerCase()) ||
-           (currentAuthUser.loginId && user.loginId && currentAuthUser.loginId.toLowerCase() === user.loginId.toLowerCase()))
-        ) {
-          useAuth.getState().updateUser({
-            permissions: selectedPermissions,
-          });
-        }
-
-        notifyEmployeeDataChanged({ userId: user.id, permissions: selectedPermissions });
-        toast({
-          title: "Permissions Updated",
-          description: `Successfully configured ${selectedPermissions.length} sidebar sections for ${user.fullName}.`,
-        });
-        if (onSaved) onSaved(fallbackUpdated);
-        onClose();
-      } catch (fallbackErr: any) {
-        setError(fallbackErr.message || err.message || "Failed to update permissions");
-      }
+      setError(err.message || "Failed to update permissions");
     } finally {
       setIsSaving(false);
     }

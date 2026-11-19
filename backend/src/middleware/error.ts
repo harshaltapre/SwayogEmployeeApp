@@ -17,12 +17,51 @@ export function notFoundHandler(_req: Request, _res: Response, next: NextFunctio
   next(new ApiError(404, "Route not found"));
 }
 
+function getPrismaSchemaErrorCode(err: unknown): "P2021" | "P2022" | undefined {
+  if (typeof err !== "object" || err === null || !("code" in err)) return undefined;
+  return err.code === "P2021" || err.code === "P2022" ? err.code : undefined;
+}
+
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
   const reqInfo = {
     method: req.method,
     url: req.url,
     ip: getRequestIp(req),
   };
+
+  const prismaSchemaErrorCode = getPrismaSchemaErrorCode(err);
+  if (prismaSchemaErrorCode) {
+    logger.error(`Prisma schema mismatch (${prismaSchemaErrorCode})`, reqInfo);
+    res.status(503).json({
+      error: "Database schema is out of date. Redeploy the backend to apply pending Prisma migrations.",
+    });
+    return;
+  }
+
+  // Handle common Prisma known request errors cleanly instead of 500
+  if (typeof err === "object" && err !== null && "code" in err) {
+    const code = (err as { code?: string; meta?: Record<string, unknown> }).code;
+    if (code === "P2002") {
+      res.status(409).json({
+        error: "A record with this unique identifier already exists.",
+        details: (err as any).meta,
+      });
+      return;
+    }
+    if (code === "P2003") {
+      res.status(400).json({
+        error: "Referenced record does not exist or cannot be modified due to existing links.",
+        details: (err as any).meta,
+      });
+      return;
+    }
+    if (code === "P2025") {
+      res.status(404).json({
+        error: "Requested record was not found.",
+      });
+      return;
+    }
+  }
 
   if (err instanceof ApiError) {
     logger.warn(`API Error ${err.statusCode} (${err.message})`, { ...reqInfo, details: err.details });

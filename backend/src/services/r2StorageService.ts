@@ -34,13 +34,21 @@ export function getBucketName(): string {
 }
 
 
-// Allowed file types
+// Allowed file types (Images, Videos, Documents, Archives, Configs)
 const ALLOWED_MIME_TYPES = [
   "image/jpeg",
   "image/jpg",
   "image/png",
   "image/gif",
   "image/webp",
+  "image/svg+xml",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "text/csv",
   "video/mp4",
   "video/webm",
   "video/quicktime",
@@ -49,20 +57,10 @@ const ALLOWED_MIME_TYPES = [
   "application/vnd.android.package-archive",
   "application/octet-stream",
   "application/json",
-  "audio/mpeg",
-  "audio/mp3",
-  "audio/wav",
-  "audio/x-wav",
-  "audio/wave",
-  "audio/ogg",
-  "audio/mp4",
-  "audio/m4a",
-  "audio/aac",
-  "audio/x-m4a",
 ];
 
-// Maximum file size (10MB for images, 200MB for videos, 250MB for release APKs/manifests)
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// Maximum file size (25MB for documents/images, 200MB for videos, 250MB for release APKs/manifests)
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const MAX_VIDEO_FILE_SIZE = 200 * 1024 * 1024;
 const MAX_RELEASE_FILE_SIZE = 250 * 1024 * 1024;
 
@@ -108,6 +106,56 @@ export function generateObjectKey(config: R2Config & { taskType?: string; custom
 }
 
 /**
+ * Generate a structured, customer-synced object key for Customer Documents in Cloudflare R2
+ * Format: customers/{customerName}_{customerId}/{category}/{documentType}/{timestamp}_{baseName}_{randomId}.{ext}
+ */
+export function generateCustomerDocumentKey(params: {
+  customerName: string;
+  customerId?: number | string;
+  category?: string;
+  documentType: string;
+  fileName: string;
+}): string {
+  const { customerName, customerId, category = "documents", documentType, fileName } = params;
+
+  // Clean and sanitize customer name (e.g., "Ramesh Patel" -> "ramesh-patel")
+  const sanitizedCustomer = (customerName || "customer")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .substring(0, 50) || "customer";
+
+  const custFolder = customerId ? `${sanitizedCustomer}_${customerId}` : sanitizedCustomer;
+
+  const sanitizedCategory = (category || "documents")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-") || "documents";
+
+  const sanitizedDocType = (documentType || "general")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-") || "general";
+
+  const ext = fileName.split(".").pop()?.toLowerCase() || "pdf";
+  const cleanBaseName = fileName
+    .replace(/\.[^/.]+$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .substring(0, 40) || "doc";
+
+  const timestamp = Date.now();
+  const randomId = crypto.randomUUID().substring(0, 8);
+
+  return `customers/${custFolder}/${sanitizedCategory}/${sanitizedDocType}/${timestamp}_${cleanBaseName}_${randomId}.${ext}`;
+}
+
+/**
  * Validate file type
  */
 export function validateFileType(mimeType: string): boolean {
@@ -136,6 +184,14 @@ export function getExtensionFromMimeType(mimeType: string): string {
     "image/png": "png",
     "image/gif": "gif",
     "image/webp": "webp",
+    "image/svg+xml": "svg",
+    "application/pdf": "pdf",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "text/plain": "txt",
+    "text/csv": "csv",
     "application/vnd.android.package-archive": "apk",
     "application/octet-stream": "apk",
     "application/json": "json",

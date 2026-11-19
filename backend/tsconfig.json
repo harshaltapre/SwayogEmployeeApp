@@ -20,6 +20,8 @@
     "src/**/scratch*.ts",
     "src/**/debug-*.ts",
     "src/**/scratch-*.ts",
+    "src/**/tmp-*.ts",
+    "src/services/attendanceReport*.ts",
     "src/**/__tests__/**",
     "src/**/test-helpers/**"
   ]

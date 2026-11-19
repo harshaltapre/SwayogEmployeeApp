@@ -52,6 +52,8 @@ function getSafeStoredUser(): User | null {
 
       if (roleStr === 'super_admin' || roleStr === 'superadmin') normalizedRole = 'super_admin';
       else if (roleStr === 'admin') normalizedRole = 'admin';
+      else if (roleStr === 'department_head') normalizedRole = 'department_head';
+      else if (roleStr === 'team_lead') normalizedRole = 'team_lead';
       else if (roleStr === 'epc_contractor' || roleStr === 'epccontractor' || roleStr === 'epc_partner') normalizedRole = 'epc_contractor';
       else if (roleStr === 'partner' || roleStr === 'vendor') normalizedRole = 'partner';
       else if (roleStr === 'customer') normalizedRole = 'customer';
@@ -123,6 +125,12 @@ export function isServiceCoordinator(jobRole?: string): boolean {
   return normalized === "servicecoordinator";
 }
 
+export function isProjectCoordinatorJobRole(jobRole?: string): boolean {
+  if (!jobRole) return false;
+  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
+  return normalized === "projectcoordinator";
+}
+
 export function isSubAdminJobRole(jobRole?: string): boolean {
   if (!jobRole) return false;
   const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
@@ -133,6 +141,12 @@ export function isInventoryExecutiveJobRole(jobRole?: string): boolean {
   if (!jobRole) return false;
   const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, " ").replace(/\s+/g, " ").trim();
   return normalized === "inventory executive" || normalized === "inventory coordinator";
+}
+
+export function isMarketingExecutiveJobRole(jobRole?: string): boolean {
+  if (!jobRole) return false;
+  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, " ").replace(/\s+/g, " ").trim();
+  return normalized === "marketing executive";
 }
 
 export function isServiceExecutiveHeadJobRole(jobRole?: string): boolean {
@@ -153,12 +167,6 @@ export function isEpcPartnerJobRole(jobRole?: string): boolean {
   return normalized === "epccontractor" || normalized === "epc" || normalized === "epcpartner";
 }
 
-export function isMonitoringAnalystJobRole(jobRole?: string): boolean {
-  if (!jobRole) return false;
-  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
-  return normalized === "monitoringanalyst" || normalized === "monitoring";
-}
-
 export function isInstallationTeamJobRole(jobRole?: string): boolean {
   if (!jobRole) return false;
   const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
@@ -168,6 +176,55 @@ export function isInstallationTeamJobRole(jobRole?: string): boolean {
     normalized === "installersquad" ||
     normalized === "certifiedinstaller"
   );
+}
+
+export function isMonitoringAnalystJobRole(jobRole?: string): boolean {
+  if (!jobRole) return false;
+  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
+  return normalized === "monitoringanalyst" || normalized === "monitoring_analyst";
+}
+
+export function isLiaisoningEmployeeJobRole(jobRole?: string): boolean {
+  if (!jobRole) return false;
+  const normalized = jobRole.trim().toLowerCase().replace(/[_\s-]+/g, "");
+  return normalized === "liaisoningemployee" || normalized === "liaisoning_employee";
+}
+
+export type FinanceLevel = "executive" | "manager" | "head" | "admin";
+
+const FINANCE_EXEC_TITLES = new Set([
+  "financeexecutive",
+  "accountant",
+  "accountsexecutive",
+  "senioraccountant",
+  "accountsreceivableexecutive",
+  "accountspayableexecutive",
+  "payrollexecutive",
+]);
+const FINANCE_MANAGER_TITLES = new Set(["financemanager", "accountsmanager"]);
+const FINANCE_HEAD_TITLES = new Set(["financehead", "headoffinance", "financedepartmenthead", "cfo"]);
+
+export function getFinanceLevelFromTitle(title?: string | null): Exclude<FinanceLevel, "admin"> | null {
+  if (!title) return null;
+  const key = title.trim().toLowerCase().replace(/[^a-z]/g, "");
+  if (!key) return null;
+  if (FINANCE_HEAD_TITLES.has(key)) return "head";
+  if (FINANCE_MANAGER_TITLES.has(key)) return "manager";
+  if (FINANCE_EXEC_TITLES.has(key)) return "executive";
+  return null;
+}
+
+export function isFinanceJobRole(jobRole?: string | null): boolean {
+  return getFinanceLevelFromTitle(jobRole) !== null;
+}
+
+export function getFinanceLevel(user: Partial<User> | null | undefined): FinanceLevel | null {
+  if (!user) return null;
+  if (user.role === "super_admin" || user.role === "admin") return "admin";
+  if (!["employee", "department_head", "team_lead"].includes(user.role || "")) return null;
+  if (user.department && user.department.toUpperCase() !== "FINANCE") return null;
+  if (user.role === "department_head" && user.department?.toUpperCase() === "FINANCE") return "head";
+  return getFinanceLevelFromTitle(user.jobRole) ?? getFinanceLevelFromTitle(user.designation);
 }
 
 export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
@@ -181,12 +238,20 @@ export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
     return '/admin/dashboard';
   }
 
+  if (isMonitoringAnalystJobRole(jobRole)) {
+    return '/monitoring-analyst/dashboard';
+  }
+
+  if (isLiaisoningEmployeeJobRole(jobRole)) {
+    return '/liaisoning/dashboard';
+  }
+
   if (isServiceExecutiveHeadJobRole(jobRole)) {
     return '/service-executive/dashboard';
   }
 
-  if (isMonitoringAnalystJobRole(jobRole)) {
-    return '/service-executive/dashboard?tab=liaisoning';
+  if (isProjectCoordinatorJobRole(jobRole)) {
+    return '/project-coordinator/dashboard';
   }
 
   if (isInstallationTeamJobRole(jobRole) || r === 'installer') {
@@ -195,6 +260,14 @@ export function getRoleDashboardPath(role: UserRole, jobRole?: string): string {
 
   if (isInventoryExecutiveJobRole(jobRole)) {
     return '/inventory/dashboard';
+  }
+
+  if (isMarketingExecutiveJobRole(jobRole)) {
+    return '/marketing/dashboard';
+  }
+
+  if (isFinanceJobRole(jobRole)) {
+    return '/finance/dashboard';
   }
 
   if (r === 'sub_admin' || isSubAdminJobRole(jobRole)) {

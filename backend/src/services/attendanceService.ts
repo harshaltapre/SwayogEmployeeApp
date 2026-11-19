@@ -32,27 +32,10 @@ import {
   evaluateAttendancePolicy,
   getKolkataTimeInfo,
   calculateHaversineDistance,
-  calculateCosineSimilarity,
   verifyFaceToken,
 } from "./attendancePolicyEngine.js";
 
-// Active in-flight attendance operations lock per employee
-const activeAttendanceOps = new Set<string>();
-
-// In-memory cache for attendance rules (60s TTL)
-let cachedRules: any = null;
-let rulesCachedAt = 0;
-const RULES_CACHE_TTL_MS = 60_000;
-
-export function invalidateRulesCache() {
-  cachedRules = null;
-  rulesCachedAt = 0;
-}
-
 export async function getRulesAsync() {
-  if (cachedRules && Date.now() - rulesCachedAt < RULES_CACHE_TTL_MS) {
-    return cachedRules;
-  }
   try {
     let dbRule = await prisma.attendanceRule.findUnique({
       where: { id: "default" },
@@ -78,8 +61,6 @@ export async function getRulesAsync() {
         },
       });
     }
-    cachedRules = dbRule;
-    rulesCachedAt = Date.now();
     return dbRule;
   } catch (err) {
     console.error("Failed to read rules from DB, returning defaults:", err);
@@ -106,7 +87,6 @@ export async function getRulesAsync() {
 }
 
 export async function saveRulesAsync(rules: any) {
-  invalidateRulesCache();
   try {
     await prisma.attendanceRule.upsert({
       where: { id: "default" },
@@ -246,34 +226,80 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
   return R * c; // in meters
 }
 
-export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: string | null; latitude?: number | null; longitude?: number | null; accuracy?: number | null; faceVerified?: boolean; verificationToken?: string | null; liveDescriptor?: number[] | null; matchConfidence?: number | null }) {
-  const opKey = `checkin:${employeeId}`;
-  if (activeAttendanceOps.has(opKey)) {
-    throw new Error("A check-in operation is already in progress. Please wait a moment.");
+export class AttendanceConflictError extends Error {
+  readonly statusCode = 409;
+  readonly code = "ATTENDANCE_CONFLICT";
+  constructor(message: string) {
+    super(message);
+    this.name = "AttendanceConflictError";
   }
-  activeAttendanceOps.add(opKey);
-  try {
-    const today = startOfDay(new Date());
+}
+
+export class AttendanceValidationError extends Error {
+  readonly statusCode = 422;
+  readonly code = "ATTENDANCE_VALIDATION_ERROR";
+  constructor(message: string) {
+    super(message);
+    this.name = "AttendanceValidationError";
+  }
+}
+
+export async function checkIn(
+  employeeId: string,
+  opts?: {
+    selfieDataUrl?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    accuracy?: number | null;
+    faceVerified?: boolean;
+    verificationToken?: string | null;
+    matchConfidence?: number | null;
+    clientUploadId?: string | null;
+  }
+) {
+  const today = startOfDay(new Date());
+  const clientUploadId = opts?.clientUploadId?.trim() || null;
+
+  if (clientUploadId) {
+    const existingByIdempotency = await prisma.attendanceRecord.findUnique({
+      where: { employeeId_clientUploadId: { employeeId, clientUploadId } },
+    });
+    if (existingByIdempotency) {
+      const latestCheckIn = await prisma.checkIn.findFirst({
+        where: { employeeId },
+        orderBy: { createdAt: "desc" },
+      });
+      return { attendance: existingByIdempotency, checkInRecord: latestCheckIn, idempotentReplay: true };
+    }
+  }
+
   const existing = await prisma.attendanceRecord.findUnique({
     where: { employeeId_date: { employeeId, date: today } },
   });
 
   if (existing?.checkInTime) {
-    throw new Error("Already checked in today");
+    if (clientUploadId && existing.clientUploadId === clientUploadId) {
+      const latestCheckIn = await prisma.checkIn.findFirst({
+        where: { employeeId },
+        orderBy: { createdAt: "desc" },
+      });
+      return { attendance: existing, checkInRecord: latestCheckIn, idempotentReplay: true };
+    }
+    throw new AttendanceConflictError("Already checked in today");
   }
 
   if (existing && existing.source === "ADMIN_ASSIGNED") {
-    throw new Error("Attendance for today has already been marked or assigned by your administrator.");
+    throw new AttendanceConflictError("Attendance for today has already been marked or assigned by your administrator.");
   }
 
   // Prevent employee check-in if attendance was already recorded/assigned by administrator
   if (existing && (existing.manualOverride || (existing.status === "PRESENT" && !existing.checkInTime) || existing.status === "LEAVE" || existing.status === "HOLIDAY" || (existing.status === "ABSENT" && existing.manualOverride))) {
-    throw new Error(
+    throw new AttendanceConflictError(
       existing.status === "LEAVE"
         ? "Your attendance status for today is already marked as LEAVE."
         : existing.status === "HOLIDAY"
-        ? "Today is a company holiday; check-in is not required."
-        : "Attendance has already been recorded for today by administrator."
+          ? "Today is a company holiday; check-in is not required."
+          : "Attendance has already been recorded for today by administrator."
     );
   }
 
@@ -282,11 +308,11 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
   // Validate geofence
   if (rules.geofenceEnabled) {
     if (opts?.latitude === null || opts?.longitude === null || opts?.latitude === undefined || opts?.longitude === undefined) {
-      throw new Error("Geofencing is enabled. Access to GPS location is required to check in.");
+      throw new AttendanceValidationError("Geofencing is enabled. Access to GPS location is required to check in.");
     }
-    
+
     if (opts?.accuracy != null && opts.accuracy > rules.minLocationAccuracy) {
-      throw new Error(`Location accuracy is poor (${Math.round(opts.accuracy)}m). Minimum required accuracy is ${rules.minLocationAccuracy}m. Please move to an open area with clear GPS signal.`);
+      throw new AttendanceValidationError(`Location accuracy is poor (${Math.round(opts.accuracy)}m). Minimum required accuracy is ${rules.minLocationAccuracy}m. Please move to an open area with clear GPS signal.`);
     }
 
     const dist = calculateHaversineDistance(
@@ -296,113 +322,156 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
       rules.officeLng
     );
     if (dist > rules.officeRadius) {
-      throw new Error(`Location verification failed. You are ${Math.round(dist)}m away from the company premises (Allowed radius: ${rules.officeRadius}m).`);
+      throw new AttendanceValidationError(`Location verification failed. You are ${Math.round(dist)}m away from the company premises (Allowed radius: ${rules.officeRadius}m).`);
     }
   }
 
   const now = new Date();
 
-  // Validate Face: Support either direct liveDescriptor (1-round-trip) OR signed verificationToken
+  // Validate Face Verification Token - required when face verification is enabled
   let isFaceVerified = false;
-  if (opts?.liveDescriptor && Array.isArray(opts.liveDescriptor) && opts.liveDescriptor.length === 128) {
-    const enrollment = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
-    if (enrollment && !enrollment.isDeleted) {
-      const threshold = rules.faceMatchThreshold || 0.55;
-      const score1 = calculateCosineSimilarity(opts.liveDescriptor, enrollment.descriptor1 as number[]);
-      const score2 = calculateCosineSimilarity(opts.liveDescriptor, enrollment.descriptor2 as number[]);
-      const score3 = calculateCosineSimilarity(opts.liveDescriptor, enrollment.descriptor3 as number[]);
-      const bestScore = Math.max(score1, score2, score3);
-      if (bestScore >= threshold) {
-        isFaceVerified = true;
-      } else if (rules.faceRequired) {
-        throw new Error(`Face match score too low (${(bestScore * 100).toFixed(1)}%). Expected at least ${(threshold * 100).toFixed(0)}%.`);
-      }
-    } else if (rules.faceRequired) {
-      throw new Error("No active face enrollment found for this employee. Please complete face enrollment in Settings.");
+  if (rules.faceRequired) {
+    if (!opts?.verificationToken) {
+      throw new AttendanceValidationError("Face verification is required. Please complete face verification before checking in.");
     }
-  } else if (opts?.verificationToken) {
     const tokenCheck = verifyFaceToken(opts.verificationToken, employeeId);
     if (!tokenCheck.valid) {
-      if (rules.faceRequired) {
-        throw new Error(`Face verification failed: ${tokenCheck.error}`);
-      }
-    } else {
+      throw new AttendanceValidationError(`Face verification failed: ${tokenCheck.error}`);
+    }
+    isFaceVerified = true;
+  } else if (opts?.verificationToken) {
+    const tokenCheck = verifyFaceToken(opts.verificationToken, employeeId);
+    if (tokenCheck.valid) {
       isFaceVerified = true;
     }
-  } else if (rules.faceRequired) {
-    throw new Error("Face verification is required. Please complete face verification before checking in.");
   }
 
   // Evaluate attendance policy using centralized policy engine (Asia/Kolkata authority)
   const kolkataInfo = getKolkataTimeInfo(now);
   const yearMonth = kolkataInfo.yearMonth;
 
-  let counter = await prisma.monthlyLateCounter.findUnique({
-    where: { employeeId_yearMonth: { employeeId, yearMonth } },
-  });
+  let attendance: any;
+  let status: any;
+  let lateSequenceNumber: any;
+  let lateAllowanceConsumed: any;
 
-  if (!counter) {
-    counter = await prisma.monthlyLateCounter.create({
-      data: { employeeId, yearMonth, lateDaysUsed: 0, halfDayCount: 0 },
+  try {
+    const txResult = await prisma.$transaction(async (tx) => {
+      const txExisting = await tx.attendanceRecord.findUnique({
+        where: { employeeId_date: { employeeId, date: today } },
+      });
+      if (txExisting?.checkInTime) {
+        if (clientUploadId && txExisting.clientUploadId === clientUploadId) {
+          return { attendance: txExisting, idempotentReplay: true, status: txExisting.status, lateSequenceNumber: null, lateAllowanceConsumed: false };
+        }
+        throw new AttendanceConflictError("Already checked in today");
+      }
+
+      let counter = await tx.monthlyLateCounter.findUnique({
+        where: { employeeId_yearMonth: { employeeId, yearMonth } },
+      });
+
+      if (!counter) {
+        counter = await tx.monthlyLateCounter.create({
+          data: { employeeId, yearMonth, lateDaysUsed: 0, halfDayCount: 0 },
+        });
+      }
+
+      const policyResult = evaluateAttendancePolicy({
+        checkInTime: now,
+        reportingTimeStr: rules.reportingTime || "10:30",
+        monthlyLateAllowance: rules.monthlyLateAllowance ?? 3,
+        currentLateDaysUsed: counter.lateDaysUsed,
+        currentHalfDayCount: counter.halfDayCount,
+        weeklyOffDays: rules.weeklyOffDays || [0],
+      });
+
+      if (policyResult.newLateDaysUsed !== counter.lateDaysUsed || policyResult.newHalfDayCount !== counter.halfDayCount) {
+        await tx.monthlyLateCounter.update({
+          where: { id: counter.id },
+          data: {
+            lateDaysUsed: policyResult.newLateDaysUsed,
+            halfDayCount: policyResult.newHalfDayCount,
+          },
+        });
+      }
+
+      const upserted = await tx.attendanceRecord.upsert({
+        where: { employeeId_date: { employeeId, date: today } },
+        create: {
+          employeeId,
+          date: today,
+          checkInTime: now,
+          status: policyResult.status,
+          lateSequenceNumber: policyResult.lateSequenceNumber,
+          lateAllowanceConsumed: policyResult.lateAllowanceConsumed,
+          faceVerified: isFaceVerified,
+          gpsVerified: rules.geofenceEnabled
+            ? true
+            : (opts?.latitude != null && opts?.longitude != null),
+          locationAccuracy: opts?.accuracy ?? null,
+          policyVersionUsed: rules.policyStatus || "ACTIVE",
+          source: "EMPLOYEE_CHECK_IN",
+          clientUploadId,
+        },
+        update: {
+          checkInTime: now,
+          status: policyResult.status,
+          lateSequenceNumber: policyResult.lateSequenceNumber,
+          lateAllowanceConsumed: policyResult.lateAllowanceConsumed,
+          faceVerified: isFaceVerified,
+          gpsVerified: rules.geofenceEnabled
+            ? true
+            : (opts?.latitude != null && opts?.longitude != null),
+          locationAccuracy: opts?.accuracy ?? null,
+          policyVersionUsed: rules.policyStatus || "ACTIVE",
+          source: "EMPLOYEE_CHECK_IN",
+          ...(clientUploadId ? { clientUploadId } : {}),
+        },
+      });
+
+      return {
+        attendance: upserted,
+        idempotentReplay: false,
+        status: policyResult.status,
+        lateSequenceNumber: policyResult.lateSequenceNumber,
+        lateAllowanceConsumed: policyResult.lateAllowanceConsumed,
+      };
     });
+
+    if (txResult.idempotentReplay) {
+      const latestCheckIn = await prisma.checkIn.findFirst({
+        where: { employeeId },
+        orderBy: { createdAt: "desc" },
+      });
+      return { attendance: txResult.attendance, checkInRecord: latestCheckIn, idempotentReplay: true };
+    }
+
+    attendance = txResult.attendance;
+    status = txResult.status;
+    lateSequenceNumber = txResult.lateSequenceNumber;
+    lateAllowanceConsumed = txResult.lateAllowanceConsumed;
+  } catch (err: any) {
+    if (err instanceof AttendanceConflictError || err instanceof AttendanceValidationError) {
+      throw err;
+    }
+    if (err?.code === "P2002") {
+      if (clientUploadId) {
+        const existingRecord = await prisma.attendanceRecord.findUnique({
+          where: { employeeId_date: { employeeId, date: today } },
+        });
+        if (existingRecord?.clientUploadId === clientUploadId) {
+          const latestCheckIn = await prisma.checkIn.findFirst({
+            where: { employeeId },
+            orderBy: { createdAt: "desc" },
+          });
+          return { attendance: existingRecord, checkInRecord: latestCheckIn, idempotentReplay: true };
+        }
+      }
+      throw new AttendanceConflictError("Already checked in today");
+    }
+    throw err;
   }
-
-  const policyResult = evaluateAttendancePolicy({
-    checkInTime: now,
-    reportingTimeStr: rules.reportingTime || "10:30",
-    monthlyLateAllowance: rules.monthlyLateAllowance ?? 3,
-    currentLateDaysUsed: counter.lateDaysUsed,
-    currentHalfDayCount: counter.halfDayCount,
-    weeklyOffDays: rules.weeklyOffDays || [0],
-  });
-
-  const status = policyResult.status;
-  const lateAllowanceConsumed = policyResult.lateAllowanceConsumed;
-  const lateSequenceNumber = policyResult.lateSequenceNumber;
-
-  // Update counter in database if attendance consumed an allowance or half-day was recorded
-  if (policyResult.newLateDaysUsed !== counter.lateDaysUsed || policyResult.newHalfDayCount !== counter.halfDayCount) {
-    await prisma.monthlyLateCounter.update({
-      where: { id: counter.id },
-      data: {
-        lateDaysUsed: policyResult.newLateDaysUsed,
-        halfDayCount: policyResult.newHalfDayCount,
-      },
-    });
-  }
-
-  // Upsert attendance record
-  const attendance = await prisma.attendanceRecord.upsert({
-    where: { employeeId_date: { employeeId, date: today } },
-    create: {
-      employeeId,
-      date: today,
-      checkInTime: now,
-      status,
-      lateSequenceNumber,
-      lateAllowanceConsumed,
-      faceVerified: isFaceVerified,
-      gpsVerified: rules.geofenceEnabled
-        ? true
-        : (opts?.latitude != null && opts?.longitude != null),
-      locationAccuracy: opts?.accuracy ?? null,
-      policyVersionUsed: rules.policyStatus || "ACTIVE",
-      source: "EMPLOYEE_CHECK_IN",
-    },
-    update: {
-      checkInTime: now,
-      status,
-      lateSequenceNumber,
-      lateAllowanceConsumed,
-      faceVerified: isFaceVerified,
-      gpsVerified: rules.geofenceEnabled
-        ? true
-        : (opts?.latitude != null && opts?.longitude != null),
-      locationAccuracy: opts?.accuracy ?? null,
-      policyVersionUsed: rules.policyStatus || "ACTIVE",
-      source: "EMPLOYEE_CHECK_IN",
-    },
-  });
 
   // Create Audit Event
   await prisma.attendanceAuditEvent.create({
@@ -423,7 +492,7 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
         longitude: opts?.longitude ?? null,
       },
     },
-  }).catch(() => {});
+  }).catch(() => { });
 
   // Handle selfie upload (data URL) if provided
   let selfieUrl: string | null = null;
@@ -458,33 +527,24 @@ export async function checkIn(employeeId: string, opts?: { selfieDataUrl?: strin
     },
   });
 
-  // Asynchronously execute admin notification & performance calculation so the API response returns in <50ms
-  setImmediate(async () => {
-    try {
-      const employee = await prisma.user.findUnique({ where: { id: employeeId } });
-      const message = `${employee?.fullName ?? "Employee"} checked in at ${now.toISOString()} (${status})`;
-      await prisma.adminNotification.create({
-        data: {
-          type: "CHECKIN_SELFIE",
-          message,
-          imageUrl: selfieUrl ?? null,
-          employeeId,
-        },
-      });
-    } catch (err) {
-      console.error("Background notification error on check-in:", err);
-    }
-    try {
-      await recalculateMonthlyPerformance(employeeId);
-    } catch (err) {
-      console.error("Background performance recalculation error on check-in:", err);
-    }
+  // Create AdminNotification
+  const employee = await prisma.user.findUnique({ where: { id: employeeId } });
+  const message = `${employee?.fullName ?? "Employee"} checked in at ${now.toISOString()} (${status})`;
+
+  await prisma.adminNotification.create({
+    data: {
+      type: "CHECKIN_SELFIE",
+      message,
+      imageUrl: selfieUrl ?? null,
+      employeeId,
+    },
+  });
+
+  await recalculateMonthlyPerformance(employeeId).catch((err) => {
+    console.error("Failed to recalculate performance on check-in:", err);
   });
 
   return { attendance, checkInRecord };
-  } finally {
-    activeAttendanceOps.delete(opKey);
-  }
 }
 
 export async function getAlarmSettingsAsync(employeeId: string) {
@@ -724,53 +784,178 @@ export function isRecordAttendanceCompleted(record: {
   return false;
 }
 
-export async function checkOut(employeeId: string) {
-  const opKey = `checkout:${employeeId}`;
-  if (activeAttendanceOps.has(opKey)) {
-    throw new Error("A check-out operation is already in progress. Please wait a moment.");
-  }
-  activeAttendanceOps.add(opKey);
-  try {
+export async function checkOut(employeeId: string, opts?: { clientUploadId?: string | null }) {
   const today = startOfDay(new Date());
-  const record = await prisma.attendanceRecord.findUnique({
-    where: { employeeId_date: { employeeId, date: today } },
-  });
+  const clientUploadId = opts?.clientUploadId?.trim() || null;
 
-  if (!record) {
-    throw new Error("No attendance record found for today");
-  }
-  if (record.checkOutTime) {
-    throw new Error("Already checked out today");
-  }
-  if (record.manualOverride && !record.checkInTime) {
-    throw new Error("Attendance was completed by administrator; check-out is not required.");
-  }
-  if (!record.checkInTime) {
-    throw new Error("No check-in found for today");
-  }
-
-  const now = new Date();
-  const totalMinutes = differenceInMinutes(now, record.checkInTime);
-  const status = totalMinutes < 240 ? "HALF_DAY" : record.status;
-
-  const updated = await prisma.attendanceRecord.update({
-    where: { id: record.id },
-    data: { checkOutTime: now, totalMinutes, status },
-  });
-
-  // Recalculate monthly performance in background
-  setImmediate(async () => {
-    try {
-      await recalculateMonthlyPerformance(employeeId);
-    } catch (err) {
-      console.error("Background performance recalculation error on check-out:", err);
+  if (clientUploadId) {
+    const existingByIdempotency = await prisma.attendanceRecord.findUnique({
+      where: { employeeId_checkOutClientUploadId: { employeeId, checkOutClientUploadId: clientUploadId } },
+    });
+    if (existingByIdempotency) {
+      return existingByIdempotency;
     }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const record = await tx.attendanceRecord.findUnique({
+      where: { employeeId_date: { employeeId, date: today } },
+    });
+
+    if (!record) {
+      throw new AttendanceValidationError("No attendance record found for today");
+    }
+    if (record.checkOutTime) {
+      if (clientUploadId && record.checkOutClientUploadId === clientUploadId) {
+        return record;
+      }
+      throw new AttendanceConflictError("Already checked out today");
+    }
+    if (record.manualOverride && !record.checkInTime) {
+      throw new AttendanceConflictError("Attendance was completed by administrator; check-out is not required.");
+    }
+    if (!record.checkInTime) {
+      throw new AttendanceValidationError("No check-in found for today");
+    }
+
+    const now = new Date();
+    const totalMinutes = differenceInMinutes(now, record.checkInTime);
+    const status = totalMinutes < 240 ? "HALF_DAY" : record.status;
+
+    return tx.attendanceRecord.update({
+      where: { id: record.id },
+      data: {
+        checkOutTime: now,
+        totalMinutes,
+        status,
+        ...(clientUploadId ? { checkOutClientUploadId: clientUploadId } : {}),
+      },
+    });
   });
 
+  await recalculateMonthlyPerformance(employeeId);
   return updated;
-  } finally {
-    activeAttendanceOps.delete(opKey);
+}
+
+type AutomaticCheckoutMode = "BACKFILL" | "DAILY";
+
+function getIndiaDateTimeUtc(date: Date, hour: number, minute: number): Date {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value || 0);
+  return new Date(Date.UTC(value("year"), value("month") - 1, value("day"), hour - 5, minute - 30, 0, 0));
+}
+
+/**
+ * Closes open attendance records without changing records already checked out.
+ * BACKFILL is intentionally limited to dates before today so startup cannot
+ * prematurely close today's attendance before the 7 PM rule runs.
+ */
+export async function closeOpenAttendanceRecords(mode: AutomaticCheckoutMode): Promise<number> {
+  const now = new Date();
+  const todayStart = getIndiaDateTimeUtc(now, 0, 0);
+  const records = await prisma.attendanceRecord.findMany({
+    where: {
+      checkInTime: { not: null },
+      checkOutTime: null,
+      status: { in: ["PRESENT", "LATE", "HALF_DAY"] },
+      ...(mode === "BACKFILL"
+        ? { date: { lt: todayStart } }
+        : { date: todayStart }),
+    },
+    select: { id: true, employeeId: true, date: true, checkInTime: true, status: true },
+  });
+
+  let closedCount = 0;
+  for (const record of records) {
+    if (!record.checkInTime) continue;
+    const cutoff = mode === "BACKFILL"
+      ? getIndiaDateTimeUtc(record.date, 19, 30)
+      : getIndiaDateTimeUtc(now, 19, 0);
+    const checkOutTime = new Date(Math.max(cutoff.getTime(), record.checkInTime.getTime()));
+    const totalMinutes = differenceInMinutes(checkOutTime, record.checkInTime);
+    const status = totalMinutes < 240 ? "HALF_DAY" : record.status;
+
+    const result = await prisma.attendanceRecord.updateMany({
+      where: { id: record.id, checkOutTime: null },
+      data: {
+        checkOutTime,
+        totalMinutes,
+        status,
+        source: "SYSTEM_GENERATED",
+        notes: mode === "BACKFILL" ? "Automatic checkout backfill at 7:30 PM" : "Automatic checkout at 7:00 PM",
+      },
+    });
+    if (result.count > 0) {
+      closedCount += result.count;
+      await recalculateMonthlyPerformance(record.employeeId).catch((err) => {
+        console.error(`[Attendance] Failed to recalculate performance for ${record.employeeId}:`, err);
+      });
+    }
   }
+
+  if (closedCount > 0) {
+    console.log(`[Attendance] Automatically closed ${closedCount} open record(s) (${mode}).`);
+  }
+  return closedCount;
+}
+
+export async function upsertSyncHealthAsync(
+  employeeId: string,
+  payload: {
+    appVersionCode?: number;
+    appVersionName?: string | null;
+    androidVersion?: string | null;
+    deviceModel?: string | null;
+    pendingOutboxCount?: number;
+    failedOutboxCount?: number;
+    lastSuccessfulSyncAt?: number | null;
+    lastSyncStatus?: string;
+    lastSyncError?: string | null;
+    lastHttpCode?: number | null;
+    tokenRefreshFailures?: number;
+  }
+) {
+  return prisma.deviceSyncHealth.upsert({
+    where: { employeeId },
+    create: {
+      employeeId,
+      appVersionCode: payload.appVersionCode ?? 0,
+      appVersionName: payload.appVersionName ?? null,
+      androidVersion: payload.androidVersion ?? null,
+      deviceModel: payload.deviceModel ?? null,
+      pendingOutboxCount: payload.pendingOutboxCount ?? 0,
+      failedOutboxCount: payload.failedOutboxCount ?? 0,
+      lastSuccessfulSyncAt: payload.lastSuccessfulSyncAt ? new Date(payload.lastSuccessfulSyncAt) : null,
+      lastSyncStatus: payload.lastSyncStatus ?? "UNKNOWN",
+      lastSyncError: payload.lastSyncError ?? null,
+      lastHttpCode: payload.lastHttpCode ?? null,
+      tokenRefreshFailures: payload.tokenRefreshFailures ?? 0,
+    },
+    update: {
+      appVersionCode: payload.appVersionCode ?? 0,
+      appVersionName: payload.appVersionName ?? null,
+      androidVersion: payload.androidVersion ?? null,
+      deviceModel: payload.deviceModel ?? null,
+      pendingOutboxCount: payload.pendingOutboxCount ?? 0,
+      failedOutboxCount: payload.failedOutboxCount ?? 0,
+      lastSuccessfulSyncAt: payload.lastSuccessfulSyncAt ? new Date(payload.lastSuccessfulSyncAt) : undefined,
+      lastSyncStatus: payload.lastSyncStatus ?? "UNKNOWN",
+      lastSyncError: payload.lastSyncError ?? null,
+      lastHttpCode: payload.lastHttpCode ?? null,
+      tokenRefreshFailures: payload.tokenRefreshFailures ?? 0,
+    },
+  });
+}
+
+export async function listSyncHealthAsync() {
+  return prisma.deviceSyncHealth.findMany({
+    orderBy: { updatedAt: "desc" },
+  });
 }
 
 export async function getTodayAttendance(employeeId: string) {
@@ -851,9 +1036,9 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
   const reviewerIds = [...new Set(records.map((r) => r.reviewedBy).filter(Boolean))] as string[];
   const reviewers = reviewerIds.length > 0
     ? await prisma.user.findMany({
-        where: { id: { in: reviewerIds } },
-        select: { id: true, fullName: true },
-      })
+      where: { id: { in: reviewerIds } },
+      select: { id: true, fullName: true },
+    })
     : [];
   const reviewerMap = new Map(reviewers.map((u) => [u.id, u.fullName]));
 
@@ -886,8 +1071,8 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
 
   const weeklyOffDays: number[] = rules.weeklyOffDays && rules.weeklyOffDays.length > 0 ? rules.weeklyOffDays : [0];
   const workingDays = getWorkingDays(start, end, holidayDateSet, weeklyOffDays);
-  
-  const presentCount = records.filter((r) => r.status === "PRESENT" || r.status === "PRESENT_LATE_ALLOWANCE").length;
+
+  const presentCount = records.filter((r) => r.status === "PRESENT").length;
   const lateCount = records.filter((r) => r.status === "LATE").length;
   const halfDays = records.filter((r) => r.status === "HALF_DAY").length;
   const leaves = records.filter((r) => r.status === "LEAVE").length;
@@ -1087,7 +1272,7 @@ export async function applyOrUpdateAttendanceRecord(params: {
         flagged: false,
         status: status === "ABSENT" || status === "LEAVE" ? "CHECKED_OUT" : "CHECKED_IN",
       },
-    }).catch(() => {});
+    }).catch(() => { });
   } else if (status !== "ABSENT" && status !== "LEAVE") {
     await prisma.checkIn.create({
       data: {
@@ -1098,7 +1283,7 @@ export async function applyOrUpdateAttendanceRecord(params: {
         reviewedBy: adminUserId,
         createdAt: checkInDateTime || targetDay,
       },
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   // Recalculate monthly performance for that employee
@@ -1122,8 +1307,8 @@ export async function applyOrUpdateAttendanceRecord(params: {
         source: source || "ADMIN_ASSIGNED",
       },
     },
-  }).catch(() => {});
-  await reconcileMonthlyLateCounter(employeeId, yearMonth).catch(() => {});
+  }).catch(() => { });
+  await reconcileMonthlyLateCounter(employeeId, yearMonth).catch(() => { });
 
   return { attendance, performance };
 }

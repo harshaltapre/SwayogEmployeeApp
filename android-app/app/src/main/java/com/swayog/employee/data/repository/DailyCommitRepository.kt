@@ -11,7 +11,7 @@ import com.swayog.employee.data.model.*
 import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.core.util.ErrorUtils
 import com.swayog.employee.core.util.OfflinePendingException
-import com.swayog.employee.data.sync.SyncWorker
+import com.swayog.employee.data.sync.SyncManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -25,9 +25,10 @@ class DailyCommitRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val dailyCommitDao: DailyCommitDao,
     private val outboxQueueDao: OutboxQueueDao,
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val syncManager: SyncManager
 ) {
-    val pendingSyncCount: Flow<Int> = outboxQueueDao.getPendingCountFlow()
+    val pendingSyncCount: Flow<Int> = syncManager.pendingSyncCountForCurrentUser
     
     fun getDailyCommitsByEmployeeId(employeeId: String): Flow<List<DailyCommit>> {
         return dailyCommitDao.getDailyCommitsByEmployeeId(employeeId).map { entities ->
@@ -274,26 +275,16 @@ class DailyCommitRepository @Inject constructor(
             endpoint = "daily-commits",
             method = "POST",
             payload = payload,
-            createdAt = System.currentTimeMillis().toString()
+            createdAt = System.currentTimeMillis().toString(),
+            clientUploadId = UUID.randomUUID().toString(),
+            ownerUserId = employeeId
         )
         outboxQueueDao.insertItem(outboxItem)
         scheduleSync()
     }
     
     private fun scheduleSync() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "offline_sync_work",
-            ExistingWorkPolicy.REPLACE,
-            syncRequest
-        )
+        syncManager.scheduleSync()
         android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work after daily commit queue update")
     }
 }

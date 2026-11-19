@@ -88,20 +88,21 @@ export default function EmployeeProfile() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (!user) return null;
-
   const [isEditing, setIsEditing] = useState(false);
-  const [profilePhoto, setProfilePhoto] = useState(loadProfilePhoto(String(user.id)));
+  const [profilePhoto, setProfilePhoto] = useState(() => (user?.id ? loadProfilePhoto(String(user.id)) : ""));
   const [profile, setProfile] = useState<EmployeeProfile>(() => {
-    const loaded = loadProfileData(String(user.id), user);
+    const userId = user?.id ? String(user.id) : "";
+    const loaded = loadProfileData(userId, user);
     return {
       ...loaded,
-      profilePhoto: loadProfilePhoto(String(user.id)),
+      profilePhoto: loadProfilePhoto(userId),
     };
   });
 
   const [editData, setEditData] = useState(profile);
   const [isSaving, setIsSaving] = useState(false);
+
+  if (!user) return null;
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

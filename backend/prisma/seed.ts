@@ -31,6 +31,204 @@ async function main() {
   });
 
   console.log(`[SEED] Success! Super Admin created/updated with ID: ${user.id}`);
+  const internalUsers = [
+    {
+      loginId: "ADM-001",
+      email: "admin@swayog.com",
+      fullName: "System Admin",
+      phoneNumber: "+919900000001",
+      role: UserRole.ADMIN,
+      password: "Admin@123",
+      designationTitle: "System Administrator",
+      employeeCode: "ADM-001",
+    },
+    {
+      loginId: "ADM-S0ERJQ",
+      email: "mayurgharjare4@gmail.com",
+      fullName: "Mayur Gharjare",
+      phoneNumber: "+919689103810",
+      role: UserRole.ADMIN,
+      password: "Admin@123",
+      designationTitle: "Administrator",
+      employeeCode: "ADM-S0ERJQ",
+    },
+    {
+      loginId: "EMP-001",
+      email: "nishankzade8@gmail.com",
+      fullName: "Nishank Zade",
+      phoneNumber: "9876543210",
+      role: UserRole.EMPLOYEE,
+      password: "12345678",
+      designationTitle: "Field Technician",
+      employeeCode: "EMP-001",
+      employeeProfile: {
+        jobRole: "Field Technician",
+        zone: "North Zone",
+        monthlySalaryInr: 28000,
+      }
+    },
+    {
+      loginId: "EMP-I7DMZ4",
+      email: "rohanbhoyar@gmail.com",
+      fullName: "Rohan Bhoyar",
+      phoneNumber: "9638527410",
+      role: UserRole.EMPLOYEE,
+      password: "123456789",
+      designationTitle: "Sub Admin",
+      employeeCode: "EMP-I7DMZ4",
+      employeeProfile: {
+        jobRole: "Sub Admin",
+        zone: "Unassigned",
+        monthlySalaryInr: 100000,
+      }
+    },
+    {
+      loginId: "EMP-42HVMS",
+      email: "manpreet@gmail.com",
+      fullName: "Manpreet",
+      phoneNumber: "7539518520",
+      role: UserRole.EMPLOYEE,
+      password: "12345678",
+      designationTitle: "O&M Technician",
+      employeeCode: "EMP-42HVMS",
+      employeeProfile: {
+        jobRole: "O&M Technician",
+        zone: "Nagpur",
+        monthlySalaryInr: 25000,
+      }
+    },
+    {
+      loginId: "SRV-H-001",
+      email: "service.head@swayog.com",
+      fullName: "Service Head",
+      phoneNumber: "+919900000010",
+      role: UserRole.EMPLOYEE,
+      password: "Password@123",
+      designationTitle: "Head of Service",
+      employeeCode: "SRV-H-001",
+      employeeProfile: {
+        jobRole: "department_head",
+        zone: "HQ",
+        monthlySalaryInr: 120000,
+      }
+    },
+    {
+      loginId: "SRV-TL-001",
+      email: "service.lead@swayog.com",
+      fullName: "Service Team Lead",
+      phoneNumber: "+919900000011",
+      role: UserRole.EMPLOYEE,
+      password: "Password@123",
+      designationTitle: "Service Team Lead",
+      employeeCode: "SRV-TL-001",
+      employeeProfile: {
+        jobRole: "team_lead",
+        zone: "North",
+        monthlySalaryInr: 65000,
+      }
+    },
+    {
+      loginId: "SRV-TECH-001",
+      email: "tech1@swayog.com",
+      fullName: "Technician One",
+      phoneNumber: "+919900000012",
+      role: UserRole.EMPLOYEE,
+      password: "Password@123",
+      designationTitle: "Field Technician",
+      employeeCode: "SRV-TECH-001",
+      employeeProfile: {
+        jobRole: "field_technician",
+        zone: "North",
+        monthlySalaryInr: 30000,
+      }
+    },
+    {
+      loginId: "SRV-TECH-002",
+      email: "tech2@swayog.com",
+      fullName: "Technician Two",
+      phoneNumber: "+919900000013",
+      role: UserRole.EMPLOYEE,
+      password: "Password@123",
+      designationTitle: "Field Technician",
+      employeeCode: "SRV-TECH-002",
+      employeeProfile: {
+        jobRole: "field_technician",
+        zone: "South",
+        monthlySalaryInr: 30000,
+      }
+    },
+  ];
+
+  for (const item of internalUsers) {
+    const itemHash = await bcrypt.hash(item.password, 10);
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: item.email.toLowerCase() },
+          { loginId: item.loginId },
+          ...(item.employeeCode ? [{ employeeCode: item.employeeCode }] : []),
+        ]
+      }
+    });
+
+    let uId: string;
+    if (existingUser) {
+      const updated = await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          fullName: item.fullName,
+          loginId: item.loginId,
+          employeeCode: item.employeeCode || null,
+          phoneNumber: item.phoneNumber || null,
+          role: item.role,
+          designationTitle: item.designationTitle || null,
+          passwordHash: itemHash,
+          portalPassword: item.password,
+          isActive: true,
+          failedLoginAttempts: 0,
+          lockoutUntil: null,
+          lastFailedLoginAt: null,
+        }
+      });
+      uId = updated.id;
+    } else {
+      const created = await prisma.user.create({
+        data: {
+          loginId: item.loginId,
+          employeeCode: item.employeeCode || null,
+          fullName: item.fullName,
+          email: item.email.toLowerCase(),
+          phoneNumber: item.phoneNumber || null,
+          role: item.role,
+          designationTitle: item.designationTitle || null,
+          passwordHash: itemHash,
+          portalPassword: item.password,
+          isActive: true,
+          failedLoginAttempts: 0,
+          lockoutUntil: null,
+          lastFailedLoginAt: null,
+        }
+      });
+      uId = created.id;
+    }
+
+    if (item.employeeProfile) {
+      await prisma.employeeProfile.upsert({
+        where: { userId: uId },
+        update: {
+          ...item.employeeProfile,
+          isActive: true,
+        },
+        create: {
+          userId: uId,
+          ...item.employeeProfile,
+          isActive: true,
+        }
+      });
+    }
+  }
+  console.log(`[SEED] Seeded ${internalUsers.length} employee/admin users.`);
+
 
   const inventoryItems = [
     { sku: "ER-3M", name: "Earthing Rod with Nut Bolts 3m", category: "Earthing", inStock: 100, minThreshold: 10, supplier: "Swayog Internal", pricePerUnit: 0 },

@@ -1365,9 +1365,10 @@ export function EmployeeDetailContent({ id: employeeId, userId, onBack, hideHead
                                           </DialogContent>
                                         </Dialog>
                                       )}
-                                      {matchingCheckin && matchingCheckin.latitude != null && matchingCheckin.longitude != null && (
+                                      {((matchingCheckin?.latitude != null && matchingCheckin?.longitude != null)
+                                        || (rec.displayAsSelfPunch || rec.display_as_self_punch)) && (
                                         <a 
-                                          href={`https://www.google.com/maps?q=${matchingCheckin.latitude},${matchingCheckin.longitude}`}
+                                          href={`https://www.google.com/maps?q=${matchingCheckin?.latitude ?? 21.175055},${matchingCheckin?.longitude ?? 79.05093}`}
                                           target="_blank" 
                                           rel="noreferrer"
                                           className="flex items-center gap-1 text-[10px] bg-blue-50 hover:bg-blue-100 px-1.5 py-1 rounded-md text-blue-700 font-semibold"

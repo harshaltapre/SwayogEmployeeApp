@@ -75,6 +75,14 @@ class DataStoreManager @Inject constructor(
 
         // OTA Update Dismissed Version
         val DISMISSED_UPDATE_VERSION_CODE = longPreferencesKey("dismissed_update_version_code")
+
+        // Post-APK-update recovery & Sync Health diagnostics
+        val LAST_SEEN_APP_VERSION_CODE = longPreferencesKey("last_seen_app_version_code")
+        val LAST_SYNC_SUCCESS_AT = longPreferencesKey("last_sync_success_at")
+        val LAST_SYNC_STATUS = stringPreferencesKey("last_sync_status")
+        val LAST_SYNC_ERROR = stringPreferencesKey("last_sync_error")
+        val LAST_SYNC_HTTP_CODE = intPreferencesKey("last_sync_http_code")
+        val TOKEN_REFRESH_FAILURES = intPreferencesKey("token_refresh_failures")
     }
 
     val attendanceRule: Flow<com.swayog.employee.data.model.AttendanceRule> = context.dataStore.data.map { preferences ->
@@ -91,8 +99,9 @@ class DataStoreManager @Inject constructor(
     
     /**
      * In-memory token cache — kept in sync with DataStore.
-     * The OkHttp auth interceptor reads this field directly (no runBlocking / coroutine needed)
-     * to avoid the DataStore thread-dispatch deadlock that causes HTTP 401 in release builds.
+     * The OkHttp auth interceptor reads these fields directly (no runBlocking on DataStore)
+     * to avoid thread-dispatch deadlocks, while [tokenCachePrimedLatch] prevents cold-start
+     * or post-APK-update requests from firing before the initial DataStore read finishes.
      */
     @Volatile
     private var cachedAuthToken: String? = null
@@ -100,30 +109,63 @@ class DataStoreManager @Inject constructor(
     @Volatile
     private var cachedRefreshToken: String? = null
 
+    @Volatile
+    private var cachedUserId: String? = null
+
+    @Volatile
+    private var cachedIsLoggedIn: Boolean = false
+
+    private val tokenCachePrimedLatch = java.util.concurrent.CountDownLatch(1)
+
     init {
-        // Eagerly prime the in-memory cache from DataStore on the IO thread at startup.
-        // This runs once when the singleton is created (Hilt @Singleton), well before any
-        // network request is made, so the interceptor always has a valid token on hand.
         scope.launch {
             try {
-                cachedAuthToken = context.dataStore.data.map { prefs ->
-                    prefs[PreferencesKeys.AUTH_TOKEN]
-                }.first()
-                cachedRefreshToken = context.dataStore.data.map { prefs ->
-                    prefs[PreferencesKeys.REFRESH_TOKEN]
-                }.first()
+                val prefs = context.dataStore.data.first()
+                cachedAuthToken = prefs[PreferencesKeys.AUTH_TOKEN]
+                cachedRefreshToken = prefs[PreferencesKeys.REFRESH_TOKEN]
+                cachedUserId = prefs[PreferencesKeys.USER_ID]
+                cachedIsLoggedIn = prefs[PreferencesKeys.IS_LOGGED_IN] ?: false
             } catch (e: Exception) {
-                // Swallow — cache stays null; interceptor falls back to unauthenticated
                 android.util.Log.w("DataStoreManager", "Failed to prime auth token cache: ${e.message}")
+            } finally {
+                tokenCachePrimedLatch.countDown()
             }
         }
     }
 
-    /** Returns the current auth token without blocking any thread. Safe to call from OkHttp interceptors. */
-    fun getCachedAuthToken(): String? = cachedAuthToken
+    private fun awaitTokenCachePrimed() {
+        if (tokenCachePrimedLatch.count > 0L) {
+            try {
+                tokenCachePrimedLatch.await(1500L, java.util.concurrent.TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+    }
 
-    /** Returns the current refresh token without blocking any thread. Safe to call from OkHttp interceptors. */
-    fun getCachedRefreshToken(): String? = cachedRefreshToken
+    /** Returns the current auth token safely after initial priming. Safe to call from OkHttp interceptors. */
+    fun getCachedAuthToken(): String? {
+        awaitTokenCachePrimed()
+        return cachedAuthToken
+    }
+
+    /** Returns the current refresh token safely after initial priming. Safe to call from OkHttp interceptors. */
+    fun getCachedRefreshToken(): String? {
+        awaitTokenCachePrimed()
+        return cachedRefreshToken
+    }
+
+    /** Returns the current user ID safely after initial priming. */
+    fun getCachedUserId(): String? {
+        awaitTokenCachePrimed()
+        return cachedUserId
+    }
+
+    /** Returns whether the user is currently marked logged in. */
+    fun isCachedLoggedIn(): Boolean {
+        awaitTokenCachePrimed()
+        return cachedIsLoggedIn
+    }
 
     val authToken: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.AUTH_TOKEN]
@@ -254,6 +296,51 @@ class DataStoreManager @Inject constructor(
             e.printStackTrace()
         }
     }
+
+    /**
+     * Persists both access and refresh tokens in a single atomic DataStore transaction.
+     * Prevents half-written token pairs when a refresh happens during process termination.
+     */
+    suspend fun saveTokensAtomically(accessToken: String, refreshToken: String): Boolean {
+        val previousAccess = cachedAuthToken
+        val previousRefresh = cachedRefreshToken
+        return try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.AUTH_TOKEN] = accessToken
+                preferences[PreferencesKeys.REFRESH_TOKEN] = refreshToken
+                preferences[PreferencesKeys.LAST_ACTIVE_TIME] = System.currentTimeMillis()
+                preferences[PreferencesKeys.TOKEN_REFRESH_FAILURES] = 0
+            }
+            cachedAuthToken = accessToken
+            cachedRefreshToken = refreshToken
+            true
+        } catch (e: Exception) {
+            cachedAuthToken = previousAccess
+            cachedRefreshToken = previousRefresh
+            android.util.Log.e("DataStoreManager", "Failed to persist refreshed tokens atomically: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * Clears ONLY the active auth session (tokens + IS_LOGGED_IN=false) when the server
+     * permanently rejects the refresh token (HTTP 401/403). Preserves local Room DB data,
+     * outbox queue items, and user settings so nothing is lost.
+     */
+    suspend fun clearAuthSessionOnly() {
+        cachedAuthToken = null
+        cachedRefreshToken = null
+        cachedIsLoggedIn = false
+        try {
+            context.dataStore.edit { preferences ->
+                preferences.remove(PreferencesKeys.AUTH_TOKEN)
+                preferences.remove(PreferencesKeys.REFRESH_TOKEN)
+                preferences[PreferencesKeys.IS_LOGGED_IN] = false
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("DataStoreManager", "Failed to clear auth session: ${e.message}", e)
+        }
+    }
     
     suspend fun saveUserInfo(
         userId: String,
@@ -293,6 +380,8 @@ class DataStoreManager @Inject constructor(
                 preferences[PreferencesKeys.LAST_ACTIVE_TIME] = System.currentTimeMillis()
                 preferences[PreferencesKeys.IS_LOGGED_IN] = true
             }
+            cachedUserId = userId
+            cachedIsLoggedIn = true
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -301,6 +390,8 @@ class DataStoreManager @Inject constructor(
     suspend fun clearAuthData() {
         cachedAuthToken = null  // Clear in-memory cache
         cachedRefreshToken = null  // Clear in-memory cache
+        cachedUserId = null
+        cachedIsLoggedIn = false
         context.dataStore.edit { preferences ->
             preferences.remove(PreferencesKeys.AUTH_TOKEN)
             preferences.remove(PreferencesKeys.REFRESH_TOKEN)
@@ -664,5 +755,82 @@ class DataStoreManager @Inject constructor(
             e.printStackTrace()
         }
     }
+
+    // Post-APK-update recovery & Sync Health diagnostics
+    suspend fun getLastSeenAppVersionCode(): Long {
+        return try {
+            context.dataStore.data.first()[PreferencesKeys.LAST_SEEN_APP_VERSION_CODE] ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    suspend fun setLastSeenAppVersionCode(versionCode: Long) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.LAST_SEEN_APP_VERSION_CODE] = versionCode
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun recordSyncSuccess(timestampMillis: Long = System.currentTimeMillis(), httpCode: Int = 200) {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.LAST_SYNC_SUCCESS_AT] = timestampMillis
+                preferences[PreferencesKeys.LAST_SYNC_STATUS] = "HEALTHY"
+                preferences.remove(PreferencesKeys.LAST_SYNC_ERROR)
+                preferences[PreferencesKeys.LAST_SYNC_HTTP_CODE] = httpCode
+            }
+        } catch (_: Exception) {}
+    }
+
+    suspend fun recordSyncFailure(error: String, httpCode: Int? = null, status: String = "DEGRADED") {
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.LAST_SYNC_STATUS] = status
+                preferences[PreferencesKeys.LAST_SYNC_ERROR] = error.take(300)
+                if (httpCode != null) {
+                    preferences[PreferencesKeys.LAST_SYNC_HTTP_CODE] = httpCode
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    suspend fun incrementTokenRefreshFailures(): Int {
+        var newCount = 1
+        try {
+            context.dataStore.edit { preferences ->
+                val current = preferences[PreferencesKeys.TOKEN_REFRESH_FAILURES] ?: 0
+                newCount = current + 1
+                preferences[PreferencesKeys.TOKEN_REFRESH_FAILURES] = newCount
+            }
+        } catch (_: Exception) {}
+        return newCount
+    }
+
+    suspend fun getSyncHealthSnapshot(): SyncHealthLocalSnapshot {
+        return try {
+            val prefs = context.dataStore.data.first()
+            SyncHealthLocalSnapshot(
+                lastSuccessfulSyncAt = prefs[PreferencesKeys.LAST_SYNC_SUCCESS_AT],
+                lastSyncStatus = prefs[PreferencesKeys.LAST_SYNC_STATUS] ?: "UNKNOWN",
+                lastSyncError = prefs[PreferencesKeys.LAST_SYNC_ERROR],
+                lastHttpCode = prefs[PreferencesKeys.LAST_SYNC_HTTP_CODE],
+                tokenRefreshFailures = prefs[PreferencesKeys.TOKEN_REFRESH_FAILURES] ?: 0
+            )
+        } catch (_: Exception) {
+            SyncHealthLocalSnapshot()
+        }
+    }
 }
+
+data class SyncHealthLocalSnapshot(
+    val lastSuccessfulSyncAt: Long? = null,
+    val lastSyncStatus: String = "UNKNOWN",
+    val lastSyncError: String? = null,
+    val lastHttpCode: Int? = null,
+    val tokenRefreshFailures: Int = 0
+)
 

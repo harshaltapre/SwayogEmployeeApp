@@ -14,6 +14,8 @@ import {
   Shield,
   Leaf,
   Layers,
+  IndianRupee,
+  TrendingUp,
 } from "lucide-react";
 
 export interface SpecializedSection {
@@ -21,7 +23,7 @@ export interface SpecializedSection {
   name: string;
   href: string;
   icon: LucideIcon;
-  category: "Service Coordinator" | "Inventory Coordinator" | "Service & Executive";
+  category: "Service Coordinator" | "Inventory Coordinator" | "Service & Executive" | "Finance";
   description: string;
   defaultForRoles?: string[]; // Roles that get this by default even without explicit permission
 }
@@ -194,6 +196,44 @@ export const SPECIALIZED_SECTIONS: SpecializedSection[] = [
     description: "High-level performance metrics, SLA compliance graphs, and regional efficiency reports.",
     defaultForRoles: ["service_executive_head", "isphere_green_head"],
   },
+
+  // ─── Finance Modules ──────────────────────────────────────────────────────
+  {
+    id: "finance_dashboard",
+    name: "Finance Workspace",
+    href: "/finance/dashboard",
+    icon: IndianRupee,
+    category: "Finance",
+    description: "Finance department control centre for invoiced revenue, collections, and outstanding receivables.",
+    defaultForRoles: ["finance_executive", "finance_manager", "finance_head", "accountant"],
+  },
+  {
+    id: "finance_invoices",
+    name: "Invoices & Receivables",
+    href: "/finance/dashboard?tab=invoices",
+    icon: FileText,
+    category: "Finance",
+    description: "Create, update, and track customer invoices and payment receipts.",
+    defaultForRoles: ["finance_executive", "finance_manager", "finance_head", "accountant"],
+  },
+  {
+    id: "finance_commissions",
+    name: "Partner Commissions",
+    href: "/finance/dashboard?tab=payouts",
+    icon: Users,
+    category: "Finance",
+    description: "Review partner commission payables and approve payouts (Manager / Head / Admin).",
+    defaultForRoles: ["finance_executive", "finance_manager", "finance_head", "accountant"],
+  },
+  {
+    id: "finance_reports",
+    name: "Company P&L & Reports",
+    href: "/finance/dashboard?tab=pnl",
+    icon: TrendingUp,
+    category: "Finance",
+    description: "Company-wide monthly P&L, payroll totals, and expense reporting (Manager / Head / Admin).",
+    defaultForRoles: ["finance_manager", "finance_head"],
+  },
 ];
 
 export const PERMISSION_PRESETS: Record<string, { label: string; description: string; ids: string[] }> = {
@@ -231,6 +271,16 @@ export const PERMISSION_PRESETS: Record<string, { label: string; description: st
       "service_exec_supplychain",
       "service_exec_knowledge",
       "service_exec_reports",
+    ],
+  },
+  finance_suite: {
+    label: "Finance Suite",
+    description: "Grant access to Finance Workspace, Invoices & Receivables, Partner Commissions, and Company P&L.",
+    ids: [
+      "finance_dashboard",
+      "finance_invoices",
+      "finance_commissions",
+      "finance_reports",
     ],
   },
   all_access: {

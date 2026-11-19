@@ -248,6 +248,11 @@ export async function listInternalUsers(actorRole: InternalUserRole, query: List
         permissions: true,
       },
     },
+    salaryRecords: {
+      orderBy: [{ year: "desc" }, { month: "desc" }],
+      take: 1,
+      select: { baseSalary: true, netPayable: true },
+    },
     partnerProfile: {
       select: {
         id: true,
@@ -278,7 +283,21 @@ export async function listInternalUsers(actorRole: InternalUserRole, query: List
     .filter(u => u.role === ROLE.PARTNER)
     .map(u => u.id);
 
-  let enrichedUsers = [...users];
+  let enrichedUsers = users.map(user => {
+    if (user.role === ROLE.EMPLOYEE) {
+      const recSalary = user.salaryRecords?.[0]?.baseSalary || user.salaryRecords?.[0]?.netPayable;
+      const salary = recSalary || user.employeeProfile?.monthlySalaryInr || 0;
+      return {
+        ...user,
+        monthlySalaryInr: salary,
+        employeeProfile: {
+          ...user.employeeProfile,
+          monthlySalaryInr: salary,
+        },
+      };
+    }
+    return user;
+  });
 
   if (employeeIds.length > 0) {
     const stats = await getEmployeesTaskStats(employeeIds);
@@ -288,11 +307,11 @@ export async function listInternalUsers(actorRole: InternalUserRole, query: List
     }, {} as Record<string, any>);
 
     enrichedUsers = enrichedUsers.map(user => {
-      if (user.role === ROLE.EMPLOYEE && statsMap[user.id]) {
+      if (user.role === ROLE.EMPLOYEE) {
         return {
           ...user,
-          activeTasksCount: statsMap[user.id].activeTasksCount,
-          jobsCompletedThisMonth: statsMap[user.id].jobsCompletedThisMonth,
+          activeTasksCount: statsMap[user.id]?.activeTasksCount ?? 0,
+          jobsCompletedThisMonth: statsMap[user.id]?.jobsCompletedThisMonth ?? 0,
         };
       }
       return user;
@@ -511,6 +530,8 @@ export async function createInternalUser(actorId: string, actorRole: InternalUse
         data: {
           role: ROLE.EMPLOYEE as any,
           employeeCode: nextEmployeeCode,
+          passwordHash: await hashPassword(input.password),
+          portalPassword: input.password,
           employeeProfile: {
             create: {
               zone: input.zone ?? "Unassigned",
@@ -658,6 +679,11 @@ export async function updateInternalUser(
 
   if (!canManageRole(actorRole, existing.role)) {
     throw new ApiError(403, "You are not allowed to update this user");
+  }
+
+  // Prevent users from updating their own permissions
+  if (actorId === targetUserId && Array.isArray(input.permissions)) {
+    throw new ApiError(403, "You cannot update your own permissions");
   }
 
   const userData: Record<string, unknown> = {};

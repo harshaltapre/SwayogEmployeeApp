@@ -2,7 +2,7 @@ package com.swayog.employee.presentation.sync
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.swayog.employee.data.local.dao.OutboxQueueDao
+import com.swayog.employee.data.sync.SyncManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -11,10 +11,10 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SyncStatusViewModel @Inject constructor(
-    private val outboxQueueDao: OutboxQueueDao
+    syncManager: SyncManager
 ) : ViewModel() {
     
-    val pendingCount: StateFlow<Int> = outboxQueueDao.getPendingCountFlow()
+    val pendingCount: StateFlow<Int> = syncManager.pendingSyncCountForCurrentUser
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),

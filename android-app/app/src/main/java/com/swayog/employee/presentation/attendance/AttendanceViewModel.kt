@@ -52,13 +52,20 @@ class AttendanceViewModel @Inject constructor(
     private val taskRepository: TaskRepository,
     private val dataStoreManager: DataStoreManager,
     private val workforceRepository: WorkforceRepository,
-    private val _faceIndexManager: FaceIndexManager
+    private val _faceIndexManager: FaceIndexManager,
+    private val syncManager: com.swayog.employee.data.sync.SyncManager
 ) : ViewModel() {
 
     val faceIndexManager: FaceIndexManager get() = _faceIndexManager
 
     private val _attendanceState = MutableStateFlow<AttendanceState>(AttendanceState.Initial)
     val attendanceState: StateFlow<AttendanceState> = _attendanceState.asStateFlow()
+
+    private val _syncError = MutableStateFlow<String?>(null)
+    val syncError: StateFlow<String?> = _syncError.asStateFlow()
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     private val _overtimeHistory = MutableStateFlow<List<OvertimeRequestDto>>(emptyList())
     val overtimeHistory: StateFlow<List<OvertimeRequestDto>> = _overtimeHistory.asStateFlow()
@@ -336,7 +343,11 @@ class AttendanceViewModel @Inject constructor(
         }
         lastLoadDataTime = now
         viewModelScope.launch {
+            _isRefreshing.value = true
             _attendanceState.value = AttendanceState.Success
+            if (force) {
+                syncManager.scheduleSync()
+            }
             loadRegularizationRequests()
             loadLateAllowanceSummary()
             loadAlarmSettings()
@@ -354,7 +365,13 @@ class AttendanceViewModel @Inject constructor(
                     val todayDeferred = async { attendanceRepository.getTodayAttendance() }
                     val perfDeferred = async { attendanceRepository.getPerformance(month, year) }
 
-                    todayDeferred.await()
+                    val todayResult = todayDeferred.await()
+                    todayResult.onSuccess {
+                        _syncError.value = null
+                    }.onFailure { err ->
+                        _syncError.value = err.message ?: "Unable to sync attendance with server"
+                        android.util.Log.w("AttendanceViewModel", "Today attendance sync failed: ${err.message}")
+                    }
                     rulesDeferred.await()
                     faceDeferred.await()
                     
@@ -363,7 +380,10 @@ class AttendanceViewModel @Inject constructor(
                         _performance.value = snapshot
                     }
                 } catch (e: Exception) {
+                    _syncError.value = e.message ?: "Unable to sync attendance with server"
                     android.util.Log.e("AttendanceViewModel", "Attendance background sync error: ${e.message}")
+                } finally {
+                    _isRefreshing.value = false
                 }
             }
         }

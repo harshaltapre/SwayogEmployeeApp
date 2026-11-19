@@ -68,14 +68,6 @@ import { Badge } from "@/components/ui/badge";
 
 export default function InventoryCustomers() {
   const { user } = useAuth();
-  if (!user) return null;
-  const isSuperOrAdmin = user.role === "super_admin" || user.role === "admin";
-  const isExec = isInventoryExecutiveJobRole(user.jobRole);
-  if (!isSuperOrAdmin && !isExec) {
-    return <Redirect to="/employee/dashboard" />;
-  }
-
-  const canManage = isExec;
 
   const [search, setSearch] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
@@ -103,15 +95,24 @@ export default function InventoryCustomers() {
   const { data: allDispatches } = useListDispatchedMaterials();
   const { data: apartments } = useListApartments();
 
+  const createDispatch = useCreateDispatchRecord();
+  const updateDispatch = useUpdateDispatchRecord();
+  const deleteDispatch = useDeleteDispatchRecord();
+
+  if (!user) return null;
+  const isSuperOrAdmin = user.role === "super_admin" || user.role === "admin";
+  const isExec = isInventoryExecutiveJobRole(user.jobRole);
+  if (!isSuperOrAdmin && !isExec) {
+    return <Redirect to="/employee/dashboard" />;
+  }
+
+  const canManage = isExec;
+
   // Group customers: individual (no apartment) vs apartment-grouped
   const individualCustomers = (customers || []).filter(c => !c.apartmentId);
   const apartmentsToDisplay = (apartments || []).filter(apt => {
     return (customers || []).some(c => c.apartmentId === apt.id);
   });
-
-  const createDispatch = useCreateDispatchRecord();
-  const updateDispatch = useUpdateDispatchRecord();
-  const deleteDispatch = useDeleteDispatchRecord();
 
   const handleOpenDispatch = (customer: CustomerRecord) => {
     setSelectedCustomer(customer);

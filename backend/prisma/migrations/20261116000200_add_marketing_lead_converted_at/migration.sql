@@ -1,0 +1,5 @@
+ALTER TABLE "MarketingLead"
+ADD COLUMN IF NOT EXISTS "convertedAt" TIMESTAMP(3);
+
+ALTER TABLE "DeletedMarketingLead"
+ADD COLUMN IF NOT EXISTS "convertedAt" TIMESTAMP(3);

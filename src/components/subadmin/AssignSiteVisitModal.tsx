@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,10 @@ interface AssignSiteVisitModalProps {
     zone?: string;
   }>;
   onSuccess?: () => void;
+  initialCustomerName?: string;
+  initialCustomerPhone?: string;
+  initialSiteAddress?: string;
+  initialCapacity?: string;
 }
 
 export const AssignSiteVisitModal: React.FC<AssignSiteVisitModalProps> = ({
@@ -30,6 +34,10 @@ export const AssignSiteVisitModal: React.FC<AssignSiteVisitModalProps> = ({
   onClose,
   employees = [],
   onSuccess,
+  initialCustomerName,
+  initialCustomerPhone,
+  initialSiteAddress,
+  initialCapacity,
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -44,6 +52,15 @@ export const AssignSiteVisitModal: React.FC<AssignSiteVisitModalProps> = ({
     format(new Date(), "yyyy-MM-dd'T'HH:mm")
   );
   const [siteInfo, setSiteInfo] = useState<string>("");
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialCustomerName !== undefined) setCustomerName(initialCustomerName);
+      if (initialCustomerPhone !== undefined) setCustomerPhone(initialCustomerPhone);
+      if (initialSiteAddress !== undefined) setSiteAddress(initialSiteAddress);
+      if (initialCapacity !== undefined) setCapacity(initialCapacity);
+    }
+  }, [isOpen, initialCustomerName, initialCustomerPhone, initialSiteAddress, initialCapacity]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,9 +104,8 @@ export const AssignSiteVisitModal: React.FC<AssignSiteVisitModalProps> = ({
       selectedEmp?.userId || (selectedEmp?.id !== undefined ? String(selectedEmp.id) : selectedEmployeeId)
     );
 
-    const formattedDescription = `Site Capacity: ${capacity.trim()}${
-      siteInfo.trim() ? `\nSite Info & Notes: ${siteInfo.trim()}` : ""
-    }`;
+    const formattedDescription = `Site Capacity: ${capacity.trim()}${siteInfo.trim() ? `\nSite Info & Notes: ${siteInfo.trim()}` : ""
+      }`;
 
     assignTaskMutation.mutate(
       {

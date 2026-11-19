@@ -16,8 +16,11 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val dataStoreManager: DataStoreManager,
     private val authRepository: AuthRepository,
+    private val attendanceRepository: com.swayog.employee.data.repository.AttendanceRepository,
+    private val syncManager: com.swayog.employee.data.sync.SyncManager,
     private val faceIndexManager: FaceIndexManager,
     private val appUpdateManager: com.swayog.employee.core.update.AppUpdateManager
 ) : ViewModel() {
@@ -76,8 +79,38 @@ class MainViewModel @Inject constructor(
                 appUpdateManager.checkForUpdates(force = false, autoDownload = true)
             }
         }
+        // Post-APK-update recovery: purge stale HTTP cache without touching Room DB or tokens
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            performPostUpdateRecoveryIfNeeded()
+        }
         // Initial profile refresh
         refreshUserProfile()
+    }
+
+    private suspend fun performPostUpdateRecoveryIfNeeded() {
+        try {
+            val currentVersionCode = appUpdateManager.installedVersionCode
+            val lastSeenVersionCode = dataStoreManager.getLastSeenAppVersionCode()
+            if (currentVersionCode != lastSeenVersionCode) {
+                android.util.Log.i(
+                    "MainViewModel",
+                    "Detected app version change ($lastSeenVersionCode -> $currentVersionCode); running non-destructive cache & sync recovery"
+                )
+                // Clear ONLY the HTTP disk cache so stale responses from the previous APK are purged
+                val httpCacheDir = java.io.File(context.cacheDir, "http_cache")
+                if (httpCacheDir.exists()) {
+                    httpCacheDir.deleteRecursively()
+                }
+                dataStoreManager.setLastSeenAppVersionCode(currentVersionCode)
+                if (dataStoreManager.isCachedLoggedIn()) {
+                    syncManager.scheduleSync()
+                    try { authRepository.getCurrentUser() } catch (_: Exception) {}
+                    try { attendanceRepository.getTodayAttendance() } catch (_: Exception) {}
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainViewModel", "Post-update recovery notice: ${e.message}")
+        }
     }
 
     /**
@@ -105,6 +138,9 @@ class MainViewModel @Inject constructor(
         // Immediately refresh profile when app comes to foreground so designation
         // changes made on the web propagate as soon as the user opens the app
         refreshUserProfile()
+        if (dataStoreManager.isCachedLoggedIn()) {
+            syncManager.scheduleSync()
+        }
 
         // If an update was already downloaded and we were waiting for package install permission, resume it
         appUpdateManager.resumeInstallIfReady()

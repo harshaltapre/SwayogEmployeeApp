@@ -37,6 +37,12 @@ interface AttendanceDao {
     
     @Query("DELETE FROM attendance")
     suspend fun deleteAllAttendance()
+
+    @Query("DELETE FROM attendance WHERE employeeId = :employeeId AND date LIKE :todayDate || '%' AND id != :authoritativeId")
+    suspend fun deleteStaleTodayRowsExcludingId(employeeId: String, todayDate: String, authoritativeId: String)
+
+    @Query("DELETE FROM attendance WHERE employeeId = :employeeId AND date LIKE :todayDate || '%' AND isSynced = 1")
+    suspend fun deleteSyncedTodayAttendance(employeeId: String, todayDate: String)
     
     @Query("SELECT * FROM attendance WHERE isSynced = 0")
     suspend fun getUnsyncedAttendance(): List<AttendanceEntity>

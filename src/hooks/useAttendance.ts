@@ -84,6 +84,12 @@ export const useTeamPerformance = (month: number, year: number) => useQuery({
   refetchInterval: 10_000,
 });
 
+export const useTeamAttendance = (month: number, year: number) => useQuery({
+  queryKey: ["admin", "team-attendance", month, year],
+  queryFn: () => apiClient.get(`/attendance/admin/team-attendance?month=${month}&year=${year}`).then((r) => r.data.snapshots),
+  refetchInterval: 10_000,
+});
+
 export const useEmployeePerformance = (employeeId: string, month: number, year: number) => useQuery({
   queryKey: ["admin", "employee-performance", employeeId, month, year],
   queryFn: () => apiClient.get(`/attendance/admin/employee/${employeeId}/performance?month=${month}&year=${year}`).then((r) => r.data.snapshot),
@@ -353,6 +359,8 @@ export interface TodaySummaryData {
   isWeeklyOff: boolean;
   holiday: { name: string; description?: string | null } | null;
   shiftStart: string;
+  shiftEnd?: string;
+  autoCheckoutGraceMinutes?: number;
   employees: TodaySummaryEmployee[];
 }
 
@@ -481,126 +489,3 @@ export const useRejectRegularizationRequest = () => {
     },
   });
 };
-
-// ── SMART ATTENDANCE & POLICY HOOKS ──────────────────────────────────────────
-
-export interface LateAllowanceSummary {
-  yearMonth: string;
-  reportingTime: string;
-  maxAllowance: number;
-  lateDaysUsed: number;
-  allowancesConsumed: number;
-  remainingAllowances: number;
-  halfDayCount: number;
-}
-
-export const useLateAllowanceSummary = (month?: number, year?: number) => useQuery({
-  queryKey: ["attendance", "late-allowance-summary", month, year],
-  queryFn: () => {
-    let url = "/attendance/late-allowance-summary";
-    const params = [];
-    if (month) params.push(`month=${month}`);
-    if (year) params.push(`year=${year}`);
-    if (params.length > 0) url += `?${params.join("&")}`;
-    return apiClient.get(url).then((r) => r.data as LateAllowanceSummary);
-  },
-});
-
-export const useAttendancePolicy = () => useQuery({
-  queryKey: ["attendance", "policy"],
-  queryFn: () => apiClient.get("/attendance/policy").then((r) => r.data),
-});
-
-export const useAlarmSettings = () => useQuery({
-  queryKey: ["attendance", "alarm-settings"],
-  queryFn: () => apiClient.get("/attendance/alarm-settings").then((r) => r.data),
-});
-
-export const useSaveAlarmSettings = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: any) => apiClient.post("/attendance/alarm-settings", data).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", "alarm-settings"] }),
-  });
-};
-
-// ── Company alarm policy & ringtones (admin-managed) ─────────────────────────
-
-export interface CompanyAlarmPolicy {
-  reportingTime: string;
-  timezone: string;
-  workingDays: number[];
-  personalDefaultTime: string;
-  prepReminderTime: string;
-  prepReminderEnabled: boolean;
-  finalReminderTime: string;
-  finalReminderEnabled: boolean;
-  policyNote?: string | null;
-  companySoundName?: string | null;
-  companySoundUrl?: string | null;
-}
-
-export interface CompanyRingtone {
-  id: string;
-  name: string;
-  objectKey?: string;
-  mimeType?: string;
-  url?: string | null;
-}
-
-export const useCompanyAlarmPolicy = () => useQuery({
-  queryKey: ["attendance", "alarm-policy"],
-  queryFn: () => apiClient.get("/attendance/alarm-policy").then((r) => r.data as { policy: CompanyAlarmPolicy; ringtones: CompanyRingtone[] }),
-});
-
-export const useUpdateAlarmPolicy = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: Partial<CompanyAlarmPolicy> & { defaultSoundName?: string | null; defaultSoundKey?: string | null }) =>
-      apiClient.post("/attendance/admin/alarm-policy", data).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["attendance", "alarm-policy"] });
-      qc.invalidateQueries({ queryKey: ["attendance", "alarm-settings"] });
-    },
-  });
-};
-
-export const useCompanyRingtones = () => useQuery({
-  queryKey: ["attendance", "admin-ringtones"],
-  queryFn: () => apiClient.get("/attendance/admin/ringtones").then((r) => r.data.ringtones as CompanyRingtone[]),
-});
-
-export const useUploadRingtone = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ file, name }: { file: File; name?: string }) => {
-      const form = new FormData();
-      form.append("file", file);
-      if (name) form.append("name", name);
-      return apiClient.post("/attendance/admin/ringtones", form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      }).then((r) => r.data);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["attendance", "admin-ringtones"] });
-      qc.invalidateQueries({ queryKey: ["attendance", "alarm-policy"] });
-    },
-  });
-};
-
-export const useDeleteRingtone = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => apiClient.delete(`/attendance/admin/ringtones/${id}`).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["attendance", "admin-ringtones"] });
-      qc.invalidateQueries({ queryKey: ["attendance", "alarm-policy"] });
-    },
-  });
-};
-
-export const useAdminAuditLogs = () => useQuery({
-  queryKey: ["admin", "attendance", "audit-logs"],
-  queryFn: () => apiClient.get("/attendance/admin/audit-logs").then((r) => r.data.logs),
-  refetchInterval: 30_000,
-});

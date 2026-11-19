@@ -149,6 +149,11 @@ export async function getAllUsers(req: Request, res: Response): Promise<void> {
           createdAt: true,
           updatedAt: true,
           employeeProfile: { select: { jobRole: true, zone: true, monthlySalaryInr: true, permissions: true } },
+          salaryRecords: {
+            orderBy: [{ year: "desc" }, { month: "desc" }],
+            take: 1,
+            select: { baseSalary: true, netPayable: true },
+          },
           partnerProfile: { select: { partnerCode: true, businessName: true, serviceZone: true } },
           customerProfile: {
             select: {
@@ -198,8 +203,15 @@ export async function getAllUsers(req: Request, res: Response): Promise<void> {
         businessName: u.customerProfile.partner.businessName || null,
       } : null;
 
+      const employeeSalary = u.salaryRecords?.[0]?.baseSalary || u.salaryRecords?.[0]?.netPayable || u.employeeProfile?.monthlySalaryInr || 0;
+      const empProfile = u.employeeProfile ? {
+        ...u.employeeProfile,
+        monthlySalaryInr: employeeSalary,
+      } : null;
+
       return {
         ...u,
+        employeeProfile: empProfile,
         customerId: custCode,
         partnerName: partner?.name || null,
         partnerCode: partner?.partnerCode || null,

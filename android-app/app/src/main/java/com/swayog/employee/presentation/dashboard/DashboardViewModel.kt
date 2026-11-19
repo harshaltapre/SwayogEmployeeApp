@@ -18,11 +18,15 @@ import javax.inject.Inject
 class DashboardViewModel @Inject constructor(
     private val dataStoreManager: DataStoreManager,
     private val attendanceRepository: AttendanceRepository,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val syncManager: com.swayog.employee.data.sync.SyncManager
 ) : ViewModel() {
     
     private val _dashboardState = MutableStateFlow<DashboardState>(DashboardState.Initial)
     val dashboardState: StateFlow<DashboardState> = _dashboardState.asStateFlow()
+
+    private val _syncError = MutableStateFlow<String?>(null)
+    val syncError: StateFlow<String?> = _syncError.asStateFlow()
     
     val userName: StateFlow<String?> = dataStoreManager.userName.stateIn(
         scope = viewModelScope,
@@ -140,7 +144,10 @@ class DashboardViewModel @Inject constructor(
                     attendanceRes.onSuccess { attendance ->
                         // Always overwrite, including null (= not checked in today).
                         // This prevents a stale checked-in state from persisting across days.
+                        _syncError.value = null
                         _todayAttendance.value = attendance
+                    }.onFailure { err ->
+                        _syncError.value = err.message ?: "Unable to sync attendance"
                     }
 
                     perfRes.onSuccess { perf ->
@@ -171,12 +178,17 @@ class DashboardViewModel @Inject constructor(
      */
     fun refreshTodayAttendance() {
         viewModelScope.launch {
+            syncManager.scheduleSync()
             attendanceRepository.getTodayAttendance()
                 .onSuccess { attendance ->
+                    _syncError.value = null
                     _todayAttendance.value = attendance
                 }
+                .onFailure { err ->
+                    _syncError.value = err.message ?: "Unable to sync attendance"
+                }
             // On failure we leave _todayAttendance as-is; the Room Flow
-            // will have already updated it via the local DB write done by check-in/out.
+            // continues showing the latest locally persisted state.
         }
     }
     

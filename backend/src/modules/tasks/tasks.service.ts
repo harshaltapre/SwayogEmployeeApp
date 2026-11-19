@@ -201,7 +201,12 @@ function normalizeJobRole(jobRole?: string | null): string {
 }
 
 function isServiceCoordinator(auth: AuthContext): boolean {
-  return auth.role === UserRole.SUB_ADMIN || normalizeJobRole(auth.jobRole) === "servicecoordinator";
+  const normalized = normalizeJobRole(auth.jobRole);
+  return (
+    auth.role === UserRole.SUB_ADMIN ||
+    normalized === "servicecoordinator" ||
+    normalized === "projectcoordinator"
+  );
 }
 
 const adminTaskRoles = new Set<UserRole>([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUB_ADMIN]);

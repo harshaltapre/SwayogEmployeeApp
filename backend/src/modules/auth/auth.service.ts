@@ -24,6 +24,7 @@ const authUserSelect = {
   email: true,
   phoneNumber: true,
   passwordHash: true,
+  portalPassword: true,
   role: true,
   designationTitle: true,
   departmentId: true,
@@ -130,23 +131,40 @@ async function findUserByIdentifier(identifier: string): Promise<AuthUser | null
     return null;
   }
 
-  if (trimmed.includes("@")) {
-    const userByEmail = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: { equals: trimmed, mode: "insensitive" } },
-          { loginId: trimmed.toLowerCase() },
-          { loginId: trimmed },
-        ],
-      },
-      select: authUserSelect,
-    });
-    if (userByEmail) {
-      return userByEmail;
-    }
+  // 1. Look up by email (case-insensitive)
+  const userByEmail = await prisma.user.findFirst({
+    where: {
+      email: { equals: trimmed, mode: "insensitive" },
+    },
+    select: authUserSelect,
+  });
+  if (userByEmail) {
+    return userByEmail;
   }
 
-  // Look up by phone number (exact and cleaned digits formats)
+  // 2. Look up by loginId (case-insensitive)
+  const userByLoginId = await prisma.user.findFirst({
+    where: {
+      loginId: { equals: trimmed, mode: "insensitive" },
+    },
+    select: authUserSelect,
+  });
+  if (userByLoginId) {
+    return userByLoginId;
+  }
+
+  // 3. Look up by employeeCode (case-insensitive)
+  const byEmployeeCode = await prisma.user.findFirst({
+    where: {
+      employeeCode: { equals: trimmed, mode: "insensitive" },
+    },
+    select: authUserSelect,
+  });
+  if (byEmployeeCode) {
+    return byEmployeeCode;
+  }
+
+  // 4. Look up by phone number (exact and cleaned digits formats)
   const cleanPhone = trimmed.replace(/[\s-+]/g, '');
   const userByPhone = await prisma.user.findFirst({
     where: {
@@ -162,33 +180,8 @@ async function findUserByIdentifier(identifier: string): Promise<AuthUser | null
     return userByPhone;
   }
 
+  // 5. Backward compatibility for customer identifiers where CUS/CUST prefixes may differ
   const normalized = trimmed.toUpperCase();
-
-  // Primary lookup by auth loginId.
-  const direct = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { loginId: normalized },
-        { loginId: trimmed },
-        { loginId: trimmed.toLowerCase() },
-      ],
-    },
-    select: authUserSelect,
-  });
-  if (direct) {
-    return direct;
-  }
-
-  // Also check by employeeCode
-  const byEmployeeCode = await prisma.user.findUnique({
-    where: { employeeCode: normalized },
-    select: authUserSelect,
-  });
-  if (byEmployeeCode) {
-    return byEmployeeCode;
-  }
-
-  // Backward compatibility for customer identifiers where CUS/CUST prefixes may differ.
   const alternateIdentifiers = new Set<string>();
   if (normalized.startsWith("CUST-")) {
     alternateIdentifiers.add(`CUS-${normalized.slice(5)}`);
@@ -198,8 +191,8 @@ async function findUserByIdentifier(identifier: string): Promise<AuthUser | null
   }
 
   for (const alternate of alternateIdentifiers) {
-    const alternateUser = await prisma.user.findUnique({
-      where: { loginId: alternate },
+    const alternateUser = await prisma.user.findFirst({
+      where: { loginId: { equals: alternate, mode: "insensitive" } },
       select: authUserSelect,
     });
     if (alternateUser) {
@@ -207,9 +200,9 @@ async function findUserByIdentifier(identifier: string): Promise<AuthUser | null
     }
   }
 
-  // Allow customerCode input to resolve to linked user.
-  const customer = await prisma.customer.findUnique({
-    where: { customerCode: normalized },
+  // 6. Allow customerCode input to resolve to linked user
+  const customer = await prisma.customer.findFirst({
+    where: { customerCode: { equals: trimmed, mode: "insensitive" } },
     select: { userId: true },
   });
 
@@ -367,7 +360,19 @@ export async function login(input: LoginInput) {
       // Specialized cases:
       // 1. SUB_ADMIN users should be allowed to login using the "EMPLOYEE" role selection
       // 2. PARTNER users / EPC Contractor users logging in via "Partner" role selection
-      const isSubAdminLoggingAsEmployee = (user.role === UserRole.SUB_ADMIN && (input.role as string) === "EMPLOYEE");
+      // 1. Employee family: EMPLOYEE, SUB_ADMIN, DEPARTMENT_HEAD, TEAM_LEAD logging in as EMPLOYEE
+      const isEmployeeFamilyLoggingAsEmployee = (
+        ["EMPLOYEE", "SUB_ADMIN", "DEPARTMENT_HEAD", "TEAM_LEAD"].includes(user.role) &&
+        ((input.role as string) === "EMPLOYEE" || (input.role as string) === "SUB_ADMIN")
+      );
+      // 2. SUB_ADMIN logging in as ADMIN
+      const isSubAdminLoggingAsAdmin = (
+        user.role === UserRole.SUB_ADMIN && (input.role as string) === "ADMIN"
+      );
+      // 3. SUPER_ADMIN logging in as ADMIN
+      const isSuperAdminLoggingAsAdmin = (
+        user.role === UserRole.SUPER_ADMIN && (input.role as string) === "ADMIN"
+      );
       const isPartnerLoggingIn = (
         (user.role === UserRole.PARTNER && ((input.role as string) === "PARTNER" || (input.role as string) === "EMPLOYEE")) ||
         (user.role === UserRole.EMPLOYEE && (input.role as string) === "PARTNER" && (
@@ -381,7 +386,7 @@ export async function login(input: LoginInput) {
         ))
       );
 
-      if (!isSubAdminLoggingAsEmployee && !isPartnerLoggingIn) {
+      if (!isEmployeeFamilyLoggingAsEmployee && !isSubAdminLoggingAsAdmin && !isSuperAdminLoggingAsAdmin && !isPartnerLoggingIn) {
         console.warn("[AUTH] Role mismatch for identifier:", input.identifier, "user role:", user.role, "requested role:", input.role);
         // Log the unauthorized access attempt
         await prisma.auditLog.create({
@@ -415,7 +420,36 @@ export async function login(input: LoginInput) {
       });
     }
 
-    const passwordMatches = await verifyPassword(input.password, user.passwordHash);
+    const rawPassword = input.password;
+    const trimmedPassword = input.password.trim();
+
+    let passwordMatches = false;
+    try {
+      passwordMatches = await verifyPassword(rawPassword, user.passwordHash);
+      if (!passwordMatches && trimmedPassword !== rawPassword) {
+        passwordMatches = await verifyPassword(trimmedPassword, user.passwordHash);
+      }
+    } catch {
+      passwordMatches = false;
+    }
+
+    if (!passwordMatches && (user as any).portalPassword) {
+      if (input.password === (user as any).portalPassword) {
+        passwordMatches = true;
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { passwordHash: await hashPassword(input.password) }
+        }).catch(console.error);
+      }
+    }
+
+    if (!passwordMatches && user.passwordHash === input.password) {
+      passwordMatches = true;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await hashPassword(input.password) }
+      }).catch(console.error);
+    }
 
     if (!passwordMatches) {
       console.warn("[AUTH] Password mismatch for user:", user.id);

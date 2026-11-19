@@ -48,6 +48,22 @@ interface MockUser {
   } | null;
 }
 
+function matchesTextFilter(value: string | null | undefined, filter: any): boolean {
+  if (value == null || filter == null) return false;
+  if (typeof filter === "string") return value === filter;
+  if (typeof filter !== "object") return false;
+
+  const mode = filter.mode === "insensitive";
+  const normalize = (text: string) => mode ? text.toLowerCase() : text;
+  if (typeof filter.equals === "string") {
+    return normalize(value) === normalize(filter.equals);
+  }
+  if (typeof filter.contains === "string") {
+    return value.toLowerCase().includes(filter.contains.toLowerCase());
+  }
+  return false;
+}
+
 class MockDatabase {
   private users: Map<string, MockUser> = new Map();
   private initialized = false;
@@ -117,16 +133,15 @@ class MockDatabase {
         // Direct identity filters
         if (where.id && user.id !== where.id) return false;
 
-        if (
-          where.email &&
-          user.email?.toLowerCase() !== (where.email as string).toLowerCase()
-        )
-          return false;
+        if (where.email && !matchesTextFilter(user.email, typeof where.email === "string"
+          ? { equals: where.email, mode: "insensitive" }
+          : where.email)) return false;
 
-        if (where.loginId && user.loginId !== where.loginId) return false;
+        if (where.loginId && !matchesTextFilter(user.loginId, where.loginId)) return false;
 
-        if (where.phoneNumber && user.phoneNumber !== where.phoneNumber)
-          return false;
+        if (where.employeeCode && !matchesTextFilter(user.employeeCode, where.employeeCode)) return false;
+
+        if (where.phoneNumber && !matchesTextFilter(user.phoneNumber, where.phoneNumber)) return false;
 
         // Role filter
         if (where.role && user.role !== where.role) return false;
@@ -139,35 +154,18 @@ class MockDatabase {
         if (where.OR && Array.isArray(where.OR)) {
           const matchesSearch = where.OR.some((condition: any) => {
             // Handle fullName search
-            if (
-              condition.fullName?.contains &&
-              user.fullName?.toLowerCase().includes((condition.fullName.contains as string).toLowerCase())
-            )
-              return true;
+            if (matchesTextFilter(user.fullName, condition.fullName)) return true;
             
             // Handle email search
-            if (
-              condition.email?.contains &&
-              user.email?.toLowerCase().includes((condition.email.contains as string).toLowerCase())
-            )
-              return true;
+            if (matchesTextFilter(user.email, condition.email)) return true;
+
+            if (matchesTextFilter(user.loginId, condition.loginId)) return true;
             
-            // Handle loginId search
-            if (
-              condition.loginId?.contains &&
-              user.loginId?.toLowerCase().includes((condition.loginId.contains as string).toLowerCase())
-            )
-              return true;
+            // Handle employee code search
+            if (matchesTextFilter(user.employeeCode, condition.employeeCode)) return true;
             
             // Handle phoneNumber search
-            if (
-              condition.phoneNumber?.contains &&
-              user.phoneNumber &&
-              user.phoneNumber
-                .toLowerCase()
-                .includes((condition.phoneNumber.contains as string).toLowerCase())
-            )
-              return true;
+            if (matchesTextFilter(user.phoneNumber, condition.phoneNumber)) return true;
             
             return false;
           });

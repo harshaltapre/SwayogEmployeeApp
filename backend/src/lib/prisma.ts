@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { env } from "../config/env.js";
 import { encryptToken, decryptToken } from "./encryption.js";
 import { mockDb } from "./mock-database.js";
 
@@ -11,6 +12,10 @@ let prismaClientInstance: any = null;
 let mockMode = false;
 let mockClientInstance: any = null;
 let isInitializingMock = false;
+
+function allowMockFallback(): boolean {
+  return env.USE_MOCK_FALLBACK === "true" && env.NODE_ENV !== "production";
+}
 
 async function ensureMockDbInitialized() {
   if (isInitializingMock) return;
@@ -93,6 +98,15 @@ function createGenericMockModel(modelName: string) {
       if (operation === 'upsert') {
         return async (args: any) => ({ id: Math.floor(Math.random() * 1000), ...args.create });
       }
+      if (operation === 'createMany') {
+        return async (args: any) => ({ count: Array.isArray(args?.data) ? args.data.length : 0 });
+      }
+      if (operation === 'groupBy') {
+        return async () => [];
+      }
+      if (operation === 'aggregate') {
+        return async () => ({ _sum: {}, _count: 0, _avg: {}, _min: {}, _max: {} });
+      }
       return async () => null;
     }
   });
@@ -148,8 +162,19 @@ function createMockPrismaWrapper() {
   mockClientInstance = new Proxy({}, {
     get(target, prop) {
       if (prop === 'user') return mockUserModel;
-      if (prop === '$queryRaw') return async () => [1];
-      if (prop === '$executeRaw') return async () => 1;
+      if (prop === '$queryRaw' || prop === '$queryRawUnsafe') return async () => [1];
+      if (prop === '$executeRaw' || prop === '$executeRawUnsafe') return async () => 1;
+      if (prop === '$transaction') {
+        return async (fnOrArray: any) => {
+          if (typeof fnOrArray === 'function') {
+            return fnOrArray(mockClientInstance);
+          }
+          if (Array.isArray(fnOrArray)) {
+            return Promise.all(fnOrArray);
+          }
+          return null;
+        };
+      }
       if (prop === '$disconnect') return async () => console.log("[Prisma] Disconnecting mock client...");
       return createGenericMockModel(String(prop));
     }
@@ -223,9 +248,8 @@ function getPrisma(): any {
                 const retryResult = await query(args);
                 return processFields(retryResult, decryptVal);
               } catch (retryErr: any) {
-                const shouldMockFallback = process.env.NODE_ENV === 'development' || process.env.USE_MOCK_FALLBACK === 'true';
-                if (shouldMockFallback) {
-                  console.warn("[Prisma] Database connection unavailable (or quota exceeded). Switching to mock database fallback.");
+                if (allowMockFallback()) {
+                  console.warn("[Prisma] Database connection unavailable (or quota exceeded). Switching to mock database fallback because USE_MOCK_FALLBACK is explicitly enabled in a non-production environment.");
                   mockMode = true;
                   await ensureMockDbInitialized();
                   const mockClient = createMockPrismaWrapper();
@@ -287,8 +311,8 @@ export const prisma: any = new Proxy({} as any, {
                   await new Promise((r) => setTimeout(r, 500));
                   return await value.apply(instance, args);
                 } catch (retryErr: any) {
-                  if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_FALLBACK === 'true') {
-                    console.warn("[Prisma] Database connection lost on raw query. Switching to mock client.");
+                  if (allowMockFallback()) {
+                    console.warn("[Prisma] Database connection lost on raw query. Switching to mock client because explicit mock fallback is enabled.");
                     mockMode = true;
                     await ensureMockDbInitialized();
                     return prop === '$queryRaw' ? [1] : 1;
@@ -304,8 +328,8 @@ export const prisma: any = new Proxy({} as any, {
       }
       return value;
     } catch (error: any) {
-      if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_FALLBACK === 'true') {
-        console.warn("[Prisma] Failed to resolve prisma instance. Switching to mock client.");
+      if (allowMockFallback()) {
+        console.warn("[Prisma] Failed to resolve prisma instance. Switching to mock client because explicit mock fallback is enabled.");
         mockMode = true;
         ensureMockDbInitialized();
         const mockClient = createMockPrismaWrapper();
@@ -317,7 +341,7 @@ export const prisma: any = new Proxy({} as any, {
 });
 
 export async function ensurePrismaInitialized() {
-  if (mockMode && process.env.USE_MOCK_FALLBACK !== 'true') {
+  if (mockMode && !allowMockFallback()) {
     mockMode = false;
     globalForPrisma.mockMode = false;
   }
@@ -328,8 +352,8 @@ export async function ensurePrismaInitialized() {
     globalForPrisma.mockMode = false;
     return client;
   } catch (error: any) {
-    if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_FALLBACK === 'true') {
-      console.warn("[Prisma] ensurePrismaInitialized failed to connect. Forcing mock database fallback.");
+    if (allowMockFallback()) {
+      console.warn("[Prisma] ensurePrismaInitialized failed to connect. Forcing mock database fallback because explicit mock fallback is enabled.");
       mockMode = true;
       await ensureMockDbInitialized();
       return createMockPrismaWrapper();

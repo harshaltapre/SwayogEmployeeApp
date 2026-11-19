@@ -1,184 +1,109 @@
-# Quick Setup Guide for R2 Public Distribution
+# Android Release Distribution Setup
 
-## Prerequisites Checklist
+This guide covers the Android APK release workflow in
+[`.github/workflows/release-apk.yml`](./.github/workflows/release-apk.yml) and its
+Cloudflare R2 storage. The API also serves the current manifest at
+`/api/v1/app/update/latest.json`.
 
-Before starting, ensure you have:
-- [ ] Cloudflare account with R2 enabled
-- [ ] GitHub repository access
-- [ ] Java JDK installed (for keystore generation)
-- [ ] Git configured on your machine
+> **Repository prerequisite:** This checkout does not contain the `android-app/`
+> source directory that the workflow builds. Make sure the Android project is
+> present on the release branch before running the workflow.
 
-## Step 1: Cloudflare R2 Setup
+## Prerequisites
 
-### 1.1 Create R2 Bucket
-1. Go to https://dash.cloudflare.com/
-2. Navigate to R2 → Create bucket
-3. Name: `swayog-dashboard`
-4. Location: Choose nearest region
-5. Click "Create bucket"
+- Access to this repository's GitHub Actions settings.
+- A Cloudflare R2 bucket and an R2 API token with read/write access to that bucket.
+- The production Android signing keystore and its passwords. Use the same
+  keystore as previous production releases; a different signing key prevents
+  existing installations from accepting updates.
+- The Android project under `android-app/`.
 
-### 1.2 Enable Public Access
-**Option A: Custom Domain (Recommended)**
-1. Go to R2 bucket → Settings → Public Access
-2. Click "Set up a custom domain"
-3. Enter: `releases.yourdomain.com`
-4. Follow DNS configuration steps
-5. Wait for SSL certificate (15-30 min)
+## Configure GitHub Actions
 
-**Option B: R2 Public URL (Quick)**
-1. Go to R2 bucket → Settings → Public Access
-2. Enable "Allow public access"
-3. Note the public URL format
+Add these repository Actions secrets:
 
-### 1.3 Get API Credentials
-1. Cloudflare Dashboard → R2 → Manage R2 API Tokens
-2. Click "Create API Token"
-3. Permissions: Account → R2 → Edit & Read
-4. Save: Access Key ID, Secret Access Key, Account ID
+| Secret | Required | Purpose |
+| --- | --- | --- |
+| `R2_ENDPOINT` | Yes | S3-compatible endpoint, such as `https://<account-id>.r2.cloudflarestorage.com`. |
+| `R2_ACCESS_KEY_ID` | Yes | R2 API token access key. |
+| `R2_SECRET_ACCESS_KEY` | Yes | R2 API token secret. |
+| `RELEASE_KEYSTORE_BASE64` | Yes | Base64-encoded production keystore. |
+| `RELEASE_KEY_ALIAS` | Yes | Signing key alias. |
+| `RELEASE_STORE_PASSWORD` | Yes | Keystore password. |
+| `RELEASE_KEY_PASSWORD` | Yes | Signing key password. |
+| `R2_BUCKET_NAME` | No | Bucket name; defaults to `swayog-dashboard`. |
+| `R2_PUBLIC_URL` | No | Public CDN/custom-domain base URL for APK downloads. |
+| `PUBLIC_DISTRIBUTION_URL` | No | Public download base URL fallback. |
+| `API_BASE_URL` | No | API base URL; defaults to the production API. |
+| `WS_BASE_URL` | No | WebSocket base URL; defaults to the production host. |
+| `WEB_DOMAIN` | No | Web application URL used in release metadata. |
 
-## Step 2: Generate Signing Keystore
+If `PRODUCTION_CERT_SHA256` is configured as a repository Actions variable, the
+workflow checks the release certificate against it.
 
-### Run the provided script:
-```bash
-cd android-app
-chmod +x generate-keystore.sh
-./generate-keystore.sh
+Store secrets in GitHub Actions settings only. Do not commit keystores,
+credentials, or populated environment files to the repository.
+
+## Configure R2
+
+1. Create a bucket or select the bucket configured by `R2_BUCKET_NAME`.
+2. Create an R2 API token restricted to that bucket, with object read/write
+   permissions.
+3. Set `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` in GitHub
+   Actions secrets.
+4. If APKs should be served through a public CDN or custom domain, configure it
+   and set its base URL in `R2_PUBLIC_URL` or `PUBLIC_DISTRIBUTION_URL`.
+
+Keep the bucket private when using presigned download URLs. Public access is
+only needed when intentionally serving files through a public distribution
+domain.
+
+The release script uploads the versioned APK under
+`releases/android/{versionName}/build-{versionCode}/app-release.apk`, plus the
+latest APK and manifest objects used for compatibility.
+
+## Run a release
+
+The workflow runs on pushes to `main` that change Android or release-related
+files, and it can also be started manually:
+
+1. Open the repository's **Actions** tab and select **Build and Deploy Android
+   Release APK**.
+2. Select **Run workflow**.
+3. Optionally enter a version name, version code, minimum supported version,
+   mandatory-update flag, and release notes. Leave version fields blank to use
+   automatic version calculation.
+4. Monitor the job through signing, APK build, R2 upload, manifest validation,
+   and release publication.
+
+Do not create a tag or commit secrets to trigger a release. The workflow
+validates the APK and manifest and creates the release tag after publishing.
+
+## Verify the published update
+
+```sh
+curl --fail --show-error https://swayog-dashboard.vercel.app/api/v1/app/update/latest.json
 ```
 
-This will:
-- Generate `release-key.jks`
-- Provide base64 encoded keystore
-- Show all GitHub secrets you need
-
-## Step 3: Add GitHub Secrets
-
-Go to: https://github.com/harshaltapre/SwayogEmployeeApp/settings/secrets/actions
-
-Add these secrets:
-
-### R2 Secrets:
-```
-R2_ACCOUNT_ID=your-cloudflare-account-id
-R2_ACCESS_KEY_ID=your-r2-access-key-id
-R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
-R2_BUCKET_NAME=swayog-dashboard
-R2_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
-R2_PUBLIC_URL=https://releases.yourdomain.com
-```
-
-### Signing Secrets (from keystore script):
-```
-RELEASE_KEYSTORE_BASE64=<base64 from script>
-RELEASE_KEY_ALIAS=<alias from script>
-RELEASE_STORE_PASSWORD=<password from script>
-RELEASE_KEY_PASSWORD=<password from script>
-```
-
-## Step 4: Update Local Configuration
-
-The `android-app/local.properties` file has been updated with:
-```
-PUBLIC_DISTRIBUTION_URL=https://your-r2-public-domain.com
-```
-
-Replace `https://your-r2-public-domain.com` with your actual R2 public URL.
-
-## Step 5: Create First Release
-
-### 5.1 Commit any changes
-```bash
-git add .
-git commit -m "Configure R2 public distribution for app updates"
-git push
-```
-
-### 5.2 Create version tag
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-This will automatically trigger the GitHub Actions workflow.
-
-## Step 6: Monitor GitHub Actions
-
-1. Go to: https://github.com/harshaltapre/SwayogEmployeeApp/actions
-2. Watch the "Build and Deploy Android Release APK" workflow
-3. Check each step for success
-4. Verify R2 upload succeeded
-5. Confirm public endpoint verification passed
-
-## Step 7: Test Public Access
-
-### Test endpoints manually:
-```bash
-# Replace with your actual public URL
-curl https://releases.yourdomain.com/releases/android/latest.json
-curl https://releases.yourdomain.com/app/android/latest.json
-```
-
-Both should return JSON with version information.
-
-## Step 8: Test Mobile App Update
-
-### 8.1 Build and install current version
-```bash
-cd android-app
-./gradlew assembleDebug
-./gradlew installDebug
-```
-
-### 8.2 Update local.properties with your public URL
-```properties
-PUBLIC_DISTRIBUTION_URL=https://releases.yourdomain.com
-```
-
-### 8.3 Test update check
-1. Open the app on your device
-2. Navigate to Settings → App Updates
-3. Tap "Check for Updates"
-4. Should show the new version available
+Confirm the response contains the expected `versionCode`, `versionName`,
+`apkUrl`, and 64-character SHA-256 checksum. If `apkUrl` points to a public
+distribution domain, check that the URL is reachable. If it is a presigned R2
+URL, verify that it downloads the APK before the signature expires.
 
 ## Troubleshooting
 
-### Workflow Fails
-- Check GitHub Actions logs for specific errors
-- Verify all GitHub Secrets are set correctly
-- Ensure R2 credentials are valid
+- **Workflow cannot find Android files:** ensure `android-app/` is present on
+  the branch being built.
+- **Signing step fails:** check that all four signing secrets are correct and
+  that the keystore matches the production certificate.
+- **R2 upload or verification fails:** check the endpoint, bucket name, and
+  token permissions. The configured token must allow the workflow to write and
+  read release objects.
+- **Manifest endpoint returns an error:** verify that the manifest was uploaded
+  and that the backend has access to the same R2 bucket.
+- **APK URL cannot be opened:** check the CDN configuration or verify that the
+  presigned URL has not expired.
 
-### Public URL Not Accessible
-- Verify R2 public access is enabled
-- Check DNS configuration for custom domain
-- Test with direct R2 URL as fallback
-
-### Update Check Fails in App
-- Verify `PUBLIC_DISTRIBUTION_URL` in local.properties
-- Check network connectivity
-- Test public endpoints with curl
-- Review Android app logs
-
-### APK Download Fails
-- Verify R2 upload succeeded
-- Check APK exists in R2 bucket
-- Test download URL manually
-- Verify public access permissions
-
-## Success Criteria
-
-You'll know it's working when:
-- ✅ GitHub Actions workflow completes successfully
-- ✅ Public endpoints return valid JSON
-- ✅ Mobile app can fetch latest.json
-- ✅ Update available notification appears
-- ✅ APK downloads and installs successfully
-
-## Support
-
-For issues:
-- **R2 Configuration**: Cloudflare Dashboard → R2 → Documentation
-- **GitHub Actions**: Repository → Actions → Workflow runs
-- **Mobile App**: Android Studio → Logcat
-
----
-
-**Ready to proceed?** Start with Step 1 (Cloudflare R2 Setup) and work through each step sequentially.
+See the [backend setup guide](./backend/README.md) for configuring R2 access for
+the API, and [API endpoint documentation](./API_ENDPOINTS_DOCUMENTATION.md) for
+the update-manifest route.

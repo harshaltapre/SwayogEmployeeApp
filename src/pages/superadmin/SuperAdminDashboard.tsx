@@ -18,7 +18,6 @@ import EmployeesTab from "./EmployeesTab";
 import PartnersTab from "./PartnersTab";
 import InventoryTab from "./InventoryTab";
 import ComplaintsTab from "./ComplaintsTab";
-import ZonesTab from "./ZonesTab";
 import SystemTab from "./SystemTab";
 import UsersTab from "./UsersTab";
 import CustomersTab from "./CustomersTab";
@@ -80,7 +79,6 @@ const NAV = [
   { id: "messages", label: "Messages", icon: <Bell size={16} /> },
   { id: "inventory", label: "Inventory", icon: <Package size={16} /> },
   { id: "complaints", label: "Complaints", icon: <AlertTriangle size={16} /> },
-  { id: "zones", label: "Zone Analysis", icon: <MapPin size={16} /> },
   { id: "system", label: "System & Audit", icon: <Shield size={16} /> },
   { id: "settings", label: "Settings", icon: <Settings size={16} /> },
 ];
@@ -288,7 +286,6 @@ export default function SuperAdminDashboard() {
       case "messages": return <MessagesTab />;
       case "inventory": return <InventoryTab />;
       case "complaints": return <ComplaintsTab />;
-      case "zones": return <ZonesTab />;
       case "system": return <SystemTab />;
       case "settings": return <SettingsTab />;
       default: return <OverviewTab onNavigate={setActiveTab} />;

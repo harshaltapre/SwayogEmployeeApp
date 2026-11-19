@@ -26,6 +26,7 @@ class SettingsViewModel @Inject constructor(
     private val faceIndexManager: FaceIndexManager,
     private val apiService: ApiService,
     private val appUpdateManager: com.swayog.employee.core.update.AppUpdateManager,
+    private val syncManager: com.swayog.employee.data.sync.SyncManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -355,7 +356,26 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun clearCache() {
-        context.cacheDir.deleteRecursively()
+        // Safely purge HTTP/image caches without deleting pending outbox attachments,
+        // then trigger a fresh server reconciliation so attendance & profile stay in sync.
+        try {
+            java.io.File(context.cacheDir, "http_cache").deleteRecursively()
+            java.io.File(context.cacheDir, "image_cache").deleteRecursively()
+            context.cacheDir.listFiles()?.forEach { file ->
+                val name = file.name.lowercase()
+                // Preserve any pending offline attendance/task media files if stored in cacheDir
+                if (!name.startsWith("attendance_selfie") && !name.startsWith("task_")) {
+                    file.deleteRecursively()
+                }
+            }
+        } catch (_: Exception) {}
+        viewModelScope.launch {
+            syncManager.scheduleSync()
+            syncWithServer()
+            try {
+                attendanceRepository.getTodayAttendance()
+            } catch (_: Exception) {}
+        }
     }
 
     private fun getDirSize(dir: java.io.File): Long {

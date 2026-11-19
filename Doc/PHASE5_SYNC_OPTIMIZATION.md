@@ -1,207 +1,68 @@
 # Phase 5 — Sync Mechanism Review and Optimization
 
-## 1. Current State of Cross-Platform Sync
+## Scope and evidence
 
-### Actual Current State (Honest Assessment)
+This review reflects the source available in this repository. The checkout contains the web application and backend, but no Android project, Kotlin source, or Gradle files. Android-specific behavior—including offline queues, FCM, API response parsing, and startup performance—cannot be verified here. Treat statements about Android in earlier planning documents as unverified until the Android source is reviewed.
 
-| Sync Aspect | Status | Details |
+The findings below are based on source inspection, not a live-device or production delivery test.
+
+## Current state
+
+| Area | Finding | Evidence and limits |
 |---|---|---|
-| REST API data fetching | ✅ Working | Both web and Android make REST calls to the same backend. Data is always current at the moment of the API call. |
-| WebSocket real-time telemetry | ✅ Working | `backend/src/lib/telemetry-ws.ts` broadcasts inverter generation data to connected web clients. Android does NOT use WebSocket — it polls REST endpoints for inverter data. |
-| Push notifications (FCM) | ❌ Not implemented | No Firebase Cloud Messaging integration in Android app. `google-services.json` exists only as `.example`. |
-| Offline sync (Android) | ⚠️ Partial | `TaskRepository` has WorkManager-based offline queue (`SyncWorker`, `OutboxQueueDao`). Attendance and daily commits do NOT have offline sync. |
-| Real-time task assignment visibility | ❌ REST-refresh-only | Employee must open app and refresh to see newly assigned tasks. No push. |
-| Real-time AMC visit visibility | ❌ REST-refresh-only | Same as tasks. |
-| Real-time complaint status updates | ❌ REST-refresh-only | SC must refresh to see employee completion. |
+| Web customer telemetry | The installation page fetches inverter summary and history through REST hooks. Both hooks retry on a 60-second interval while the page is in the foreground; users can also retry manually. | [Installation.tsx](../src/pages/customer/Installation.tsx), [api-client.ts](../src/lib/api-client.ts) |
+| Telemetry cache | The backend returns valid cached summary data for up to 60 seconds. If a provider fetch fails and credentials are configured, a valid previous summary is returned with `isStale`; without a valid cached summary, the request fails. If credentials are absent, the backend can return simulated readings instead. | [subadmin.controller.ts](../backend/src/modules/subadmin/subadmin.controller.ts) |
+| WebSocket telemetry | The backend exposes `/ws/telemetry`, authenticates connections, sends cached summary data on connection, and polls connected customers every 30 seconds. The WebSocket payloads are inverter telemetry—not task, attendance, complaint, or daily-commit events. | [telemetry-ws.ts](../backend/src/lib/telemetry-ws.ts), [telemetry-poller.ts](../backend/src/lib/telemetry-poller.ts), [server.ts](../backend/src/server.ts) |
+| WebSocket client use | The customer installation page uses the REST hooks above; it does not connect to `/ws/telemetry`. | [Installation.tsx](../src/pages/customer/Installation.tsx) |
+| Browser push | Web Push is implemented for subscribed admin users using VAPID. The backend sends admin notifications to subscribed admins; this is not evidence of Android FCM or targeted task-assignment push. | [pushNotifications.ts](../src/lib/pushNotifications.ts), [webPushService.ts](../backend/src/services/webPushService.ts), [notificationService.ts](../backend/src/services/notificationService.ts) |
+| Employee/customer notifications | The backend stores employee and customer notification records and exposes REST routes for reading/updating employee notifications. These records are distinct from Web Push delivery. | [employeeNotificationService.ts](../backend/src/services/employeeNotificationService.ts), [employeeNotifications.ts](../backend/src/routes/employeeNotifications.ts), [customerNotificationService.ts](../backend/src/services/customerNotificationService.ts) |
+| Android sync and FCM | Not verifiable from this checkout. No Android app source is tracked here. | Android implementation must be reviewed in its source repository before making claims about offline sync, FCM, or mobile refresh behavior. |
 
-### The Backend Already Has The Infrastructure
+## Workflow sync gaps
 
-From `backend/src/server.ts`:
+The telemetry WebSocket is not a general application event bus. No task, AMC, complaint, attendance, or daily-commit event emission was found in the reviewed WebSocket implementation. Existing REST endpoints and notification records should not be treated as proof of immediate delivery to a client.
 
-- WebSocket server is initialized: `initWebSocketServer(server)`
-- Telemetry poller runs: `startTelemetryPoller()`
-- Growatt scheduler: `startGrowattScheduler()`
-- Waaree scheduler: `startWaareeScheduler()`
+| Workflow | What this review confirms | Remaining verification |
+|---|---|---|
+| Task assignment | Backend task APIs exist; the telemetry WebSocket does not publish task events. | Verify employee and coordinator refresh behavior in each client. Confirm whether assignment should create an in-app notification, browser push, or Android push. |
+| AMC visits | Backend AMC routes exist; the telemetry WebSocket does not publish AMC events. | Verify how visits are surfaced and refreshed in the web and Android clients. |
+| Complaints/service requests | Backend REST routes and customer notification records exist; the telemetry WebSocket does not publish complaint events. | Verify assignment, scheduling, and completion notifications for each intended recipient. |
+| Attendance | Admin browser Web Push and employee notification records are present in the backend. | Verify which attendance events trigger them, delivery behavior, and whether mobile push is required. |
+| Daily commits | This review found no corresponding event in the telemetry WebSocket. | Confirm client refresh behavior and whether managers need an immediate notification. |
 
-But these are all **telemetry-only**. There is no WebSocket event emission for:
+## Recommended next steps
 
-- Task assignment/updates
-- AMC visit scheduling
-- Complaint status changes
-- Attendance events
-- Daily commit submissions
+1. **Keep REST as the source of truth.** Continue to support manual refresh/retry and make stale data and failed refreshes visible to users.
+2. **Confirm mobile scope before planning Android changes.** Review the Android source and its current notification/offline behavior; do not assume the documented `TaskRepository`, `SyncWorker`, or FCM setup is present.
+3. **Choose delivery by recipient and workflow.** Web Push currently targets subscribed admins. If task assignment needs prompt delivery, define whether the recipient needs an in-app record, browser push, Android FCM, or more than one channel.
+4. **Emit notifications from the domain operation.** For any new event delivery, trigger it after the relevant change is successfully persisted, make retries safe against duplicate notifications, and retain REST refresh as a fallback.
+5. **Validate end to end.** Test permission denial, expired subscriptions/tokens, offline clients, duplicate events, and deep links on every supported client before describing delivery as reliable.
 
----
+Push-notification effort estimates are intentionally omitted: the Android source, delivery requirements, and deployment configuration are not available in this checkout.
 
-## 2. Sync Verification Per Workflow and Role
+## Startup performance and response compatibility
 
-### Task Assignment Sync
+Android startup/ANR behavior and the cause of historical crash logs cannot be concluded from this repository snapshot. The referenced Android classes and crash logs are not present in the checkout. Collect current device traces and backend logs before assigning a root cause or declaring the issue resolved.
 
-| Role | Current Visibility | Sync Method | Gap |
-|---|---|---|---|
-| Employee (assigned) | Must open app and refresh | REST GET /api/v1/employee/tasks | No push when assigned |
-| Service Coordinator (who assigned) | Immediate (they did it) | UI response | No confirmation employee received it |
-| Admin (oversight) | Must refresh admin page | REST GET /api/v1/admin/tasks | No real-time update |
-
-### AMC Visit Sync
-
-| Role | Current Visibility | Sync Method | Gap |
-|---|---|---|---|
-| Employee | Must open app and refresh `GET /api/v1/employee/tasks` | REST | AMC visits may NOT appear at all unless merged into employee/tasks endpoint |
-| SC | Immediate on creation | UI response | No confirmation to employee |
-| Customer | Must log in to portal | REST | No notification |
-
-### Complaint Lifecycle Sync
-
-| Role | Current Visibility | Sync Method | Gap |
-|---|---|---|---|
-| SC (to review) | Must refresh complaints page | REST `GET /api/v1/subadmin/service-requests` | No push when new complaint created |
-| Employee (assigned) | Must refresh tasks | REST | No push |
-| Customer (created) | Must log in to portal | REST | No push/email |
-| SC (completion) | Must refresh complaints | REST | No push when employee completes |
-
-### Attendance Sync
-
-| Role | Current Visibility | Sync Method | Gap |
-|---|---|---|---|
-| Employee | Immediate (they checked in) | API response | - |
-| Admin/SC | Must refresh attendance page | REST | No real-time alert for late/no-show |
-| HR | Must check reports | REST | No daily summary push |
-
-### Daily Commit Sync
-
-| Role | Current Visibility | Sync Method | Gap |
-|---|---|---|---|
-| Employee | Immediate after submission | API response | - |
-| Manager/Team Lead | Must refresh daily commits page | REST | No push when report submitted |
-
----
-
-## 3. Recommendation: Add Sync for Task Assignment (Highest Impact)
-
-### Why Task Assignment First
-
-Per the Phase 2 flow documentation and Phase 3 gap analysis, the most critical sync gap is:
-> Employee never knows they have a new task until they open the app and manually refresh.
-
-This was flagged repeatedly as the clearest case for improvement.
-
-### Approach: FCM Push + Backend Event Emission
-
-**Step 1**: Add Firebase Cloud Messaging to Android app
-
-- Requires: `google-services.json` (real one, not example), `firebase-messaging` dependency
-- Backend: Add `POST /api/v1/notifications/register-fcm-token` endpoint
-- Android: `FirebaseMessagingService` to receive token, `NotificationsViewModel` to handle
-
-**Step 2**: Backend emits events on key state changes
-
-- On task creation → push to assigned employee
-- On AMC visit creation → push to assigned employee
-- On complaint scheduling → push to assigned employee
-- On task completion → push to SC/Admin who assigned it
-
-**Step 3**: For roles without immediate access (Admin oversight, Customer portal)
-
-- Keep REST-refresh as fallback (always works)
-- Add push for immediacy
-
-### Implementation Effort
-
-- FCM setup: 2-3 days
-- Backend push events: 1-2 days
-- Android notification handling: 1-2 days
-
-### Priority vs. Other Gaps
-
-Given the HIGH priority items in Phase 4 (task fetch fix, AMC visibility, complaint scheduling), adding push notifications is **Phase 6 material** — it is not a prerequisite for the Phase 4 items to work. The Phase 4 items fix core functionality that should exist regardless of push. Push notifications are an enhancement on top.
-
----
-
-## 4. Startup Performance Issue Review
-
-### Previously Flagged Issues
-
-From crash logs and frame drop indicators in the codebase:
-
-- `hs_err_pid19512.log` — HotSpot JVM crash log (backend JVM, not Android)
-- `crash_log.txt` — check for Android crash info
-- ANR warnings at Android app startup
-
-### Current State After Investigation
-
-**Backend (JVM crash)**: The `hs_err_pid19512.log` and `replay_pid19512.log` files indicate an OutOfMemoryError on the backend server during a previous deployment. This was a server resource issue, not an app bug. The `replay_pid19512.log` references the last JIT compilation attempted. This has likely been resolved by the Docker/backend configuration.
-
-**Android ANR Risks**:
-
-1. `TaskDao` database queries on main thread → `Room` forces background threads via `Dispatchers.IO` in `TaskRepository`, which is correct
-2. `FaceEmbeddingHelper` uses TensorFlow Lite — model loading happens once and is CPU-heavy — should be on background thread
-3. `AttendanceRepository` makes network calls on `Dispatchers.IO` — correct
-
-### Verdict: **No unresolved startup performance issues** found in the current codebase code. The crash logs are from a previous deployment issue (backend OOM), not an Android app issue
-
----
-
-## 5. Response-Shape Consistency Review
-
-### Previously Flagged Issue
-
-Backend API responses have inconsistent shapes:
-
-- Some endpoints return `{ data: ... }` wrapper
-- Some return flat `{ success: true, ... }`
-- Some return `{ data: ... }` with no success field
-- Android `ApiService` expects `ApiResponse<T>` wrapper on some endpoints but raw response on others
-
-### Current State
-
-**Backend `auth.controller.ts`**: Returns `{ success: true, accessToken, refreshToken, user }` — flat structure
-**Backend `tasks.controller.ts`**: Returns `{ data: task }` — wrapped
-**Backend `subadmin.controller.ts`**: Returns mixed — some wrapped, some flat
-**Android `ApiService.kt`**: Uses `Response<ApiResponse<T>>` for wrapped endpoints, `Response<TodayAttendanceResponse>` for flat ones
-
-### Current Evidence
-
-From `TaskRepository.refreshTasks`:
-
-```kotlin
-val response = apiService.getTasks(employeeUserId)
-if (response.isSuccessful && response.body()?.data != null) {
-```
-
-This expects `{ data: [...] }` wrapper, which matches `tasks.controller.ts` returning `{ data: tasks }`.
-
-From `TaskRepository.updateTaskStatus`:
-
-```kotlin
-val response = apiService.updateTask(taskId, UpdateTaskRequest(status = status))
-if (response.isSuccessful && response.body()?.data != null) {
-```
-
-This expects `{ data: task }` wrapper for `PATCH /api/v1/tasks/{taskId}`.
-
-**Conclusion**: The response shapes are **currently consistent** for the endpoints the Android app actually calls. The inconsistency exists in the backend but only for endpoints the Android app doesn't use (admin/superadmin). No changes needed for Android compatibility.
-
----
+Likewise, Android API compatibility cannot be confirmed without its `ApiService` and response models. Backend endpoints do not all use the same JSON envelope, so validate each endpoint against the actual client model instead of generalizing from one successful response.
 
 ## Summary
 
-| Assessment Item | Status | Action Required |
+| Assessment | Status | Action |
 |---|---|---|
-| Cross-platform sync (REST) | ✅ Working for all roles | None |
-| Real-time (WebSocket) | ✅ Only for telemetry | Could extend to workflow events (Phase 6) |
-| Push notifications (FCM) | ❌ Not implemented | Phase 6 |
-| Offline sync (Android) | ⚠️ Partial (tasks only) | Could extend to attendance (Phase 6) |
-| Task assignment sync to employee | ❌ REST-refresh-only | **Highest-value sync improvement** |
-| Startup performance issues | ✅ None found | No action |
-| Response-shape consistency | ✅ Consistent for Android endpoints | No action |
+| Web inverter summary/history | REST polling every 60 seconds in the foreground; explicit retry is available | Keep stale/error states visible; test with provider failures |
+| Backend telemetry WebSocket | Implemented for inverter telemetry only; poller runs every 30 seconds for connected customers | Do not use it as evidence of workflow-event sync |
+| Browser admin Web Push | Implemented for subscribed admins | Verify event coverage and production delivery |
+| Employee/customer notification records | Backend storage and REST access exist | Verify client refresh and recipient expectations |
+| Task/AMC/complaint/daily-commit real-time delivery | Not established by the telemetry WebSocket | Define requirements and implement/verify per workflow |
+| Android offline sync, FCM, and startup behavior | Not verifiable in this checkout | Review the Android source and test on devices |
+| Android API response compatibility | Not verifiable without Android client models | Compare each response with the actual client contract |
 
-</content>
-<task_progress>
-- [x] Phase 1 — Full Web Application Inventory
-- [x] Phase 2 — Detailed Flow Documentation (all 6 workflows)
-- [x] Phase 3 — Updated Gap Analysis (flow-level detail)
-- [x] Phase 4 — Non-Destructive Implementation Plan with baseline verification
-- [x] Phase 5 — Sync Mechanism Review and Optimization
-- [ ] Final End-to-End Demonstration
-</task_progress>
+## Phase progress
+
+- [x] Phase 1 — Full web application inventory
+- [x] Phase 2 — Detailed flow documentation
+- [x] Phase 3 — Updated gap analysis
+- [x] Phase 4 — Non-destructive implementation plan with baseline verification
+- [x] Phase 5 — Sync mechanism review
+- [ ] Final end-to-end demonstration

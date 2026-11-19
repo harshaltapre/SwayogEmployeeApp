@@ -45,7 +45,9 @@ class TaskRepository @Inject constructor(
     private val taskDao: TaskDao,
     private val outboxQueueDao: OutboxQueueDao,
     private val dailyCommitDao: DailyCommitDao,
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val dataStoreManager: com.swayog.employee.data.local.preferences.DataStoreManager,
+    private val syncManager: com.swayog.employee.data.sync.SyncManager
 ) {
     private val gson = Gson()
     
@@ -61,7 +63,7 @@ class TaskRepository @Inject constructor(
         }
     }
 
-    val pendingSyncCount: Flow<Int> = outboxQueueDao.getPendingCountFlow()
+    val pendingSyncCount: Flow<Int> = syncManager.pendingSyncCountForCurrentUser
 
     fun getAllTasksFlow(): Flow<List<Task>> {
         return taskDao.getAllTasks().map { entities ->
@@ -143,7 +145,7 @@ class TaskRepository @Inject constructor(
                     taskDao.insertTasks(entities)
 
                     // Re-queue completions for tasks the backend still shows as not-completed
-                    val pendingOutboxItems = outboxQueueDao.getPendingItems()
+                    val pendingOutboxItems = outboxQueueDao.getPendingItemsForUser(employeeUserId)
                     for ((localId, localTask) in localUnsyncedCompleted) {
                         val backendTask = tasks.find { it.id == localId }
                         val backendIsNotCompleted = backendTask != null &&
@@ -329,15 +331,20 @@ class TaskRepository @Inject constructor(
                 taskDao.updateTask(entity)
                 Result.success(task)
             } else {
-                // Add to outbox queue for offline sync
-                val outboxItem = OutboxQueueEntity(
-                    id = UUID.randomUUID().toString(),
-                    endpoint = "tasks/$taskId",
-                    method = "PATCH",
-                    payload = """{"status":"$status"}""",
-                    createdAt = System.currentTimeMillis().toString()
-                )
-                outboxQueueDao.insertItem(outboxItem)
+                // Add to outbox queue for offline sync (bound to current owner)
+                val ownerId = dataStoreManager.getCachedUserId().orEmpty()
+                if (ownerId.isNotBlank()) {
+                    val outboxItem = OutboxQueueEntity(
+                        id = UUID.randomUUID().toString(),
+                        endpoint = "tasks/$taskId",
+                        method = "PATCH",
+                        payload = """{"status":"$status"}""",
+                        createdAt = System.currentTimeMillis().toString(),
+                        clientUploadId = UUID.randomUUID().toString(),
+                        ownerUserId = ownerId
+                    )
+                    outboxQueueDao.insertItem(outboxItem)
+                }
                 
                 // Update local entity
                 val localTask = taskDao.getTaskById(taskId)
@@ -996,15 +1003,19 @@ class TaskRepository @Inject constructor(
             put("clientUploadId", effectiveUploadId)
         }.toString()
         
-        val outboxItem = OutboxQueueEntity(
-            id = UUID.randomUUID().toString(),
-            endpoint = "tasks/$cleanTaskId/complete",
-            method = "PATCH",
-            payload = payload,
-            createdAt = System.currentTimeMillis().toString(),
-            clientUploadId = effectiveUploadId
-        )
-        outboxQueueDao.insertItem(outboxItem)
+        val ownerId = dataStoreManager.getCachedUserId().orEmpty()
+        if (ownerId.isNotBlank()) {
+            val outboxItem = OutboxQueueEntity(
+                id = UUID.randomUUID().toString(),
+                endpoint = "tasks/$cleanTaskId/complete",
+                method = "PATCH",
+                payload = payload,
+                createdAt = System.currentTimeMillis().toString(),
+                clientUploadId = effectiveUploadId,
+                ownerUserId = ownerId
+            )
+            outboxQueueDao.insertItem(outboxItem)
+        }
 
         // Update local entity in Room immediately so it shows as completed in UI
         val localTask = taskDao.getTaskById(taskId)
@@ -1116,7 +1127,11 @@ class TaskRepository @Inject constructor(
             }
 
             try {
-                val pendingItems = outboxQueueDao.getPendingItems()
+                val currentUserId = dataStoreManager.getCachedUserId().orEmpty()
+                if (currentUserId.isBlank()) {
+                    return@withContext SyncResultSummary(total = 0, synced = 0, failed = 0, isAuthError = true)
+                }
+                val pendingItems = outboxQueueDao.getPendingItemsForUser(currentUserId)
                 android.util.Log.d("TASK_SYNC", "Manual syncPendingActions() started with ${pendingItems.size} pending outbox item(s)")
                 if (pendingItems.isEmpty()) {
                     android.util.Log.d("SiteVisitSync", "[SiteVisitSync] No pending outbox items to sync.")
@@ -1642,19 +1657,7 @@ class TaskRepository @Inject constructor(
     }
 
     private fun scheduleSync() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "offline_sync_work",
-            ExistingWorkPolicy.KEEP,
-            syncRequest
-        )
+        syncManager.scheduleSync()
         android.util.Log.d("TASK_SYNC", "Enqueued automatic sync work after task queue update")
     }
 }

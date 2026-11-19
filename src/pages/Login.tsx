@@ -202,8 +202,8 @@ export default function Login() {
   const onSubmit = (data: LoginFormValues) => {
     loginMutation.mutate({
       data: {
-        identifier: data.identifier ?? "",
-        password: data.password ?? "",
+        identifier: (data.identifier ?? "").trim(),
+        password: (data.password ?? "").trim(),
         role: (data.role ?? "customer") as LoginRole,
       },
     });

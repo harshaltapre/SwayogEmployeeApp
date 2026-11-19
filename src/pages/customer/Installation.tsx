@@ -40,7 +40,6 @@ export default function CustomerInstallation() {
     refetch: refetchHistory,
   } = useGetCustomerInverterGenerationHistory(customerId ?? -1, selectedPeriod, {
     enabled: !!customerId,
-    retry: false,
   });
 
   const {
@@ -51,7 +50,6 @@ export default function CustomerInstallation() {
     refetch: refetchSummary,
   } = useGetCustomerInverterGeneration(customerId ?? -1, {
     enabled: !!customerId,
-    retry: false,
   });
 
   // -1 = not started, 0–11 = the given stage is COMPLETED (and stage+1 is In Progress)
@@ -74,6 +72,7 @@ export default function CustomerInstallation() {
     refetchHistory();
     refetchSummary();
   };
+  const hasTelemetryError = isErrorHistory || isErrorSummary;
 
   return (
     <SidebarLayout>
@@ -87,11 +86,15 @@ export default function CustomerInstallation() {
                 <span>Energy Generation Performance</span>
                 {inverterSummary && (
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase ${
-                    inverterSummary.isSimulated 
+                    inverterSummary.isSimulated || inverterSummary.isStale
                       ? "bg-amber-50 text-amber-700 border border-amber-200/80 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/50" 
                       : "bg-emerald-500 text-white"
                   }`}>
-                    {inverterSummary.isSimulated ? "Simulated Sync" : "Live API"}
+                    {inverterSummary.isStale
+                      ? "Last Known Data"
+                      : inverterSummary.isSimulated
+                      ? "Simulated Sync"
+                      : "Live API"}
                   </span>
                 )}
               </CardTitle>
@@ -120,10 +123,10 @@ export default function CustomerInstallation() {
                 <RefreshCw className="h-8 w-8 animate-spin text-slate-400 mb-3" />
                 <p className="text-sm font-medium">Loading generation telemetry...</p>
               </div>
-            ) : isErrorHistory || isErrorSummary ? (
+            ) : (isErrorHistory || isErrorSummary) && inverterHistory.length === 0 && !inverterSummary ? (
               <div className="flex-1 flex flex-col items-center justify-center py-10 text-center rounded-xl border border-red-100 bg-red-50/40 p-6 dark:border-red-950/20 dark:bg-red-950/5">
                 <AlertTriangle className="h-10 w-10 text-red-500 mb-3 animate-pulse" />
-                <p className="text-sm font-bold text-red-800 dark:text-red-400">Data Fetch Failed</p>
+                <p className="text-sm font-bold text-red-800 dark:text-red-400">Inverter telemetry is temporarily unavailable</p>
                 <p className="text-xs text-slate-650 mt-1 max-w-md dark:text-red-400/80 leading-relaxed font-semibold">
                   Failed to fetch live generation data from the {installationData?.inverterBrand || "KSolar"} system. Please verify that the credentials are correct and that the inverter is online.
                 </p>
@@ -144,30 +147,77 @@ export default function CustomerInstallation() {
               </div>
             ) : inverterHistory.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-                <Zap className="h-8 w-8 text-slate-300 mb-3" />
-                <p className="text-sm font-medium">No generation history available yet</p>
-                <p className="text-xs text-slate-400 mt-1">Telemetry will begin showing once your system is fully handed over.</p>
+                {isErrorHistory ? (
+                  <>
+                    <AlertTriangle className="h-8 w-8 text-amber-500 mb-3" />
+                    <p className="text-sm font-medium">Generation history is temporarily unavailable</p>
+                    <p className="text-xs text-slate-400 mt-1">Previously loaded summary readings remain available while the provider reconnects.</p>
+                    {inverterErrorMsg && <p className="mt-2 max-w-md text-xs text-amber-700">{inverterErrorMsg}</p>}
+                    <Button variant="outline" size="sm" onClick={refreshGeneration} className="mt-4">
+                      <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                      Retry Telemetry
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-8 w-8 text-slate-300 mb-3" />
+                    <p className="text-sm font-medium">No generation history available yet</p>
+                    <p className="text-xs text-slate-400 mt-1">Telemetry will begin showing once your system is fully handed over.</p>
+                  </>
+                )}
+                {inverterSummary && (
+                  <div className="mt-5 grid w-full max-w-lg grid-cols-3 gap-3 text-left">
+                    <div className="rounded-lg border p-3">
+                      <p className="text-[10px] font-bold uppercase text-slate-500">Daily Output</p>
+                      <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{inverterSummary.dailyGeneration} kWh</p>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <p className="text-[10px] font-bold uppercase text-slate-500">Lifetime Total</p>
+                      <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{inverterSummary.totalGeneration} kWh</p>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <p className="text-[10px] font-bold uppercase text-slate-500">Peak Yield</p>
+                      <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{inverterSummary.peakPower} kW</p>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col gap-5">
+                {(hasTelemetryError || inverterSummary?.isStale) && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div className="flex-1">
+                      <p className="font-semibold">
+                        {inverterSummary?.isStale
+                          ? "Showing the last successful inverter reading while live data reconnects."
+                          : "A telemetry refresh failed. Previously loaded generation data is still shown."}
+                      </p>
+                      {inverterErrorMsg && <p className="mt-1 break-words">{inverterErrorMsg}</p>}
+                    </div>
+                    <Button variant="outline" size="sm" onClick={refreshGeneration} className="h-7 shrink-0">
+                      Retry
+                    </Button>
+                  </div>
+                )}
                 {/* Inline Stats Grid */}
                 <div className="grid gap-3 grid-cols-3">
                   <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 sm:p-4 dark:bg-slate-900/50 dark:border-slate-800 flex flex-col justify-between shadow-sm">
                     <span className="text-[9px] uppercase tracking-[0.18em] text-slate-500 font-bold block mb-1">Daily Output</span>
                     <span className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">
-                      {inverterSummary?.dailyGeneration ? `${inverterSummary.dailyGeneration} kWh` : "—"}
+                      {inverterSummary?.dailyGeneration != null ? `${inverterSummary.dailyGeneration} kWh` : "—"}
                     </span>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 sm:p-4 dark:bg-slate-900/50 dark:border-slate-800 flex flex-col justify-between shadow-sm">
                     <span className="text-[9px] uppercase tracking-[0.18em] text-slate-500 font-bold block mb-1">Lifetime Total</span>
                     <span className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">
-                      {inverterSummary?.totalGeneration ? `${inverterSummary.totalGeneration} kWh` : "—"}
+                      {inverterSummary?.totalGeneration != null ? `${inverterSummary.totalGeneration} kWh` : "—"}
                     </span>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 sm:p-4 dark:bg-slate-900/50 dark:border-slate-800 flex flex-col justify-between shadow-sm">
                     <span className="text-[9px] uppercase tracking-[0.18em] text-slate-500 font-bold block mb-1">Peak Yield</span>
                     <span className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">
-                      {inverterSummary?.peakPower ? `${inverterSummary.peakPower} kW` : "—"}
+                      {inverterSummary?.peakPower != null ? `${inverterSummary.peakPower} kW` : "—"}
                     </span>
                   </div>
                 </div>

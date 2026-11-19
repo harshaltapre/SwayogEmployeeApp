@@ -216,23 +216,35 @@ export async function updateServiceRequest(req: Request, res: Response): Promise
 }
 
 export async function fetchInverterGenerationDirect(customerId: number, bypassCache: boolean = false): Promise<any> {
-  // 0. Cache Check
-  if (!bypassCache) {
-    try {
-      const cached = await prisma.inverterCache.findUnique({
-        where: { customerId }
-      });
-      if (cached) {
-        const ageSeconds = (Date.now() - new Date(cached.updatedAt).getTime()) / 1000;
-        const cachedData = cached.summaryData as any;
-        if (ageSeconds < 300 && cachedData && typeof cachedData.status === "string" && typeof cachedData.currentPower === "number") { // 5 minutes TTL
-          console.log(`[Inverter Cache] Returning cached telemetry for customer ${customerId} (age: ${Math.round(ageSeconds)}s)`);
-          return cached.summaryData;
-        }
+  const cacheTtlMs = 60_000;
+  let cachedTelemetry: unknown;
+
+  try {
+    const cached = await prisma.inverterCache.findUnique({
+      where: { customerId }
+    });
+    cachedTelemetry = cached?.summaryData;
+
+    if (!bypassCache && cached) {
+      const ageMs = Date.now() - new Date(cached.updatedAt).getTime();
+      const data = cached.summaryData;
+      if (
+        ageMs >= 0 &&
+        ageMs < cacheTtlMs &&
+        typeof data === "object" &&
+        data !== null &&
+        !Array.isArray(data) &&
+        "status" in data &&
+        typeof data.status === "string" &&
+        "currentPower" in data &&
+        typeof data.currentPower === "number"
+      ) {
+        console.log(`[Inverter Cache] Returning cached telemetry for customer ${customerId} (age: ${Math.round(ageMs / 1000)}s)`);
+        return { ...data, isStale: false };
       }
-    } catch (cacheErr: any) {
-      console.warn(`[Inverter Cache] Reading cache failed:`, cacheErr.message);
     }
+  } catch (cacheErr: any) {
+    console.warn(`[Inverter Cache] Reading cache failed:`, cacheErr.message);
   }
 
   const customer = await prisma.customer.findUnique({
@@ -494,6 +506,27 @@ export async function fetchInverterGenerationDirect(customerId: number, bypassCa
   if (!isLive) {
     const hasAnyCred = hasLogin || hasApiKey || (isWaaree && hasDeviceSn);
     if (hasAnyCred) {
+      if (
+        typeof cachedTelemetry === "object" &&
+        cachedTelemetry !== null &&
+        !Array.isArray(cachedTelemetry) &&
+        "customerId" in cachedTelemetry &&
+        cachedTelemetry.customerId === customerId &&
+        "totalGeneration" in cachedTelemetry &&
+        typeof cachedTelemetry.totalGeneration === "number" &&
+        "dailyGeneration" in cachedTelemetry &&
+        typeof cachedTelemetry.dailyGeneration === "number" &&
+        "peakPower" in cachedTelemetry &&
+        typeof cachedTelemetry.peakPower === "number" &&
+        "currentPower" in cachedTelemetry &&
+        typeof cachedTelemetry.currentPower === "number" &&
+        "status" in cachedTelemetry &&
+        typeof cachedTelemetry.status === "string"
+      ) {
+        console.warn(`[Inverter Cache] Returning last successful telemetry for customer ${customerId} after live fetch failed`);
+        return { ...cachedTelemetry, isStale: true };
+      }
+
       throw new ApiError(502, `Failed to fetch live inverter telemetry: ${apiErrorMsg || "Unknown connection error"}`);
     }
 
@@ -531,10 +564,11 @@ export async function fetchInverterGenerationDirect(customerId: number, bypassCa
     inverterBrand: customer.inverterBrand,
     totalGeneration,
     dailyGeneration,
-    peakPower: customer.systemSizeKw || 5.0,
+    peakPower,
     currentPower: peakPower,
     status: isLive ? "online" : "offline",
     isSimulated,
+    isStale: false,
     lastUpdated: new Date().toISOString(),
   };
 

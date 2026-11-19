@@ -134,7 +134,7 @@
     "email": "mayurgharjare4@gmail.com",
     "fullName": "Mayur Gharjare",
     "phoneNumber": "+919689103810",
-    "passwordHash": "$2a$12$z58/nkd/qS0aNAKZYgPqTO0txtkEROaHs6SxIkF0jGsvuarfKVsC2",
+    "passwordHash": "$2a$12$Wue4H625Js8KARaWTlxeNeTosUgPu8ySI51AkcJNWg5UISbQ.oRY6",
     "role": "ADMIN",
     "designationTitle": null,
     "departmentId": null,
@@ -143,9 +143,10 @@
     "failedLoginAttempts": 0,
     "lockoutUntil": null,
     "createdAt": "2026-04-23T05:37:14.872Z",
-    "updatedAt": "2026-04-23T05:37:14.872Z",
+    "updatedAt": "2026-10-29T09:06:40.201Z",
     "employeeProfile": null,
-    "partnerProfile": null
+    "partnerProfile": null,
+    "lastFailedLoginAt": null
   },
   {
     "id": "user-1776922908285",
@@ -206,5 +207,25 @@
     "updatedAt": "2026-04-23T05:44:16.480Z",
     "employeeProfile": null,
     "partnerProfile": null
+  },
+  {
+    "id": "liaisoning-user-001",
+    "loginId": "LIA-001",
+    "email": "liaisoning@swayog.in",
+    "fullName": "Liaisoning Employee",
+    "phoneNumber": "9999999999",
+    "passwordHash": "$2a$10$LPmdu91iux8H3i2MrcfvAuw8tgMN1.sOQJA.y2uIkpp4UPJsGsuOK",
+    "role": "EMPLOYEE",
+    "designationTitle": "Liaisoning Employee",
+    "isActive": true,
+    "failedLoginAttempts": 0,
+    "lockoutUntil": null,
+    "createdAt": "2026-11-05T12:39:29.019Z",
+    "updatedAt": "2026-11-05T12:39:29.020Z",
+    "employeeProfile": {
+      "jobRole": "liaisoning_employee",
+      "zone": "Unassigned",
+      "monthlySalaryInr": 18000
+    }
   }
 ]

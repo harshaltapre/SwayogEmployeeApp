@@ -15,6 +15,9 @@ data class OutboxQueueEntity(
     val createdAt: String,
     val retryCount: Int = 0,
     val isSynced: Boolean = false,
-    val clientUploadId: String? = null // Idempotency key for duplicate prevention
+    val clientUploadId: String? = null, // Idempotency key for duplicate prevention
+    val ownerUserId: String = "",       // Explicit employee ownership; "" = quarantined legacy record
+    val lastError: String? = null,
+    val lastAttemptAt: Long? = null
 )
 

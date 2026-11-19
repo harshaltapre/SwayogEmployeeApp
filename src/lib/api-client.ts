@@ -15,6 +15,11 @@ import { resolveConfiguredApiBaseUrl } from "@/lib/resolve-api-base-url";
 
 type AdminDashboardSummary = {
   totalCustomers: number;
+  totalEmployees: number;
+  inactiveEmployees: number;
+  totalPartners: number;
+  inactivePartners: number;
+  lowStockCount: number;
   activeInstallations: number;
   pendingServices: number;
   monthlyRevenue: number;
@@ -57,8 +62,10 @@ export type CustomerGenerationSummary = {
   totalGeneration: number;
   dailyGeneration: number;
   peakPower: number;
+  currentPower?: number;
   lastUpdated: string;
   isSimulated?: boolean;
+  isStale?: boolean;
 };
 
 export type CustomerGenerationHistoryPoint = {
@@ -87,6 +94,11 @@ export type CustomerRecord = {
   address: string;
   systemSizeKw: number;
   projectStage?: number;
+  siteVisitCompleted?: boolean;
+  documentsCollected?: boolean;
+  solarSystemInstalled?: boolean;
+  isRejected?: boolean;
+  rejectionReason?: string | null;
   installationDate: string;
   warrantyExpiry: string | null;
   panelBrand: string | null;
@@ -205,10 +217,10 @@ export type CreateCustomerInput = {
   fullName: string;
   email: string;
   phoneNumber: string;
-  city: string;
-  address: string;
-  systemSizeKw: number;
-  installationDate: string;
+  city?: string;
+  address?: string;
+  systemSizeKw?: number;
+  installationDate?: string;
   warrantyExpiry?: string | null;
   panelBrand?: string;
   inverterBrand?: string;
@@ -231,6 +243,11 @@ export type CreateCustomerInput = {
   status?: CustomerStatus;
   partnerId?: string;
   projectStage?: number;
+  siteVisitCompleted?: boolean;
+  documentsCollected?: boolean;
+  solarSystemInstalled?: boolean;
+  isRejected?: boolean;
+  rejectionReason?: string | null;
   commissionAmount?: number;
   monthlyCleaningRate?: number;
   paymentTerms?: string;
@@ -267,7 +284,7 @@ export type InvoiceRecord = {
 };
 
 export type CreateInvoiceInput = Omit<InvoiceRecord, "id">;
-export type UpdateInvoiceInput = Partial<CreateInvoiceInput>;
+export type UpdateInvoiceInput = Partial<CreateInvoiceInput> & { amountPaid?: number };
 
 export type EmployeeRecord = {
   id: number;
@@ -325,6 +342,7 @@ export type UpdateInternalUserInput = {
   serviceCategories?: string[];
   reportingManagerId?: string | null;
   portalPassword?: string;
+  permissions?: string[];
 };
 
 export type TransferInternalUserTeamInput = {
@@ -570,7 +588,31 @@ const mockFinancialSummary = {
   collectionRate: 0,
 };
 
-type FinancialSummary = typeof mockFinancialSummary;
+export type FinancialSummary = typeof mockFinancialSummary & {
+  totalInvoiced?: number;
+  outstanding?: number;
+  invoiceCount?: number;
+  openInvoiceCount?: number;
+  estimatedPipelineValue?: number;
+  vendorPayablesOutstanding?: number;
+  vendorPaymentsTotal?: number;
+  operationalExpensesTotal?: number;
+  netCashFlow?: number;
+  basis?: {
+    revenue: string;
+    collected: string;
+    outstanding: string;
+    estimatedPipelineValue: string;
+  };
+};
+
+export type FinanceMe = {
+  level: "executive" | "manager" | "head" | "admin" | null;
+  permissions: string[];
+  isServiceCoordinator: boolean;
+  managerApprovalLimit: number;
+  canApproveAboveManagerLimit: boolean;
+};
 
 const mockTasks: any[] = [];
 
@@ -845,6 +887,8 @@ function normalizeFrontendRole(rawRole: string): UserRole {
   if (lower === "admin") return "admin";
   if (lower === "employee") return "employee";
   if (lower === "sub_admin" || lower === "sub-admin" || lower === "subadmin") return "sub_admin";
+  if (lower === "department_head" || lower === "department-head" || lower === "departmenthead") return "department_head";
+  if (lower === "team_lead" || lower === "team-lead" || lower === "teamlead") return "team_lead";
   if (lower === "epc_contractor" || lower === "epc" || lower === "epccontractor") return "epc_contractor";
   if (lower === "partner" || lower === "vendor") return "partner";
   if (lower === "customer") return "customer";
@@ -854,6 +898,8 @@ function normalizeFrontendRole(rawRole: string): UserRole {
   if (upper === "ADMIN") return "admin";
   if (upper === "EMPLOYEE") return "employee";
   if (upper === "SUB_ADMIN") return "sub_admin";
+  if (upper === "DEPARTMENT_HEAD") return "department_head";
+  if (upper === "TEAM_LEAD") return "team_lead";
   if (upper === "EPC_CONTRACTOR" || upper === "EPC") return "epc_contractor";
   if (upper === "PARTNER" || upper === "VENDOR") return "partner";
   if (upper === "CUSTOMER") return "customer";
@@ -1158,7 +1204,12 @@ export function normalizeCustomerRecord(raw: any): CustomerRecord {
     city: String(raw?.city ?? ""),
     address: String(raw?.address ?? ""),
     systemSizeKw: Number(raw?.systemSizeKw ?? 0),
-    projectStage: 11,
+    projectStage: typeof raw?.projectStage === "number" ? raw.projectStage : undefined,
+    siteVisitCompleted: typeof raw?.siteVisitCompleted === "boolean" ? raw.siteVisitCompleted : raw?.projectStage >= 11,
+    documentsCollected: typeof raw?.documentsCollected === "boolean" ? raw.documentsCollected : raw?.projectStage >= 11,
+    solarSystemInstalled: typeof raw?.solarSystemInstalled === "boolean" ? raw.solarSystemInstalled : false,
+    isRejected: Boolean(raw?.isRejected),
+    rejectionReason: typeof raw?.rejectionReason === "string" ? raw.rejectionReason : null,
     installationDate: normalizeDateValue(raw?.installationDate) ?? new Date().toISOString(),
     warrantyExpiry: normalizeDateValue(raw?.warrantyExpiry),
     panelBrand: typeof raw?.panelBrand === "string" ? raw.panelBrand : null,
@@ -1472,6 +1523,11 @@ export function useGetAdminDashboardSummary(opts?: any) {
       // Map backend summary to frontend structure
       return {
         totalCustomers: payload.summary.totalCustomers || 0,
+        totalEmployees: payload.summary.totalEmployees || 0,
+        inactiveEmployees: payload.summary.inactiveEmployees || 0,
+        totalPartners: payload.summary.totalPartners || 0,
+        inactivePartners: payload.summary.inactivePartners || 0,
+        lowStockCount: payload.summary.lowStockCount || 0,
         activeInstallations: payload.summary.totalTasks || 0, // Fallback mapping
         pendingServices: payload.summary.pendingServices ?? 0,
         monthlyRevenue: payload.summary.monthlyRevenue || 0,
@@ -1488,6 +1544,7 @@ export function useGetAdminDashboardSummary(opts?: any) {
         revenueTrend: payload.summary.revenueTrend || 0,
       };
     },
+    staleTime: 30_000,
     ...opts?.query,
   });
 }
@@ -1816,6 +1873,10 @@ export function useGetCustomerInverterGenerationHistory(customerId: number, peri
       return response.history ?? [];
     },
     enabled: customerId > 0,
+    retry: 2,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     ...opts?.query,
   });
 }
@@ -1868,6 +1929,10 @@ export function useGetCustomerInverterGeneration(customerId: number, opts?: any)
       return response;
     },
     enabled: customerId > 0,
+    retry: 2,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     ...opts?.query,
   });
 }
@@ -2164,87 +2229,14 @@ export function useCreateCustomerServiceRequest(opts?: any) {
   return useMutation({
     mutationFn: async ({ data }: { data: any }) => {
       const apiBaseUrl = getApiBaseUrl();
-      const authUser = useAuth.getState().user;
-      
-      const newLocalId = `local-${Date.now()}`;
-      const newLocalRecord: any = {
-        id: newLocalId,
-        ticketId: `TIC-${Math.floor(100000 + Math.random() * 900000)}`,
-        type: data.serviceType,
-        title: data.serviceType,
-        description: data.description,
-        status: "pending",
-        address: data.address,
-        latitude: data.latitude ?? null,
-        longitude: data.longitude ?? null,
-        date: data.preferredDate || new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      };
-
-      try {
-        const localRequests = getStoredCustomerServiceRequests();
-        setStoredCustomerServiceRequests([newLocalRecord, ...localRequests]);
-        
-        const localComplaints = getStoredDynamicComplaints();
-        const newLocalComplaint: any = {
-          id: newLocalId,
-          customerId: authUser?.id ? Number(authUser.id) : 1,
-          customer_id: authUser?.id ? Number(authUser.id) : 1,
-          customerName: authUser?.name || "Customer Portal",
-          customerEmail: authUser?.email || "customer@example.com",
-          customerPhone: authUser?.employeeCode || "",
-          customerCity: data.address.split(",")[0] || "Mumbai",
-          customerCode: "CUST-LOCAL",
-          title: data.serviceType,
-          description: data.description,
-          status: "pending",
-          scheduledDate: null,
-          scheduled_date: null,
-          scheduledTime: null,
-          address: data.address,
-          latitude: data.latitude ?? null,
-          longitude: data.longitude ?? null,
-          createdAt: newLocalRecord.createdAt,
-        };
-        setStoredDynamicComplaints([newLocalComplaint, ...localComplaints]);
-      } catch (e) {
-        console.warn("Failed to write to local storage", e);
-      }
-
       if (!apiBaseUrl) {
-        return { data: newLocalRecord, success: true, message: "Service request submitted locally" };
+        throw { error: "Backend API URL is required to create service requests." };
       }
 
-      try {
-        const response = await requestApi<any>("/customer/requests", {
-          method: "POST",
-          body: JSON.stringify(data),
-        });
-
-        if (response && response.id) {
-          try {
-            const serverId = String(response.id);
-            const localRequests = getStoredCustomerServiceRequests();
-            const updatedRequests = localRequests.map((r: any) =>
-              String(r.id) === String(newLocalId) ? { ...r, id: serverId } : r
-            );
-            setStoredCustomerServiceRequests(updatedRequests);
-
-            const localComplaints = getStoredDynamicComplaints();
-            const updatedComplaints = localComplaints.map((c: any) =>
-              String(c.id) === String(newLocalId) ? { ...c, id: serverId } : c
-            );
-            setStoredDynamicComplaints(updatedComplaints);
-          } catch (e) {
-            console.warn("Failed to update local storage request ID to match server ID", e);
-          }
-        }
-
-        return response;
-      } catch (error) {
-        console.warn("Failed to submit service request to backend, returning local success", error);
-        return { data: newLocalRecord, success: true, message: "Service request submitted locally" };
-      }
+      return requestApi<any>("/customer/requests", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
     },
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: getListCustomerServiceRequestsQueryKey() });
@@ -3038,6 +3030,569 @@ export function useDeleteDispatchRecord(opts?: any) {
       onSuccess?.(data, variables, context);
     },
     ...restMutationOptions,
+  });
+}
+
+export function useGetFinanceMe(opts?: any) {
+  return useQuery<FinanceMe>({
+    queryKey: ["financials", "me"],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (apiBaseUrl) {
+        return requestApi<FinanceMe>("/financials/me");
+      }
+      return delay<FinanceMe>({
+        level: null,
+        permissions: [],
+        isServiceCoordinator: false,
+        managerApprovalLimit: 100000,
+        canApproveAboveManagerLimit: false,
+      });
+    },
+    ...opts?.query,
+  });
+}
+
+export type CustomerLedgerRow = {
+  customerId: number;
+  customerCode: string;
+  fullName: string;
+  city: string;
+  phoneNumber: string;
+  systemSizeKw: number;
+  projectStage: number;
+  status: string;
+  contractValue: number | null;
+  totalInvoiced: number;
+  totalCollected: number;
+  receivableBalance: number;
+  unbilledContract: number | null;
+  invoiceCount: number;
+  openInvoiceCount: number;
+  lastInvoiceDate: string | null;
+};
+
+export type CustomerLedgerResponse = {
+  summary: {
+    totalCustomers: number;
+    customersWithDues: number;
+    totalContracted: number;
+    totalInvoiced: number;
+    totalCollected: number;
+    totalReceivable: number;
+    totalUnbilled: number;
+  };
+  customers: CustomerLedgerRow[];
+};
+
+export function useGetCustomerLedger(opts?: any) {
+  return useQuery<CustomerLedgerResponse>({
+    queryKey: ["financials", "customer-ledger"],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (apiBaseUrl) {
+        return requestApi<CustomerLedgerResponse>("/financials/customer-ledger");
+      }
+      return delay<CustomerLedgerResponse>({
+        summary: {
+          totalCustomers: 0,
+          customersWithDues: 0,
+          totalContracted: 0,
+          totalInvoiced: 0,
+          totalCollected: 0,
+          totalReceivable: 0,
+          totalUnbilled: 0,
+        },
+        customers: [],
+      });
+    },
+    ...opts?.query,
+  });
+}
+
+export type VendorPayablesResponse = {
+  summary: {
+    totalMaterialPurchases: number;
+    supplierCount: number;
+    partnerPendingPayables: number;
+    partnerPaidTotal: number;
+    payrollPending: number;
+    payrollFinalized: number;
+    totalExpenses: number;
+    vendorBillsTotal?: number;
+    vendorNetPayableTotal?: number;
+    vendorPaidTotal?: number;
+    vendorOutstandingTotal?: number;
+    vendorOverdueTotal?: number;
+    openVendorBillCount?: number;
+  };
+  suppliers: {
+    supplier: string;
+    totalSpend: number;
+    entryCount: number;
+    lastPurchaseDate: string;
+    items: string[];
+  }[];
+  expenses: {
+    id: string;
+    category: string;
+    amount: number;
+    expenseDate: string;
+    zone?: string | null;
+    notes?: string | null;
+  }[];
+};
+
+export type VendorMasterRecord = {
+  id: string;
+  vendorCode: string;
+  name: string;
+  vendorType: string;
+  gstin?: string | null;
+  pan?: string | null;
+  contactPerson?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  state?: string | null;
+  pinCode?: string | null;
+  bankAccountName?: string | null;
+  bankAccountNumber?: string | null;
+  ifscCode?: string | null;
+  paymentTermsDays: number;
+  openingBalance: number;
+  tdsApplicable: boolean;
+  defaultTdsRate: number;
+  status: string;
+  notes?: string | null;
+  billCount: number;
+  openBillCount: number;
+  overdueBillCount: number;
+  inventoryPurchaseValue: number;
+  totalBilled: number;
+  totalNetPayable: number;
+  amountPaid: number;
+  outstandingAmount: number;
+  overdueAmount: number;
+};
+
+export type VendorBillItemRecord = {
+  id?: string;
+  inventoryItemId?: number | null;
+  itemName: string;
+  description?: string | null;
+  hsnSac?: string | null;
+  quantity: number;
+  unit?: string;
+  rate: number;
+  discountPct?: number;
+  taxableValue?: number;
+  gstRate?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  totalAmount?: number;
+};
+
+export type VendorBillRecord = {
+  id: string;
+  billNumber: string;
+  vendorId: string;
+  vendorInvoiceNo: string;
+  invoiceDate: string;
+  receivedDate: string;
+  dueDate: string;
+  purchaseOrderRef?: string | null;
+  grnRef?: string | null;
+  customerId?: number | null;
+  zone?: string | null;
+  category: string;
+  supplyType: "INTRA_STATE" | "INTER_STATE";
+  subtotal: number;
+  discountAmount: number;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  otherCharges: number;
+  totalAmount: number;
+  tdsRate: number;
+  tdsAmount: number;
+  netPayable: number;
+  amountPaid: number;
+  balanceDue: number;
+  itcEligible: boolean;
+  billableToCustomer: boolean;
+  status: "DRAFT" | "AWAITING_APPROVAL" | "APPROVED" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "CANCELLED";
+  effectiveStatus?: string;
+  isOverdue?: boolean;
+  notes?: string | null;
+  vendor?: {
+    id: string;
+    vendorCode: string;
+    name: string;
+    vendorType: string;
+    gstin?: string | null;
+    tdsApplicable?: boolean;
+    defaultTdsRate?: number;
+  };
+  customer?: {
+    id: number;
+    fullName: string;
+    customerCode: string;
+    city: string;
+  } | null;
+  items: VendorBillItemRecord[];
+  payments?: Array<{
+    id: string;
+    paymentNumber: string;
+    paymentDate: string;
+    amount: number;
+    tdsDeducted: number;
+    paymentMode: string;
+    referenceNo?: string | null;
+  }>;
+};
+
+export type GeneralLedgerResponse = {
+  summary: {
+    trialBalanceDebit: number;
+    trialBalanceCredit: number;
+    isBalanced: boolean;
+    inputCgst: number;
+    inputSgst: number;
+    inputIgst: number;
+    totalItcAvailable: number;
+    tdsPayable: number;
+    accountsPayable: number;
+  };
+  trialBalance: Array<{
+    id: string;
+    code: string;
+    name: string;
+    accountType: "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE";
+    totalDebit: number;
+    totalCredit: number;
+    netBalance: number;
+  }>;
+  journalEntries: Array<{
+    id: string;
+    entryNumber: string;
+    entryDate: string;
+    referenceType: string;
+    referenceId?: string | null;
+    description: string;
+    lines: Array<{
+      id: string;
+      debit: number;
+      credit: number;
+      memo?: string | null;
+      account: {
+        code: string;
+        name: string;
+        accountType: string;
+      };
+    }>;
+  }>;
+};
+
+export function useListVendors(opts?: any) {
+  return useQuery<VendorMasterRecord[]>({
+    queryKey: ["financials", "vendors"],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (apiBaseUrl) {
+        return requestApi<VendorMasterRecord[]>("/financials/vendors");
+      }
+      return delay<VendorMasterRecord[]>([]);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useCreateVendor() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<VendorMasterRecord> & { name: string }) => {
+      return requestApi<VendorMasterRecord>("/financials/vendors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["financials"] });
+    },
+  });
+}
+
+export function useListVendorBills(params?: { vendorId?: string; status?: string; from?: string; to?: string }, opts?: any) {
+  return useQuery<VendorBillRecord[]>({
+    queryKey: ["financials", "vendor-bills", params],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (apiBaseUrl) {
+        const qs = new URLSearchParams();
+        if (params?.vendorId) qs.set("vendorId", params.vendorId);
+        if (params?.status) qs.set("status", params.status);
+        if (params?.from) qs.set("from", params.from);
+        if (params?.to) qs.set("to", params.to);
+        const q = qs.toString();
+        return requestApi<VendorBillRecord[]>(`/financials/vendor-bills${q ? `?${q}` : ""}`);
+      }
+      return delay<VendorBillRecord[]>([]);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useCreateVendorBill() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      vendorId: string;
+      vendorInvoiceNo: string;
+      invoiceDate?: string;
+      dueDate?: string;
+      purchaseOrderRef?: string;
+      grnRef?: string;
+      customerId?: number;
+      zone?: string;
+      category?: string;
+      supplyType?: "INTRA_STATE" | "INTER_STATE";
+      otherCharges?: number;
+      tdsRate?: number;
+      itcEligible?: boolean;
+      billableToCustomer?: boolean;
+      notes?: string;
+      submitMode?: "DRAFT" | "AWAITING_APPROVAL" | "OPEN";
+      items: VendorBillItemRecord[];
+    }) => {
+      return requestApi<VendorBillRecord>("/financials/vendor-bills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["financials"] });
+    },
+  });
+}
+
+export function useApproveVendorBill() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (billId: string) => {
+      return requestApi<VendorBillRecord>(`/financials/vendor-bills/${billId}/approve`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["financials"] });
+    },
+  });
+}
+
+export function useUpdateVendorBill() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: {
+        vendorId?: string;
+        vendorInvoiceNo?: string;
+        invoiceDate?: string;
+        dueDate?: string;
+        purchaseOrderRef?: string;
+        grnRef?: string;
+        customerId?: number;
+        zone?: string;
+        category?: string;
+        supplyType?: "INTRA_STATE" | "INTER_STATE";
+        otherCharges?: number;
+        tdsRate?: number;
+        itcEligible?: boolean;
+        billableToCustomer?: boolean;
+        notes?: string;
+        submitMode?: "DRAFT" | "AWAITING_APPROVAL" | "OPEN";
+        items?: VendorBillItemRecord[];
+      };
+    }) => {
+      return requestApi<VendorBillRecord>(`/financials/vendor-bills/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["financials"] });
+    },
+  });
+}
+
+export function useDeleteVendorBill() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (billId: string) => {
+      return requestApi<{ status: string; message: string }>(`/financials/vendor-bills/${billId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["financials"] });
+    },
+  });
+}
+
+export function useRecordVendorPayment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      vendorId?: string;
+      billId?: string;
+      amount: number;
+      tdsDeducted?: number;
+      paymentDate?: string;
+      paymentMode?: string;
+      referenceNo?: string;
+      bankAccount?: string;
+      notes?: string;
+    }) => {
+      return requestApi<any>("/financials/vendor-payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["financials"] });
+    },
+  });
+}
+
+export function useGetGeneralLedger(opts?: any) {
+  return useQuery<GeneralLedgerResponse>({
+    queryKey: ["financials", "ledger"],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (apiBaseUrl) {
+        return requestApi<GeneralLedgerResponse>("/financials/ledger");
+      }
+      return delay<GeneralLedgerResponse>({
+        summary: {
+          trialBalanceDebit: 0,
+          trialBalanceCredit: 0,
+          isBalanced: true,
+          inputCgst: 0,
+          inputSgst: 0,
+          inputIgst: 0,
+          totalItcAvailable: 0,
+          tdsPayable: 0,
+          accountsPayable: 0,
+        },
+        trialBalance: [],
+        journalEntries: [],
+      });
+    },
+    ...opts?.query,
+  });
+}
+
+export function useGetVendorPayables(params?: any, opts?: any) {
+  return useQuery<VendorPayablesResponse>({
+    queryKey: ["financials", "vendor-payables", params],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (apiBaseUrl) {
+        const qs = new URLSearchParams();
+        if (params?.from) qs.set("from", params.from);
+        if (params?.to) qs.set("to", params.to);
+        const q = qs.toString();
+        return requestApi<VendorPayablesResponse>(`/financials/vendor-payables${q ? `?${q}` : ""}`);
+      }
+      return delay<VendorPayablesResponse>({
+        summary: {
+          totalMaterialPurchases: 0,
+          supplierCount: 0,
+          partnerPendingPayables: 0,
+          partnerPaidTotal: 0,
+          payrollPending: 0,
+          payrollFinalized: 0,
+          totalExpenses: 0,
+        },
+        suppliers: [],
+        expenses: [],
+      });
+    },
+    ...opts?.query,
+  });
+}
+
+export function useCreateExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      category: string;
+      amount: number;
+      expenseDate?: string;
+      zone?: string;
+      notes?: string;
+    }) => {
+      return requestApi<any>("/financials/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["financials"] });
+    },
+  });
+}
+
+export function useUpdateExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: {
+        category?: string;
+        amount?: number;
+        expenseDate?: string;
+        zone?: string;
+        notes?: string;
+      };
+    }) => {
+      return requestApi<any>(`/financials/expenses/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["financials"] });
+    },
+  });
+}
+
+export function useDeleteExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (expenseId: string) => {
+      return requestApi<{ status: string; message: string }>(`/financials/expenses/${expenseId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["financials"] });
+    },
   });
 }
 
@@ -4238,5 +4793,1343 @@ export function useMarkEmployeeNotificationRead() {
       qc.invalidateQueries({ queryKey: ["employee-notifications"] });
       qc.invalidateQueries({ queryKey: ["employee-notifications-unread-count"] });
     },
+  });
+}
+
+// ─── Customer Onboarding API ──────────────────────────────────────────────────
+
+export type OnboardingRequest = {
+  id: string;
+  requestNumber: string;
+  customerName: string;
+  companyName: string | null;
+  phoneNumber: string;
+  email: string;
+  siteAddress: string;
+  location: string | null;
+  requestedProduct: string;
+  customerRequirements: string;
+  assignedEmployeeId: string | null;
+  assignedEmployee: { id: string; fullName: string; email: string } | null;
+  enquiryDate: string;
+  notes: string | null;
+  attachments: string | null;
+  stage: string;
+  convertedCustomerId: number | null;
+  rejectionReason: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  siteVisits: any[];
+  quotations: any[];
+  auditLogs?: any[];
+  _count?: { siteVisits: number; quotations: number };
+  [key: string]: any;
+};
+
+export type OnboardingStats = {
+  totalRequests: number;
+  newRequests: number;
+  siteVisitPending: number;
+  quotationsReview: number;
+  pendingApprovals: number;
+  converted: number;
+};
+
+export type MarketingLeadRecord = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  address?: string | null;
+  source: string;
+  status: string;
+  convertedAt?: string | null;
+  assignedTo: string | null;
+  followUpAt: string | null;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  isDuplicate?: boolean;
+  duplicateReason?: string;
+  matchedLeadName?: string;
+};
+
+export type MarketingLeadConversionStats = {
+  month: string;
+  convertedCount: number;
+  monthlyConvertedCount: number;
+};
+
+export type MarketingCampaignRecord = {
+  id: string;
+  name: string;
+  channel: string;
+  startDate: string | null;
+  budget: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MarketingFollowUpRecord = {
+  id: string;
+  leadId: string;
+  date: string;
+  note: string;
+  done: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function useListMarketingLeads(opts?: any) {
+  return useQuery<MarketingLeadRecord[]>({
+    queryKey: ["marketing-leads"],
+    queryFn: () => requestApi<MarketingLeadRecord[]>("/marketing/leads", { method: "GET" }),
+    ...(opts?.query || {}),
+  });
+}
+
+export function useMarketingLeadConversionStats(month: string, opts?: any) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const timezoneOffsetMinutes = Number.isFinite(year) && Number.isFinite(monthNumber)
+    ? new Date(year, monthNumber - 1, 1).getTimezoneOffset()
+    : 0;
+
+  return useQuery<MarketingLeadConversionStats>({
+    queryKey: ["marketing-lead-conversion-stats", month, timezoneOffsetMinutes],
+    queryFn: () =>
+      requestApi<MarketingLeadConversionStats>(
+        `/marketing/leads/conversion-stats?month=${encodeURIComponent(month)}&timezoneOffsetMinutes=${timezoneOffsetMinutes}`,
+        { method: "GET" },
+      ),
+    enabled: Boolean(month),
+    ...(opts?.query || {}),
+  });
+}
+
+export function useListMarketingCampaigns(opts?: any) {
+  return useQuery<MarketingCampaignRecord[]>({
+    queryKey: ["marketing-campaigns"],
+    queryFn: () => requestApi<MarketingCampaignRecord[]>("/marketing/campaigns", { method: "GET" }),
+    ...(opts?.query || {}),
+  });
+}
+
+export function useListMarketingFollowUps(opts?: any) {
+  return useQuery<MarketingFollowUpRecord[]>({
+    queryKey: ["marketing-follow-ups"],
+    queryFn: () => requestApi<MarketingFollowUpRecord[]>("/marketing/follow-ups", { method: "GET" }),
+    ...(opts?.query || {}),
+  });
+}
+
+function useMarketingMutation<TVariables>(path: string, method: "POST" | "PATCH", queryKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (variables: { id?: string; data: TVariables }) =>
+      requestApi(path.replace(":id", variables.id || ""), {
+        method,
+        body: JSON.stringify(variables.data),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [queryKey] }),
+  });
+}
+
+export function useCreateMarketingCampaign(opts?: any) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; channel: string; startDate?: string; budget: string }) =>
+      requestApi<MarketingCampaignRecord>("/marketing/campaigns", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["marketing-campaigns"] }),
+    ...(opts?.mutation || {}),
+  });
+}
+
+export function useUpdateMarketingCampaign(opts?: any) {
+  return useMarketingMutation<{ status: string }>("/marketing/campaigns/:id", "PATCH", "marketing-campaigns");
+}
+
+export function useCreateMarketingFollowUp(opts?: any) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { leadId: string; date: string; note: string }) =>
+      requestApi<MarketingFollowUpRecord>("/marketing/follow-ups", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["marketing-follow-ups"] }),
+    ...(opts?.mutation || {}),
+  });
+}
+
+export function useUpdateMarketingFollowUp(opts?: any) {
+  return useMarketingMutation<{ done: boolean }>("/marketing/follow-ups/:id", "PATCH", "marketing-follow-ups");
+}
+
+export function useImportMarketingWorkspace(opts?: any) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { leads: any[]; campaigns: any[]; followUps: any[] }) =>
+      requestApi<{ leads: number; campaigns: number; followUps: number }>("/marketing/workspace/import", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["marketing-leads"] });
+      queryClient.invalidateQueries({ queryKey: ["marketing-lead-conversion-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["marketing-campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["marketing-follow-ups"] });
+    },
+    ...(opts?.mutation || {}),
+  });
+}
+
+export function useCreateMarketingLead(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: (data: { name: string; phone: string; email?: string; address?: string; source: string }) =>
+      requestApi<MarketingLeadRecord>("/marketing/leads", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["marketing-leads"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateMarketingLead(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { status?: string; assignedTo?: string | null; followUpAt?: string | null; address?: string | null } }) =>
+      requestApi<MarketingLeadRecord>(`/marketing/leads/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["marketing-leads"] });
+      queryClient.invalidateQueries({ queryKey: ["marketing-lead-conversion-stats"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export type BulkImportMarketingLeadsResult = {
+  total: number;
+  successful: number;
+  duplicatesCount: number;
+  invalidCount: number;
+  duplicatesRejected: Array<{
+    row: number;
+    name: string;
+    phone: string;
+    email?: string;
+    reason: string;
+    matchedWith?: string;
+    status: 'DUPLICATE';
+  }>;
+  invalidRejected: Array<{
+    row: number;
+    name: string;
+    phone: string;
+    email?: string;
+    reason: string;
+    status: 'INVALID';
+  }>;
+};
+
+export interface DeletedMarketingLeadRecord {
+  id: string;
+  originalLeadId: string;
+  name: string;
+  phone: string;
+  email?: string | null;
+  address?: string | null;
+  source: string;
+  status: string;
+  assignedTo?: string | null;
+  followUpAt?: string | null;
+  deleteRemark: string;
+  deletedById?: string | null;
+  deletedByName?: string | null;
+  deletedAt: string;
+  convertedAt?: string | null;
+  createdAt: string;
+}
+
+export function useDeleteMarketingLead(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: ({ id, remark }: { id: string; remark: string }) =>
+      requestApi<{ success: boolean; message: string }>(`/marketing/leads/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remark }),
+      }),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ['marketing-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['deleted-marketing-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['marketing-lead-conversion-stats'] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useListDeletedMarketingLeads(options?: any) {
+  return useQuery<DeletedMarketingLeadRecord[]>({
+    queryKey: ['deleted-marketing-leads'],
+    queryFn: async () => {
+      const response = await requestApi<DeletedMarketingLeadRecord[]>('/marketing/deleted-leads');
+      return Array.isArray(response) ? response : [];
+    },
+    staleTime: 30000,
+    ...options,
+  });
+}
+
+export function useRestoreMarketingLead(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      requestApi<{ success: boolean; message: string; lead: any }>(`/marketing/deleted-leads/${id}/restore`, {
+        method: 'POST',
+      }),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ['marketing-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['deleted-marketing-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['marketing-lead-conversion-stats'] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useBulkImportMarketingLeads(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation<
+    BulkImportMarketingLeadsResult,
+    Error,
+    Array<{ name: string; phone: string; email?: string; address?: string; source?: string }>
+  >({
+    mutationFn: (leads: Array<{ name: string; phone: string; email?: string; address?: string; source?: string }>) =>
+      requestApi<BulkImportMarketingLeadsResult>('/marketing/leads/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ leads }),
+      }),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ['marketing-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['marketing-lead-conversion-stats'] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useOnboardingStats(opts?: any) {
+  return useQuery<OnboardingStats>({
+    queryKey: ["onboarding-stats"],
+    queryFn: async () => {
+      const res = await requestApi<OnboardingStats>("/onboarding/stats", { method: "GET" });
+      return res;
+    },
+    ...(opts?.query || {}),
+  });
+}
+
+export function useListOnboardingRequests(params?: any, opts?: any) {
+  const queryStr = new URLSearchParams(params as any).toString();
+  return useQuery<OnboardingRequest[]>({
+    queryKey: ["onboarding-requests", params],
+    queryFn: async () => {
+      const res = await requestApi<OnboardingRequest[]>(`/onboarding/requests${queryStr ? `?${queryStr}` : ""}`, {
+        method: "GET",
+      });
+      return res;
+    },
+    ...(opts?.query || {}),
+  });
+}
+
+export function useGetOnboardingRequest(id: string, opts?: any) {
+  return useQuery<OnboardingRequest>({
+    queryKey: ["onboarding-request", id],
+    queryFn: async () => {
+      const res = await requestApi<OnboardingRequest>(`/onboarding/requests/${id}`, { method: "GET" });
+      return res;
+    },
+    enabled: !!id,
+    ...(opts?.query || {}),
+  });
+}
+
+export function useCreateOnboardingRequest(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async (data: any) => {
+      return requestApi<OnboardingRequest>("/onboarding/requests", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-stats"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useDeleteOnboardingRequest(opts?: any) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      requestApi<{ success: boolean; message: string; id: string }>(`/onboarding/requests/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-request", variables.id] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-stats"] });
+    },
+  });
+}
+
+export function useUpdateOnboardingRequest(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return requestApi<OnboardingRequest>(`/onboarding/requests/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-request", variables.id] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-stats"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateOnboardingStage(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return requestApi<OnboardingRequest>(`/onboarding/requests/${id}/stage`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-request", variables.id] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-stats"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useApproveConversion(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data?: any }) => {
+      return requestApi<any>(`/onboarding/requests/${id}/approve-conversion`, {
+        method: "POST",
+        body: JSON.stringify(data || {}),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-request", variables.id] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useCreateSiteVisit(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async (data: any) => {
+      return requestApi<any>("/onboarding/site-visits", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-request", variables.onboardingRequestId] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateSiteVisit(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return requestApi<any>(`/onboarding/site-visits/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding-requests"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useCreateQuotation(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async (data: any) => {
+      return requestApi<any>("/onboarding/quotations", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-request", variables.onboardingRequestId] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Liaisoning Process API Client Methods
+// ---------------------------------------------------------------------------
+
+export function useLiaisoningDashboardSummary(opts?: any) {
+  return useQuery<any>({
+    queryKey: ["liaisoning", "dashboard-summary"],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning data." };
+      }
+      return requestApi<any>("/liaisoning/dashboard-summary");
+    },
+    ...opts?.query,
+  });
+}
+
+export function useLiaisoningApplications(filters?: {
+  query?: string;
+  discomName?: string;
+  overallStatus?: string;
+  currentStage?: string;
+  assignedEmployeeId?: string;
+  page?: number;
+  limit?: number;
+}, opts?: any) {
+  return useQuery<any>({
+    queryKey: ["liaisoning", "applications", filters],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning data." };
+      }
+      const params = new URLSearchParams();
+      if (filters?.query) params.set("query", filters.query);
+      if (filters?.discomName) params.set("discomName", filters.discomName);
+      if (filters?.overallStatus) params.set("overallStatus", filters.overallStatus);
+      if (filters?.currentStage) params.set("currentStage", filters.currentStage);
+      if (filters?.assignedEmployeeId) params.set("assignedEmployeeId", filters.assignedEmployeeId);
+      if (filters?.page) params.set("page", String(filters.page));
+      if (filters?.limit) params.set("limit", String(filters.limit));
+      const queryString = params.toString();
+      return requestApi<any>(`/liaisoning/applications${queryString ? `?${queryString}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useLiaisoningApplicationById(id: string, opts?: any) {
+  return useQuery<any>({
+    queryKey: ["liaisoning", "application", id],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning data." };
+      }
+      return requestApi<any>(`/liaisoning/applications/${id}`);
+    },
+    enabled: !!id,
+    ...opts?.query,
+  });
+}
+
+export function useInitializeLiaisoningApplication(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ customerId }: { customerId: number }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning operations." };
+      }
+      return requestApi<any>("/liaisoning/applications/initialize", {
+        method: "POST",
+        body: JSON.stringify({ customerId }),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "applications"] });
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "dashboard-summary"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateLiaisoningApplication(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning operations." };
+      }
+      return requestApi<any>(`/liaisoning/applications/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "applications"] });
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "application", variables.id] });
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "dashboard-summary"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateLiaisoningStageStatus(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ applicationId, stage, status, remarks, rejectionReason }: {
+      applicationId: string;
+      stage: string;
+      status: string;
+      remarks?: string;
+      rejectionReason?: string;
+    }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning operations." };
+      }
+      return requestApi<any>(`/liaisoning/applications/${applicationId}/stages/${stage}`, {
+        method: "PUT",
+        body: JSON.stringify({ status, remarks, rejectionReason }),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "applications"] });
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "application", variables.applicationId] });
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "dashboard-summary"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUploadLiaisoningDocument(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ applicationId, file, documentType, title, description }: {
+      applicationId: string;
+      file: File;
+      documentType: string;
+      title: string;
+      description?: string;
+    }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning operations." };
+      }
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("documentType", documentType);
+      formData.append("title", title);
+      if (description) formData.append("description", description);
+      
+      const response = await fetch(`${apiBaseUrl}/api/v1/liaisoning/applications/${applicationId}/documents`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw { error: error.message || "Failed to upload document" };
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "application", variables.applicationId] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useAddLiaisoningFollowUp(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ applicationId, followUpDate, followUpType, remarks, assignedTo }: {
+      applicationId: string;
+      followUpDate: string;
+      followUpType: string;
+      remarks?: string;
+      assignedTo?: string;
+    }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning operations." };
+      }
+      return requestApi<any>(`/liaisoning/applications/${applicationId}/follow-ups`, {
+        method: "POST",
+        body: JSON.stringify({ followUpDate, followUpType, remarks, assignedTo }),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "applications"] });
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "application", variables.applicationId] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useCompleteLiaisoningFollowUp(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ followUpId, completionNotes }: { followUpId: string; completionNotes?: string }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning operations." };
+      }
+      return requestApi<any>(`/liaisoning/follow-ups/${followUpId}/complete`, {
+        method: "PUT",
+        body: JSON.stringify({ completionNotes }),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "applications"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useLiaisoningReport(type: string, filters?: {
+  startDate?: string;
+  endDate?: string;
+  discomName?: string;
+  employeeId?: string;
+}, opts?: any) {
+  return useQuery<any>({
+    queryKey: ["liaisoning", "reports", type, filters],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for liaisoning reports." };
+      }
+      const params = new URLSearchParams();
+      if (filters?.startDate) params.set("startDate", filters.startDate);
+      if (filters?.endDate) params.set("endDate", filters.endDate);
+      if (filters?.discomName) params.set("discomName", filters.discomName);
+      if (filters?.employeeId) params.set("employeeId", filters.employeeId);
+      const queryString = params.toString();
+      return requestApi<any>(`/liaisoning/reports/${type}${queryString ? `?${queryString}` : ""}`);
+    },
+    enabled: !!type,
+    ...opts?.query,
+  });
+}
+
+export function useLiaisoningActivities(filters?: { applicationId?: string; page?: number; limit?: number }, opts?: any) {
+  return useQuery<any>({
+    queryKey: ["liaisoning", "activities", filters],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) throw { error: "Backend API URL is required." };
+      const params = new URLSearchParams();
+      if (filters?.applicationId) params.set("applicationId", filters.applicationId);
+      if (filters?.page) params.set("page", String(filters.page));
+      if (filters?.limit) params.set("limit", String(filters.limit));
+      const qs = params.toString();
+      return requestApi<any>(`/liaisoning/activities${qs ? `?${qs}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useLiaisoningFollowUps(filters?: { status?: string; page?: number; limit?: number }, opts?: any) {
+  return useQuery<any>({
+    queryKey: ["liaisoning", "follow-ups", filters],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) throw { error: "Backend API URL is required." };
+      const params = new URLSearchParams();
+      if (filters?.status) params.set("status", filters.status);
+      if (filters?.page) params.set("page", String(filters.page));
+      if (filters?.limit) params.set("limit", String(filters.limit));
+      const qs = params.toString();
+      return requestApi<any>(`/liaisoning/follow-ups${qs ? `?${qs}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useLiaisoningDocuments(filters?: { status?: string; documentType?: string; query?: string; page?: number; limit?: number }, opts?: any) {
+  return useQuery<any>({
+    queryKey: ["liaisoning", "documents", filters],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) throw { error: "Backend API URL is required." };
+      const params = new URLSearchParams();
+      if (filters?.status) params.set("status", filters.status);
+      if (filters?.documentType) params.set("documentType", filters.documentType);
+      if (filters?.query) params.set("query", filters.query);
+      if (filters?.page) params.set("page", String(filters.page));
+      if (filters?.limit) params.set("limit", String(filters.limit));
+      const qs = params.toString();
+      return requestApi<any>(`/liaisoning/documents${qs ? `?${qs}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useVerifyLiaisoningDocument(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: ({ documentId, status, remarks }: { documentId: string; status: string; remarks?: string }) => {
+      return requestApi<any>(`/liaisoning/documents/${documentId}/verify`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, remarks }),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "documents"] });
+      queryClient.invalidateQueries({ queryKey: ["liaisoning", "application"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useLiaisoningEligibleCustomers(query?: string, opts?: any) {
+  return useQuery<any>({
+    queryKey: ["liaisoning", "eligible-customers", query],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) throw { error: "Backend API URL is required." };
+      const params = new URLSearchParams();
+      if (query) params.set("query", query);
+      const qs = params.toString();
+      return requestApi<any>(`/liaisoning/eligible-customers${qs ? `?${qs}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Monitoring Analyst API Client Methods
+// ---------------------------------------------------------------------------
+
+export function useMonitoringDashboardSummary(opts?: any) {
+  return useQuery({
+    queryKey: ["monitoring", "dashboard-summary"],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring data." };
+      }
+      return requestApi<any>("/monitoring/dashboard-summary");
+    },
+    ...opts?.query,
+  });
+}
+
+export function useMonitoringCustomers(filters?: {
+  query?: string;
+  projectStatus?: string;
+  docStatus?: string;
+  city?: string;
+  page?: number;
+  limit?: number;
+}, opts?: any) {
+  return useQuery({
+    queryKey: ["monitoring", "customers", filters],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring data." };
+      }
+      const params = new URLSearchParams();
+      if (filters?.query) params.set("query", filters.query);
+      if (filters?.projectStatus) params.set("projectStatus", filters.projectStatus);
+      if (filters?.docStatus) params.set("docStatus", filters.docStatus);
+      if (filters?.city) params.set("city", filters.city);
+      if (filters?.page) params.set("page", String(filters.page));
+      if (filters?.limit) params.set("limit", String(filters.limit));
+      const queryString = params.toString();
+      return requestApi<any>(`/monitoring/customers${queryString ? `?${queryString}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useCreateMonitoringCustomer(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async (customerData: {
+      fullName: string;
+      phoneNumber: string;
+      email?: string;
+      consumerNumber?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      pincode?: string;
+      systemSizeKw?: number | string;
+      panelBrand?: string;
+      inverterBrand?: string;
+      inverterModel?: string;
+      inverterSrNo?: string;
+      solarSystemInstalled?: boolean;
+    }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring operations." };
+      }
+      return requestApi<any>("/monitoring/customers", {
+        method: "POST",
+        body: JSON.stringify(customerData),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "customers"] });
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "dashboard-summary"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useMonitoringCustomer360(customerId: number, opts?: any) {
+  return useQuery({
+    queryKey: ["monitoring", "customer", customerId],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring data." };
+      }
+      return requestApi<any>(`/monitoring/customers/${customerId}`);
+    },
+    enabled: !!customerId,
+    ...opts?.query,
+  });
+}
+
+export function useMonitoringDocuments(filters?: {
+  category?: string;
+  documentType?: string;
+  status?: string;
+  customerId?: number;
+  page?: number;
+  limit?: number;
+}, opts?: any) {
+  return useQuery({
+    queryKey: ["monitoring", "documents", filters],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring data." };
+      }
+      const params = new URLSearchParams();
+      if (filters?.category) params.set("category", filters.category);
+      if (filters?.documentType) params.set("documentType", filters.documentType);
+      if (filters?.status) params.set("status", filters.status);
+      if (filters?.customerId) params.set("customerId", String(filters.customerId));
+      if (filters?.page) params.set("page", String(filters.page));
+      if (filters?.limit) params.set("limit", String(filters.limit));
+      const queryString = params.toString();
+      return requestApi<any>(`/monitoring/documents${queryString ? `?${queryString}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useUploadMonitoringDocument(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ customerId, file, category, documentType, title, remarks }: {
+      customerId: number;
+      file: File;
+      category: string;
+      documentType: string;
+      title: string;
+      remarks?: string;
+    }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring operations." };
+      }
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("customerId", String(customerId));
+      formData.append("category", category);
+      formData.append("documentType", documentType);
+      formData.append("title", title);
+      if (remarks) formData.append("remarks", remarks);
+      
+      const response = await fetch(`${apiBaseUrl}/api/v1/monitoring/documents/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw { error: error.message || "Failed to upload document" };
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "documents"] });
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "customer", variables.customerId] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useVerifyMonitoringDocument(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ documentId, action, rejectionReason, remarks }: {
+      documentId: string;
+      action: string;
+      rejectionReason?: string;
+      remarks?: string;
+    }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring operations." };
+      }
+      return requestApi<any>(`/monitoring/documents/${documentId}/verify`, {
+        method: "PUT",
+        body: JSON.stringify({ action, rejectionReason, remarks }),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "documents"] });
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "dashboard-summary"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateMonitoringSiteSurvey(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ customerId, data }: { customerId: number; data: any }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring operations." };
+      }
+      return requestApi<any>(`/monitoring/site-surveys/${customerId}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "customer", variables.customerId] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateMonitoringInstallation(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ customerId, data }: { customerId: number; data: any }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring operations." };
+      }
+      return requestApi<any>(`/monitoring/installations/${customerId}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "customer", variables.customerId] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateMonitoringNetMetering(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ customerId, data }: { customerId: number; data: any }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring operations." };
+      }
+      return requestApi<any>(`/monitoring/net-metering/${customerId}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "customer", variables.customerId] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useMonitoringTasks(customerId?: number, opts?: any) {
+  return useQuery({
+    queryKey: ["monitoring", "tasks", customerId],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring data." };
+      }
+      const params = new URLSearchParams();
+      if (customerId) params.set("customerId", String(customerId));
+      const queryString = params.toString();
+      return requestApi<any>(`/monitoring/tasks${queryString ? `?${queryString}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useCreateMonitoringTask(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring operations." };
+      }
+      return requestApi<any>("/monitoring/tasks", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "tasks"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useUpdateMonitoringTask(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ taskId, data }: { taskId: string; data: any }) => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring operations." };
+      }
+      return requestApi<any>(`/monitoring/tasks/${taskId}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["monitoring", "tasks"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
+  });
+}
+
+export function useMonitoringActivities(filters?: {
+  page?: number;
+  limit?: number;
+  customerId?: number;
+  action?: string;
+}, opts?: any) {
+  return useQuery({
+    queryKey: ["monitoring", "activities", filters],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring data." };
+      }
+      const params = new URLSearchParams();
+      if (filters?.page) params.set("page", String(filters.page));
+      if (filters?.limit) params.set("limit", String(filters.limit));
+      if (filters?.customerId) params.set("customerId", String(filters.customerId));
+      if (filters?.action) params.set("action", filters.action);
+      const queryString = params.toString();
+      return requestApi<any>(`/monitoring/activities${queryString ? `?${queryString}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useMonitoringReports(filters?: {
+  reportType?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  customerId?: number;
+}, opts?: any) {
+  return useQuery({
+    queryKey: ["monitoring", "reports", filters],
+    queryFn: async () => {
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw { error: "Backend API URL is required for monitoring data." };
+      }
+      const params = new URLSearchParams();
+      if (filters?.reportType) params.set("reportType", filters.reportType);
+      if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
+      if (filters?.dateTo) params.set("dateTo", filters.dateTo);
+      if (filters?.customerId) params.set("customerId", String(filters.customerId));
+      const queryString = params.toString();
+      return requestApi<any>(`/monitoring/reports/data${queryString ? `?${queryString}` : ""}`);
+    },
+    ...opts?.query,
+  });
+}
+
+export function useUpdateQuotation(opts?: any) {
+  const queryClient = useQueryClient();
+  const mutationOptions = opts?.mutation ?? {};
+  const { onSuccess, ...restMutationOptions } = mutationOptions;
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return requestApi<any>(`/onboarding/quotations/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding-requests"] });
+      onSuccess?.(data, variables, context);
+    },
+    ...restMutationOptions,
   });
 }

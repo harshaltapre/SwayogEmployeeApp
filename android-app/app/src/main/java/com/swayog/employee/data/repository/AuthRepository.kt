@@ -33,8 +33,7 @@ class AuthRepository @Inject constructor(
                 val user = authResponse.user
 
                 withContext(Dispatchers.IO) {
-                    dataStoreManager.saveAuthToken(authResponse.token)
-                    dataStoreManager.saveRefreshToken(authResponse.refreshToken)
+                    dataStoreManager.saveTokensAtomically(authResponse.token, authResponse.refreshToken)
                     dataStoreManager.saveUserInfo(
                         userId = user.id,
                         email = user.email,
@@ -86,9 +85,8 @@ class AuthRepository @Inject constructor(
             if (response.isSuccessful && response.body()?.data != null) {
                 val authResponse = response.body()!!.data!!
                 
-                // Save tokens
-                dataStoreManager.saveAuthToken(authResponse.token)
-                dataStoreManager.saveRefreshToken(authResponse.refreshToken)
+                // Save tokens atomically
+                dataStoreManager.saveTokensAtomically(authResponse.token, authResponse.refreshToken)
                 
                 // Save user info
                 val user = authResponse.user
@@ -179,8 +177,7 @@ class AuthRepository @Inject constructor(
                 val response = apiService.refreshToken(RefreshTokenRequest(refreshToken))
                 if (response.isSuccessful && response.body()?.data != null) {
                     val authResponse = response.body()!!.data!!
-                    dataStoreManager.saveAuthToken(authResponse.token)
-                    dataStoreManager.saveRefreshToken(authResponse.refreshToken)
+                    dataStoreManager.saveTokensAtomically(authResponse.token, authResponse.refreshToken)
                     Result.success(authResponse)
                 } else {
                     Result.failure(Exception("Token refresh failed"))

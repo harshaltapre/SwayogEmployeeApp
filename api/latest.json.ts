@@ -77,35 +77,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ) {
               parsed.appId = parsed.appId || "com.swayog.employee";
               parsed.platform = parsed.platform || "android";
-
-              // Resolve public APK URL if relative or using internal R2 domain
-              const publicBaseUrl = process.env.R2_PUBLIC_URL || process.env.PUBLIC_DISTRIBUTION_URL;
-              const hasPublicCdn = !!(
-                publicBaseUrl &&
-                !publicBaseUrl.includes(".r2.cloudflarestorage.com") &&
-                !publicBaseUrl.includes("your-public-domain.com")
-              );
-
-              const rawApk = (parsed.apkUrl || "").trim();
-              const isRelativeOrInternal = !rawApk.startsWith("http") || rawApk.includes(".r2.cloudflarestorage.com");
-
-              if (isRelativeOrInternal) {
-                const targetKey = (!rawApk || rawApk.includes("/download/latest"))
-                  ? `releases/android/${parsed.versionName}/build-${parsed.versionCode}/app-release.apk`
-                  : rawApk.replace(/^\//, "");
-
-                if (hasPublicCdn) {
-                  parsed.apkUrl = `${publicBaseUrl!.replace(/\/$/, "")}/${targetKey}`;
-                } else {
-                  const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-                  const webDomain = (
-                    process.env.WEB_DOMAIN ||
-                    (productionDomain ? `https://${productionDomain}` : "https://swayog-dashboard.vercel.app")
-                  ).replace(/\/$/, "");
-                  parsed.apkUrl = `${webDomain}/releases/android/${parsed.versionName}/build-${parsed.versionCode}/app-release.apk`;
-                }
+              // Never return private unauthenticated R2 endpoint to Android clients
+              if (
+                parsed.apkUrl.includes(".r2.cloudflarestorage.com") &&
+                !parsed.apkUrl.includes("X-Amz-Signature")
+              ) {
+                parsed.apkUrl = `https://swayog-dashboard.vercel.app/releases/android/${parsed.versionName}/build-${parsed.versionCode}/app-release.apk`;
               }
-
               return res.status(200).json(parsed);
             }
           }

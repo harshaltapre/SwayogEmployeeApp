@@ -20,23 +20,37 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
-    chunkSizeWarningLimit: 5000,
+    chunkSizeWarningLimit: 1200,
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('xlsx')) return 'vendor-xlsx';
+            if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
+            if (id.includes('leaflet') || id.includes('react-leaflet')) return 'vendor-maps';
+            if (id.includes('face-api.js')) return 'vendor-faceapi';
+            if (id.includes('@radix-ui') || id.includes('lucide-react')) return 'vendor-ui';
+            if (id.includes('@tanstack/react-query')) return 'vendor-query';
+            if (id.includes('react') || id.includes('react-dom') || id.includes('wouter')) return 'vendor-core';
           }
         }
       }
     }
   },
   server: {
-    port: 3000,
+    port: 5173,
     host: true,
     strictPort: false,
     watch: {
-      ignored: ["**/node_modules/**", "**/application/android/build/**", "**/build/**"],
+      ignored: [
+        "**/node_modules/**",
+        "**/backend/**",
+        "**/dist/**",
+        "**/.git/**",
+        "**/application/android/build/**",
+        "**/build/**",
+      ],
     },
     proxy: {
       "/api": {

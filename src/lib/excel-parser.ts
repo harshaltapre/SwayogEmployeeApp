@@ -386,3 +386,301 @@ export async function exportCustomersToExcel(customers: any[]): Promise<Blob> {
   const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
   return new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
+
+
+export type ValidatedMarketingLeadData = {
+  rowNumber: number;
+  name: string;
+  phone: string;
+  normalizedPhone: string;
+  email?: string;
+  address?: string;
+  source: "Website" | "Campaign" | "Referral" | "Partner" | "Other";
+  status: "New" | "Contacted" | "Qualified" | "Converted" | "Disqualified";
+  assignedTo?: string;
+  isValid: boolean;
+  isDuplicate: boolean;
+  duplicateReason?: string;
+  matchedRecord?: string;
+  errors: string[];
+};
+
+export interface ExistingClientRecords {
+  phones?: Set<string>;
+  emails?: Set<string>;
+  nameAddrs?: Set<string>;
+  phoneToName?: Map<string, string>;
+  emailToName?: Map<string, string>;
+}
+
+export function normalizeIndianPhoneNumber(phone: string): { normalized: string; isValid: boolean } {
+  let cleaned = String(phone || "").replace(/\D/g, "");
+  if (cleaned.length === 12 && cleaned.startsWith("91")) {
+    cleaned = cleaned.slice(2);
+  } else if (cleaned.length === 11 && cleaned.startsWith("0")) {
+    cleaned = cleaned.slice(1);
+  }
+  const isValid = /^[6-9]\d{9}$/.test(cleaned);
+  return { normalized: cleaned, isValid };
+}
+
+export function normalizeLeadEmail(email?: string): string {
+  return String(email || "").trim().toLowerCase();
+}
+
+export function normalizeLeadText(text?: string): string {
+  return String(text || "").trim().replace(/\s+/g, " ");
+}
+
+export function getLeadFuzzyKey(name: string, address: string): string {
+  const normName = normalizeLeadText(name).toLowerCase();
+  const normAddr = normalizeLeadText(address).toLowerCase();
+  return `${normName}:::${normAddr}`;
+}
+
+/**
+ * Validate marketing lead data from Excel / CSV with comprehensive validation and duplicate detection
+ */
+export function validateMarketingLeadData(
+  rows: Record<string, unknown>[],
+  existingRecords?: ExistingClientRecords
+): ValidatedMarketingLeadData[] {
+  // Track seen identifiers within the file for intra-sheet duplicate detection
+  const seenPhones = new Map<string, { row: number; name: string }>();
+  const seenEmails = new Map<string, { row: number; name: string }>();
+  const seenNameAddrs = new Map<string, { row: number; name: string }>();
+
+  return rows.map((row, index) => {
+    const rowNumber = index + 2;
+    const errors: string[] = [];
+
+    const rawName = String(row['Name'] || row['Name *'] || row['Contact Name'] || row['Lead Name'] || row['Full Name'] || row['name'] || '').trim();
+    const rawPhone = String(row['Phone'] || row['Phone *'] || row['Phone Number'] || row['Mobile'] || row['phone'] || '').trim();
+    const rawEmail = String(row['Email'] || row['Email Address'] || row['email'] || '').trim();
+    const rawAddress = String(row['Address'] || row['Address *'] || row['Site Location'] || row['Location'] || row['City'] || row['address'] || '').trim();
+
+    const name = normalizeLeadText(rawName);
+    const email = normalizeLeadEmail(rawEmail);
+    const address = normalizeLeadText(rawAddress);
+    const { normalized: normalizedPhone, isValid: isPhoneValid } = normalizeIndianPhoneNumber(rawPhone);
+
+    // Normalize source
+    const sourceRaw = String(row['Source'] || row['Lead Source'] || row['source'] || 'Website').trim();
+    const validSources = ["Website", "Campaign", "Referral", "Partner", "Other"] as const;
+    const matchedSource = validSources.find(s => s.toLowerCase() === sourceRaw.toLowerCase()) || "Website";
+
+    // Normalize status
+    const statusRaw = String(row['Status'] || row['Lead Status'] || row['status'] || 'New').trim();
+    const validStatuses = ["New", "Contacted", "Qualified", "Converted", "Disqualified"] as const;
+    const matchedStatus = validStatuses.find(s => s.toLowerCase() === statusRaw.toLowerCase()) || "New";
+
+    const assignedTo = String(row['Assigned To'] || row['Owner'] || row['assignedTo'] || '').trim() || undefined;
+
+    // Field-level data validation
+    if (!name) {
+      errors.push('Client name cannot be empty');
+    } else if (name.length < 2) {
+      errors.push('Client name must be at least 2 characters');
+    }
+
+    if (!rawPhone) {
+      errors.push('Mobile number is required');
+    } else if (!isPhoneValid) {
+      errors.push('Mobile number must be a valid 10-digit Indian number starting with 6-9');
+    }
+
+    if (!address) {
+      errors.push('Address / Site Location cannot be empty');
+    }
+
+    if (email && !isValidEmail(email)) {
+      errors.push('Email address format is invalid');
+    }
+
+    // Duplicate detection
+    let isDuplicate = false;
+    let duplicateReason: string | undefined;
+    let matchedRecord: string | undefined;
+
+    // 1. Check against existing CRM database records
+    if (isPhoneValid && existingRecords?.phones?.has(normalizedPhone)) {
+      isDuplicate = true;
+      matchedRecord = existingRecords?.phoneToName?.get(normalizedPhone) || "Existing Client";
+      duplicateReason = `Mobile number already exists in CRM (matches ${matchedRecord})`;
+    } else if (email && existingRecords?.emails?.has(email)) {
+      isDuplicate = true;
+      matchedRecord = existingRecords?.emailToName?.get(email) || "Existing Client";
+      duplicateReason = `Email already exists in CRM (matches ${matchedRecord})`;
+    } else if (name && address && existingRecords?.nameAddrs?.has(getLeadFuzzyKey(name, address))) {
+      isDuplicate = true;
+      matchedRecord = "Existing Client";
+      duplicateReason = "Client name and address already exist in CRM";
+    }
+
+    // 2. Check duplicates within the uploaded file
+    if (!isDuplicate) {
+      if (isPhoneValid) {
+        if (seenPhones.has(normalizedPhone)) {
+          const prev = seenPhones.get(normalizedPhone)!;
+          isDuplicate = true;
+          matchedRecord = prev.name || `Row #${prev.row}`;
+          duplicateReason = `Duplicate mobile number in upload file (matches Row #${prev.row} - ${prev.name})`;
+        } else {
+          seenPhones.set(normalizedPhone, { row: rowNumber, name: name || 'Unnamed' });
+        }
+      }
+
+      if (!isDuplicate && email) {
+        if (seenEmails.has(email)) {
+          const prev = seenEmails.get(email)!;
+          isDuplicate = true;
+          matchedRecord = prev.name || `Row #${prev.row}`;
+          duplicateReason = `Duplicate email address in upload file (matches Row #${prev.row} - ${prev.name})`;
+        } else {
+          seenEmails.set(email, { row: rowNumber, name: name || 'Unnamed' });
+        }
+      }
+
+      if (!isDuplicate && name && address) {
+        const fuzzyKey = getLeadFuzzyKey(name, address);
+        if (seenNameAddrs.has(fuzzyKey)) {
+          const prev = seenNameAddrs.get(fuzzyKey)!;
+          isDuplicate = true;
+          matchedRecord = prev.name || `Row #${prev.row}`;
+          duplicateReason = `Duplicate client name & address in upload file (matches Row #${prev.row} - ${prev.name})`;
+        } else {
+          seenNameAddrs.set(fuzzyKey, { row: rowNumber, name: name || 'Unnamed' });
+        }
+      }
+    }
+
+    const isValid = errors.length === 0 && !isDuplicate;
+
+    return {
+      rowNumber,
+      name,
+      phone: rawPhone,
+      normalizedPhone: isPhoneValid ? normalizedPhone : rawPhone,
+      email: email || undefined,
+      address: address || undefined,
+      source: matchedSource,
+      status: matchedStatus,
+      assignedTo,
+      isValid,
+      isDuplicate,
+      duplicateReason,
+      matchedRecord,
+      errors
+    };
+  });
+}
+
+/**
+ * Dynamically exports a list of marketing leads to a styled Excel (.xlsx) file
+ */
+export async function exportMarketingLeadsToExcel(leads: any[]): Promise<Blob> {
+  const XLSX = await import('xlsx');
+  const headers = [
+    "Lead ID / Ref",
+    "Contact Name",
+    "Phone Number",
+    "Email Address",
+    "Address / Site Location",
+    "Lead Source",
+    "Status",
+    "Assigned To",
+    "Created Date",
+    "Product / Details"
+  ];
+
+  const data = leads.map(l => ({
+    "Lead ID / Ref": l.requestNumber || l.id || "",
+    "Contact Name": l.name || "",
+    "Phone Number": l.phone || "",
+    "Email Address": l.email || "",
+    "Address / Site Location": l.address || "",
+    "Lead Source": l.source || "",
+    "Status": l.statusLabel || l.status || "New",
+    "Assigned To": l.assignedTo || "Unassigned",
+    "Created Date": l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-IN") : "",
+    "Product / Details": l.requestedProduct || ""
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(data, { header: headers });
+  worksheet['!cols'] = [
+    { wch: 22 },
+    { wch: 24 },
+    { wch: 16 },
+    { wch: 28 },
+    { wch: 38 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 28 }
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Marketing Leads");
+
+  const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  return new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+/**
+ * Generates an Excel template for Marketing Leads bulk import
+ */
+export async function generateMarketingLeadTemplate(): Promise<Blob> {
+  const XLSX = await import('xlsx');
+  const sampleData = [
+    {
+      "Name *": "Rajesh Sharma",
+      "Phone *": "9876543210",
+      "Email": "rajesh.sharma@example.com",
+      "Address": "Flat 402, Shivam Apts, Gangapur Road, Nashik",
+      "Source": "Website",
+      "Status": "New",
+      "Assigned To": ""
+    },
+    {
+      "Name *": "Sunita Deshmukh",
+      "Phone *": "9823456789",
+      "Email": "sunita.d@example.com",
+      "Address": "Plot 15, MIDC Ambad, Nashik",
+      "Source": "Referral",
+      "Status": "Contacted",
+      "Assigned To": "Yogesh Tayade"
+    },
+    {
+      "Name *": "Amit Enterprises",
+      "Phone *": "9822012345",
+      "Email": "amit@enterprises.com",
+      "Address": "Sector 18, Vashi, Navi Mumbai",
+      "Source": "Partner",
+      "Status": "Qualified",
+      "Assigned To": ""
+    }
+  ];
+  const headers = [
+    "Name *",
+    "Phone *",
+    "Email",
+    "Address",
+    "Source",
+    "Status",
+    "Assigned To"
+  ];
+  const worksheet = XLSX.utils.json_to_sheet(sampleData, { header: headers });
+  worksheet['!cols'] = [
+    { wch: 24 },
+    { wch: 16 },
+    { wch: 28 },
+    { wch: 45 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 20 }
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Leads Template");
+  const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  return new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}

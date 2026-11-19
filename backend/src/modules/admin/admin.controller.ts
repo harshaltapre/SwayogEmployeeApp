@@ -226,6 +226,9 @@ export async function getAdminDashboard(req: Request, res: Response): Promise<vo
       totalTasks,
       tasksByStatus,
       totalEmployees,
+      inactiveEmployees,
+      totalPartners,
+      inactivePartners,
       totalCustomers,
       activeCustomers,
       inactiveCustomers,
@@ -234,6 +237,7 @@ export async function getAdminDashboard(req: Request, res: Response): Promise<vo
       totalKwData,
       activeAmc,
       expiredAmc,
+      inventoryStockLevels,
       openComplaints,
       pendingServices,
       recentTasks,
@@ -246,6 +250,23 @@ export async function getAdminDashboard(req: Request, res: Response): Promise<vo
       prisma.user.count({
         where: {
           role: "EMPLOYEE",
+        },
+      }),
+      prisma.user.count({
+        where: {
+          role: "EMPLOYEE",
+          isActive: false,
+        },
+      }),
+      prisma.user.count({
+        where: {
+          role: "PARTNER",
+        },
+      }),
+      prisma.user.count({
+        where: {
+          role: "PARTNER",
+          isActive: false,
         },
       }),
       prisma.customer.count(),
@@ -271,6 +292,12 @@ export async function getAdminDashboard(req: Request, res: Response): Promise<vo
       }),
       prisma.customer.count({ where: { amcStatus: "ACTIVE" } }),
       prisma.customer.count({ where: { amcStatus: "EXPIRED" } }),
+      prisma.inventory.findMany({
+        select: {
+          inStock: true,
+          minThreshold: true,
+        },
+      }),
       // Open complaints = all unresolved (PENDING, SCHEDULED)
       prisma.serviceRequest.count({
         where: {
@@ -299,12 +326,19 @@ export async function getAdminDashboard(req: Request, res: Response): Promise<vo
 
     const totalKw = totalKwData._sum.systemSizeKw || 0;
     const monthlyRevenue = totalKw * 60000;
+    const lowStockCount = inventoryStockLevels.filter(
+      (item) => item.inStock <= item.minThreshold,
+    ).length;
 
     res.status(200).json({
       data: {
         summary: {
           totalTasks,
           totalEmployees,
+          inactiveEmployees,
+          totalPartners,
+          inactivePartners,
+          lowStockCount,
           totalCustomers,
           activeCustomers,
           inactiveCustomers,

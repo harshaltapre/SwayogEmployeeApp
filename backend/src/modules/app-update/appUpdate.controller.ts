@@ -91,7 +91,7 @@ export async function getLatestAppUpdate(req: Request, res: Response): Promise<v
     }
 
     if (!manifest) {
-      console.warn("[AppUpdate] No authoritative release manifest found in R2");
+      console.warn("[AppUpdate] No authoritative release manifest found in R2 or local storage");
       res.status(503).json({
         error: "Unable to check for updates right now",
         message: "Authoritative release manifest is temporarily unavailable"

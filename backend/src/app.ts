@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
+import compression from "compression";
 import path from "path";
 
 import { env } from "./config/env.js";
@@ -29,9 +30,13 @@ import taskImagesRoutes from "./routes/taskImages.js";
 import waareeRoutes from "./routes/waaree.js";
 import { paymentsRoutes } from "./routes/payments.js";
 import { isphereGreenRoutes } from "./modules/isphere-green/isphere-green.routes.js";
+import { onboardingRoutes } from "./modules/onboarding/onboarding.routes.js";
+import { marketingRoutes } from "./modules/marketing/marketing.routes.js";
 import { appUpdateRoutes } from "./routes/appUpdate.routes.js";
 import workforceRoutes from "./routes/workforce.js";
 import employeeNotificationRoutes from "./routes/employeeNotifications.js";
+import { liaisoningRoutes } from "./modules/liaisoning/liaisoning.routes.js";
+import { monitoringRoutes } from "./modules/monitoring/monitoring.routes.js";
 
 export const app = express();
 
@@ -52,21 +57,34 @@ const corsOrigins = [
   ...(env.CORS_ORIGIN || "").split(",").map((origin) => origin.trim()).filter(Boolean),
   ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
 ];
+const allowedOriginSet = new Set(corsOrigins);
 
 app.use(
   cors({
-    origin: [...new Set(corsOrigins)],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOriginSet.has(origin)) return callback(null, true);
+      if (
+        (!process.env.VERCEL || env.NODE_ENV !== "production") &&
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
     credentials: true,
   }),
 );
+app.use(compression());
 app.use(requestIdMiddleware);
 app.use(helmet({
   contentSecurityPolicy: false, // Allow dashboard inline scripts/styles
   crossOriginEmbedderPolicy: false, // Allow cross-origin resource loading
+  crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), { maxAge: "7d", immutable: true }));
 app.use(maintenanceModeMiddleware);
 
 // --- All routes below ---
@@ -193,6 +211,10 @@ app.use("/api/v1/messages", messagesRoutes);
 app.use("/api/v1/inventory", inventoryRoutes);
 app.use("/api/v1/apartments", apartmentsRoutes);
 app.use("/api/v1/isphere-green", isphereGreenRoutes);
+app.use("/api/v1/onboarding", onboardingRoutes);
+app.use("/api/v1/marketing", marketingRoutes);
+app.use("/api/v1/liaisoning", liaisoningRoutes);
+app.use("/api/v1/monitoring", monitoringRoutes);
 // Canonical app update endpoints - /latest.json, /releases/android/latest.json, and downloads
 app.use("/", appUpdateRoutes);
 app.use("/releases", appUpdateRoutes);

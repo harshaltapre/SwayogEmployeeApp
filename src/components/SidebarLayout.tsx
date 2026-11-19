@@ -3,11 +3,15 @@ import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
   isInventoryExecutiveJobRole,
+  isLiaisoningEmployeeJobRole,
+  isMarketingExecutiveJobRole,
   isMonitoringAnalystJobRole,
   isSubAdminJobRole,
+  isProjectCoordinatorJobRole,
   isServiceExecutiveHeadJobRole,
   isEpcPartnerJobRole,
   isInstallationTeamJobRole,
+  getFinanceLevel,
   useAuth,
 } from "@/lib/auth";
 import { getAllowedSpecializedSections } from "@/lib/section-permissions";
@@ -37,6 +41,13 @@ import {
   Camera,
   CreditCard,
   ShieldCheck,
+  UserPlus,
+  Building2,
+  Award,
+  TrendingUp,
+  BarChart3,
+  MapPin,
+  Trash2,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
@@ -97,13 +108,35 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     const isInventoryPath = location.startsWith("/inventory");
     const isSubAdminPath = location.startsWith("/subadmin");
     const isEmployeePath = location.startsWith("/employee");
+    const isMonitoringAnalystPath = location.startsWith("/monitoring-analyst");
+    const isLiaisoningPath = location.startsWith("/liaisoning");
 
-    // Super Admin & Admin see everything
-    if (user.role === "super_admin" || user.role === "admin") {
+    // Super Admin: high-level oversight (Zone Analysis and Isphere Green removed per role boundaries)
+    if (user.role === "super_admin") {
       return [
-        { name: "Dashboard", href: user.role === "super_admin" ? "/super-admin/dashboard" : "/admin/dashboard", icon: LayoutDashboard },
+        { name: "Dashboard", href: "/super-admin/dashboard", icon: LayoutDashboard },
+        { name: "Monitoring Analysis", href: "/monitoring-analyst/dashboard", icon: BarChart3 },
         { name: "Customers", href: "/admin/customers", icon: Users },
         { name: "Employees", href: "/admin/employees", icon: Briefcase },
+        { name: "Marketing", href: "/marketing/dashboard", icon: Activity },
+        { name: "Partners", href: "/admin/partners", icon: Users },
+        { name: "Complaints", href: "/admin/complaints", icon: Wrench },
+        { name: "Inventory", href: "/admin/inventory", icon: Package },
+        { name: "Financials", href: "/admin/financials", icon: IndianRupee },
+        { name: "Daily Commits", href: "/admin/daily-commits", icon: ClipboardList },
+        { name: "Attendance Tracking", href: "/super-admin/attendance", icon: CalendarCheck },
+        { name: "Settings", href: "/admin/settings", icon: Settings },
+      ];
+    }
+
+    // Admin: full operational management including Isphere Green
+    if (user.role === "admin") {
+      return [
+        { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+        { name: "Monitoring Analysis", href: "/monitoring-analyst/dashboard", icon: BarChart3 },
+        { name: "Customers", href: "/admin/customers", icon: Users },
+        { name: "Employees", href: "/admin/employees", icon: Briefcase },
+        { name: "Marketing", href: "/marketing/dashboard", icon: Activity },
         { name: "Partners", href: "/admin/partners", icon: Users },
         { name: "Service & Executive", href: "/service-executive/dashboard", icon: Wrench },
         { name: "Complaints", href: "/admin/complaints", icon: Wrench },
@@ -111,8 +144,45 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         { name: "Isphere Green", href: "/admin/isphere-green", icon: Leaf },
         { name: "Financials", href: "/admin/financials", icon: IndianRupee },
         { name: "Daily Commits", href: "/admin/daily-commits", icon: ClipboardList },
-        { name: "Attendance Tracking", href: user.role === "super_admin" ? "/super-admin/attendance" : "/admin/attendance", icon: CalendarCheck },
+        { name: "Attendance Tracking", href: "/admin/attendance", icon: CalendarCheck },
         { name: "Settings", href: "/admin/settings", icon: Settings },
+      ];
+    }
+
+    // Monitoring Analyst: Dedicated Monitoring Analysis & Document Management
+    if (isMonitoringAnalystJobRole(user.jobRole)) {
+      return [
+        { name: "Monitoring Analysis", href: "/monitoring-analyst/dashboard", icon: LayoutDashboard },
+        { name: "Customer Applications", href: "/liaisoning/applications", icon: Users },
+        { name: "Document Management", href: "/liaisoning/documents", icon: FileText },
+        { name: "Liaisoning Process", href: "/liaisoning/process", icon: FileCheck },
+        { name: "DISCOM Management", href: "/liaisoning/discom", icon: Building2 },
+        { name: "Net Metering", href: "/liaisoning/net-metering", icon: CreditCard },
+        { name: "Inspection & Approval", href: "/liaisoning/inspection", icon: ShieldCheck },
+        { name: "Commissioning", href: "/liaisoning/commissioning", icon: Award },
+        { name: "Subsidy Tracking", href: "/liaisoning/subsidy", icon: TrendingUp },
+        { name: "Follow-ups & Reminders", href: "/liaisoning/followups", icon: Calendar },
+        { name: "Reports & Analytics", href: "/liaisoning/reports", icon: BarChart3 },
+        { name: "Profile & Settings", href: "/employee/settings", icon: Settings },
+      ];
+    }
+
+    // Liaisoning Employee: Dedicated Liaisoning Process module
+    if (isLiaisoningEmployeeJobRole(user.jobRole)) {
+      return [
+        { name: "Dashboard", href: "/liaisoning/dashboard", icon: LayoutDashboard },
+        { name: "Customer Applications", href: "/liaisoning/applications", icon: Users },
+        { name: "Liaisoning Process", href: "/liaisoning/process", icon: FileCheck },
+        { name: "Document Management", href: "/liaisoning/documents", icon: FileText },
+        { name: "DISCOM Management", href: "/liaisoning/discom", icon: Building2 },
+        { name: "Net Metering", href: "/liaisoning/net-metering", icon: CreditCard },
+        { name: "Inspection & Approval", href: "/liaisoning/inspection", icon: ShieldCheck },
+        { name: "Commissioning", href: "/liaisoning/commissioning", icon: Award },
+        { name: "Subsidy Tracking", href: "/liaisoning/subsidy", icon: TrendingUp },
+        { name: "Follow-ups & Reminders", href: "/liaisoning/followups", icon: Calendar },
+        { name: "Reports & Analytics", href: "/liaisoning/reports", icon: BarChart3 },
+        { name: "Activity Logs", href: "/liaisoning/activities", icon: Activity },
+        { name: "Profile & Settings", href: "/employee/settings", icon: Settings },
       ];
     }
 
@@ -125,6 +195,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     ) {
       const isServiceExecutive = isServiceExecutiveHeadJobRole(user.jobRole);
       const isInventory = isInventoryExecutiveJobRole(user.jobRole);
+      const isMarketing = isMarketingExecutiveJobRole(user.jobRole);
+      const financeLevel = getFinanceLevel(user);
       const isSubAdmin = user.role === "sub_admin" || isSubAdminJobRole(user.jobRole);
       const allowedSpecialized = getAllowedSpecializedSections(user);
 
@@ -182,6 +254,67 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         return appendUniqueCustomSections(baseItems);
       }
 
+      if (financeLevel && financeLevel !== "admin") {
+        const baseItems = [
+          { name: "Finance Overview", href: "/finance/dashboard?tab=overview", icon: IndianRupee, sectionHeader: "Finance Department" },
+          { name: "Customer Ledger (AR)", href: "/finance/dashboard?tab=customers", icon: Users },
+          { name: "Invoices & Collections", href: "/finance/dashboard?tab=invoices", icon: FileText },
+          { name: "Purchases & Payables (AP)", href: "/finance/dashboard?tab=vendors", icon: Truck },
+          { name: "General Ledger & GST", href: "/finance/dashboard?tab=ledger", icon: BarChart3 },
+          { name: "Partner Commissions", href: "/finance/dashboard?tab=payouts", icon: Users },
+          { name: "Zone Breakdown", href: "/finance/dashboard?tab=zones", icon: MapPin },
+          ...(financeLevel === "manager" || financeLevel === "head"
+            ? [{ name: "Company P&L", href: "/finance/dashboard?tab=pnl", icon: TrendingUp }]
+            : []),
+          { name: "Attendance", href: "/employee/attendance", icon: Calendar, sectionHeader: "Employee" },
+          { name: "Daily Commit", href: "/employee/daily-commit", icon: FileText },
+          { name: "Settings", href: "/employee/settings", icon: Settings },
+        ];
+        return appendUniqueCustomSections(baseItems);
+      }
+
+      if (isMarketing) {
+        return [
+          { name: "Marketing Overview", href: "/marketing/dashboard?section=overview", icon: LayoutDashboard, sectionHeader: "SWAYOG ENERGY · Marketing" },
+          { name: "Lead Management", href: "/marketing/dashboard?section=lead-management", icon: Users },
+          { name: "Add New Lead", href: "/marketing/dashboard?section=add-lead", icon: UserPlus },
+          { name: "Lead Assignment", href: "/marketing/dashboard?section=lead-assignment", icon: Briefcase },
+          { name: "Follow-up Management", href: "/marketing/dashboard?section=follow-ups", icon: CalendarCheck },
+          { name: "Lead Qualification", href: "/marketing/dashboard?section=qualification", icon: CheckSquare },
+          { name: "Campaign Management", href: "/marketing/dashboard?section=campaigns", icon: Activity },
+          { name: "Website Enquiries", href: "/marketing/dashboard?section=website-enquiries", icon: MessageSquare },
+          { name: "Referral & Partner Leads", href: "/marketing/dashboard?section=referrals", icon: Users },
+          { name: "Lead Conversion Pipeline", href: "/marketing/dashboard?section=pipeline", icon: Briefcase },
+          { name: "Reports & Analytics", href: "/marketing/dashboard?section=reports", icon: FileText },
+          { name: "Team Performance", href: "/marketing/dashboard?section=team-performance", icon: GraduationCap },
+          { name: "Deleted Entries", href: "/marketing/dashboard?section=deleted-entries", icon: Trash2 },
+          { name: "Onboarding Requests", href: "/marketing/onboarding", icon: UserPlus },
+          { name: "Settings", href: "/employee/settings", icon: Settings },
+        ];
+      }
+
+      if (isProjectCoordinatorJobRole(user.jobRole)) {
+        return [
+          { name: "Dashboard", href: "/project-coordinator/dashboard?tab=overview", icon: LayoutDashboard, sectionHeader: "Project Workspace" },
+          { name: "Leads", href: "/project-coordinator/dashboard?tab=my-projects", icon: Briefcase },
+          { name: "Site Survey & Feasibility", href: "/project-coordinator/dashboard?tab=site-survey", icon: MapPin },
+          { name: "Project Planning & Scheduling", href: "/project-coordinator/dashboard?tab=planning", icon: Calendar },
+          { name: "Team Allocation", href: "/project-coordinator/dashboard?tab=team-allocation", icon: Users },
+          { name: "Material Requests", href: "/project-coordinator/dashboard?tab=materials", icon: Package },
+          { name: "Project Progress", href: "/project-coordinator/dashboard?tab=progress", icon: Activity },
+          { name: "Quality & Inspection", href: "/project-coordinator/dashboard?tab=quality", icon: ShieldCheck },
+          { name: "Commissioning", href: "/project-coordinator/dashboard?tab=commissioning", icon: CheckSquare },
+          { name: "Project Handover", href: "/project-coordinator/dashboard?tab=handover", icon: FileCheck },
+          { name: "Issues & Escalations", href: "/project-coordinator/dashboard?tab=issues", icon: Wrench },
+          { name: "Project Reports", href: "/project-coordinator/dashboard?tab=reports", icon: BarChart3 },
+          { name: "Employees Under Me", href: "/employee/under-me", icon: Users, sectionHeader: "Team Management" },
+          { name: "Attendance", href: "/employee/attendance", icon: Calendar },
+          { name: "Daily Commit", href: "/employee/daily-commit", icon: FileText },
+          { name: "Team Commits", href: "/employee/daily-commits/team", icon: ClipboardList },
+          { name: "Settings", href: "/employee/settings", icon: Settings, sectionHeader: "Account" },
+        ];
+      }
+
       if (isSubAdmin) {
         const baseItems = [
           { name: "Dashboard", href: "/subadmin/dashboard", icon: LayoutDashboard },
@@ -194,18 +327,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           { name: "Settings", href: "/employee/settings", icon: Settings },
         ];
         return appendUniqueCustomSections(baseItems);
-      }
-
-      if (isMonitoringAnalystJobRole(user.jobRole)) {
-        return [
-          { name: "Liaisoning Dashboard", href: "/service-executive/dashboard?tab=liaisoning", icon: LayoutDashboard },
-          { name: "Liaisoning Process", href: "/service-executive/dashboard?tab=liaisoning-process", icon: FileCheck },
-          { name: "Tasks", href: "/employee/tasks", icon: CheckSquare },
-          { name: "Attendance", href: "/employee/attendance", icon: Calendar },
-          { name: "Daily Commit", href: "/employee/daily-commit", icon: FileText },
-          { name: "Team Commits", href: "/employee/daily-commits/team", icon: ClipboardList },
-          { name: "Settings", href: "/employee/settings", icon: Settings },
-        ];
       }
 
       // Default Employee Sidebar + Granted Specialized Sections
@@ -296,6 +417,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     if (user.role === "customer") return "CUSTOMER";
     if (user.role === "sub_admin") return "SERVICE COORDINATOR";
     if (user.role === "employee") {
+      if (isMarketingExecutiveJobRole(user.jobRole)) return "MARKETING EXECUTIVE";
+      if (isLiaisoningEmployeeJobRole(user.jobRole)) return "LIAISONING EMPLOYEE";
+      if (isMonitoringAnalystJobRole(user.jobRole)) return "MONITORING ANALYST";
       if (user.jobRole === "inventory_executive") return "INVENTORY EXECUTIVE";
       return user.jobRole ? user.jobRole.replace(/_/g, " ").toUpperCase() : "EMPLOYEE";
     }
@@ -322,7 +446,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             const itemTab = item.href.includes("?tab=") ? item.href.split("?tab=")[1] : null;
             const isActive = itemTab
               ? (location === itemPath && (currentTab ? currentTab === itemTab : itemTab === "overview"))
-              : (location === item.href);
+              : (location === item.href && !currentTab);
             return (
               <div key={item.name + item.href}>
                 {item.sectionHeader && (
@@ -403,7 +527,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         <NavContent />
       </div>
 
-      <div className="flex min-h-screen flex-1 flex-col bg-background md:pl-64">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col bg-background md:pl-64">
         <div className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-border bg-white/95 px-3 shadow-sm backdrop-blur md:hidden">
           <Sheet>
             <SheetTrigger asChild>

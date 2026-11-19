@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -euo pipefail
 
 echo "Installing backend dependencies..."
 npm install --prefix backend
