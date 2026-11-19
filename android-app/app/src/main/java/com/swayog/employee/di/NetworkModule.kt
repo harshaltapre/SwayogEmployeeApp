@@ -190,6 +190,7 @@ object NetworkModule {
                             shouldClearSession = true
                         }
                     }
+                    Unit
                 }
 
                 if (!newAccessTokenToRetry.isNullOrBlank()) {
