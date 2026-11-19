@@ -188,6 +188,68 @@ class AttendanceReliabilityTest {
     }
 
     @Test
+    fun getMonthlyAttendanceData_preservesEnrichedFieldsAndFailsTruthfully() = runTest {
+        val today = java.time.LocalDate.now().toString()
+        val record = AttendanceRecord(
+            id = "att-month-1",
+            employeeId = "emp-123",
+            date = "${today}T00:00:00.000Z",
+            checkInTime = "${today}T09:15:00.000Z",
+            checkOutTime = "${today}T18:15:00.000Z",
+            totalMinutes = 540,
+            status = "PRESENT_LATE_ALLOWANCE",
+            notes = "Admin verified",
+            latitude = 18.5204,
+            longitude = 73.8567,
+            source = "ADMIN_MARKED",
+            manualOverride = true,
+            reviewedBy = "admin-1",
+            reviewerName = "Manager",
+            isAttendanceCompleted = true
+        )
+        `when`(apiService.getMonthlyAttendance(11, 2026)).thenReturn(
+            Response.success(
+                com.swayog.employee.data.model.MonthlyAttendanceResponse(
+                    records = listOf(record),
+                    present = 1,
+                    workingDays = 1
+                )
+            )
+        )
+
+        val result = repository.getMonthlyAttendanceData(11, 2026)
+
+        assertTrue(result.isSuccess)
+        verify(attendanceDao).insertAll(
+            listOf(
+                AttendanceEntity(
+                    id = "att-month-1",
+                    employeeId = "emp-123",
+                    date = today,
+                    checkInTime = "${today}T09:15:00.000Z",
+                    checkOutTime = "${today}T18:15:00.000Z",
+                    totalMinutes = 540,
+                    status = "PRESENT_LATE_ALLOWANCE",
+                    notes = "Admin verified",
+                    checkInSelfieUrl = null,
+                    checkInLocation = "Lat 18.5204, Lng 73.8567",
+                    isSynced = true,
+                    source = "ADMIN_MARKED",
+                    manualOverride = true,
+                    reviewedBy = "admin-1",
+                    reviewerName = "Manager",
+                    isAttendanceCompleted = true
+                )
+            )
+        )
+
+        val errBody = """{"success":false,"error":"Unauthorized"}""".toResponseBody("application/json".toMediaType())
+        `when`(apiService.getMonthlyAttendance(10, 2026)).thenReturn(Response.error(401, errBody))
+        val failed = repository.getMonthlyAttendanceData(10, 2026)
+        assertTrue(failed.isFailure)
+    }
+
+    @Test
     fun syncManager_usesSingleSharedUniqueWorkName() {
         assertEquals("offline_sync_work", SyncManager.SYNC_WORK_NAME)
     }

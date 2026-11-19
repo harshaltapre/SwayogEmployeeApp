@@ -35,6 +35,70 @@ import {
   verifyFaceToken,
 } from "./attendancePolicyEngine.js";
 
+let attendanceSchemaEnsuredPromise: Promise<void> | null = null;
+
+/**
+ * Ensures additive attendance idempotency / smart-attendance columns & tables exist
+ * even if a deployment ran without RUN_PRISMA_MIGRATE=1. Strictly non-destructive.
+ */
+async function ensureAttendanceSchemaReady(): Promise<void> {
+  if (!attendanceSchemaEnsuredPromise) {
+    attendanceSchemaEnsuredPromise = (async () => {
+      try {
+        await prisma.$executeRawUnsafe(`ALTER TABLE "AttendanceRecord" ADD COLUMN IF NOT EXISTS "lateSequenceNumber" INTEGER;`);
+        await prisma.$executeRawUnsafe(`ALTER TABLE "AttendanceRecord" ADD COLUMN IF NOT EXISTS "lateAllowanceConsumed" BOOLEAN NOT NULL DEFAULT false;`);
+        await prisma.$executeRawUnsafe(`ALTER TABLE "AttendanceRecord" ADD COLUMN IF NOT EXISTS "faceVerified" BOOLEAN NOT NULL DEFAULT false;`);
+        await prisma.$executeRawUnsafe(`ALTER TABLE "AttendanceRecord" ADD COLUMN IF NOT EXISTS "gpsVerified" BOOLEAN NOT NULL DEFAULT false;`);
+        await prisma.$executeRawUnsafe(`ALTER TABLE "AttendanceRecord" ADD COLUMN IF NOT EXISTS "locationAccuracy" DOUBLE PRECISION;`);
+        await prisma.$executeRawUnsafe(`ALTER TABLE "AttendanceRecord" ADD COLUMN IF NOT EXISTS "policyVersionUsed" TEXT;`);
+        await prisma.$executeRawUnsafe(`ALTER TABLE "AttendanceRecord" ADD COLUMN IF NOT EXISTS "clientUploadId" TEXT;`);
+        await prisma.$executeRawUnsafe(`ALTER TABLE "AttendanceRecord" ADD COLUMN IF NOT EXISTS "checkOutClientUploadId" TEXT;`);
+        await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "AttendanceRecord_employeeId_clientUploadId_key" ON "AttendanceRecord"("employeeId", "clientUploadId");`);
+        await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "AttendanceRecord_employeeId_checkOutClientUploadId_key" ON "AttendanceRecord"("employeeId", "checkOutClientUploadId");`);
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "DeviceSyncHealth" (
+            "id" TEXT NOT NULL,
+            "employeeId" TEXT NOT NULL,
+            "appVersionCode" INTEGER NOT NULL DEFAULT 0,
+            "appVersionName" TEXT,
+            "androidVersion" TEXT,
+            "deviceModel" TEXT,
+            "pendingOutboxCount" INTEGER NOT NULL DEFAULT 0,
+            "failedOutboxCount" INTEGER NOT NULL DEFAULT 0,
+            "lastSuccessfulSyncAt" TIMESTAMP(3),
+            "lastSyncStatus" TEXT NOT NULL DEFAULT 'UNKNOWN',
+            "lastSyncError" TEXT,
+            "lastHttpCode" INTEGER,
+            "tokenRefreshFailures" INTEGER NOT NULL DEFAULT 0,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "DeviceSyncHealth_pkey" PRIMARY KEY ("id")
+          );
+        `);
+        await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "DeviceSyncHealth_employeeId_key" ON "DeviceSyncHealth"("employeeId");`);
+      } catch (err) {
+        attendanceSchemaEnsuredPromise = null;
+        console.warn("[AttendanceSchemaGuard] Non-fatal schema check warning:", err);
+      }
+    })();
+  }
+  await attendanceSchemaEnsuredPromise;
+}
+
+async function withAttendanceSchemaGuard<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err: any) {
+    if (err?.code === "P2022" || err?.code === "P2021") {
+      console.warn(`[AttendanceSchemaGuard] Detected missing schema object (${err.code}); applying additive guard and retrying`);
+      attendanceSchemaEnsuredPromise = null;
+      await ensureAttendanceSchemaReady();
+      return await fn();
+    }
+    throw err;
+  }
+}
+
 export async function getRulesAsync() {
   try {
     let dbRule = await prisma.attendanceRule.findUnique({
@@ -245,6 +309,22 @@ export class AttendanceValidationError extends Error {
 }
 
 export async function checkIn(
+  employeeId: string,
+  opts?: {
+    selfieDataUrl?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    accuracy?: number | null;
+    faceVerified?: boolean;
+    verificationToken?: string | null;
+    matchConfidence?: number | null;
+    clientUploadId?: string | null;
+  }
+) {
+  return withAttendanceSchemaGuard(() => checkInInternal(employeeId, opts));
+}
+
+async function checkInInternal(
   employeeId: string,
   opts?: {
     selfieDataUrl?: string | null;
@@ -785,6 +865,10 @@ export function isRecordAttendanceCompleted(record: {
 }
 
 export async function checkOut(employeeId: string, opts?: { clientUploadId?: string | null }) {
+  return withAttendanceSchemaGuard(() => checkOutInternal(employeeId, opts));
+}
+
+async function checkOutInternal(employeeId: string, opts?: { clientUploadId?: string | null }) {
   const today = startOfDay(new Date());
   const clientUploadId = opts?.clientUploadId?.trim() || null;
 
@@ -920,7 +1004,7 @@ export async function upsertSyncHealthAsync(
     tokenRefreshFailures?: number;
   }
 ) {
-  return prisma.deviceSyncHealth.upsert({
+  return withAttendanceSchemaGuard(() => prisma.deviceSyncHealth.upsert({
     where: { employeeId },
     create: {
       employeeId,
@@ -949,16 +1033,20 @@ export async function upsertSyncHealthAsync(
       lastHttpCode: payload.lastHttpCode ?? null,
       tokenRefreshFailures: payload.tokenRefreshFailures ?? 0,
     },
-  });
+  }));
 }
 
 export async function listSyncHealthAsync() {
-  return prisma.deviceSyncHealth.findMany({
+  return withAttendanceSchemaGuard(() => prisma.deviceSyncHealth.findMany({
     orderBy: { updatedAt: "desc" },
-  });
+  }));
 }
 
 export async function getTodayAttendance(employeeId: string) {
+  return withAttendanceSchemaGuard(() => getTodayAttendanceInternal(employeeId));
+}
+
+async function getTodayAttendanceInternal(employeeId: string) {
   const today = startOfDay(new Date());
   const record = await prisma.attendanceRecord.findUnique({
     where: { employeeId_date: { employeeId, date: today } },
@@ -1013,8 +1101,13 @@ export async function getTodayAttendance(employeeId: string) {
 }
 
 export async function getMonthlyAttendance(employeeId: string, month: number, year: number) {
-  const start = startOfMonth(new Date(year, month - 1));
-  const end = endOfMonth(new Date(year, month - 1));
+  return withAttendanceSchemaGuard(() => getMonthlyAttendanceInternal(employeeId, month, year));
+}
+
+async function getMonthlyAttendanceInternal(employeeId: string, month: number, year: number) {
+  // Use UTC date boundaries matching PostgreSQL @db.Date columns regardless of server timezone
+  const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
   const [records, checkIns, holidays, rules] = await Promise.all([
     prisma.attendanceRecord.findMany({
@@ -1072,10 +1165,10 @@ export async function getMonthlyAttendance(employeeId: string, month: number, ye
   const weeklyOffDays: number[] = rules.weeklyOffDays && rules.weeklyOffDays.length > 0 ? rules.weeklyOffDays : [0];
   const workingDays = getWorkingDays(start, end, holidayDateSet, weeklyOffDays);
 
-  const presentCount = records.filter((r) => r.status === "PRESENT").length;
+  const presentCount = records.filter((r) => r.status === "PRESENT" || r.status === "PRESENT_LATE_ALLOWANCE").length;
   const lateCount = records.filter((r) => r.status === "LATE").length;
   const halfDays = records.filter((r) => r.status === "HALF_DAY").length;
-  const leaves = records.filter((r) => r.status === "LEAVE").length;
+  const leaves = records.filter((r) => r.status === "LEAVE" || r.status === "ON_LEAVE").length;
   const adminAssignedCount = records.filter((r) => r.source === "ADMIN_ASSIGNED").length;
   const explicitAbsent = records.filter((r) => r.status === "ABSENT").length;
 

@@ -445,15 +445,71 @@ router.post("/profile-photo", authenticateAccessToken, asyncHandler(async (req, 
 
 router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
   try {
-    const { selfie, latitude, longitude, accuracy, matchConfidence, matchDistance, livenessVerified, verificationToken, clientUploadId: bodyUploadId } = req.body;
+    const {
+      selfie,
+      latitude,
+      longitude,
+      accuracy,
+      matchConfidence,
+      matchDistance,
+      livenessVerified,
+      verificationToken,
+      liveDescriptor,
+      clientUploadId: bodyUploadId,
+    } = req.body;
     const idempotencyKey = (req.header("Idempotency-Key") || bodyUploadId || null) as string | null;
 
-    // Security: Do not accept client-side boolean flags as proof of face verification
-    // Require a valid server-issued verification token when face verification is enabled
+    // Security: Never trust client boolean flags as proof of face verification.
+    // Require either a valid server-issued verificationToken OR perform live server-side
+    // verification of the submitted 128-element descriptor against PostgreSQL FaceEnrollment.
     const rules = await AttendanceService.getRulesAsync();
-    if (rules.faceRequired && !verificationToken) {
-      res.status(422).json({ success: false, code: "FACE_VERIFICATION_REQUIRED", error: "Face verification is required. Please complete face verification before checking in." });
-      return;
+    let effectiveVerificationToken: string | null = verificationToken || null;
+
+    if (rules.faceRequired && !effectiveVerificationToken) {
+      if (Array.isArray(liveDescriptor) && liveDescriptor.length === 128 && livenessVerified === true) {
+        const employeeId = req.auth!.userId;
+        const enrollment = await prisma.faceEnrollment.findUnique({ where: { employeeId } });
+        if (!enrollment || enrollment.isDeleted) {
+          res.status(404).json({
+            success: false,
+            code: "FACE_NOT_ENROLLED",
+            error: "No active face enrollment found for this employee. Please complete face enrollment in Settings first.",
+          });
+          return;
+        }
+        const threshold = rules.faceMatchThreshold || 0.55;
+        const desc1 = enrollment.descriptor1 as number[];
+        const desc2 = enrollment.descriptor2 as number[];
+        const desc3 = enrollment.descriptor3 as number[];
+        const bestScore = Math.max(
+          calculateCosineSimilarity(liveDescriptor, desc1),
+          calculateCosineSimilarity(liveDescriptor, desc2),
+          calculateCosineSimilarity(liveDescriptor, desc3)
+        );
+        if (bestScore < threshold) {
+          res.status(403).json({
+            success: false,
+            code: "FACE_MATCH_FAILED",
+            error: `Face match score too low (${(bestScore * 100).toFixed(1)}%). Expected at least ${(threshold * 100).toFixed(0)}%.`,
+            matchScore: bestScore,
+          });
+          return;
+        }
+        const issued = generateFaceVerificationToken({
+          employeeId,
+          matchScore: bestScore,
+          livenessVerified: true,
+          expiresInSeconds: 300,
+        });
+        effectiveVerificationToken = issued.token;
+      } else {
+        res.status(422).json({
+          success: false,
+          code: "FACE_VERIFICATION_REQUIRED",
+          error: "Face verification is required. Please complete face verification before checking in.",
+        });
+        return;
+      }
     }
 
     const result = await AttendanceService.checkIn(req.auth!.userId, {
@@ -462,7 +518,7 @@ router.post("/check-in", employeeAuth, asyncHandler(async (req, res) => {
       longitude: longitude ? Number(longitude) : null,
       accuracy: accuracy ? Number(accuracy) : null,
       faceVerified: false, // Will be set to true only after valid token verification in service
-      verificationToken: verificationToken || null,
+      verificationToken: effectiveVerificationToken,
       clientUploadId: idempotencyKey,
     });
 

@@ -100,6 +100,7 @@ fun AttendanceScreen(
     val lateAllowanceSummary by viewModel.lateAllowanceSummary.collectAsState()
     val isCheckInProcessing by viewModel.isCheckInProcessing.collectAsState()
     val isCheckOutProcessing by viewModel.isCheckOutProcessing.collectAsState()
+    val syncError by viewModel.syncError.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
     var isLocatingForCheckIn by remember { mutableStateOf(false) }
@@ -566,7 +567,11 @@ fun AttendanceScreen(
                 showBackButton = true,
                 onBackClick = onNavigateBack,
                 actions = {
-                    IconButton(onClick = { viewModel.loadData() }) {
+                    IconButton(onClick = {
+                        viewModel.loadData(force = true)
+                        viewModel.loadMonth(calendarMonth + 1, calendarYear)
+                        viewModel.refreshOvertime()
+                    }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                     if (onNavigateToAlarmSettings != null) {
@@ -590,9 +595,43 @@ fun AttendanceScreen(
                 pendingCount = pendingSyncCount,
                 onClick = {
                     Toast.makeText(context, "Refreshing attendance records...", Toast.LENGTH_SHORT).show()
-                    viewModel.loadData()
+                    viewModel.loadData(force = true)
+                    viewModel.loadMonth(calendarMonth + 1, calendarYear)
                 }
             )
+
+            if (!syncError.isNullOrBlank()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Sync failed: $syncError",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = {
+                                viewModel.loadData(force = true)
+                                viewModel.loadMonth(calendarMonth + 1, calendarYear)
+                            }
+                        ) {
+                            Text("Retry")
+                        }
+                    }
+                }
+            }
             
             com.swayog.employee.presentation.common.responsive.ResponsiveContentContainer(
                 maxWidth = if (windowSize.isTablet) 840.dp else androidx.compose.ui.unit.Dp.Unspecified
@@ -640,7 +679,7 @@ fun AttendanceScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
 
-                                val isNotCheckedIn = record == null || (record.checkInTime == null && !record.isAdminMarked && record.status != "PRESENT" && record.status != "LATE" && record.status != "HALF_DAY" && record.status != "HALF-DAY" && record.status != "LEAVE")
+                                val isNotCheckedIn = record == null || (record.checkInTime == null && !record.isAdminMarked && record.status != "PRESENT" && record.status != "PRESENT_LATE_ALLOWANCE" && record.status != "LATE" && record.status != "HALF_DAY" && record.status != "HALF-DAY" && record.status != "LEAVE" && record.status != "ON_LEAVE")
 
                                 val statusText = when {
                                     record == null && isPast630Today -> "Absent (Not Checked In till 6:30 PM)"
@@ -1385,13 +1424,13 @@ fun AttendanceScreen(
                         val presentCount: Int = remember(filteredRecords) {
                             filteredRecords.count { rec ->
                                 val s = rec.status.uppercase()
-                                s == "PRESENT" || s == "LATE" || s == "HALF_DAY" || s == "HALF-DAY"
+                                s == "PRESENT" || s == "PRESENT_LATE_ALLOWANCE" || s == "LATE" || s == "HALF_DAY" || s == "HALF-DAY"
                             }
                         }
                         val fullPresentCount: Int = remember(filteredRecords) {
                             filteredRecords.count { rec ->
                                 val s = rec.status.uppercase()
-                                s == "PRESENT" || s == "LATE"
+                                s == "PRESENT" || s == "PRESENT_LATE_ALLOWANCE" || s == "LATE"
                             }
                         }
                         val halfDaysCount: Int = remember(filteredRecords) {
@@ -1400,7 +1439,13 @@ fun AttendanceScreen(
                                 s == "HALF_DAY" || s == "HALF-DAY"
                             }
                         }
-                        val absentCount: Int = maxOf(0, workingDays - fullPresentCount - halfDaysCount)
+                        val leaveCount: Int = remember(filteredRecords) {
+                            filteredRecords.count { rec ->
+                                val s = rec.status.uppercase()
+                                s == "LEAVE" || s == "ON_LEAVE"
+                            }
+                        }
+                        val absentCount: Int = maxOf(0, workingDays - fullPresentCount - halfDaysCount - leaveCount)
                         val attendancePercent: Int = if (workingDays > 0) {
                             Math.round(((fullPresentCount + halfDaysCount * 0.5) / workingDays.toDouble()) * 100).toInt()
                         } else 0
@@ -1564,15 +1609,15 @@ fun AttendanceScreen(
                                                 val isPast630Now = nowCal.get(Calendar.HOUR_OF_DAY) > 18 || (nowCal.get(Calendar.HOUR_OF_DAY) == 18 && nowCal.get(Calendar.MINUTE) >= 30)
                                                 val hasValidCheckIn = record?.checkInTime != null ||
                                                     (isToday && todayAttendance?.checkInTime != null) ||
-                                                    recordStatus == "PRESENT" || recordStatus == "LATE" || recordStatus == "HALF_DAY" || recordStatus == "HALF-DAY" || recordStatus == "LEAVE"
+                                                    recordStatus == "PRESENT" || recordStatus == "PRESENT_LATE_ALLOWANCE" || recordStatus == "LATE" || recordStatus == "HALF_DAY" || recordStatus == "HALF-DAY" || recordStatus == "LEAVE" || recordStatus == "ON_LEAVE"
 
                                                 val isAutoAbsent = !isSunday && !isHoliday && !hasValidCheckIn && (isPastDate || (isToday && isPast630Now))
 
                                                 val dotColor = when {
-                                                    recordStatus == "PRESENT" -> Color(0xFF0B6E4F)
+                                                    recordStatus == "PRESENT" || recordStatus == "PRESENT_LATE_ALLOWANCE" -> Color(0xFF0B6E4F)
                                                     recordStatus == "LATE" -> Color(0xFFD1603D)
                                                     recordStatus == "ABSENT" || isAutoAbsent -> Color(0xFFF44336)
-                                                    recordStatus == "LEAVE" -> Color(0xFF386FA4)
+                                                    recordStatus == "LEAVE" || recordStatus == "ON_LEAVE" -> Color(0xFF386FA4)
                                                     recordStatus == "HALF_DAY" || recordStatus == "HALF-DAY" -> Color(0xFF7E22CE)
                                                     !hasRecord && isHoliday -> Color(0xFFF43F5E) // Festival Holiday
                                                     !hasRecord && isSunday -> Color(0xFFF59E0B) // Sunday Holiday
@@ -1587,9 +1632,10 @@ fun AttendanceScreen(
                                                     isSunday -> "Sun Off"
                                                     recordStatus == "ABSENT" || isAutoAbsent -> "Absent"
                                                     recordStatus == "PRESENT" -> "Present"
+                                                    recordStatus == "PRESENT_LATE_ALLOWANCE" -> "Late OK"
                                                     recordStatus == "LATE" -> "Late"
                                                     recordStatus == "HALF_DAY" || recordStatus == "HALF-DAY" -> "Half Day"
-                                                    recordStatus == "LEAVE" -> "Leave"
+                                                    recordStatus == "LEAVE" || recordStatus == "ON_LEAVE" -> "Leave"
                                                     else -> null
                                                 }
 

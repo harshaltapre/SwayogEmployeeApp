@@ -69,11 +69,13 @@ class DashboardViewModel @Inject constructor(
     val performance: StateFlow<com.swayog.employee.data.model.PerformanceSnapshot?> = _performance.asStateFlow()
     
     init {
+        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
         viewModelScope.launch {
-            dataStoreManager.userId.filterNotNull().collect { id ->
-                taskRepository.getTasksByEmployeeId(id).collect { localTasks ->
-                    _tasks.value = localTasks
-                }
+            dataStoreManager.userId.flatMapLatest { id ->
+                if (id.isNullOrBlank()) flowOf(emptyList())
+                else taskRepository.getTasksByEmployeeId(id)
+            }.collect { localTasks ->
+                _tasks.value = localTasks
             }
         }
 

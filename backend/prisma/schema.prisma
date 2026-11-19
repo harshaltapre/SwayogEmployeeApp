@@ -78,6 +78,9 @@ model User {
   workSubmissions            WorkSubmission[]
   liaisoning_applications    liaisoning_applications[]
   liaisoning_audit_logs      liaisoning_audit_logs[]
+  monthlyLateCounters        MonthlyLateCounter[]
+  attendanceAuditEvents      AttendanceAuditEvent[]            @relation("audit_events_employee")
+  actedAttendanceAudits      AttendanceAuditEvent[]            @relation("audit_events_actor")
 
   @@index([lockoutUntil])
   @@index([departmentId])
@@ -510,6 +513,12 @@ model AttendanceRecord {
   checkOutSource        String?
   autoClosedAt          DateTime?
   autoClosureReason      String?
+  lateSequenceNumber    Int?
+  lateAllowanceConsumed Boolean          @default(false)
+  faceVerified          Boolean          @default(false)
+  gpsVerified           Boolean          @default(false)
+  locationAccuracy      Float?
+  policyVersionUsed     String?
   clientUploadId         String?
   checkOutClientUploadId String?
   employee              User             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -873,17 +882,55 @@ model Payment {
 model AttendanceRule {
   id                       String   @id @default("default")
   shiftStart               String   @default("09:15")
+  reportingTime            String   @default("10:30")
+  monthlyLateAllowance     Int      @default(3)
+  timezone                 String   @default("Asia/Kolkata")
   faceRequired             Boolean  @default(true)
   geofenceEnabled          Boolean  @default(false)
+  geofenceActive           Boolean  @default(true)
   officeLat                Float    @default(21.175401747696093)
   officeLng                Float    @default(79.05111036149488)
   officeRadius             Float    @default(150.0)
+  minLocationAccuracy      Float    @default(100.0)
   faceMatchThreshold       Float    @default(0.55)
+  policyStatus             String   @default("ACTIVE")
+  effectiveDate            DateTime @default(now())
   updatedAt                DateTime @updatedAt
   dailyWorkingHours        Float    @default(9.0)
   weeklyOffDays            Int[]    @default([0])
   shiftEnd                 String   @default("18:30")
   autoCheckoutGraceMinutes Int      @default(30)
+}
+
+model MonthlyLateCounter {
+  id           String   @id @default(uuid())
+  employeeId   String
+  yearMonth    String
+  lateDaysUsed Int      @default(0)
+  halfDayCount Int      @default(0)
+  updatedAt    DateTime @updatedAt
+  employee     User     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, yearMonth])
+  @@index([employeeId])
+}
+
+model AttendanceAuditEvent {
+  id             String   @id @default(uuid())
+  employeeId     String
+  date           DateTime @db.Date
+  eventType      String
+  previousStatus String?
+  newStatus      String?
+  actorId        String?
+  reason         String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  employee       User     @relation("audit_events_employee", fields: [employeeId], references: [id], onDelete: Cascade)
+  actor          User?    @relation("audit_events_actor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([date])
 }
 
 model Holiday {
@@ -1620,13 +1667,17 @@ enum CommissionStatus {
 
 enum AttendanceStatus {
   PRESENT
+  PRESENT_LATE_ALLOWANCE
   ABSENT
   HALF_DAY
   LATE
   LEAVE
+  ON_LEAVE
   HOLIDAY
   WEEKLY_OFF
   COMP_OFF
+  PENDING_VERIFICATION
+  MANUAL_REVIEW
 }
 
 enum WorkStatus {

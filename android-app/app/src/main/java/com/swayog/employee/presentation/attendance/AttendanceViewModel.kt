@@ -13,10 +13,13 @@ import com.swayog.employee.data.model.Task
 import com.swayog.employee.data.repository.AttendanceRepository
 import com.swayog.employee.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.async
@@ -162,19 +165,23 @@ class AttendanceViewModel @Inject constructor(
         loadData()
         refreshOvertime()
         startLiveSessionTimer()
+        @OptIn(ExperimentalCoroutinesApi::class)
         viewModelScope.launch {
-            dataStoreManager.userId.filterNotNull().collect { id ->
-                attendanceRepository.getAttendanceByEmployeeId(id).collect { records ->
-                    _monthlyRecords.value = records
-                }
+            dataStoreManager.userId.flatMapLatest { id ->
+                if (id.isNullOrBlank()) flowOf(emptyList())
+                else attendanceRepository.getAttendanceByEmployeeId(id)
+            }.collect { records ->
+                _monthlyRecords.value = records
             }
         }
 
+        @OptIn(ExperimentalCoroutinesApi::class)
         viewModelScope.launch {
-            dataStoreManager.userId.filterNotNull().collect { id ->
-                taskRepository.getActiveTasksByEmployeeId(id).collect { tasks ->
-                    _currentTask.value = tasks.firstOrNull()
-                }
+            dataStoreManager.userId.flatMapLatest { id ->
+                if (id.isNullOrBlank()) flowOf(emptyList())
+                else taskRepository.getActiveTasksByEmployeeId(id)
+            }.collect { tasks ->
+                _currentTask.value = tasks.firstOrNull()
             }
         }
     }
@@ -300,9 +307,21 @@ class AttendanceViewModel @Inject constructor(
 
                     result.onSuccess { data ->
                         _monthlySummary.value = data
-                        // Use only admin-declared holidays returned by the backend
                         _holidays.value = data.holidays
-                    }.onFailure {
+                        if (data.records.isNotEmpty()) {
+                            // Merge authoritative month records immediately so the calendar never
+                            // flashes "all absent" while waiting for Room Flow recomposition.
+                            val normalizedNew = data.records.map { rec ->
+                                rec.copy(date = if (rec.date.length >= 10) rec.date.substring(0, 10) else rec.date)
+                            }
+                            val existingById = _monthlyRecords.value.associateBy { it.id }.toMutableMap()
+                            normalizedNew.forEach { rec -> existingById[rec.id] = rec }
+                            _monthlyRecords.value = existingById.values.sortedByDescending { it.date }
+                        }
+                        _syncError.value = null
+                    }.onFailure { err ->
+                        _syncError.value = err.message ?: "Unable to fetch monthly attendance from server"
+                        android.util.Log.w("AttendanceViewModel", "loadMonth failed: ${err.message}")
                         // If monthly data fetch failed, try fetching holidays directly
                         // as a fallback so the calendar still reflects declared holidays.
                         val holidayResult = attendanceRepository.getHolidays(month, year)

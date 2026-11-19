@@ -91,15 +91,28 @@ object ErrorUtils {
     }
 
     /**
-     * Formats an unsuccessful Retrofit response.
+     * Formats an unsuccessful Retrofit response, extracting clean JSON error messages when available.
      */
     fun <T> formatResponseError(response: Response<T>): String {
-        val errorBody = try {
-            response.errorBody()?.string()?.take(100)
+        val rawBody = try {
+            response.errorBody()?.string()
         } catch (e: Exception) {
-            "Could not read error body"
+            null
         }
-        val message = if (response.message().isNullOrBlank()) "No Message" else response.message()
-        return "HTTP ${response.code()} $message: ${errorBody ?: "Empty body"}"
+        if (!rawBody.isNullOrBlank()) {
+            try {
+                val json = org.json.JSONObject(rawBody)
+                val extracted = json.optString("error").takeIf { it.isNotBlank() }
+                    ?: json.optString("message").takeIf { it.isNotBlank() }
+                if (!extracted.isNullOrBlank()) {
+                    return "$extracted (HTTP ${response.code()})"
+                }
+            } catch (_: Exception) {
+                // Not a JSON object; fall back to raw snippet below
+            }
+        }
+        val snippet = rawBody?.take(140) ?: "Empty body"
+        val message = if (response.message().isNullOrBlank()) "Error" else response.message()
+        return "HTTP ${response.code()} $message: $snippet"
     }
 }
