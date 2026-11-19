@@ -80,10 +80,19 @@ class AttendanceRepository @Inject constructor(
                 val record = response.body()!!.record
                 if (record != null) {
                     val dateKey = formatDate(record.date)
-                    val existingLoc = try { attendanceDao.getTodayAttendance(userId, dateKey)?.checkInLocation } catch (_: Exception) { null }
+                    val existingLocal = try { attendanceDao.getTodayAttendance(userId, dateKey) } catch (_: Exception) { null }
+                    val existingLoc = existingLocal?.checkInLocation
                     val locStr = if (record.latitude != null && record.longitude != null) {
                         "Lat ${record.latitude}, Lng ${record.longitude}"
                     } else existingLoc
+
+                    // Conflict resolution: preserve an unsynced local check-out if the server hasn't received it yet
+                    val hasUnsyncedLocalCheckOut = existingLocal != null &&
+                        !existingLocal.isSynced &&
+                        !existingLocal.checkOutTime.isNullOrBlank() &&
+                        record.checkOutTime.isNullOrBlank()
+                    val effectiveCheckOutTime = if (hasUnsyncedLocalCheckOut) existingLocal!!.checkOutTime else record.checkOutTime
+                    val effectiveIsSynced = !hasUnsyncedLocalCheckOut
 
                     attendanceDao.deleteStaleTodayRowsExcludingId(userId, dateKey, record.id)
                     attendanceDao.insertAttendance(
@@ -92,20 +101,23 @@ class AttendanceRepository @Inject constructor(
                             employeeId = userId,
                             date = dateKey,
                             checkInTime = record.checkInTime,
-                            checkOutTime = record.checkOutTime,
+                            checkOutTime = effectiveCheckOutTime,
                             totalMinutes = record.totalMinutes,
                             status = record.status,
                             notes = record.notes,
                             checkInSelfieUrl = null,
                             checkInLocation = locStr,
-                            isSynced = true,
+                            isSynced = effectiveIsSynced,
                             source = record.source,
                             manualOverride = record.manualOverride,
                             reviewedBy = record.reviewedBy,
                             reviewerName = record.reviewerName,
-                            isAttendanceCompleted = record.isAttendanceCompleted
+                            isAttendanceCompleted = record.isAttendanceCompleted || !effectiveCheckOutTime.isNullOrBlank()
                         )
                     )
+                    if (hasUnsyncedLocalCheckOut) {
+                        syncManager.scheduleSync()
+                    }
                 } else {
                     val hasPendingCheckIn = outboxQueueDao.getPendingItemsForUser(userId)
                         .any { it.endpoint.contains("check-in") }

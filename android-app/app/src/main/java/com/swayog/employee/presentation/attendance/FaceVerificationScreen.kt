@@ -47,11 +47,13 @@ fun FaceVerificationScreen(
 
     val faceEmbeddingHelper = remember { FaceEmbeddingHelper(context) }
     val analyzerExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    var activeFaceAnalyzer by remember { mutableStateOf<FaceAnalyzer?>(null) }
     var recognitionTargets by remember { mutableStateOf<List<List<Float>>>(emptyList()) }
     var isCheckingEnrollment by remember { mutableStateOf(true) }
     
     DisposableEffect(Unit) {
         onDispose {
+            activeFaceAnalyzer?.close()
             faceEmbeddingHelper.close()
             analyzerExecutor.shutdown()
         }
@@ -139,9 +141,7 @@ fun FaceVerificationScreen(
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
 
-                    imageAnalyzer.setAnalyzer(
-                        analyzerExecutor,
-                        FaceAnalyzer(faceEmbeddingHelper) { face, embedding ->
+                    val analyzer = FaceAnalyzer(faceEmbeddingHelper) { face, embedding ->
                             if (isProcessing) return@FaceAnalyzer
                             
                             if (face == null || embedding == null) {
@@ -198,7 +198,8 @@ fun FaceVerificationScreen(
                                 }
                             }
                         }
-                    )
+                    activeFaceAnalyzer = analyzer
+                    imageAnalyzer.setAnalyzer(analyzerExecutor, analyzer)
 
                     val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 

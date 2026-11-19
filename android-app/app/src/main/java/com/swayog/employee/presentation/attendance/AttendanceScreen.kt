@@ -398,6 +398,9 @@ fun AttendanceScreen(
                     val outputStream = ByteArrayOutputStream()
                     watermarkedBitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
                     val base64String = "data:image/jpeg;base64," + Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+                    if (watermarkedBitmap != bitmap && !watermarkedBitmap.isRecycled) {
+                        watermarkedBitmap.recycle()
+                    }
 
                     withContext(Dispatchers.Main) {
                         viewModel.checkIn(
@@ -2020,6 +2023,8 @@ fun AttendanceScreen(
                                                         bitmap.compress(Bitmap.CompressFormat.JPEG, 70, stream)
                                                         val byteArray = stream.toByteArray()
                                                         val base64Selfie = "data:image/jpeg;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP)
+                                                        if (bitmap != rawBitmap && !bitmap.isRecycled) bitmap.recycle()
+                                                        if (!rawBitmap.isRecycled) rawBitmap.recycle()
                                                         try { photoFile.delete() } catch (_: Exception) {}
 
                                                         withContext(Dispatchers.Main) {

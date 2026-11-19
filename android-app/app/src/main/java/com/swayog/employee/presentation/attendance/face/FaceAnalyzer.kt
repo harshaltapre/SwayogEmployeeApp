@@ -78,12 +78,18 @@ class FaceAnalyzer(
                 }
                 .addOnCompleteListener {
                     imageProxy.close()
-                    if (bitmap != rawBitmap) bitmap.recycle() // Clean up rotated bitmap
-                    rawBitmap.recycle() // Clean up raw bitmap
+                    if (bitmap != rawBitmap && !bitmap.isRecycled) bitmap.recycle() // Clean up rotated bitmap
+                    if (!rawBitmap.isRecycled) rawBitmap.recycle() // Clean up raw bitmap
                     isProcessing = false
                 }
         } else {
             imageProxy.close()
         }
+    }
+
+    fun close() {
+        try {
+            detector.close()
+        } catch (_: Exception) {}
     }
 }

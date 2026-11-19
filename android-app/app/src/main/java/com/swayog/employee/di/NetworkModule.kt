@@ -228,9 +228,36 @@ object NetworkModule {
         val httpCacheDir = java.io.File(context.cacheDir, "http_cache")
         val cache = okhttp3.Cache(httpCacheDir, cacheSize)
 
+        val packetTelemetryInterceptor = Interceptor { chain ->
+            val req = chain.request()
+            val startNs = System.nanoTime()
+            val reqBytes = try { req.body?.contentLength() ?: 0L } catch (_: Exception) { 0L }
+            try {
+                val res = chain.proceed(req)
+                val durationMs = (System.nanoTime() - startNs) / 1_000_000L
+                if (BuildConfig.DEBUG || durationMs > 1000L || !res.isSuccessful) {
+                    val resBytes = res.header("Content-Length")?.toLongOrNull() ?: -1L
+                    val encoding = res.header("Content-Encoding") ?: "identity"
+                    Log.d(
+                        "PACKET_TRANSFER",
+                        "${req.method} ${req.url.encodedPath} -> HTTP ${res.code} (${durationMs}ms, tx=${reqBytes}B, rx=${resBytes}B, enc=$encoding)"
+                    )
+                }
+                res
+            } catch (e: Exception) {
+                val durationMs = (System.nanoTime() - startNs) / 1_000_000L
+                Log.w(
+                    "PACKET_TRANSFER",
+                    "${req.method} ${req.url.encodedPath} -> FAILED after ${durationMs}ms (tx=${reqBytes}B): ${e.javaClass.simpleName}: ${e.message}"
+                )
+                throw e
+            }
+        }
+
         return OkHttpClient.Builder()
             .cache(cache)
             .addInterceptor(authInterceptor)
+            .addInterceptor(packetTelemetryInterceptor)
             .addInterceptor(loggingInterceptor)
             .retryOnConnectionFailure(true)
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
