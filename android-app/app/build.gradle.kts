@@ -59,10 +59,10 @@ android {
         targetSdk = 35
         versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
             ?: (localProperties.getProperty("versionCode"))?.toIntOrNull()
-            ?: 53 // Build 53 - Smart Attendance System
+            ?: 65 // Build 65 - Attendance Sync & Token Reliability
         versionName = (project.findProperty("versionName") as? String)
             ?: (localProperties.getProperty("versionName"))
-            ?: "1.1.30"
+            ?: "1.7.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
