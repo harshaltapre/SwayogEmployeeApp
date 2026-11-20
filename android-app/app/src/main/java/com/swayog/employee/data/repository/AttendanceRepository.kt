@@ -159,35 +159,11 @@ class AttendanceRepository @Inject constructor(
         
         return if (isOnline) {
             try {
-                // Obtain server-signed face verification token when face verification is required
-                // and a live 128-d descriptor was captured on-device, without weakening verification.
-                var effectiveVerificationToken = verificationToken
-                if (effectiveVerificationToken.isNullOrBlank() && liveDescriptor != null && liveDescriptor.size == 128) {
-                    val verifyResult = obtainFaceVerificationToken(
-                        liveDescriptor = liveDescriptor,
-                        livenessVerified = livenessVerified || faceVerified
-                    )
-                    if (verifyResult.isSuccess) {
-                        effectiveVerificationToken = verifyResult.getOrNull()
-                    } else {
-                        val verifyErr = verifyResult.exceptionOrNull()
-                        if (verifyErr is FaceVerifyRouteUnavailableException) {
-                            // Live backend does not expose /attendance/face/verify yet;
-                            // proceed directly to /employee/attendance/check-in with liveDescriptor.
-                            android.util.Log.w("AttendanceRepository", "/attendance/face/verify returned 404; falling back to direct check-in with liveDescriptor")
-                        } else if (verifyErr != null && ErrorUtils.isNetworkException(verifyErr)) {
-                            return handleOfflineCheckIn(
-                                userId, selfie, latitude, longitude, matchConfidence, accuracy, null, clientUploadId
-                            )
-                        } else {
-                            val rules = try { dataStoreManager.attendanceRule.first() } catch (_: Exception) { AttendanceRule() }
-                            if (rules.faceRequired) {
-                                val errMsg = verifyErr?.message ?: "Face verification failed on server. Please try again."
-                                dataStoreManager.recordSyncFailure(errMsg, httpCode = 422)
-                                return Result.failure(OnlineSubmissionFailedException(errMsg))
-                            }
-                        }
-                    }
+                // If local face enrollment hasn't synced to the server yet, sync it before check-in
+                // so the server and web dashboard have the latest descriptors.
+                val faceSyncStatus = try { dataStoreManager.faceEnrollmentSyncStatus.first() } catch (_: Exception) { "SYNCED" }
+                if (faceSyncStatus == "PENDING" || faceSyncStatus == "FAILED") {
+                    syncLocalFaceEnrollmentToServer()
                 }
 
                 val request = CheckInRequest(
@@ -196,13 +172,27 @@ class AttendanceRepository @Inject constructor(
                     longitude = longitude,
                     matchConfidence = matchConfidence,
                     accuracy = accuracy,
-                    verificationToken = effectiveVerificationToken,
-                    faceVerified = !effectiveVerificationToken.isNullOrBlank() || faceVerified,
-                    livenessVerified = !effectiveVerificationToken.isNullOrBlank() || livenessVerified,
+                    verificationToken = verificationToken,
+                    faceVerified = !verificationToken.isNullOrBlank() || faceVerified || (liveDescriptor != null && liveDescriptor.size == 128),
+                    livenessVerified = !verificationToken.isNullOrBlank() || livenessVerified || (liveDescriptor != null && liveDescriptor.size == 128),
                     liveDescriptor = liveDescriptor,
                     clientUploadId = clientUploadId
                 )
-                val response = apiService.checkIn(request, clientUploadId)
+                var response = apiService.checkIn(request, clientUploadId)
+
+                // If server reports FACE_NOT_ENROLLED (404) or FACE_MATCH_FAILED (403) while valid local
+                // descriptors exist, sync local descriptors to server once and retry check-in.
+                if (!response.isSuccessful && (response.code() == 404 || response.code() == 403)) {
+                    val errSnippet = try { response.raw().peekBody(4096).string() } catch (_: Exception) { "" }
+                    if (errSnippet.contains("FACE_NOT_ENROLLED", ignoreCase = true) ||
+                        errSnippet.contains("FACE_MATCH_FAILED", ignoreCase = true) ||
+                        errSnippet.contains("No active face enrollment", ignoreCase = true)
+                    ) {
+                        if (syncLocalFaceEnrollmentToServer()) {
+                            response = apiService.checkIn(request, clientUploadId)
+                        }
+                    }
+                }
                 if (response.isSuccessful && response.body()?.result != null) {
                     val checkInResponse = response.body()!!.result!!
                     val attRecord = checkInResponse.attendanceRecord
@@ -854,6 +844,45 @@ class AttendanceRepository @Inject constructor(
      * If the server reports 404 (no enrollment on server yet) while valid local descriptors exist,
      * uploads the pending enrollment first and retries verification once.
      */
+    private suspend fun syncLocalFaceEnrollmentToServer(): Boolean {
+        val localDescriptors = try { dataStoreManager.faceDescriptors.first() } catch (_: Exception) { emptyList() }
+        val validLocal = localDescriptors.size == 3 && localDescriptors.all {
+            com.swayog.employee.data.local.preferences.DataStoreManager.isValidFaceDescriptor(
+                it,
+                com.swayog.employee.presentation.attendance.face.FaceEmbeddingHelper.EMBEDDING_DIMENSION
+            )
+        }
+        if (!validLocal) return false
+        return try {
+            val enrollResp = apiService.enrollFace(
+                FaceEnrollRequest(
+                    descriptor1 = localDescriptors[0],
+                    descriptor2 = localDescriptors[1],
+                    descriptor3 = localDescriptors[2],
+                    source = "MOBILE"
+                )
+            )
+            if (enrollResp.isSuccessful && enrollResp.body()?.success == true) {
+                val body = enrollResp.body()!!
+                val currentVersion = try { dataStoreManager.faceEnrollmentVersion.first() } catch (_: Exception) { 0 }
+                dataStoreManager.saveFaceEnrollment(
+                    descriptor1 = localDescriptors[0],
+                    descriptor2 = localDescriptors[1],
+                    descriptor3 = localDescriptors[2],
+                    enrollmentId = body.enrollmentId,
+                    syncVersion = body.syncVersion ?: (currentVersion + 1),
+                    updatedAt = body.enrolledAt,
+                    syncStatus = "SYNCED"
+                )
+                true
+            } else {
+                false
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private suspend fun obtainFaceVerificationToken(
         liveDescriptor: List<Float>,
         livenessVerified: Boolean
