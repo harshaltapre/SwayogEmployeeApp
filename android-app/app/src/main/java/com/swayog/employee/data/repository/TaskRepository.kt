@@ -10,6 +10,7 @@ import com.swayog.employee.data.local.entity.OutboxQueueEntity
 import com.swayog.employee.data.model.*
 import com.swayog.employee.core.util.ErrorUtils
 import com.swayog.employee.core.util.OfflinePendingException
+import com.swayog.employee.core.util.OnlineSubmissionFailedException
 import com.swayog.employee.core.util.LocalFileHelper
 import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.data.sync.SyncWorker
@@ -594,15 +595,22 @@ class TaskRepository @Inject constructor(
                     )
                     taskDao.updateTask(entity)
                     Result.success(completedTask)
+                } else if (response.code() in 400..499 && response.code() !in listOf(408, 429)) {
+                    val errorDetail = ErrorUtils.formatResponseError(response)
+                    Result.failure(OnlineSubmissionFailedException(errorDetail))
                 } else {
                     saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, clientUploadId, photoRemarks)
                     saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, photoRemarks)
                     Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
                 }
             } catch (e: Exception) {
-                saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, clientUploadId, photoRemarks)
-                saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, photoRemarks)
-                Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
+                if (ErrorUtils.isNetworkException(e)) {
+                    saveTaskCompletionToOutbox(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, clientUploadId, photoRemarks)
+                    saveCompletionLocally(taskId, completionMessage, completionDocumentUrl, beforeImageUrl, afterImageUrl, beforeLatitude, beforeLongitude, afterLatitude, afterLongitude, taskType, images, beforeImages, afterImages, maintenanceVideos, photoRemarks)
+                    Result.failure(OfflinePendingException("AMC Visit completed & saved locally on app! Syncing with server..."))
+                } else {
+                    Result.failure(OnlineSubmissionFailedException(ErrorUtils.formatException(e)))
+                }
             }
         }
         val isOnline = NetworkUtils.isNetworkAvailable(context)
@@ -754,9 +762,12 @@ class TaskRepository @Inject constructor(
                     )
                     taskDao.updateTask(entity)
                     Result.success(finalTask)
+                } else if (response.code() in 400..499 && response.code() !in listOf(408, 429)) {
+                    val errorDetail = ErrorUtils.formatResponseError(response)
+                    android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] Client error for task $taskId ($errorDetail) — surfacing error without queuing")
+                    Result.failure(OnlineSubmissionFailedException(errorDetail))
                 } else {
-                    // ⚠️ Server returned HTTP error (404, 403, 500, etc.).
-                    // Save locally as completed so the employee is not blocked, and queue to outbox for background sync!
+                    // ⚠️ Server returned 5xx/transient error — save locally & queue to outbox for background sync
                     val errorDetail = ErrorUtils.formatResponseError(response)
                     android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] Server error for task $taskId ($errorDetail) — saving locally & queuing to outbox")
                     saveTaskCompletionToOutbox(
@@ -797,44 +808,49 @@ class TaskRepository @Inject constructor(
                     Result.failure(OfflinePendingException("Task completed & saved locally on app! Syncing with server..."))
                 }
             } catch (e: Exception) {
-                // 🌐 Network exception or unexpected exception — queue to outbox & save locally.
-                android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] Exception for task $taskId — saving to outbox: ${e.message}")
-                saveTaskCompletionToOutbox(
-                    taskId = taskId,
-                    completionMessage = completionMessage,
-                    completionDocumentUrl = completionDocumentUrl,
-                    beforeImageUrl = beforeImageUrl,
-                    afterImageUrl = afterImageUrl,
-                    beforeLatitude = beforeLatitude,
-                    beforeLongitude = beforeLongitude,
-                    afterLatitude = afterLatitude,
-                    afterLongitude = afterLongitude,
-                    taskType = taskType,
-                    images = images,
-                    beforeImages = beforeImages,
-                    afterImages = afterImages,
-                    maintenanceVideos = maintenanceVideos,
-                    photoRemarks = photoRemarks,
-                    clientUploadId = clientUploadId
-                )
-                saveCompletionLocally(
-                    taskId = taskId,
-                    completionMessage = completionMessage,
-                    completionDocumentUrl = completionDocumentUrl,
-                    beforeImageUrl = beforeImageUrl,
-                    afterImageUrl = afterImageUrl,
-                    beforeLatitude = beforeLatitude,
-                    beforeLongitude = beforeLongitude,
-                    afterLatitude = afterLatitude,
-                    afterLongitude = afterLongitude,
-                    taskType = taskType,
-                    images = images,
-                    beforeImages = beforeImages,
-                    afterImages = afterImages,
-                    maintenanceVideos = maintenanceVideos,
-                    photoRemarks = photoRemarks
-                )
-                Result.failure(OfflinePendingException("Task completed & saved locally on app! Syncing with server..."))
+                if (ErrorUtils.isNetworkException(e)) {
+                    // 🌐 Network exception — queue to outbox & save locally.
+                    android.util.Log.w("TaskSubmissionChain", "[TaskSubmission] Network exception for task $taskId — saving to outbox: ${e.message}")
+                    saveTaskCompletionToOutbox(
+                        taskId = taskId,
+                        completionMessage = completionMessage,
+                        completionDocumentUrl = completionDocumentUrl,
+                        beforeImageUrl = beforeImageUrl,
+                        afterImageUrl = afterImageUrl,
+                        beforeLatitude = beforeLatitude,
+                        beforeLongitude = beforeLongitude,
+                        afterLatitude = afterLatitude,
+                        afterLongitude = afterLongitude,
+                        taskType = taskType,
+                        images = images,
+                        beforeImages = beforeImages,
+                        afterImages = afterImages,
+                        maintenanceVideos = maintenanceVideos,
+                        photoRemarks = photoRemarks,
+                        clientUploadId = clientUploadId
+                    )
+                    saveCompletionLocally(
+                        taskId = taskId,
+                        completionMessage = completionMessage,
+                        completionDocumentUrl = completionDocumentUrl,
+                        beforeImageUrl = beforeImageUrl,
+                        afterImageUrl = afterImageUrl,
+                        beforeLatitude = beforeLatitude,
+                        beforeLongitude = beforeLongitude,
+                        afterLatitude = afterLatitude,
+                        afterLongitude = afterLongitude,
+                        taskType = taskType,
+                        images = images,
+                        beforeImages = beforeImages,
+                        afterImages = afterImages,
+                        maintenanceVideos = maintenanceVideos,
+                        photoRemarks = photoRemarks
+                    )
+                    Result.failure(OfflinePendingException("Task completed & saved locally on app! Syncing with server..."))
+                } else {
+                    android.util.Log.e("TaskSubmissionChain", "[TaskSubmission] Non-network exception for task $taskId: ${e.message}", e)
+                    Result.failure(OnlineSubmissionFailedException(ErrorUtils.formatException(e)))
+                }
             }
         } else {
             // 📴 OFFLINE — save to outbox queue and update local DB

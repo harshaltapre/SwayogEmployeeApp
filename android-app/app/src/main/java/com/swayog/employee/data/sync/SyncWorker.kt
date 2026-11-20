@@ -133,6 +133,7 @@ class SyncWorker @AssistedInject constructor(
                     Log.d("TASK_SYNC", "Processing outbox item ${item.id} endpoint=${item.endpoint} method=${item.method} retryCount=${item.retryCount}")
                     val filesToDelete = mutableListOf<String>()
                     var itemError: String? = null
+                    var itemHttpCode: Int? = null
                     val success = try {
                         when {
                             item.endpoint.startsWith("tasks/") && item.method == "PATCH" -> {
@@ -141,6 +142,7 @@ class SyncWorker @AssistedInject constructor(
                                     val json = JSONObject(item.payload)
                                     val status = json.optString("status")
                                     val response = apiService.updateTask(taskId, UpdateTaskRequest(status = status))
+                                    itemHttpCode = response.code()
                                     lastHttpCode = response.code()
                                     if (response.isSuccessful) {
                                         val localTask = taskDao.getTaskById(taskId)
@@ -235,6 +237,7 @@ class SyncWorker @AssistedInject constructor(
                                         clientUploadId = clientUploadId
                                     )
                                     val response = apiService.completeTask(taskId, request)
+                                    itemHttpCode = response.code()
                                     lastHttpCode = response.code()
                                     if (response.isSuccessful) {
                                         val task = response.body()?.data
@@ -314,6 +317,7 @@ class SyncWorker @AssistedInject constructor(
                                     clientUploadId = idempotencyKey
                                 )
                                 val response = apiService.checkIn(request, idempotencyKey)
+                                itemHttpCode = response.code()
                                 lastHttpCode = response.code()
                                 val errStr = if (!response.isSuccessful) {
                                     try { response.errorBody()?.string().orEmpty() } catch (_: Exception) { "" }
@@ -337,6 +341,7 @@ class SyncWorker @AssistedInject constructor(
                                     request = CheckOutRequest(clientUploadId = idempotencyKey),
                                     idempotencyKey = idempotencyKey
                                 )
+                                itemHttpCode = response.code()
                                 lastHttpCode = response.code()
                                 val errStr = if (!response.isSuccessful) {
                                     try { response.errorBody()?.string().orEmpty() } catch (_: Exception) { "" }
@@ -366,6 +371,7 @@ class SyncWorker @AssistedInject constructor(
                                     tomorrowPlan = json.optString("tomorrowPlan").takeIf { it.isNotEmpty() }
                                 )
                                 val response = apiService.createDailyCommit(request)
+                                itemHttpCode = response.code()
                                 lastHttpCode = response.code()
                                 if (response.isSuccessful && response.body()?.data != null) {
                                     val commit = response.body()!!.data!!
@@ -410,6 +416,15 @@ class SyncWorker @AssistedInject constructor(
                         outboxQueueDao.updateItem(item.copy(isSynced = true, lastError = null, lastAttemptAt = System.currentTimeMillis()))
                         outboxQueueDao.deleteItem(item)
                         Log.d("TASK_SYNC", "Successfully synced and removed item ${item.id}")
+                    } else if (itemHttpCode in listOf(400, 403, 404, 413, 422)) {
+                        // Permanent client rejection (e.g. validation error, 403 face/role rejection):
+                        // retire the item so pendingSyncCount does not stay stuck > 0 forever while online.
+                        filesToDelete.forEach { filePath ->
+                            LocalFileHelper.deleteFile(filePath)
+                        }
+                        outboxQueueDao.deleteItem(item)
+                        Log.w("TASK_SYNC", "Retired non-retryable outbox item ${item.id} (HTTP $itemHttpCode): $itemError")
+                        lastSyncError = itemError
                     } else {
                         val updatedItem = item.copy(
                             retryCount = item.retryCount + 1,

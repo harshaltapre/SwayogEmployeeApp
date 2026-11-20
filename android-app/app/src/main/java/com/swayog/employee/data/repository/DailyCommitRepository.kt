@@ -11,6 +11,7 @@ import com.swayog.employee.data.model.*
 import com.swayog.employee.core.util.NetworkUtils
 import com.swayog.employee.core.util.ErrorUtils
 import com.swayog.employee.core.util.OfflinePendingException
+import com.swayog.employee.core.util.OnlineSubmissionFailedException
 import com.swayog.employee.data.sync.SyncManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -179,7 +180,13 @@ class DailyCommitRepository @Inject constructor(
                     dailyCommitDao.insertDailyCommit(entity)
                     Result.success(commit)
                 } else {
-                    // API call failed - save to outbox queue for offline sync and create local entity
+                    // Online but server rejected the request — surface the real error instead of queuing forever
+                    val errorMsg = ErrorUtils.formatResponseError(response)
+                    Result.failure(OnlineSubmissionFailedException(errorMsg))
+                }
+            } catch (e: Exception) {
+                if (ErrorUtils.isNetworkException(e)) {
+                    // Network error - save to outbox queue for offline sync and create local entity
                     val tempId = UUID.randomUUID().toString()
                     saveDailyCommitToOutbox(employeeId, commitDate, requestTask, requestSummary, requestHours, requestBlockers, requestPlan, attachmentUrl)
                     val entity = DailyCommitEntity(
@@ -198,27 +205,9 @@ class DailyCommitRepository @Inject constructor(
                     )
                     dailyCommitDao.insertDailyCommit(entity)
                     Result.failure(OfflinePendingException("Saved locally. Will sync automatically when online."))
+                } else {
+                    Result.failure(OnlineSubmissionFailedException(ErrorUtils.formatException(e)))
                 }
-            } catch (e: Exception) {
-                // Network error - save to outbox queue for offline sync and create local entity
-                val tempId = UUID.randomUUID().toString()
-                saveDailyCommitToOutbox(employeeId, commitDate, requestTask, requestSummary, requestHours, requestBlockers, requestPlan, attachmentUrl)
-                val entity = DailyCommitEntity(
-                    id = tempId,
-                    employeeId = employeeId,
-                    commitDate = commitDate,
-                    taskWorkedOn = requestTask,
-                    workSummary = requestSummary,
-                    hoursSpent = requestHours,
-                    issuesBlockers = requestBlockers,
-                    tomorrowPlan = requestPlan,
-                    attachmentUrl = attachmentUrl,
-                    submittedAt = nowStr,
-                    createdAt = nowStr,
-                    isSynced = false
-                )
-                dailyCommitDao.insertDailyCommit(entity)
-                Result.failure(OfflinePendingException("Saved locally. Will sync automatically when online."))
             }
         } else {
             // Offline - save to outbox queue and create local commit record

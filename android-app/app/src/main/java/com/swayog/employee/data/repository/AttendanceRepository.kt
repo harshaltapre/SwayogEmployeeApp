@@ -835,8 +835,10 @@ class AttendanceRepository @Inject constructor(
             return Result.success(firstAttempt.body()!!.verificationToken!!)
         }
 
-        // If server has no enrollment yet (404) but device has valid local 3-descriptor enrollment, sync it once and retry
-        if (firstAttempt.code() == 404) {
+        // If server has no enrollment yet (404) or local re-enrollment is still PENDING/FAILED (403 against stale server descriptors),
+        // sync valid local 3-descriptor enrollment once and retry.
+        val faceSyncStatus = try { dataStoreManager.faceEnrollmentSyncStatus.first() } catch (_: Exception) { "SYNCED" }
+        if (firstAttempt.code() == 404 || (firstAttempt.code() == 403 && (faceSyncStatus == "PENDING" || faceSyncStatus == "FAILED"))) {
             val localDescriptors = try { dataStoreManager.faceDescriptors.first() } catch (_: Exception) { emptyList() }
             val validLocal = localDescriptors.size == 3 && localDescriptors.all {
                 com.swayog.employee.data.local.preferences.DataStoreManager.isValidFaceDescriptor(

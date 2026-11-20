@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 fun FaceVerificationScreen(
     faceDescriptors: List<List<Float>> = emptyList(),
     faceIndexManager: com.swayog.employee.presentation.attendance.face.FaceIndexManager? = null,
+    matchThreshold: Float = FaceMatcher.THRESHOLD,
     onVerificationSuccess: (Bitmap, Float) -> Unit = { _, _ -> },
     onVerificationSuccessWithDescriptor: ((Bitmap, Float, List<Float>) -> Unit)? = null,
     onVerificationFailed: (String) -> Unit,
@@ -159,22 +160,23 @@ fun FaceVerificationScreen(
                                     return@FaceAnalyzer
                                 }
 
+                                val effectiveThreshold = matchThreshold.coerceAtLeast(FaceMatcher.THRESHOLD)
                                 val matchScore = FaceMatcher.findBestMatch(embedding, currentTargets)
                                 val now = System.currentTimeMillis()
                                 if (now - lastDiagnosticLogTime >= 3000L) {
                                     lastDiagnosticLogTime = now
-                                    val result = if (matchScore >= FaceMatcher.THRESHOLD) "MATCH" else "NO_MATCH"
+                                    val result = if (matchScore >= effectiveThreshold) "MATCH" else "NO_MATCH"
                                     android.util.Log.d(
                                         "FACE_DEBUG",
                                         "[FACE_UPDATE_3] storedCount=${currentTargets.size} " +
                                             "[FACE_UPDATE_4] storedDimensions=${currentTargets.map { it.size }} " +
                                             "[FACE_UPDATE_11] liveDimension=${embedding.size} " +
                                             "[FACE_UPDATE_12] bestScore=$matchScore " +
-                                            "[FACE_UPDATE_13] threshold=${FaceMatcher.THRESHOLD} " +
+                                            "[FACE_UPDATE_13] threshold=$effectiveThreshold " +
                                             "[FACE_UPDATE_14] result=$result"
                                     )
                                 }
-                                if (matchScore >= FaceMatcher.THRESHOLD) {
+                                if (matchScore >= effectiveThreshold) {
                                     isProcessing = true
                                     // Update UI and trigger success on main thread
                                     ContextCompat.getMainExecutor(ctx).execute {

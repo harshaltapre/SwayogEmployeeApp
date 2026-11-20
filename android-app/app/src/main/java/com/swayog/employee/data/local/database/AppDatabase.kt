@@ -19,7 +19,7 @@ import com.swayog.employee.data.local.entity.*
         CustomerEntity::class,
         OutboxQueueEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -87,7 +87,7 @@ abstract class AppDatabase : RoomDatabase() {
                         db.execSQL("DROP TABLE IF EXISTS `outbox_queue`")
 
                         db.execSQL("CREATE TABLE IF NOT EXISTS `users` (`id` TEXT NOT NULL, `loginId` TEXT NOT NULL, `employeeCode` TEXT, `email` TEXT NOT NULL, `phoneNumber` TEXT, `fullName` TEXT NOT NULL, `role` TEXT NOT NULL, `designationTitle` TEXT, `departmentId` TEXT, `reportingManagerId` TEXT, `isActive` INTEGER NOT NULL, `createdAt` TEXT NOT NULL, `jobRole` TEXT, `zone` TEXT, `monthlySalaryInr` INTEGER, `profilePhotoUrl` TEXT, `rating` REAL, PRIMARY KEY(`id`))")
-                        db.execSQL("CREATE TABLE IF NOT EXISTS `tasks` (`id` TEXT NOT NULL, `jobType` TEXT, `description` TEXT, `customerName` TEXT, `customerPhone` TEXT, `address` TEXT, `latitude` REAL, `longitude` REAL, `status` TEXT, `scheduledTime` TEXT, `employeeUserId` TEXT, `assignedById` TEXT, `completionMessage` TEXT, `completionDocumentUrl` TEXT, `beforeImageUrl` TEXT, `afterImageUrl` TEXT, `beforeLatitude` REAL, `beforeLongitude` REAL, `afterLatitude` REAL, `afterLongitude` REAL, `completedAt` TEXT, `createdAt` TEXT, `updatedAt` TEXT, `isSynced` INTEGER NOT NULL, `invoiceJson` TEXT, `taskType` TEXT, `imagesJson` TEXT, `sitePhotosJson` TEXT, `beforeImagesJson` TEXT, `afterImagesJson` TEXT, `assignedEmployeeName` TEXT, `assignedEmployeePhone` TEXT, PRIMARY KEY(`id`))")
+                        db.execSQL("CREATE TABLE IF NOT EXISTS `tasks` (`id` TEXT NOT NULL, `jobType` TEXT, `description` TEXT, `customerName` TEXT, `customerPhone` TEXT, `address` TEXT, `latitude` REAL, `longitude` REAL, `status` TEXT, `scheduledTime` TEXT, `employeeUserId` TEXT, `assignedById` TEXT, `completionMessage` TEXT, `completionDocumentUrl` TEXT, `beforeImageUrl` TEXT, `afterImageUrl` TEXT, `beforeLatitude` REAL, `beforeLongitude` REAL, `afterLatitude` REAL, `afterLongitude` REAL, `completedAt` TEXT, `createdAt` TEXT, `updatedAt` TEXT, `isSynced` INTEGER NOT NULL, `invoiceJson` TEXT, `taskType` TEXT, `imagesJson` TEXT, `sitePhotosJson` TEXT, `beforeImagesJson` TEXT, `afterImagesJson` TEXT, `maintenanceVideosJson` TEXT, `assignedEmployeeName` TEXT, `assignedEmployeePhone` TEXT, PRIMARY KEY(`id`))")
                         db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_employeeUserId` ON `tasks` (`employeeUserId`)")
                         db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_status` ON `tasks` (`status`)")
                         db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_taskType` ON `tasks` (`taskType`)")
@@ -144,6 +144,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Version 19 repairs any pre-v18 upgrade path where `tasks.maintenanceVideosJson`
+         * or `tasks.photoRemarksJson` was omitted during incremental or fallback migrations.
+         */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val existingColumns = mutableSetOf<String>()
+                db.query("PRAGMA table_info(`tasks`)").use { cursor ->
+                    val nameIndex = cursor.getColumnIndex("name")
+                    while (cursor.moveToNext()) {
+                        if (nameIndex >= 0) {
+                            existingColumns.add(cursor.getString(nameIndex))
+                        }
+                    }
+                }
+                if ("maintenanceVideosJson" !in existingColumns) {
+                    db.execSQL("ALTER TABLE `tasks` ADD COLUMN `maintenanceVideosJson` TEXT")
+                }
+                if ("photoRemarksJson" !in existingColumns) {
+                    db.execSQL("ALTER TABLE `tasks` ADD COLUMN `photoRemarksJson` TEXT")
+                }
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -153,7 +177,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_12_14)
                     .addMigrations(*ALL_MIGRATIONS)
-                    .addMigrations(MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+                    .addMigrations(MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
                     .build()
                 INSTANCE = instance
                 instance

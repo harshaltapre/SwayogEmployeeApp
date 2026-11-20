@@ -388,6 +388,7 @@ fun AttendanceScreen(
         FaceVerificationScreen(
             faceDescriptors = faceDescriptors,
             faceIndexManager = viewModel.faceIndexManager,
+            matchThreshold = attendanceRules.faceMatchThreshold,
             onVerificationSuccessWithDescriptor = { bitmap, matchConfidence, liveDescriptor ->
                 showCamera = false
                 coroutineScope.launch(Dispatchers.Default) {
