@@ -31,4 +31,30 @@ object FaceMatcher {
         }
         return bestScore
     }
+
+    /**
+     * Averages multiple 128-d embeddings and L2-normalizes the result to reduce
+     * single-frame camera sensor noise during live face verification.
+     */
+    fun averageNormalized(embeddings: List<List<Float>>): List<Float>? {
+        if (embeddings.isEmpty()) return null
+        val dim = embeddings.first().size
+        if (dim == 0 || embeddings.any { it.size != dim }) return null
+
+        val sums = FloatArray(dim)
+        for (vec in embeddings) {
+            for (i in 0 until dim) {
+                sums[i] += vec[i]
+            }
+        }
+        var normSq = 0.0
+        for (i in 0 until dim) {
+            val v = sums[i] / embeddings.size.toFloat()
+            sums[i] = v
+            normSq += v * v
+        }
+        val norm = sqrt(normSq).toFloat()
+        if (norm <= 0f) return null
+        return sums.map { it / norm }
+    }
 }

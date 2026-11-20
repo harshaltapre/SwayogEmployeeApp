@@ -171,16 +171,21 @@ class AttendanceRepository @Inject constructor(
                         effectiveVerificationToken = verifyResult.getOrNull()
                     } else {
                         val verifyErr = verifyResult.exceptionOrNull()
-                        if (verifyErr != null && ErrorUtils.isNetworkException(verifyErr)) {
+                        if (verifyErr is FaceVerifyRouteUnavailableException) {
+                            // Live backend does not expose /attendance/face/verify yet;
+                            // proceed directly to /employee/attendance/check-in with liveDescriptor.
+                            android.util.Log.w("AttendanceRepository", "/attendance/face/verify returned 404; falling back to direct check-in with liveDescriptor")
+                        } else if (verifyErr != null && ErrorUtils.isNetworkException(verifyErr)) {
                             return handleOfflineCheckIn(
                                 userId, selfie, latitude, longitude, matchConfidence, accuracy, null, clientUploadId
                             )
-                        }
-                        val rules = try { dataStoreManager.attendanceRule.first() } catch (_: Exception) { AttendanceRule() }
-                        if (rules.faceRequired) {
-                            val errMsg = verifyErr?.message ?: "Face verification failed on server. Please try again."
-                            dataStoreManager.recordSyncFailure(errMsg, httpCode = 422)
-                            return Result.failure(OnlineSubmissionFailedException(errMsg))
+                        } else {
+                            val rules = try { dataStoreManager.attendanceRule.first() } catch (_: Exception) { AttendanceRule() }
+                            if (rules.faceRequired) {
+                                val errMsg = verifyErr?.message ?: "Face verification failed on server. Please try again."
+                                dataStoreManager.recordSyncFailure(errMsg, httpCode = 422)
+                                return Result.failure(OnlineSubmissionFailedException(errMsg))
+                            }
                         }
                     }
                 }
@@ -647,12 +652,40 @@ class AttendanceRepository @Inject constructor(
                     Result.success(false)
                 } else {
                     val localDescriptors = faceIndexManager.loadFromDataStore()
-                    if (localDescriptors.isNotEmpty()) {
+                    if (localDescriptors.size == 3) {
                         android.util.Log.w(
                             "AttendanceRepository",
-                            "Server reports no face enrollment; preserving valid local descriptors for offline recognition"
+                            "Server reports no face enrollment; syncing valid local descriptors to server"
                         )
-                        dataStoreManager.setFaceSyncStatus("PENDING")
+                        try {
+                            val enrollResp = apiService.enrollFace(
+                                FaceEnrollRequest(
+                                    descriptor1 = localDescriptors[0],
+                                    descriptor2 = localDescriptors[1],
+                                    descriptor3 = localDescriptors[2],
+                                    source = "MOBILE"
+                                )
+                            )
+                            if (enrollResp.isSuccessful && enrollResp.body()?.success == true) {
+                                val body = enrollResp.body()!!
+                                val currentVersion = try { dataStoreManager.faceEnrollmentVersion.first() } catch (_: Exception) { 0 }
+                                dataStoreManager.saveFaceEnrollment(
+                                    descriptor1 = localDescriptors[0],
+                                    descriptor2 = localDescriptors[1],
+                                    descriptor3 = localDescriptors[2],
+                                    enrollmentId = body.enrollmentId,
+                                    syncVersion = body.syncVersion ?: (currentVersion + 1),
+                                    updatedAt = body.enrolledAt,
+                                    syncStatus = "SYNCED"
+                                )
+                            } else {
+                                dataStoreManager.setFaceSyncStatus("PENDING")
+                                syncManager.scheduleSync()
+                            }
+                        } catch (_: Exception) {
+                            dataStoreManager.setFaceSyncStatus("PENDING")
+                            syncManager.scheduleSync()
+                        }
                     }
                     Result.success(localDescriptors.isNotEmpty())
                 }
@@ -835,6 +868,15 @@ class AttendanceRepository @Inject constructor(
             return Result.success(firstAttempt.body()!!.verificationToken!!)
         }
 
+        // If /attendance/face/verify returns 404 with "Route not found", the deployed backend
+        // does not mount this endpoint; let checkIn fall back to direct /check-in verification.
+        if (firstAttempt.code() == 404) {
+            val formatted404 = ErrorUtils.formatResponseError(firstAttempt)
+            if (formatted404.contains("Route not found", ignoreCase = true)) {
+                return Result.failure(FaceVerifyRouteUnavailableException(formatted404))
+            }
+        }
+
         // If server has no enrollment yet (404) or local re-enrollment is still PENDING/FAILED (403 against stale server descriptors),
         // sync valid local 3-descriptor enrollment once and retry.
         val faceSyncStatus = try { dataStoreManager.faceEnrollmentSyncStatus.first() } catch (_: Exception) { "SYNCED" }
@@ -884,6 +926,8 @@ class AttendanceRepository @Inject constructor(
             ?: ErrorUtils.formatResponseError(firstAttempt)
         return Result.failure(Exception(errMsg))
     }
+
+    private class FaceVerifyRouteUnavailableException(message: String) : Exception(message)
 
     suspend fun verifyFace(request: FaceVerifyRequest): Result<FaceVerifyResponse> {
         return try {

@@ -131,6 +131,7 @@ fun FaceVerificationScreen(
 
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                 var lastDiagnosticLogTime = 0L
+                val recentEmbeddings = ArrayDeque<List<Float>>(3)
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
 
@@ -161,7 +162,19 @@ fun FaceVerificationScreen(
                                 }
 
                                 val effectiveThreshold = matchThreshold.coerceAtLeast(FaceMatcher.THRESHOLD)
-                                val matchScore = FaceMatcher.findBestMatch(embedding, currentTargets)
+                                if (recentEmbeddings.size >= 3) {
+                                    recentEmbeddings.removeFirst()
+                                }
+                                recentEmbeddings.addLast(embedding)
+                                val averagedEmbedding = FaceMatcher.averageNormalized(recentEmbeddings.toList())
+                                val rawScore = FaceMatcher.findBestMatch(embedding, currentTargets)
+                                val avgScore = averagedEmbedding?.let { FaceMatcher.findBestMatch(it, currentTargets) } ?: 0f
+                                val (bestEmbedding, matchScore) = if (avgScore >= rawScore && averagedEmbedding != null) {
+                                    averagedEmbedding to avgScore
+                                } else {
+                                    embedding to rawScore
+                                }
+
                                 val now = System.currentTimeMillis()
                                 if (now - lastDiagnosticLogTime >= 3000L) {
                                     lastDiagnosticLogTime = now
@@ -170,8 +183,8 @@ fun FaceVerificationScreen(
                                         "FACE_DEBUG",
                                         "[FACE_UPDATE_3] storedCount=${currentTargets.size} " +
                                             "[FACE_UPDATE_4] storedDimensions=${currentTargets.map { it.size }} " +
-                                            "[FACE_UPDATE_11] liveDimension=${embedding.size} " +
-                                            "[FACE_UPDATE_12] bestScore=$matchScore " +
+                                            "[FACE_UPDATE_11] liveDimension=${bestEmbedding.size} " +
+                                            "[FACE_UPDATE_12] bestScore=$matchScore (raw=$rawScore, avg=$avgScore) " +
                                             "[FACE_UPDATE_13] threshold=$effectiveThreshold " +
                                             "[FACE_UPDATE_14] result=$result"
                                     )
@@ -180,11 +193,11 @@ fun FaceVerificationScreen(
                                     isProcessing = true
                                     // Update UI and trigger success on main thread
                                     ContextCompat.getMainExecutor(ctx).execute {
-                                        faceStatusText = "Match Success! Checking in..."
+                                        faceStatusText = "Match Success (${(matchScore * 100).toInt()}%)! Checking in..."
                                         val capturedBitmap = previewView.bitmap
                                         if (capturedBitmap != null) {
                                             if (onVerificationSuccessWithDescriptor != null) {
-                                                onVerificationSuccessWithDescriptor(capturedBitmap, matchScore, embedding)
+                                                onVerificationSuccessWithDescriptor(capturedBitmap, matchScore, bestEmbedding)
                                             } else {
                                                 onVerificationSuccess(capturedBitmap, matchScore)
                                             }
@@ -193,9 +206,9 @@ fun FaceVerificationScreen(
                                         }
                                     }
                                 } else {
-                                    // Update UI on main thread
+                                    // Update UI on main thread with helpful guidance
                                     ContextCompat.getMainExecutor(ctx).execute {
-                                        faceStatusText = "Verification failed: Match score too low"
+                                        faceStatusText = "Hold steady & look at camera (${(matchScore * 100).toInt()}%)"
                                     }
                                 }
                             }

@@ -93,8 +93,11 @@ class FaceEnrollmentViewModel @Inject constructor(
                 }
             }
             2 -> {
-                // Left angle turn (Euler Y typically negative when turned left, or positive on some mirrored sensors)
-                if (eulerY < -7f || eulerY > 7f) {
+                // Gentle left/right angle turn (7-22 deg) that still matches frontal check-in well
+                val absY = abs(eulerY)
+                val base = descriptor1
+                val consistent = base == null || FaceMatcher.cosineSimilarity(base, embedding) >= 0.40f
+                if (absY in 7f..22f && consistent) {
                     descriptor2 = embedding
                     step2Direction = eulerY
                     lastCaptureTime = currentTime
@@ -108,9 +111,12 @@ class FaceEnrollmentViewModel @Inject constructor(
                 }
             }
             3 -> {
-                // Right angle turn (opposite direction of step 2)
+                // Gentle opposite angle turn (7-22 deg) consistent with frontal capture
+                val absY = abs(eulerY)
                 val oppositeDirection = if (step2Direction > 0) eulerY < -7f else eulerY > 7f
-                if (oppositeDirection) {
+                val base = descriptor1
+                val consistent = base == null || FaceMatcher.cosineSimilarity(base, embedding) >= 0.40f
+                if (oppositeDirection && absY <= 22f && consistent) {
                     descriptor3 = embedding
                     lastCaptureTime = currentTime
                     _uiState.update { it.copy(step3Done = true) }
